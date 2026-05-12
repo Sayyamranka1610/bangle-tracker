@@ -340,6 +340,170 @@ input[type="date"]{min-width:118px}
 .gd-step-num{width:22px;height:22px;border-radius:50%;background:#534AB7;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .sync-history-row{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1efe8;font-size:11px;align-items:baseline}
 .sync-history-row:last-child{border-bottom:none}
+
+/* ══════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — tablet (≤768px) and phone (≤480px)
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width:768px){
+  /* Prevent iOS auto-zoom on input focus */
+  input,select,textarea{font-size:16px!important}
+
+  /* Tighter dashboard padding */
+  .dash{padding:.5rem}
+
+  /* ── Drive bar & Save bar: horizontal scroll instead of wrapping ── */
+  .gd-bar,.save-bar{
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    -webkit-overflow-scrolling:touch;
+    padding:6px 12px;
+    scrollbar-width:none;
+  }
+  .gd-bar::-webkit-scrollbar,.save-bar::-webkit-scrollbar{display:none}
+  #gd-status-txt{white-space:nowrap;font-size:10px}
+  .save-bar-status{min-width:auto;white-space:nowrap}
+  .gd-bar-sep,.save-bar-sep{flex-shrink:0}
+
+  /* ── Header ── */
+  .header-band{padding:12px 14px;border-radius:10px;gap:8px}
+  .header-band h1{font-size:15px}
+  .header-band p{font-size:10px}
+  .header-actions{width:100%;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;gap:6px;scrollbar-width:none}
+  .header-actions::-webkit-scrollbar{display:none}
+  .header-actions button{flex-shrink:0;font-size:11px;padding:6px 10px;min-height:36px}
+
+  /* ── Stats: 3 columns ── */
+  .stats{grid-template-columns:repeat(3,1fr);gap:6px}
+  .stat-card{padding:10px 10px}
+  .stat-val{font-size:18px}
+  .stat-lbl{font-size:10px}
+
+  /* ── Main tabs: horizontal scroll ── */
+  .main-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;gap:4px;padding-bottom:4px;scrollbar-width:none}
+  .main-tabs::-webkit-scrollbar{display:none}
+  .main-tab{white-space:nowrap;flex-shrink:0;padding:8px 14px;font-size:12px}
+
+  /* ── Filter bar ── */
+  .filter-bar{padding:8px 12px;gap:8px}
+  .filter-bar select,.filter-bar input{max-width:100%}
+
+  /* ── Order cards ── */
+  .order-header{padding:10px 12px;gap:8px}
+  .oh-title{font-size:12px}
+  .oh-sub{font-size:10px}
+  .oh-right{flex-wrap:wrap;gap:4px;max-width:100%}
+  .oh-icon{width:28px;height:28px;font-size:12px;border-radius:7px}
+  .order-body{padding:10px}
+  .client-body{padding:8px}
+
+  /* ── Tabs inside order detail: horizontal scroll ── */
+  .tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{white-space:nowrap;flex-shrink:0;padding:7px 12px}
+
+  /* ── Field rows: 2-column grid ── */
+  .field-row{flex-wrap:wrap}
+  .field-group{min-width:calc(50% - 5px)}
+
+  /* ── Stage items ── */
+  .stage-item-top{flex-wrap:wrap;gap:6px}
+  .stage-status-sel{max-width:100%!important;width:100%!important}
+  .stage-name-wrap{min-width:100px}
+
+  /* ── Analytics: single column ── */
+  .analytics-grid{grid-template-columns:1fr}
+  .bar-label{width:90px;font-size:10px}
+
+  /* ── Inventory summary: 2 columns ── */
+  .inv-summary-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .inv-sum-val{font-size:16px}
+
+  /* ── Metrics: 2 columns ── */
+  .metric-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .metric-val{font-size:18px}
+
+  /* ── Inventory table: scrollable ── */
+  .inv-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* ── Modal: bottom sheet ── */
+  .modal-overlay{padding:0;align-items:flex-end}
+  .modal{
+    width:100%!important;
+    max-width:100%!important;
+    border-radius:18px 18px 0 0;
+    max-height:92vh;
+    padding:1.2rem 1rem;
+  }
+  .modal-actions{flex-wrap:wrap}
+  .modal-actions button{flex:1;min-width:120px}
+
+  /* ── Toast: full width at bottom ── */
+  .toast{
+    left:12px!important;
+    right:12px!important;
+    bottom:14px!important;
+    transform:none!important;
+    text-align:center;
+  }
+
+  /* ── Design gallery ── */
+  .design-imgs-gallery{grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px}
+  .gallery-img-card img{height:90px}
+
+  /* ── Design card ── */
+  .design-card{padding:10px}
+  .design-stages-section{padding:10px}
+
+  /* ── Variety table: add touch scroll indicator ── */
+  .variety-table-wrap{-webkit-overflow-scrolling:touch}
+
+  /* ── Inventory toolbar ── */
+  .inv-toolbar{padding:8px 12px;gap:8px}
+  .inv-period-tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+  .inv-period-tab{white-space:nowrap;flex-shrink:0}
+}
+
+/* ── Small phones (≤480px) ── */
+@media (max-width:480px){
+  /* Stats: 2 columns */
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat-val{font-size:16px}
+
+  /* Tighter header */
+  .header-band h1{font-size:13px}
+  .header-actions button{font-size:10px;padding:5px 8px}
+
+  /* Fields: full width */
+  .field-group{min-width:100%}
+
+  /* Stage bottom row: stack vertically */
+  .stage-item-bottom{flex-direction:column;gap:6px}
+  .stage-vendor-inp,.stage-date-inp,.stage-notes-area,.stage-days-inp{
+    max-width:100%!important;width:100%!important
+  }
+
+  /* Modal padding */
+  .modal{padding:1rem .75rem}
+
+  /* Inventory: compact */
+  .inv-sum-card{padding:10px 12px}
+  .inv-sum-val{font-size:15px}
+
+  /* Design gallery: smaller thumbnails */
+  .design-imgs-gallery{grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:6px}
+  .gallery-img-card img{height:76px}
+  .gallery-add-card{min-height:106px}
+
+  /* Badges smaller */
+  .badge{font-size:10px;padding:2px 7px}
+  .oh-right .badge{font-size:9px}
+  .stat-lbl{font-size:9px}
+
+  /* Analytics */
+  .metric-val{font-size:16px}
+  .inv-sum-val{font-size:15px}
+  .bar-label{width:70px}
+}
 </style>
 <!-- Google API client library -->
 <script src="https://apis.google.com/js/api.js" async defer onload="gdOnGapiLoad()"></script>
