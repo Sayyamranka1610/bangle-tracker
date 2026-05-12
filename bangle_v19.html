@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bangle Production Tracker v13 — Drive Sync</title>
+<title>Bangle Production Tracker v19 — Drive Sync</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--indigo:#534AB7;--indigo-light:#EEEDFE;--indigo-mid:#AFA9EC;--indigo-dark:#3C3489;--teal:#0F6E56;--teal-light:#E1F5EE;--teal-mid:#5DCAA5;--amber:#BA7517;--amber-light:#FAEEDA;--amber-mid:#EF9F27;--red:#A32D2D;--red-light:#FCEBEB;--red-mid:#F09595;--green:#3B6D11;--green-light:#EAF3DE;--green-mid:#97C459;--blue:#185FA5;--blue-light:#E6F1FB;--blue-mid:#85B7EB;--bg:#f4f3ef;--card:#fff;--border:#D3D1C7}
@@ -4630,7 +4630,7 @@ async function gdSyncNow(silent){
   if(!_gd.accessToken){ if(!silent) showToast('Connect Drive first','amber'); return; }
   gdSetStatus('syncing','Drive: saving…');
   const payload = JSON.stringify({
-    _meta:{ version:'v13', savedAt:new Date().toISOString(), email:_gd.email, orders: S.orders.length },
+    _meta:{ version:'v19', savedAt:new Date().toISOString(), email:_gd.email, orders: S.orders.length },
     state:{...S, openOrders:[...S.openOrders], openClients:[...S.openClients]}
   });
   const sizeKB = (new Blob([payload]).size/1024).toFixed(1);
