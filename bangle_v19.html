@@ -608,7 +608,7 @@ input[type="date"]{min-width:118px}
   <div class="header-band">
     <div><h1>🪬 Bangle Production Tracker</h1><p id="header-sub">Loading...</p></div>
     <div class="header-actions no-print">
-      <button onclick="exportCSV()">📥 Export Dashboard</button>
+      <button onclick="showExportMenu()">📥 Export</button>
       <button onclick="showPrintMenu()">🖨️ Print</button>
       <button onclick="openStageTemplateEditor()">⚙️ Stages</button>
       <button onclick="openAuditModal()">📋 Audit log</button>
@@ -3235,7 +3235,7 @@ function showPrintMenu(){
         <label for="print-stages-chk" style="font-size:12px;color:#3C3489;font-weight:600;cursor:pointer">Include production stages in print</label>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px">
-        <button onclick="closeModal();setTimeout(()=>window.print(),200)" style="text-align:left;padding:12px 16px;font-size:13px">📦 Print all (current view)</button>
+        <button onclick="doPrintAll(document.getElementById('print-stages-chk').checked)" style="text-align:left;padding:12px 16px;font-size:13px">📦 Print all (current view)</button>
         <div style="background:#f7f6f2;border-radius:10px;padding:12px">
           <label style="font-size:11px;color:#777;font-weight:600;display:block;margin-bottom:6px">Client-wise</label>
           <select id="pc-client" style="margin-bottom:8px">${[...new Set(S.orders.map(o=>o.client))].sort().map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
@@ -3250,6 +3250,13 @@ function showPrintMenu(){
       <div class="modal-actions"><button onclick="closeModal()">Cancel</button></div>
     </div>
   </div>`;
+}
+
+function doPrintAll(includeStages){
+  closeModal();
+  const filtered=S.orders.filter(orderMatchesFilter);
+  if(!filtered.length){showToast('No orders match the current filters','amber');return;}
+  openPrintWindow('All Orders (current view)',filtered,'all',includeStages!==false);
 }
 
 // Build printable HTML for an order, respecting activeTab
@@ -3415,8 +3422,120 @@ function getAllSizes(){
   return [...szSet];
 }
 
+// ── EXPORT MENU ───────────────────────────────────────────────────────────────
+function showExportMenu(){
+  const mc=document.getElementById('modal-container');
+  const clients=[...new Set(S.orders.map(o=>o.client))].sort();
+  const codes=[...new Set(S.orders.flatMap(o=>o.designs.map(d=>d.code)).filter(Boolean))].sort();
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:480px">
+      <div class="modal-header"><div class="modal-icon">📥</div><h3>Export options</h3></div>
+
+      <!-- Stages toggle -->
+      <div style="background:#EEEDFE;border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;border:1.5px solid #D0CCF5">
+        <input type="checkbox" id="exp-stages-chk" style="width:auto;accent-color:#534AB7;cursor:pointer;margin-top:3px" checked>
+        <div>
+          <label for="exp-stages-chk" style="font-size:13px;color:#3C3489;font-weight:700;cursor:pointer;display:block">Include production stages in export</label>
+          <div style="font-size:11px;color:#888;margin-top:3px">When checked, a separate stages section is added with vendor, status, dates and notes for every design stage</div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <!-- All orders -->
+        <div style="background:#f7f6f2;border-radius:12px;padding:13px 14px;border:1.5px solid #E8E7E0">
+          <div style="font-size:11px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">📋 All orders (filters applied)</div>
+          <div style="display:flex;gap:8px">
+            <button style="flex:1;padding:9px 8px;font-size:12px" onclick="exportCSV(document.getElementById('exp-stages-chk').checked);closeModal()">📄 Export CSV</button>
+            <button class="primary" style="flex:1;padding:9px 8px;font-size:12px" onclick="exportExcelFull(document.getElementById('exp-stages-chk').checked);closeModal()">📊 Export Excel (.xlsx)</button>
+          </div>
+        </div>
+
+        <!-- Client-wise -->
+        <div style="background:#f7f6f2;border-radius:12px;padding:13px 14px;border:1.5px solid #E8E7E0">
+          <div style="font-size:11px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">👤 Client-wise</div>
+          <select id="exp-client" style="margin-bottom:8px">${clients.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
+          <button style="width:100%;padding:8px" onclick="exportClientCSV(document.getElementById('exp-client').value,document.getElementById('exp-stages-chk').checked);closeModal()">📥 Export selected client</button>
+        </div>
+
+        <!-- Design code-wise -->
+        <div style="background:#f7f6f2;border-radius:12px;padding:13px 14px;border:1.5px solid #E8E7E0">
+          <div style="font-size:11px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">🎨 Design code-wise</div>
+          <select id="exp-code" style="margin-bottom:8px">${codes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
+          <button style="width:100%;padding:8px" onclick="exportDesignCSV(document.getElementById('exp-code').value,document.getElementById('exp-stages-chk').checked);closeModal()">📥 Export selected design</button>
+        </div>
+      </div>
+      <div class="modal-actions"><button onclick="closeModal()">Cancel</button></div>
+    </div>
+  </div>`;
+}
+
+// ── EXCEL EXPORT (SheetJS multi-sheet) ────────────────────────────────────────
+function exportExcelFull(includeStages){
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please use CSV export.');return;}
+  if(includeStages===undefined)includeStages=true;
+  const filtered=S.orders.filter(orderMatchesFilter);
+  const allSizes=getAllSizes();
+  const wb=XLSX.utils.book_new();
+
+  // ── Sheet 1: Summary ──────────────────────────────────────────────────────
+  const sumRows=[
+    ['Order ID','Client','Start Date','Priority','Status','% Done','Total Qty','Designs','Notes']
+  ];
+  filtered.forEach(o=>{
+    const al=orderAlert(o);
+    sumRows.push([o.orderId,o.client,fmtDate(o.startDate),o.priority,
+      {ok:'On track',warn:'Due soon',late:'Overdue',done:'Completed'}[al],
+      orderPct(o)+'%',totalQty(o),o.designs.length,o.notes||'']);
+  });
+  const ws1=XLSX.utils.aoa_to_sheet(sumRows);
+  ws1['!cols']=[{wch:12},{wch:20},{wch:12},{wch:10},{wch:12},{wch:8},{wch:10},{wch:8},{wch:30}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Summary');
+
+  // ── Sheet 2: Design & Variety Breakdown ───────────────────────────────────
+  const dvRows=[['Order ID','Client','Priority','Status','Design Name','Design Code','Variety',...allSizes,'Total Qty','Stages Done','Total Stages','Stage %']];
+  filtered.forEach(o=>{
+    const al=orderAlert(o);
+    const stLabel={ok:'On track',warn:'Due soon',late:'Overdue',done:'Completed'}[al];
+    o.designs.forEach(d=>{
+      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes,images:[]}];
+      const stgDone=d.stages.filter(s=>s.status==='done').length;
+      varieties.forEach(v=>{
+        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+        dvRows.push([o.orderId,o.client,o.priority,stLabel,d.name,d.code,v.name,
+          ...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length,
+          d.stages.length?Math.round(stgDone/d.stages.length*100)+'%':'0%']);
+      });
+    });
+  });
+  const ws2=XLSX.utils.aoa_to_sheet(dvRows);
+  ws2['!cols']=[{wch:12},{wch:20},{wch:10},{wch:12},{wch:20},{wch:12},{wch:18},
+    ...allSizes.map(()=>({wch:7})),{wch:10},{wch:10},{wch:10},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Design & Variety Breakdown');
+
+  // ── Sheet 3: Production Stages (conditional) ──────────────────────────────
+  if(includeStages){
+    const stRows=[['Order ID','Client','Design Name','Design Code','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Stage Notes']];
+    filtered.forEach(o=>{
+      o.designs.forEach(d=>{
+        d.stages.forEach((st,si)=>{
+          const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
+          const dl=designDeadline(o,d,si);
+          stRows.push([o.orderId,o.client,d.name,d.code,si+1,t.name,t.loc||'',
+            st.vendor||'',st.status,getEffDays(o,d,si),fmtDate(dl),st.stageNote||'']);
+        });
+      });
+    });
+    const ws3=XLSX.utils.aoa_to_sheet(stRows);
+    ws3['!cols']=[{wch:12},{wch:20},{wch:20},{wch:12},{wch:7},{wch:20},{wch:16},{wch:18},{wch:10},{wch:10},{wch:12},{wch:30}];
+    XLSX.utils.book_append_sheet(wb,ws3,'Production Stages');
+  }
+
+  XLSX.writeFile(wb,`bangle_dashboard_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
 // ── MAIN DASHBOARD EXPORT (all orders, full detail) ───────────────────────────
-function exportCSV(){
+function exportCSV(includeStages){
+  if(includeStages===undefined)includeStages=true;
   const filtered=S.orders.filter(orderMatchesFilter);
   const allSizes=getAllSizes();
   // Section 1: Order Summary
@@ -3449,18 +3568,20 @@ function exportCSV(){
       });
     });
   });
-  summaryRows.push([]);
-  summaryRows.push(['=== PRODUCTION STAGES ===']);
-  summaryRows.push(['Order ID','Client','Design Name','Design Code','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Stage Notes']);
-  filtered.forEach(order=>{
-    order.designs.forEach(d=>{
-      d.stages.forEach((st,si)=>{
-        const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
-        const dl=designDeadline(order,d,si);
-        summaryRows.push([order.orderId,order.client,d.name,d.code,si+1,t.name,t.loc||'',st.vendor||'',st.status,getEffDays(order,d,si),fmtDate(dl),st.stageNote||'']);
+  if(includeStages){
+    summaryRows.push([]);
+    summaryRows.push(['=== PRODUCTION STAGES ===']);
+    summaryRows.push(['Order ID','Client','Design Name','Design Code','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Stage Notes']);
+    filtered.forEach(order=>{
+      order.designs.forEach(d=>{
+        d.stages.forEach((st,si)=>{
+          const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
+          const dl=designDeadline(order,d,si);
+          summaryRows.push([order.orderId,order.client,d.name,d.code,si+1,t.name,t.loc||'',st.vendor||'',st.status,getEffDays(order,d,si),fmtDate(dl),st.stageNote||'']);
+        });
       });
     });
-  });
+  }
   downloadCSV(csvEncode(summaryRows),`bangle_full_dashboard_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
@@ -3503,7 +3624,8 @@ function exportOrderCSV(oid){
 }
 
 // ── EXPORT FOR A CLIENT ────────────────────────────────────────────────────────
-function exportClientCSV(clientName){
+function exportClientCSV(clientName,includeStages){
+  if(includeStages===undefined)includeStages=true;
   const orders=S.orders.filter(o=>o.client===clientName);
   const allSizes=getAllSizes();
   const rows=[['=== CLIENT EXPORT ===','Client:',clientName],
@@ -3523,11 +3645,25 @@ function exportClientCSV(clientName){
       });
     });
   });
+  if(includeStages){
+    rows.push([]);
+    rows.push(['=== PRODUCTION STAGES ===']);
+    rows.push(['Order ID','Design Name','Design Code','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Stage Notes']);
+    orders.forEach(order=>{
+      order.designs.forEach(d=>{
+        d.stages.forEach((st,si)=>{
+          const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
+          rows.push([order.orderId,d.name,d.code,si+1,t.name,t.loc||'',st.vendor||'',st.status,getEffDays(order,d,si),fmtDate(designDeadline(order,d,si)),st.stageNote||'']);
+        });
+      });
+    });
+  }
   downloadCSV(csvEncode(rows),`client_${clientName.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
 // ── EXPORT FOR A DESIGN (design-view) ─────────────────────────────────────────
-function exportDesignCSV(code){
+function exportDesignCSV(code,includeStages){
+  if(includeStages===undefined)includeStages=true;
   const items=[];
   S.orders.forEach(order=>{
     (order.designs||[]).forEach(d=>{if(d.code===code)items.push({order,d});});
@@ -3549,6 +3685,17 @@ function exportDesignCSV(code){
       rows.push([order.orderId,order.client,fmtDate(order.startDate),order.priority,statusLabel,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
     });
   });
+  if(includeStages){
+    rows.push([]);
+    rows.push(['=== PRODUCTION STAGES ===']);
+    rows.push(['Order ID','Client','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Stage Notes']);
+    items.forEach(({order,d})=>{
+      d.stages.forEach((st,si)=>{
+        const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
+        rows.push([order.orderId,order.client,si+1,t.name,t.loc||'',st.vendor||'',st.status,getEffDays(order,d,si),fmtDate(designDeadline(order,d,si)),st.stageNote||'']);
+      });
+    });
+  }
   downloadCSV(csvEncode(rows),`design_${code.replace(/[^a-z0-9]/gi,'_')}_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
