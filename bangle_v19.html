@@ -281,6 +281,36 @@ input[type="date"]{min-width:118px}
 .inv-bal-item strong{color:#534AB7;font-size:13px}
 @media(max-width:700px){.inv-summary-grid{grid-template-columns:repeat(2,1fr)}}
 
+/* ── Physical Stock ─────────────────────────────────────────────────────── */
+.inv-sub-tabs{display:flex;gap:4px;margin-bottom:14px}
+.inv-sub-tab{padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;color:#534AB7;border:1.5px solid #AFA9EC;background:#fff;cursor:pointer;transition:all .15s}
+.inv-sub-tab.active{background:#534AB7;color:#fff;border-color:#534AB7}
+.stock-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#fff;border-radius:12px;padding:10px 16px;border:1.5px solid var(--border)}
+.stock-img-search{border:2px dashed #AFA9EC;border-radius:12px;padding:18px;text-align:center;cursor:pointer;background:#faf9ff;margin-bottom:14px;transition:border-color .15s}
+.stock-img-search:hover,.stock-img-search.drag-over{border-color:#534AB7;background:#f0efff}
+.stock-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:16px}
+.stock-card{background:#fff;border-radius:14px;border:1.5px solid #E8E7E0;overflow:hidden;transition:box-shadow .15s}
+.stock-card:hover{box-shadow:0 4px 18px rgba(83,74,183,.14)}
+.stock-card-img{height:160px;background:#f4f3ef;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.stock-card-img img{width:100%;height:100%;object-fit:cover}
+.stock-card-img .ob-badge{position:absolute;top:8px;left:8px;background:#534AB7;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:99px;letter-spacing:.04em}
+.stock-card-img .match-badge{position:absolute;top:8px;right:8px;background:#0F6E56;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px}
+.stock-card-body{padding:12px}
+.stock-card-title{font-size:13px;font-weight:700;color:#1a1916;margin-bottom:2px}
+.stock-card-sub{font-size:11px;color:#534AB7;font-weight:600;margin-bottom:8px}
+.stock-size-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.stock-size-chip{background:#EEEDFE;color:#3C3489;font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px}
+.stock-card-total{font-size:12px;font-weight:700;color:#0F6E56;background:#E1F5EE;border-radius:6px;padding:3px 10px;display:inline-block}
+.stock-card-actions{display:flex;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid #F1EFE8}
+.stock-table{width:100%;border-collapse:collapse;font-size:11px;background:#fff;border-radius:12px;overflow:hidden}
+.stock-table th{background:#534AB7;color:#fff;padding:8px 12px;font-weight:600;text-align:center;white-space:nowrap}
+.stock-table th:first-child{text-align:left}
+.stock-table td{padding:7px 12px;border-bottom:1px solid #F1EFE8;text-align:center;vertical-align:middle}
+.stock-table td:first-child{text-align:left;font-weight:600;color:#534AB7}
+.stock-table tr:last-child td{border-bottom:none}
+.stock-empty{text-align:center;padding:3rem;color:#aaa;font-size:13px}
+@media(max-width:600px){.stock-gallery{grid-template-columns:1fr}}
+
 .stage-group-raw{border-color:#FFD54F!important;}.stage-group-semi{border-color:#90CAF9!important;}.stage-group-finished{border-color:#A5D6A7!important;}
 .group-qty-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
 
@@ -487,7 +517,10 @@ input[type="date"]{min-width:118px}
 /* ── Login screen ── */
 #login-screen{position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#534AB7 0%,#3C3489 100%);display:flex;align-items:center;justify-content:center;padding:20px}
 .login-card{background:#fff;border-radius:20px;padding:2.5rem 2rem;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center}
-.login-logo{font-size:52px;margin-bottom:10px}
+.login-logo{margin-bottom:18px;display:flex;justify-content:center}
+.bangle-icon{width:76px;height:76px;border-radius:50%;border:13px solid #7F77DD;background:transparent;position:relative;box-shadow:0 0 0 4px rgba(255,255,255,.25),0 12px 36px rgba(0,0,0,.28),inset 0 2px 6px rgba(255,255,255,.2)}
+.bangle-icon::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.35)}
+.bangle-icon::after{content:'';position:absolute;top:6px;left:50%;transform:translateX(-50%);width:18px;height:6px;border-radius:50%;background:rgba(255,255,255,.45)}
 .login-title{font-size:20px;font-weight:700;color:#1a1916;margin-bottom:4px}
 .login-sub{font-size:12px;color:#888;margin-bottom:24px}
 .login-field{margin-bottom:14px;text-align:left}
@@ -521,7 +554,7 @@ input[type="date"]{min-width:118px}
 <!-- ── LOGIN SCREEN ───────────────────────────────────────────────────── -->
 <div id="login-screen">
   <div class="login-card" id="login-card">
-    <div class="login-logo">🪬</div>
+    <div class="login-logo"><div class="bangle-icon"></div></div>
     <h2 class="login-title">Bangle Production Tracker</h2>
     <p class="login-sub">Sign in to access the dashboard</p>
     <div class="login-field">
@@ -640,7 +673,9 @@ let S = {
   invLedger:[],           // [{id,date,designName,designCode,type,qty,orderId,note,source,autoType,stageRef,rejections}]
   // qty = pieces for ALL groups (raw, semi, finished)
   invPeriod:'monthly',    // 'weekly'|'monthly'|'yearly'
-  invGroupBy:'name'       // 'name'|'code'
+  invGroupBy:'name',      // 'name'|'code'
+  stockItems:[],          // [{id,designName,designCode,variety,images:[{data,hash}],sizes:{},date,isOpeningBalance,notes}]
+  stockView:'gallery'     // 'gallery'|'table'
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -664,6 +699,8 @@ try{
     S.invLedger=sv.invLedger||[];
     S.invPeriod=sv.invPeriod||'monthly';
     S.invGroupBy=sv.invGroupBy||'name';
+    S.stockItems=sv.stockItems||[];
+    S.stockView=sv.stockView||'gallery';
     window._loadedFromStorage = true; // flag: real data loaded successfully
   } else {
     window._loadedFromStorage = false; // no saved data found — will use sample
@@ -885,6 +922,17 @@ async function idbGetAll(){
 function extractImages(state){
   const imageMap={};
   const cloned=JSON.parse(JSON.stringify(state)); // deep clone
+  // Strip stockItems images
+  (cloned.stockItems||[]).forEach((it,idx)=>{
+    (it.images||[]).forEach((img,ii)=>{
+      if(img.data&&img.data.startsWith('data:')){
+        const key=`stkimg_${it.id}_${ii}`;
+        imageMap[key]=img.data;
+        img.data='__IDB__'+key;
+      }
+    });
+  });
+
   (cloned.orders||[]).forEach(o=>{
     // Strip attached file data (large binary) — kept in IndexedDB only
     if(o.attachedFile&&o.attachedFile.data){
@@ -3745,6 +3793,13 @@ function buildPeriodRow(pr, pi, isKg, inType, unit, catColor){
 
 function renderInventory(){
   const container=document.getElementById('view-inventory');
+  // Sub-tab header always rendered first
+  const subTabHtml=`<div class="inv-sub-tabs no-print">
+    <button class="inv-sub-tab${(S.invSubTab||'ledger')==='ledger'?' active':''}" onclick="S.invSubTab='ledger';renderInventory()">📊 Production Ledger</button>
+    <button class="inv-sub-tab${(S.invSubTab||'ledger')==='stock'?' active':''}" onclick="S.invSubTab='stock';renderInventory()">📦 Physical Stock</button>
+  </div>`;
+  if((S.invSubTab||'ledger')==='stock'){container.innerHTML=subTabHtml;renderStockView(container);return;}
+
   const byField=S.invGroupBy==='code'?'designCode':'designName';
   const designKeys=invGetDesignKeys(byField);
   const todayStr=invIsoDate(new Date());
@@ -3766,9 +3821,9 @@ function renderInventory(){
     return{k,label,sublabel,raw:b.raw,semi:b.semi,fin:b.fin,moves};
   });
 
-  container.innerHTML=`
+  container.innerHTML=subTabHtml+`
   <div class="inv-toolbar">
-    <strong style="color:#534AB7;font-size:13px">🗄️ Inventory Ledger</strong>
+    <strong style="color:#534AB7;font-size:13px">🗄️ Production Ledger</strong>
     <div class="inv-period-tabs">
       <button class="inv-period-tab${S.invPeriod==='weekly'?' active':''}" onclick="setInvPeriod('weekly')">Weekly</button>
       <button class="inv-period-tab${S.invPeriod==='monthly'?' active':''}" onclick="setInvPeriod('monthly')">Monthly</button>
@@ -3957,6 +4012,345 @@ function renderInvPeriodTable(designKeys,byField){
 
 function setInvPeriod(p){S.invPeriod=p;renderInventory();}
 function setInvGroupBy(g){S.invGroupBy=g;renderInventory();}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── PHYSICAL STOCK TRACKER ───────────────────────────────────════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Perceptual image hash (8×8 aHash) ────────────────────────────────────────
+function imgHash(dataUrl){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const c=document.createElement('canvas');c.width=8;c.height=8;
+        const ctx=c.getContext('2d');ctx.drawImage(img,0,0,8,8);
+        const px=ctx.getImageData(0,0,8,8).data;
+        const gray=[];
+        for(let i=0;i<64;i++)gray.push(0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2]);
+        const avg=gray.reduce((a,v)=>a+v,0)/64;
+        resolve(gray.map(v=>v>=avg?'1':'0').join(''));
+      }catch(e){resolve('');}
+    };
+    img.onerror=()=>resolve('');
+    img.src=dataUrl;
+  });
+}
+function hashDist(h1,h2){
+  if(!h1||!h2||h1.length!==h2.length)return 64;
+  let d=0;for(let i=0;i<h1.length;i++)if(h1[i]!==h2[i])d++;return d;
+}
+function hashSimilarity(h1,h2){return Math.round((1-hashDist(h1,h2)/64)*100);}
+
+// ── Render Physical Stock view ────────────────────────────────────────────────
+function renderStockView(container){
+  const items=S.stockItems||[];
+  const searchActive=window._stockSearchHash||null;
+
+  // Sort: if searching, sort by similarity; else opening balances first, then by date desc
+  let displayItems=[...items];
+  if(searchActive){
+    displayItems=displayItems.map(item=>{
+      const bestSim=Math.max(0,...(item.images||[]).map(im=>hashSimilarity(searchActive,im.hash||'')));
+      return{...item,_sim:bestSim};
+    }).sort((a,b)=>b._sim-a._sim);
+  } else {
+    displayItems.sort((a,b)=>{
+      if(a.isOpeningBalance&&!b.isOpeningBalance)return -1;
+      if(!a.isOpeningBalance&&b.isOpeningBalance)return 1;
+      return new Date(b.date)-new Date(a.date);
+    });
+  }
+
+  const totalPcs=items.reduce((a,it)=>a+Object.values(it.sizes||{}).reduce((b,v)=>b+(parseInt(v)||0),0),0);
+
+  const galleryHtml=displayItems.length?displayItems.map(item=>{
+    const sizes=item.sizes||{};
+    const totalItem=Object.values(sizes).reduce((a,v)=>a+(parseInt(v)||0),0);
+    const sizeChips=Object.entries(sizes).filter(([,v])=>parseInt(v)>0)
+      .map(([sz,v])=>`<span class="stock-size-chip">${sz}: ${v}</span>`).join('');
+    const imgSrc=item.images&&item.images.length?item.images[0].data:'';
+    const simLabel=searchActive&&item._sim!=null?`<div class="match-badge">${item._sim}% match</div>`:'';
+    return`<div class="stock-card">
+      <div class="stock-card-img">
+        ${imgSrc?`<img src="${imgSrc}" alt="stock image" onclick="openLbDirect('${imgSrc}')">`:`<span style="font-size:32px;color:#D3D1C7">🖼️</span>`}
+        ${item.isOpeningBalance?'<div class="ob-badge">Opening Balance</div>':''}
+        ${simLabel}
+      </div>
+      <div class="stock-card-body">
+        <div class="stock-card-title">${esc(item.designName||'—')} <span style="font-size:11px;font-weight:400;color:#888">[${esc(item.designCode||'—')}]</span></div>
+        <div class="stock-card-sub">🧵 ${esc(item.variety||'—')}</div>
+        <div class="stock-size-chips">${sizeChips||'<span style="font-size:10px;color:#aaa">No quantities entered</span>'}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="stock-card-total">Total: ${totalItem} pcs</span>
+          <span style="font-size:10px;color:#888">${item.date||''}</span>
+        </div>
+        ${item.notes?`<div style="font-size:10px;color:#777;margin-top:5px">${esc(item.notes)}</div>`:''}
+        <div class="stock-card-actions">
+          <button class="icon-btn" style="font-size:11px" onclick="openEditStockModal('${item.id}')">✏️ Edit</button>
+          <button class="icon-btn danger" style="font-size:11px" onclick="deleteStockItem('${item.id}')">✕ Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join(''):`<div class="stock-empty">No stock entries yet.<br>Click <strong>+ Add Opening Balance</strong> to get started.</div>`;
+
+  const searchResultLabel=searchActive?`<div style="font-size:12px;color:#0F6E56;font-weight:600;margin-bottom:8px">🔍 Showing results sorted by image similarity — <button class="icon-btn" onclick="clearStockSearch()">✕ Clear search</button></div>`:'';
+
+  container.innerHTML+=`
+  <div class="stock-toolbar">
+    <strong style="color:#534AB7;font-size:13px">📦 Physical Stock — by Design, Variety & Size</strong>
+    <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="openAddStockModal(true)" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer">📋 Add Opening Balance</button>
+      <button class="icon-btn" onclick="openAddStockModal(false)">➕ Add Stock Entry</button>
+      <button class="icon-btn" onclick="exportStockExcel()">📥 Export Excel</button>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    <div style="background:#EEEDFE;border-radius:10px;padding:10px 18px;text-align:center">
+      <div style="font-size:20px;font-weight:700;color:#534AB7">${items.length}</div>
+      <div style="font-size:11px;color:#777">Stock entries</div>
+    </div>
+    <div style="background:#E1F5EE;border-radius:10px;padding:10px 18px;text-align:center">
+      <div style="font-size:20px;font-weight:700;color:#0F6E56">${totalPcs.toLocaleString()}</div>
+      <div style="font-size:11px;color:#777">Total pieces</div>
+    </div>
+    <div style="background:#FFF8E1;border-radius:10px;padding:10px 18px;text-align:center">
+      <div style="font-size:20px;font-weight:700;color:#854F0B">${items.filter(i=>i.isOpeningBalance).length}</div>
+      <div style="font-size:11px;color:#777">Opening balances</div>
+    </div>
+  </div>
+
+  <div class="stock-img-search" id="stock-search-zone"
+    ondragover="event.preventDefault();this.classList.add('drag-over')"
+    ondragleave="this.classList.remove('drag-over')"
+    ondrop="handleStockImgDrop(event)"
+    onclick="document.getElementById('stock-search-inp').click()">
+    <div style="font-size:24px;margin-bottom:6px">🔍</div>
+    <strong style="font-size:12px">Search by image — upload a photo of the design</strong>
+    <p style="font-size:11px;color:#888;margin-top:4px">Drop image here or click · Dashboard will show matching stock sorted by similarity</p>
+  </div>
+  <input type="file" id="stock-search-inp" accept="image/*" style="display:none" onchange="handleStockSearchFile(this)">
+
+  ${searchResultLabel}
+  <div class="stock-gallery">${galleryHtml}</div>`;
+}
+
+function clearStockSearch(){window._stockSearchHash=null;renderInventory();}
+
+function handleStockImgDrop(e){
+  e.preventDefault();document.getElementById('stock-search-zone').classList.remove('drag-over');
+  const file=e.dataTransfer.files[0];if(file&&file.type.startsWith('image/'))runStockImageSearch(file);
+}
+function handleStockSearchFile(inp){const file=inp.files[0];if(file)runStockImageSearch(file);inp.value='';}
+function runStockImageSearch(file){
+  const zone=document.getElementById('stock-search-zone');
+  if(zone)zone.innerHTML='<div style="font-size:12px;color:#534AB7;font-weight:600">⏳ Analysing image…</div>';
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    const hash=await imgHash(ev.target.result);
+    window._stockSearchHash=hash;
+    renderInventory();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Add / Edit Stock Modal ────────────────────────────────────────────────────
+function openAddStockModal(isOpening,editId){
+  const existing=editId?(S.stockItems||[]).find(x=>x.id===editId):null;
+  const isOb=existing?existing.isOpeningBalance:!!isOpening;
+  const defSizes=(existing&&existing.sizes)?Object.keys(existing.sizes):['2/4','2/6','2/8','2/10','2/12','2/14'];
+  window._stockModalSizes=[...defSizes];
+  window._stockModalImages=existing?JSON.parse(JSON.stringify(existing.images||[])):[];
+
+  const sizeRowsHtml=()=>window._stockModalSizes.map((sz,i)=>`
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;font-weight:600;color:#534AB7;min-width:40px">${sz}</span>
+      <input type="number" min="0" value="${existing&&existing.sizes&&existing.sizes[sz]!=null?existing.sizes[sz]:0}"
+        id="stock-sz-${i}" style="width:90px" placeholder="0">
+      <button class="icon-btn danger" style="font-size:10px;padding:2px 6px" onclick="removeStockSize(${i})">✕</button>
+    </div>`).join('');
+
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:520px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEEDFE;color:#534AB7">📦</div>
+        <h3>${editId?'Edit Stock Entry':(isOb?'Add Opening Balance':'Add Stock Entry')}</h3>
+      </div>
+
+      ${isOb?`<div style="background:#EEEDFE;border-radius:8px;padding:8px 12px;font-size:11px;color:#3C3489;font-weight:600;margin-bottom:12px">
+        📋 Opening Balance — stock on hand at the start of FY 2026-27 (1 Apr 2026)
+      </div>`:''}
+
+      <div class="field-row">
+        <div class="field-group">
+          <label>Design name</label>
+          <input id="stk-dname" value="${esc(existing?existing.designName:'')}" placeholder="e.g. Mogra Twist" list="stk-dname-list">
+          <datalist id="stk-dname-list">${(S.vocabulary.dnames||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+        </div>
+        <div class="field-group" style="max-width:140px">
+          <label>Design code</label>
+          <input id="stk-dcode" value="${esc(existing?existing.designCode:'')}" placeholder="e.g. MG-22" list="stk-dcode-list">
+          <datalist id="stk-dcode-list">${(S.vocabulary.dcodes||[]).map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label>Variety name</label>
+          <input id="stk-variety" value="${esc(existing?existing.variety:'')}" placeholder="e.g. Classic Gold">
+        </div>
+        <div class="field-group" style="max-width:155px">
+          <label>Date ${isOb?'(as of)':'(entry date)'}</label>
+          <input type="date" id="stk-date" value="${existing?existing.date:'2026-04-01'}">
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
+        <span>📏 Quantity by size</span>
+        <button class="icon-btn" onclick="addStockSize()">+ Add size</button>
+      </div>
+      <div id="stock-size-rows" style="display:flex;flex-direction:column;gap:6px;background:#f0efff;border-radius:8px;padding:10px;margin-bottom:12px">
+        ${sizeRowsHtml()}
+      </div>
+
+      <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px">📷 Images of this variety</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px" id="stk-img-preview">
+        ${window._stockModalImages.map((im,i)=>`<div style="position:relative">
+          <img src="${im.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:pointer" onclick="openLbDirect('${im.data}')">
+          <button style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;border:none;background:#E24B4A;color:#fff;font-size:10px;cursor:pointer;padding:0;line-height:1" onclick="removeStockImg(${i})">✕</button>
+        </div>`).join('')}
+        <label style="width:72px;height:72px;border:2px dashed #AFA9EC;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#888;gap:4px" for="stk-img-inp">
+          <span style="font-size:22px">📷</span>Add
+        </label>
+        <input type="file" id="stk-img-inp" accept="image/*" multiple style="display:none" onchange="handleStockImgUpload(this)">
+      </div>
+
+      <div class="field-group">
+        <label>Notes (optional)</label>
+        <input id="stk-notes" value="${esc(existing?existing.notes||'':'')}" placeholder="Any remarks about this stock entry">
+      </div>
+
+      <div class="modal-actions">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="primary" onclick="saveStockItem('${editId||''}',${isOb})">${editId?'Save changes':'Add entry'}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function addStockSize(){
+  const last=window._stockModalSizes[window._stockModalSizes.length-1]||'2/12';
+  const next='2/'+(parseInt(last.split('/')[1]||12)+2);
+  window._stockModalSizes.push(next);
+  refreshStockSizeRows();
+}
+function removeStockSize(i){window._stockModalSizes.splice(i,1);refreshStockSizeRows();}
+function refreshStockSizeRows(){
+  const wrap=document.getElementById('stock-size-rows');if(!wrap)return;
+  wrap.innerHTML=window._stockModalSizes.map((sz,i)=>`
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;font-weight:600;color:#534AB7;min-width:40px">${sz}</span>
+      <input type="number" min="0" value="0" id="stock-sz-${i}" style="width:90px" placeholder="0">
+      <button class="icon-btn danger" style="font-size:10px;padding:2px 6px" onclick="removeStockSize(${i})">✕</button>
+    </div>`).join('');
+}
+
+async function handleStockImgUpload(inp){
+  const files=Array.from(inp.files);
+  for(const file of files){
+    await new Promise(resolve=>{
+      const reader=new FileReader();
+      reader.onload=async ev=>{
+        const data=ev.target.result;
+        const hash=await imgHash(data);
+        window._stockModalImages.push({data,hash});
+        resolve();
+      };reader.readAsDataURL(file);
+    });
+  }
+  inp.value='';
+  // refresh preview
+  const prev=document.getElementById('stk-img-preview');
+  if(prev)prev.innerHTML=window._stockModalImages.map((im,i)=>`<div style="position:relative">
+    <img src="${im.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:pointer" onclick="openLbDirect('${im.data}')">
+    <button style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;border:none;background:#E24B4A;color:#fff;font-size:10px;cursor:pointer;padding:0;line-height:1" onclick="removeStockImg(${i})">✕</button>
+  </div>`).join('')+`<label style="width:72px;height:72px;border:2px dashed #AFA9EC;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#888;gap:4px" for="stk-img-inp">
+    <span style="font-size:22px">📷</span>Add
+  </label><input type="file" id="stk-img-inp" accept="image/*" multiple style="display:none" onchange="handleStockImgUpload(this)">`;
+}
+function removeStockImg(i){window._stockModalImages.splice(i,1);const prev=document.getElementById('stk-img-preview');if(prev){const fakeInp=document.createElement('input');fakeInp.style.display='none';handleStockImgUpload(fakeInp);}}
+
+async function saveStockItem(editId,isOb){
+  const dname=document.getElementById('stk-dname').value.trim();
+  const dcode=document.getElementById('stk-dcode').value.trim();
+  const variety=document.getElementById('stk-variety').value.trim();
+  const date=document.getElementById('stk-date').value;
+  const notes=document.getElementById('stk-notes').value.trim();
+  if(!dname||!variety){alert('Design name and Variety name are required.');return;}
+  const sizes={};
+  window._stockModalSizes.forEach((sz,i)=>{
+    const inp=document.getElementById('stock-sz-'+i);
+    sizes[sz]=parseInt(inp?inp.value:0)||0;
+  });
+  if(!S.stockItems)S.stockItems=[];
+  if(editId){
+    const idx=S.stockItems.findIndex(x=>x.id===editId);
+    if(idx>=0)S.stockItems[idx]={...S.stockItems[idx],designName:dname,designCode:dcode,variety,sizes,date,isOpeningBalance:!!isOb,notes,images:window._stockModalImages};
+  } else {
+    S.stockItems.push({id:uid(),designName:dname,designCode:dcode,variety,sizes,date,isOpeningBalance:!!isOb,notes,images:window._stockModalImages});
+  }
+  save();closeModal();renderInventory();
+}
+function openEditStockModal(id){openAddStockModal(false,id);}
+function deleteStockItem(id){
+  if(!confirm('Delete this stock entry? This cannot be undone.'))return;
+  S.stockItems=(S.stockItems||[]).filter(x=>x.id!==id);
+  save();renderInventory();
+}
+
+// ── Excel Export ──────────────────────────────────────────────────────────────
+function exportStockExcel(){
+  if(typeof XLSX==='undefined'){alert('SheetJS not loaded.');return;}
+  const items=S.stockItems||[];
+  if(!items.length){alert('No stock entries to export.');return;}
+
+  // Collect all sizes across all items
+  const allSizes=[...new Set(items.flatMap(it=>Object.keys(it.sizes||{})))].sort((a,b)=>{
+    const pa=parseInt(a.split('/')[1]||0),pb=parseInt(b.split('/')[1]||0);return pa-pb;
+  });
+
+  const today=new Date().toISOString().split('T')[0];
+  const sheetData=[
+    [`🪬 Bangle Production Tracker — Physical Stock Report as of ${today}`],
+    [`Generated: ${new Date().toLocaleString()}`],
+    [],
+    ['Design Name','Design Code','Variety','Type','Date','Notes',...allSizes,'Total Pcs'],
+    ...items.map(it=>{
+      const total=Object.values(it.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+      return[
+        it.designName||'',it.designCode||'',it.variety||'',
+        it.isOpeningBalance?'Opening Balance':'Stock Entry',
+        it.date||'',it.notes||'',
+        ...allSizes.map(sz=>parseInt((it.sizes||{})[sz])||0),
+        total
+      ];
+    }),
+    [],
+    // Summary row — totals per size
+    ['','','','TOTAL','','', ...allSizes.map(sz=>items.reduce((a,it)=>a+(parseInt((it.sizes||{})[sz])||0),0)),
+      items.reduce((a,it)=>a+Object.values(it.sizes||{}).reduce((b,v)=>b+(parseInt(v)||0),0),0)
+    ]
+  ];
+
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(sheetData);
+  ws['!cols']=[{wch:20},{wch:14},{wch:18},{wch:16},{wch:12},{wch:22},...allSizes.map(()=>({wch:8})),{wch:10}];
+  const lc=5+allSizes.length+1;
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:lc}},{s:{r:1,c:0},e:{r:1,c:lc}}];
+  XLSX.utils.book_append_sheet(wb,ws,'Physical Stock');
+  XLSX.writeFile(wb,`Physical_Stock_${today}.xlsx`);
+}
 
 // ── ADD INVENTORY ENTRY MODAL ─────────────────────────────────────────────────
 function openAddInvEntry(prefill){
