@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bangle Production Tracker v19 — Drive Sync</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--indigo:#534AB7;--indigo-light:#EEEDFE;--indigo-mid:#AFA9EC;--indigo-dark:#3C3489;--teal:#0F6E56;--teal-light:#E1F5EE;--teal-mid:#5DCAA5;--amber:#BA7517;--amber-light:#FAEEDA;--amber-mid:#EF9F27;--red:#A32D2D;--red-light:#FCEBEB;--red-mid:#F09595;--green:#3B6D11;--green-light:#EAF3DE;--green-mid:#97C459;--blue:#185FA5;--blue-light:#E6F1FB;--blue-mid:#85B7EB;--bg:#f4f3ef;--card:#fff;--border:#D3D1C7}
@@ -885,6 +886,12 @@ function extractImages(state){
   const imageMap={};
   const cloned=JSON.parse(JSON.stringify(state)); // deep clone
   (cloned.orders||[]).forEach(o=>{
+    // Strip attached file data (large binary) — kept in IndexedDB only
+    if(o.attachedFile&&o.attachedFile.data){
+      const fKey=`file_o_${o.id}`;
+      imageMap[fKey]=o.attachedFile.data;
+      o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
+    }
     (o.designs||[]).forEach(d=>{
       // Design-level images
       (d.images||[]).forEach((img,ii)=>{
@@ -1337,6 +1344,15 @@ function buildOrderCard(order,oi){
 }
 
 function buildDetailsPanel(order,oi){
+  const fileHtml=order.attachedFile
+    ? `<div style="margin-top:10px;padding:8px 12px;background:#E1F5EE;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:600;color:#0F6E56">📎 Attached file:</span>
+        <a href="${order.attachedFile.data}" download="${esc(order.attachedFile.name)}"
+          style="font-size:11px;color:#534AB7;font-weight:600;text-decoration:underline;cursor:pointer">${esc(order.attachedFile.name)}</a>
+        <span style="font-size:10px;color:#888">(click to download)</span>
+        <button class="icon-btn danger no-print" style="font-size:10px;padding:2px 8px" onclick="upOrder(${oi},'attachedFile',null)">Remove</button>
+      </div>`
+    : '';
   return `<div class="field-row">
     <div class="field-group"><label>Order ID</label><input value="${esc(order.orderId)}" onchange="upOrder(${oi},'orderId',this.value)"></div>
     <div class="field-group ac-wrap"><label>Client name</label>
@@ -1352,7 +1368,8 @@ function buildDetailsPanel(order,oi){
     </div>
   </div>
   <label style="font-size:11px;color:#777;font-weight:500">Order notes</label>
-  <textarea class="notes-area" onchange="upOrder(${oi},'notes',this.value)" placeholder="Notes...">${esc(order.notes||'')}</textarea>`;
+  <textarea class="notes-area" onchange="upOrder(${oi},'notes',this.value)" placeholder="Notes...">${esc(order.notes||'')}</textarea>
+  ${fileHtml}`;
 }
 
 function buildDesignsPanel(order,oi){
@@ -1465,6 +1482,23 @@ function buildStagesPanel(order,oi){
   }).join('');
 }
 
+function buildVarietyGallery(varieties){
+  const withImgs=varieties.filter(v=>v.images&&v.images.length>0);
+  if(!withImgs.length){
+    return '<div style="font-size:11px;color:#aaa;padding:6px 0 10px">No variety images yet — add images via the variety table below.</div>';
+  }
+  const cards=withImgs.map(v=>
+    v.images.map(img=>`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center">
+      <img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:10px;border:1.5px solid #AFA9EC;cursor:pointer;box-shadow:0 2px 6px rgba(83,74,183,.12)" onclick="openLbDirect('${img.data}')">
+      <span style="font-size:11px;color:#3C3489;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||'Variety')}</span>
+    </div>`).join('')
+  ).join('');
+  return `<div style="margin-bottom:12px">
+    <div style="font-size:11px;color:#534AB7;font-weight:600;margin-bottom:8px">🖼️ Variety designs</div>
+    <div style="display:flex;flex-wrap:wrap;gap:14px">${cards}</div>
+  </div>`;
+}
+
 function buildDesignCard(order,oi,d,di){
   const imgs=d.images||[];
   if(!d.sizes||!Object.keys(d.sizes).length){d.sizes={};DEFAULT_SIZES.forEach(s=>d.sizes[s]=0);}
@@ -1503,21 +1537,8 @@ function buildDesignCard(order,oi,d,di){
       </div>
     </div>
 
-    <!-- Design-level images -->
-    <div style="font-size:11px;color:#534AB7;font-weight:600;margin-bottom:6px">📷 Design reference images</div>
-    <div class="design-imgs-gallery">
-      ${imgs.map((img,ii)=>`<div class="gallery-img-card">
-        <div class="gallery-img-label">Img ${ii+1}</div>
-        <img src="${img.data}" alt="Design ${ii+1}" onclick="openLightbox('${d.id}',${ii})">
-        <div class="img-footer"><span class="img-num">#${ii+1}</span>
-          <button class="del-img no-print" onclick="deleteImg(${oi},${di},${ii})" title="Remove">✕</button>
-        </div>
-      </div>`).join('')}
-      <label class="gallery-add-card no-print" for="img-up-${d.id}">
-        <span class="gallery-add-icon">📷</span><span>Add image</span><span style="font-size:10px;color:#AFA9EC">click to upload</span>
-      </label>
-      <input type="file" id="img-up-${d.id}" accept="image/*" multiple style="display:none" onchange="handleImgUpload(${oi},${di},this)">
-    </div>
+    <!-- Variety image gallery -->
+    ${buildVarietyGallery(varieties)}
 
     <!-- VARIETY TABLE -->
     <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
@@ -2441,6 +2462,7 @@ function openNewOrderModal(prefill){
   prefill=prefill||{};
   window._modalSizes=prefill.sizes?[...prefill.sizes]:[...DEFAULT_SIZES];
   window._modalVarieties=prefill.varieties?JSON.parse(JSON.stringify(prefill.varieties)):[];
+  if(!prefill._keepFile)window._uploadedOrderFile=null; // clear file unless re-opening from file parse
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" id="modal-overlay-main">
     <div class="modal" style="width:700px" role="dialog" aria-modal="true">
@@ -2829,8 +2851,10 @@ function createOrder(){
     id:uid(),orderId,client,startDate,
     priority:document.getElementById('no-prio').value,
     notes:document.getElementById('no-notes').value,
-    designs:[design]
+    designs:[design],
+    attachedFile:window._uploadedOrderFile||null
   };
+  window._uploadedOrderFile=null; // clear after attaching
   S.orders.unshift(newOrder);
   S.openOrders.add(newOrder.id);
   S.openClients.add(client);
@@ -2849,32 +2873,108 @@ function processOrderFile(file){
   const status=document.getElementById('import-status');
   if(!status)return;
   const name=file.name.toLowerCase();
+
+  // Store file for later download under Order details
+  const fileReader=new FileReader();
+  fileReader.onload=ev=>{
+    window._uploadedOrderFile={name:file.name,type:file.type,data:ev.target.result};
+  };
+  fileReader.readAsDataURL(file);
+
   if(name.endsWith('.csv')){
-    // Real CSV parsing
     const reader=new FileReader();
     reader.onload=e=>{
       const text=e.target.result;
       const rows=text.split('\n').map(r=>r.split(',').map(c=>c.replace(/^"|"$/g,'').trim()));
       if(rows.length<2){status.textContent='CSV appears empty.';status.style.display='block';return;}
       const headers=rows[0].map(h=>h.toLowerCase());
-      const data=rows[1];// first data row
+      const data=rows[1];
       const get=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&data[i])return data[i];}return '';};
-      const prefill={orderId:get('order id','order_id','orderid'),client:get('client','customer'),startDate:get('date','start'),dname:get('design name','design'),dcode:get('code','design code')};
-      status.textContent=`✅ CSV parsed — fields prefilled below. Review and create.`;status.style.display='block';
+      const prefill={orderId:get('order id','order_id','orderid'),client:get('client','customer'),startDate:get('date','start'),dname:get('design name','design'),dcode:get('code','design code'),_keepFile:true};
+      status.textContent='✅ CSV parsed — fields prefilled below. Review and create.';status.style.display='block';
       closeModal();openNewOrderModal(prefill);
     };reader.readAsText(file);
+
   } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
-    // Mock — SheetJS CDN hook point
-    status.textContent='ℹ️ Excel detected. To enable real Excel parsing, include SheetJS (https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js) and connect via the parseExcelFile() function. Fields below are ready for manual entry.';
-    status.style.display='block';
+    if(typeof XLSX==='undefined'){
+      status.textContent='⚠️ SheetJS library not loaded. Check internet connection.';status.style.display='block';return;
+    }
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'binary'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        if(!rows||rows.length<1){status.textContent='Excel appears empty.';status.style.display='block';return;}
+
+        // Try row-based (header row + data row) format first
+        const headers=rows[0].map(h=>String(h).toLowerCase().trim());
+        const dataRow=rows[1]||[];
+        const get=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&dataRow[i]!==undefined&&dataRow[i]!=='')return String(dataRow[i]).trim();}return '';};
+
+        // Collect varieties from rows 1..n (if variety column exists)
+        const vIdx=headers.findIndex(h=>h.includes('variety')||h.includes('design name'));
+        const varieties=[];
+        if(vIdx>=0&&rows.length>1){
+          rows.slice(1).forEach(row=>{
+            const vName=String(row[vIdx]||'').trim();
+            if(!vName)return;
+            // Collect size columns: headers that match patterns like 2/2, 2/4, 2/6, etc.
+            const sizes={};
+            headers.forEach((h,hi)=>{
+              if(/^\d+\/\d+$/.test(h.trim())){
+                const val=parseInt(row[hi])||0;
+                if(val>0)sizes[h.trim()]=val;
+              }
+            });
+            varieties.push({name:vName,sizes,images:[]});
+          });
+        }
+
+        // Parse date (Excel serial or string)
+        let startDate='';
+        const rawDate=get('date','start');
+        if(rawDate){
+          const num=parseFloat(rawDate);
+          if(!isNaN(num)&&num>10000){
+            // Excel serial date
+            const d=new Date(Math.round((num-25569)*86400*1000));
+            startDate=d.toISOString().split('T')[0];
+          } else {
+            // Try as string date
+            const d=new Date(rawDate);
+            if(!isNaN(d))startDate=d.toISOString().split('T')[0];
+          }
+        }
+
+        const prefill={
+          orderId:get('order id','order_id','orderid','order no','order number'),
+          client:get('client','customer','party','buyer'),
+          startDate:startDate||new Date().toISOString().split('T')[0],
+          dname:get('design name','design','item name','product'),
+          dcode:get('design code','code','item code','sku'),
+          notes:get('notes','remarks','comment'),
+          varieties:varieties.length>0?varieties:undefined,
+          _keepFile:true
+        };
+
+        const filled=Object.entries(prefill).filter(([k,v])=>v&&v!=''&&k!=='_keepFile').map(([k])=>k).join(', ');
+        status.textContent=`✅ Excel parsed — ${filled?'auto-filled: '+filled:'review fields below'}. Check and create order.`;
+        status.style.display='block';
+        closeModal();openNewOrderModal(prefill);
+      } catch(err){
+        status.textContent='⚠️ Could not read Excel file: '+err.message;status.style.display='block';
+      }
+    };
+    reader.readAsBinaryString(file);
+
   } else if(file.type.startsWith('image/')){
-    // Image upload — show preview in zone
     const reader=new FileReader();
     reader.onload=e=>{
       const zone=document.getElementById('upload-zone');
-      if(zone)zone.innerHTML=`<img src="${e.target.result}" style="max-height:120px;border-radius:8px;margin:0 auto;display:block"><p style="margin-top:6px">Image uploaded. Fill in the fields manually below based on the order sheet.</p>`;
+      if(zone)zone.innerHTML=`<img src="${e.target.result}" style="max-height:140px;border-radius:8px;margin:0 auto;display:block"><p style="margin-top:8px;font-size:11px;color:#666">Order image loaded for reference. Fill fields manually below.</p>`;
     };reader.readAsDataURL(file);
-    status.textContent='📷 Order image loaded for reference. Fill fields manually.';status.style.display='block';
+    status.textContent='📷 Order image loaded. Fill in the fields below based on the sheet.';status.style.display='block';
   }
 }
 
@@ -2882,19 +2982,23 @@ function processOrderFile(file){
 function showPrintMenu(){
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
-    <div class="modal" style="width:420px">
+    <div class="modal" style="width:460px">
       <div class="modal-header"><div class="modal-icon">🖨️</div><h3>Print options</h3></div>
+      <div style="background:#EEEDFE;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="print-stages-chk" style="width:auto;accent-color:#534AB7;cursor:pointer" checked>
+        <label for="print-stages-chk" style="font-size:12px;color:#3C3489;font-weight:600;cursor:pointer">Include production stages in print</label>
+      </div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <button onclick="closeModal();setTimeout(()=>window.print(),200)" style="text-align:left;padding:12px 16px;font-size:13px">📦 Print all (current view)</button>
         <div style="background:#f7f6f2;border-radius:10px;padding:12px">
           <label style="font-size:11px;color:#777;font-weight:600;display:block;margin-bottom:6px">Client-wise</label>
           <select id="pc-client" style="margin-bottom:8px">${[...new Set(S.orders.map(o=>o.client))].sort().map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
-          <button onclick="printClient(document.getElementById('pc-client').value)" style="width:100%">🖨️ Print selected client</button>
+          <button onclick="printClient(document.getElementById('pc-client').value,document.getElementById('print-stages-chk').checked)" style="width:100%">🖨️ Print selected client</button>
         </div>
         <div style="background:#f7f6f2;border-radius:10px;padding:12px">
           <label style="font-size:11px;color:#777;font-weight:600;display:block;margin-bottom:6px">Design code-wise</label>
           <select id="pc-code" style="margin-bottom:8px">${S.vocabulary.dcodes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
-          <button onclick="printByDesign(document.getElementById('pc-code').value)" style="width:100%">🖨️ Print selected design</button>
+          <button onclick="printByDesign(document.getElementById('pc-code').value,document.getElementById('print-stages-chk').checked)" style="width:100%">🖨️ Print selected design</button>
         </div>
       </div>
       <div class="modal-actions"><button onclick="closeModal()">Cancel</button></div>
@@ -2903,7 +3007,8 @@ function showPrintMenu(){
 }
 
 // Build printable HTML for an order, respecting activeTab
-function buildPrintableOrder(order,tabOverride){
+function buildPrintableOrder(order,tabOverride,includeStages){
+  if(includeStages===undefined)includeStages=true;
   const tab=tabOverride||(S.activeTabs[order.id]||'designs');
   const qty=totalQty(order);
   let content='';
@@ -2920,10 +3025,27 @@ function buildPrintableOrder(order,tabOverride){
       const varieties=d.varieties||[];
       const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
       const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
-      return `<div style="margin-bottom:12px;padding:10px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
-        <h3 style="font-size:13px;margin-bottom:4px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code}]</span> — ${designQty(d)} pcs</h3>
-        ${d.images&&d.images.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${d.images.map(img=>`<img src="${img.data}" style="width:65px;height:65px;object-fit:cover;border-radius:5px;border:1px solid #D3D1C7">`).join('')}</div>`:''}
-        ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:6px">
+
+      // Build per-variety image cards with size quantities below
+      const varietyCards=varieties.map(v=>{
+        const vImages=v.images||[];
+        const vTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+        const sizeQtyHtml=szKeys.map(sz=>`<span style="display:inline-block;margin:2px 3px;font-size:10px;background:#EEEDFE;border-radius:4px;padding:2px 6px"><strong>${sz}</strong>: ${(v.sizes||{})[sz]||0}</span>`).join('');
+        const imgHtml=vImages.length
+          ? vImages.map(img=>`<img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;display:block">`).join('<br style="margin:4px 0">')
+          : '<div style="width:160px;height:80px;background:#f0efff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#AFA9EC;border:1.5px dashed #AFA9EC">No image</div>';
+        return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;vertical-align:top;margin:0 12px 16px 0;max-width:180px">
+          ${imgHtml}
+          <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
+          <div style="text-align:center;line-height:1.6">${sizeQtyHtml}</div>
+          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} pcs</div>
+        </div>`;
+      }).join('');
+
+      return `<div style="margin-bottom:16px;padding:12px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
+        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code}]</span> — ${designQty(d)} pcs</h3>
+        ${varieties.length?`<div style="margin-bottom:10px">${varietyCards}</div>`:''}
+        ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
           <thead><tr style="background:#534AB7;color:#fff">
             <th style="padding:5px 8px;text-align:left">Variety</th>
             ${szKeys.map(sz=>`<th style="padding:5px 8px;text-align:center">${sz}</th>`).join('')}
@@ -2945,7 +3067,7 @@ function buildPrintableOrder(order,tabOverride){
       </div>`;
     }).join('');
   }
-  if(tab==='stages'||tab==='all'){
+  if(includeStages&&(tab==='stages'||tab==='all')){
     content+=order.designs.map(d=>`
       <div style="margin-bottom:12px;page-break-inside:avoid">
         <h3 style="font-size:12px;margin-bottom:6px;color:#534AB7">Stages: ${d.name} [${d.code}]</h3>
@@ -2978,9 +3100,10 @@ function buildPrintableOrder(order,tabOverride){
   </div>`;
 }
 
-function openPrintWindow(title,orders,tabOverride){
+function openPrintWindow(title,orders,tabOverride,includeStages){
+  if(includeStages===undefined)includeStages=true;
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
-  const body=orders.map(o=>buildPrintableOrder(o,tabOverride)).join('');
+  const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages)).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>body{font-family:system-ui;padding:20px;color:#1a1916;font-size:12px}
     table{border-collapse:collapse}@media print{button{display:none!important}}</style>
@@ -2994,20 +3117,23 @@ function openPrintWindow(title,orders,tabOverride){
   w.document.close();
 }
 
-function printClient(clientName){
+function printClient(clientName,includeStages){
+  if(includeStages===undefined)includeStages=true;
   closeModal();
   const orders=S.orders.filter(o=>o.client===clientName).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
-  openPrintWindow('Client: '+clientName,orders,'all');
+  openPrintWindow('Client: '+clientName,orders,'all',includeStages);
 }
 function printOrderById(oid){
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
   const tab=S.activeTabs[oid]||'designs';
-  openPrintWindow(`Order: ${order.orderId} (${tab} view)`,[order],tab);
+  // For direct order print (not via menu), always include stages by default
+  openPrintWindow(`Order: ${order.orderId} (${tab} view)`,[order],tab,true);
 }
-function printByDesign(code){
+function printByDesign(code,includeStages){
+  if(includeStages===undefined)includeStages=true;
   closeModal();
   const orders=S.orders.filter(o=>o.designs.some(d=>d.code===code));
-  openPrintWindow('Design code: '+code,orders,'designs');
+  openPrintWindow('Design code: '+code,orders,'designs',includeStages);
 }
 function printDesignWise(oid,did){
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
