@@ -960,6 +960,12 @@ function extractImages(state){
 
   // Strip vendor order variety images
   (cloned.vendorOrders||[]).forEach(o=>{
+    // Strip attached file data
+    if(o.attachedFile&&o.attachedFile.data&&o.attachedFile.data.startsWith('data:')){
+      const fKey=`file_vo_${o.id}`;
+      imageMap[fKey]=o.attachedFile.data;
+      o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
+    }
     (o.designs||[]).forEach(d=>{
       (d.varieties||[]).forEach(v=>{
         (v.images||[]).forEach((img,ii)=>{
@@ -1024,8 +1030,12 @@ function reinjectImages(state,imageMap){
       });
     });
   });
-  // Reinject vendor order variety images
+  // Reinject vendor order attached files + variety images
   (state.vendorOrders||[]).forEach(o=>{
+    if(o.attachedFile&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('__IDB__')){
+      const key=o.attachedFile.data.slice(7);
+      if(imageMap[key])o.attachedFile.data=imageMap[key];
+    }
     (o.designs||[]).forEach(d=>{
       (d.varieties||[]).forEach(v=>{
         (v.images||[]).forEach(img=>{
@@ -3318,11 +3328,6 @@ function renderVendorOrders(){
   const allCodes=[...new Set(S.vendorOrders.flatMap(o=>o.designs.map(d=>d.code)).filter(Boolean))].sort();
   const f=S.vendorFilters||{};
 
-  // Stats
-  const late=filtered.filter(o=>vendorOrderAlert(o)==='late').length;
-  const warn=filtered.filter(o=>vendorOrderAlert(o)==='warn').length;
-  const ok=filtered.length-late-warn;
-
   // Group by vendor
   const vendorMap={};
   filtered.forEach(vo=>{
@@ -3357,13 +3362,6 @@ function renderVendorOrders(){
       <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
     </div>
 
-    <!-- Stats -->
-    <div class="stats" style="margin-bottom:14px">
-      <div class="stat-card stat-total" style="cursor:default"><div class="stat-val">${S.vendorOrders.length}</div><div class="stat-lbl">Total</div></div>
-      <div class="stat-card stat-ontrack" style="cursor:default"><div class="stat-val">${ok}</div><div class="stat-lbl">On track</div></div>
-      <div class="stat-card stat-soon" style="cursor:default"><div class="stat-val">${warn}</div><div class="stat-lbl">Due soon</div></div>
-      <div class="stat-card stat-late" style="cursor:default"><div class="stat-val">${late}</div><div class="stat-lbl">Overdue</div></div>
-    </div>
 
     <!-- Filter bar -->
     <div class="filter-bar" style="margin-bottom:14px">
@@ -3445,6 +3443,14 @@ function buildVendorOrderCard(vo,vi){
 }
 
 function buildVendorDetailsPanel(vo,vi){
+  const fileHtml=vo.attachedFile
+    ?`<div style="margin-top:10px;padding:8px 12px;background:#E1F5EE;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:600;color:#0F6E56">📎 Attached file:</span>
+        <a href="${vo.attachedFile.data}" download="${esc(vo.attachedFile.name)}"
+          style="font-size:11px;color:#534AB7;font-weight:600;text-decoration:underline;cursor:pointer">${esc(vo.attachedFile.name)}</a>
+        <span style="font-size:10px;color:#888">(click to download)</span>
+        <button class="icon-btn danger no-print" style="font-size:10px;padding:2px 8px" onclick="upVendorOrder(${vi},'attachedFile',null)">Remove</button>
+      </div>`:'';
   return`<div class="field-row">
     <div class="field-group"><label>Vendor name</label>
       <input value="${esc(vo.vendor)}" onchange="upVendorOrder(${vi},'vendor',this.value)">
@@ -3470,7 +3476,8 @@ function buildVendorDetailsPanel(vo,vi){
   </div>
   <div class="field-group"><label>Notes</label>
     <textarea class="notes-area" onchange="upVendorOrder(${vi},'notes',this.value)">${esc(vo.notes||'')}</textarea>
-  </div>`;
+  </div>
+  ${fileHtml}`;
 }
 
 function buildVendorDesignsPanel(vo,vi){
@@ -3606,51 +3613,138 @@ function addVVImg(vi,di,vri,inp){
 function delVVImg(vi,di,vri,ii){S.vendorOrders[vi].designs[di].varieties[vri].images.splice(ii,1);save();renderVendorOrders();}
 
 // ── New Vendor Order Modal ────────────────────────────────────────────────────
-function openNewVendorOrderModal(){
-  const mc=document.getElementById('modal-container');
-  const knownVendors=[...new Set(S.vendorOrders.map(o=>o.vendor).filter(Boolean))].sort();
-  const today=new Date().toISOString().split('T')[0];
-  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
-    <div class="modal" style="width:560px">
-      <div class="modal-header"><div class="modal-icon">🏭</div><h3>New Vendor Order</h3></div>
-      <div class="field-row">
-        <div class="field-group">
-          <label>Vendor name <span style="color:#A32D2D">*</span></label>
-          <div class="ac-wrap">
-            <input id="vord-vendor" placeholder="e.g. Rathi Metals" oninput="voAC(this,'vord-vendor-ac',S.vendorOrders.map(o=>o.vendor).filter(Boolean))">
-            <div class="ac-list" id="vord-vendor-ac" style="display:none"></div>
-          </div>
+function openNewVendorOrderModal(prefill){
+  prefill=prefill||{};
+  if(!prefill._keepFile)window._uploadedOrderFile=null;
+
+  // Resolve first design + extra designs
+  let firstDesign={};
+  if(prefill.designs&&prefill.designs.length>0){
+    firstDesign=prefill.designs[0];
+    window._modalExtraDesigns=prefill.designs.slice(1);
+  } else {
+    firstDesign={name:prefill.dname||'',code:prefill.dcode||'',varieties:prefill.varieties,sizes:prefill.sizes};
+    window._modalExtraDesigns=[];
+  }
+  window._modalSizes=firstDesign.sizes&&firstDesign.sizes.length?[...firstDesign.sizes]:[...DEFAULT_SIZES];
+  window._modalVarieties=firstDesign.varieties?JSON.parse(JSON.stringify(firstDesign.varieties)):[];
+
+  const extraDesigns=window._modalExtraDesigns||[];
+  const extraBanner=extraDesigns.length>0
+    ?`<div style="background:#E1F5EE;border:1px solid #5DCAA5;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px">
+        <span style="font-weight:700;color:#0F6E56">📦 ${extraDesigns.length} more design${extraDesigns.length>1?'s':''} detected from file — will be created automatically:</span>
+        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">
+          ${extraDesigns.map(d=>`<span style="background:#fff;border:1px solid #5DCAA5;border-radius:5px;padding:2px 8px;color:#0F6E56;font-weight:600">${esc(d.name||'?')} <span style="font-weight:400;color:#888">[${esc(d.code||'?')}]</span></span>`).join('')}
         </div>
+      </div>`:'';
+
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" id="modal-overlay-main">
+    <div class="modal" style="width:700px" role="dialog" aria-modal="true">
+      <div class="modal-header"><div class="modal-icon" style="background:#EEF0FE;color:#534AB7">🏭</div><h3>New Vendor Order</h3></div>
+
+      <!-- File import zone -->
+      <div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+          <div style="font-size:11px;font-weight:600;color:#534AB7">📤 Import from file <span style="font-weight:400;color:#888">— auto-fills all fields</span></div>
+          <button type="button" onclick="downloadVendorOrderTemplate()" style="font-size:11px;padding:5px 12px;background:#534AB7;color:#fff;border:none;border-radius:7px;cursor:pointer">📥 Download Excel Template</button>
+        </div>
+        <div class="upload-order-zone" id="upload-zone"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="handleVendorOrderDrop(event)"
+          onclick="document.getElementById('vendor-order-file-inp').click()">
+          <div class="uo-icon">📂</div>
+          <strong style="font-size:12px">Drop the filled Excel template here, or click to browse</strong>
+          <p>.xlsx · .csv · or a photo of the order sheet</p>
+        </div>
+        <input type="file" id="vendor-order-file-inp" accept=".xlsx,.xls,.csv,image/*" style="display:none" onchange="handleVendorOrderFileInput(this)">
+        <div id="import-status" style="font-size:11px;color:#0F6E56;margin-top:4px;display:none"></div>
+      </div>
+
+      ${extraBanner}
+
+      <div class="section-head"><span>Order info <span style="color:#A32D2D;font-size:10px">* required fields</span></span></div>
+      <div class="field-row">
         <div class="field-group">
           <label>Order ID</label>
-          <input id="vord-id" value="${genVendorOrderId()}" placeholder="VORD-01">
+          <input id="no-id" placeholder="VORD-01" value="${esc(prefill.orderId||genVendorOrderId())}">
+        </div>
+        <div class="field-group ac-wrap">
+          <label>Vendor name <span style="color:#A32D2D">*</span></label>
+          <input id="no-client" placeholder="e.g. Rathi Metals" autocomplete="off" value="${esc(prefill.client||'')}"
+            oninput="voAC(this,'no-ac-client',S.vendorOrders.map(o=>o.vendor).filter(Boolean))" onblur="hideACModal('no-ac-client')">
+          <div class="ac-list" id="no-ac-client" style="display:none"></div>
+          <div class="err-msg" id="err-no-client" style="display:none">Vendor name is required</div>
         </div>
       </div>
       <div class="field-row">
-        <div class="field-group"><label>Order date <span style="color:#A32D2D">*</span></label>
-          <input type="date" id="vord-date" value="${today}">
+        <div class="field-group" style="max-width:160px">
+          <label>Order date <span style="color:#A32D2D">*</span></label>
+          <input type="date" id="no-date" value="${prefill.startDate||new Date().toISOString().split('T')[0]}">
+          <div class="err-msg" id="err-no-date" style="display:none">Order date is required</div>
         </div>
-        <div class="field-group"><label>Expected delivery date</label>
-          <input type="date" id="vord-delivery">
+        <div class="field-group" style="max-width:160px">
+          <label>Expected delivery</label>
+          <input type="date" id="no-delivery" value="${prefill.deliveryDate||''}">
         </div>
-        <div class="field-group"><label>Priority</label>
-          <select id="vord-priority">
-            <option value="normal">Normal</option>
-            <option value="urgent">Urgent</option>
-            <option value="critical">Critical</option>
-          </select>
+        <div class="field-group" style="max-width:130px">
+          <label>Priority</label>
+          <select id="no-prio">${PRIO_OPTS.map(p=>`<option value="${p}"${prefill.priority===p?' selected':''}>${p}</option>`).join('')}</select>
+        </div>
+        <div class="field-group">
+          <label>Notes <span style="font-size:10px;color:#aaa">(optional)</span></label>
+          <input id="no-notes" placeholder="Optional notes" value="${esc(prefill.notes||'')}">
         </div>
       </div>
-      <div class="field-group" style="margin-bottom:10px"><label>Notes</label>
-        <textarea id="vord-notes" class="notes-area" placeholder="Optional notes…"></textarea>
+
+      <div class="section-head"><span>Design 1 <span style="color:#A32D2D;font-size:10px">* required</span>${extraDesigns.length>0?` <span style="font-weight:400;color:#888;font-size:10px">— ${extraDesigns.length+1} designs total from file</span>`:''}</span></div>
+      <div class="field-row">
+        <div class="field-group ac-wrap">
+          <label>Design name <span style="color:#A32D2D">*</span></label>
+          <input id="no-dname" placeholder="e.g. Mogra Twist" autocomplete="off" value="${esc(firstDesign.name||'')}"
+            oninput="showACModal(this,'dnames')" onblur="hideACModal('no-ac-dname')">
+          <div class="ac-list" id="no-ac-dname" style="display:none"></div>
+          <div class="err-msg" id="err-no-dname" style="display:none">Design name is required</div>
+        </div>
+        <div class="field-group ac-wrap">
+          <label>Design code</label>
+          <input id="no-dcode" placeholder="e.g. MG-22" autocomplete="off" value="${esc(firstDesign.code||'')}"
+            oninput="showACModal(this,'dcodes')" onblur="hideACModal('no-ac-dcode')">
+          <div class="ac-list" id="no-ac-dcode" style="display:none"></div>
+        </div>
       </div>
-      <div id="vord-err" class="err-msg" style="display:none"></div>
+
+      <!-- Size headers -->
+      <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <span>📏 Size headers <span style="font-weight:400;color:#888">(edit denominator — locked after creation)</span></span>
+        <button class="icon-btn" id="btn-add-size" onclick="addModalSize()">+ Add size</button>
+      </div>
+      <div id="no-size-headers" style="display:flex;gap:6px;flex-wrap:wrap;background:#f0efff;padding:8px 10px;border-radius:8px;border:1px solid #AFA9EC;margin-bottom:10px"></div>
+
+      <!-- Varieties -->
+      <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <span>🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span></span>
+        <button class="icon-btn" id="btn-add-variety" onclick="addModalVariety()">+ Add variety</button>
+      </div>
+      <div id="no-variety-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div class="err-msg" id="err-no-varieties" style="display:none;margin-top:4px">At least one variety with non-zero quantity is required</div>
+
       <div class="modal-actions">
-        <button onclick="closeModal()">Cancel</button>
-        <button class="primary" onclick="createVendorOrder()">Create Vendor Order</button>
+        <button id="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+        <button class="primary" id="btn-modal-create" onclick="createVendorOrder()">Create Vendor Order${extraDesigns.length>0?' ('+(extraDesigns.length+1)+' designs)':''}</button>
       </div>
     </div>
   </div>`;
+  renderModalSizeHeaders();
+  renderModalVarieties();
+  _modalDisableBackground();
+  const overlay=document.getElementById('modal-overlay-main');
+  if(overlay){
+    overlay.addEventListener('click',e=>{if(e.target===overlay)closeModal();});
+    overlay.addEventListener('keydown',_modalFocusTrap);
+  }
+  setTimeout(()=>{const f=document.getElementById('no-client');if(f)f.focus();},30);
 }
 
 function voAC(inp,listId,options){
@@ -3658,28 +3752,242 @@ function voAC(inp,listId,options){
   const el=document.getElementById(listId);if(!el)return;
   const matches=options.filter((x,i,a)=>a.indexOf(x)===i&&x.toLowerCase().includes(q)&&x.toLowerCase()!==q);
   if(!q||!matches.length){el.style.display='none';return;}
-  el.innerHTML=matches.slice(0,8).map(x=>`<div class="ac-item" onclick="document.getElementById('${inp.id}').value='${esc(x)}';document.getElementById('${listId}').style.display='none'">${esc(x)}</div>`).join('');
+  el.innerHTML=matches.slice(0,8).map(x=>`<div class="ac-item" onmousedown="document.getElementById('${inp.id}').value='${esc(x)}';document.getElementById('${listId}').style.display='none'">${esc(x)}</div>`).join('');
   el.style.display='block';
 }
 
 function createVendorOrder(){
-  const vendor=(document.getElementById('vord-vendor').value||'').trim();
-  const orderId=(document.getElementById('vord-id').value||'').trim()||genVendorOrderId();
-  const startDate=document.getElementById('vord-date').value;
-  const deliveryDate=document.getElementById('vord-delivery').value||'';
-  const priority=document.getElementById('vord-priority').value;
-  const notes=document.getElementById('vord-notes').value.trim();
-  const errEl=document.getElementById('vord-err');
-  if(!vendor){errEl.textContent='Please enter a vendor name.';errEl.style.display='block';return;}
-  if(!startDate){errEl.textContent='Please enter an order date.';errEl.style.display='block';return;}
+  ['no-client','no-date','no-dname'].forEach(clearFieldError);
+  const errV=document.getElementById('err-no-varieties');if(errV)errV.style.display='none';
+
+  const vendor=(document.getElementById('no-client').value||'').trim();
+  const orderId=(document.getElementById('no-id').value||'').trim()||genVendorOrderId();
+  const startDate=document.getElementById('no-date').value;
+  const deliveryDate=(document.getElementById('no-delivery')||{}).value||'';
+  const priority=document.getElementById('no-prio').value;
+  const notes=(document.getElementById('no-notes').value||'').trim();
+  const dname=(document.getElementById('no-dname').value||'').trim();
+  const dcode=(document.getElementById('no-dcode').value||'').trim();
+
+  let hasErr=false;
+  if(!vendor){showFieldError('no-client','Vendor name is required');hasErr=true;}
+  if(!startDate){showFieldError('no-date','Order date is required');hasErr=true;}
+  if(!dname){showFieldError('no-dname','Design name is required');hasErr=true;}
+
+  const validVarieties=(window._modalVarieties||[]).filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
+  if(!(window._modalVarieties||[]).length||!validVarieties.length){
+    if(errV)errV.style.display='block';hasErr=true;
+  }
+  if(hasErr)return;
+
+  // Build vendor design objects (no stages)
+  const buildVDesign=(dName,dCode,szKeys,vList)=>{
+    const szObj=Object.fromEntries(szKeys.map(sz=>[sz,0]));
+    vList.forEach(v=>szKeys.forEach(sz=>{szObj[sz]=(szObj[sz]||0)+(parseInt((v.sizes||{})[sz])||0);}));
+    return{id:uid(),name:dName,code:dCode,sizesLocked:true,sizes:szObj,images:[],varieties:JSON.parse(JSON.stringify(vList))};
+  };
+
+  const firstDesign=buildVDesign(dname,dcode,window._modalSizes,window._modalVarieties);
+  const extraDesignObjects=(window._modalExtraDesigns||[]).map(ed=>{
+    const szKeys=ed.sizes&&ed.sizes.length?ed.sizes:window._modalSizes;
+    return buildVDesign(ed.name||'Design',ed.code||'',szKeys,ed.varieties||[]);
+  });
+
   histPush();
-  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,designs:[]};
+  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,
+    designs:[firstDesign,...extraDesignObjects],attachedFile:window._uploadedOrderFile||null};
+  window._uploadedOrderFile=null;
+  window._modalExtraDesigns=[];
   S.vendorOrders.push(newVO);
   S.openVendorOrders=(S.openVendorOrders||[]);
   S.openVendorOrders.push('open_'+newVO.id);
   S.vendorActiveTabs[newVO.id]='designs';
   audit('VendorOrder',`Created ${orderId} for ${vendor}`);
   save();closeModal();renderVendorOrders();
+}
+
+// ── Vendor Order Excel Template & File Import ─────────────────────────────────
+function downloadVendorOrderTemplate(){
+  if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
+  const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
+  const totalCols=3+TMPL_SIZES.length+1;
+  const sheetData=[
+    ['🪬  BANGLE PRODUCTION TRACKER — Vendor Order Entry Form'],
+    ['Fill Column B for order details. In the table, each row = one variety. Leave Design Name & Code blank to continue the same design.'],
+    [],
+    ['─── ORDER DETAILS ──────────────────────────────────────────────────────────────────────'],
+    ['Order ID','VORD-01'],
+    ['Vendor Name','Rathi Metals'],
+    ['Order Date','15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    ['Expected Delivery','25-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    ['Notes','Urgent — deliver before festival season'],
+    [],
+    ['─── DESIGNS & VARIETY QUANTITIES ─────────────────────────────────────────────────────'],
+    ['Each row = one variety. Leave Design Name & Code blank to continue same design. Add more rows as needed.'],
+    ['Design Name','Design Code','Variety Name',...TMPL_SIZES,'Row Total'],
+    ['Mogra Twist','MG-22','Classic Gold',50,80,100,80,50,20,380],
+    ['','','Premium',30,60,70,60,30,10,260],
+    ['','','Antique Rose',20,40,50,40,20,5,175],
+    ['Lotus Bangle','LT-08','Gold',40,60,80,70,40,15,305],
+    ['','','Silver',25,45,60,50,25,8,213],
+    ['','','Rose Gold',15,30,40,30,15,5,135],
+    ['','','','','','','','','',''],
+    ['','','','','','','','','',''],
+    ['','','','','','','','','',''],
+    ['','','','','','','','','',''],
+  ];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(sheetData);
+  ws['!cols']=[{wch:18},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
+  const lc=totalCols-1;
+  ws['!merges']=[
+    {s:{r:0,c:0},e:{r:0,c:lc}},{s:{r:1,c:0},e:{r:1,c:lc}},
+    {s:{r:3,c:0},e:{r:3,c:lc}},{s:{r:10,c:0},e:{r:10,c:lc}},{s:{r:11,c:0},e:{r:11,c:lc}},
+  ];
+  XLSX.utils.book_append_sheet(wb,ws,'Vendor Order Form');
+  XLSX.writeFile(wb,'Bangle_Vendor_Order_Template.xlsx');
+}
+
+function handleVendorOrderDrop(e){
+  e.preventDefault();document.getElementById('upload-zone').classList.remove('drag-over');
+  const file=e.dataTransfer.files[0];if(file)processVendorOrderFile(file);
+}
+function handleVendorOrderFileInput(input){const file=input.files[0];if(file)processVendorOrderFile(file);}
+function processVendorOrderFile(file){
+  const status=document.getElementById('import-status');
+  if(!status)return;
+  const name=file.name.toLowerCase();
+
+  // Store file for download in order details
+  const fileReader=new FileReader();
+  fileReader.onload=ev=>{window._uploadedOrderFile={name:file.name,type:file.type,data:ev.target.result};};
+  fileReader.readAsDataURL(file);
+
+  const openPrefilled=(fields)=>{closeModal();openNewVendorOrderModal({...fields,_keepFile:true});};
+
+  if(name.endsWith('.csv')){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const text=e.target.result;
+      const parseCSVRow=line=>{const cells=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){cells.push(cur.trim());cur='';}else{cur+=ch;}}cells.push(cur.trim());return cells;};
+      const rawRows=text.split('\n').map(parseCSVRow).filter(r=>r.some(c=>c));
+      if(rawRows.length<2){status.textContent='CSV appears empty.';status.style.display='block';return;}
+      const headers=rawRows[0].map(h=>h.toLowerCase().trim());
+      const dataRows=rawRows.slice(1);
+      const getFromRow=(row,...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&row[i])return String(row[i]).trim();}return '';};
+      const parseDateStr=raw=>{if(!raw)return '';const d=new Date(raw);return isNaN(d)?'':d.toISOString().split('T')[0];};
+      const designNameIdx=headers.findIndex(h=>h==='design name'||h==='design');
+      const designCodeIdx=headers.findIndex(h=>h==='design code'||h==='code');
+      const varietyIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
+      const sizeIdxMap={};headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h))sizeIdxMap[h]=i;});
+      const allSizes=Object.keys(sizeIdxMap);
+      const orderRow=dataRows[0];
+      const orderId=getFromRow(orderRow,'order id','orderid','order no','order number');
+      const client=getFromRow(orderRow,'vendor','supplier','party');
+      const startDate=parseDateStr(getFromRow(orderRow,'order date','start date','date','start'))||new Date().toISOString().split('T')[0];
+      const deliveryDate=parseDateStr(getFromRow(orderRow,'delivery','expected delivery'))||'';
+      const notes=getFromRow(orderRow,'notes','remarks','comment');
+      const designMap=[];let curDesign=null,lastDName='',lastDCode='';
+      dataRows.forEach(row=>{
+        const dn=designNameIdx>=0?String(row[designNameIdx]||'').trim():'';
+        const dc=designCodeIdx>=0?String(row[designCodeIdx]||'').trim():'';
+        if(dn)lastDName=dn;if(dc)lastDCode=dc;
+        const vName=varietyIdx>=0?String(row[varietyIdx]||'').trim():'';
+        if(!vName)return;
+        if(!curDesign||curDesign.name!==lastDName){curDesign={name:lastDName,code:lastDCode,sizes:allSizes,varieties:[]};designMap.push(curDesign);}
+        const sizes={};allSizes.forEach(sz=>{sizes[sz]=parseInt(row[sizeIdxMap[sz]])||0;});
+        curDesign.varieties.push({name:vName,sizes,images:[]});
+      });
+      const designs=designMap.filter(d=>d.varieties.length>0);
+      status.textContent=`✅ CSV parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
+      status.style.display='block';
+      openPrefilled({orderId,client,startDate,deliveryDate,notes,designs:designs.length>0?designs:undefined});
+    };reader.readAsText(file);
+
+  } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
+    if(typeof XLSX==='undefined'){status.textContent='⚠️ SheetJS library not loaded.';status.style.display='block';return;}
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'binary'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        if(!rows||rows.length<1){status.textContent='Excel appears empty.';status.style.display='block';return;}
+        const parseDate=raw=>{
+          if(!raw)return '';
+          const num=parseFloat(raw);
+          if(!isNaN(num)&&num>10000)return new Date(Math.round((num-25569)*86400*1000)).toISOString().split('T')[0];
+          const d=new Date(String(raw));return isNaN(d)?'':d.toISOString().split('T')[0];
+        };
+        const colA=rows.map(r=>String(r[0]||'').toLowerCase().trim());
+        const isLabelFormat=colA.some(l=>l.includes('order id')||l.includes('vendor name'));
+        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes)=>{
+          const dm=[];let cur=null,ldn='',ldc='';
+          dataRows.forEach(row=>{
+            const dn=String(row[dnIdx]||'').trim(),dc=String(row[dcIdx]||'').trim();
+            if(dn)ldn=dn;if(dc)ldc=dc;
+            const vn=String(row[vIdx]||'').trim();if(!vn)return;
+            if(!cur||cur.name!==ldn){cur={name:ldn,code:ldc,sizes:[...allSizes],varieties:[]};dm.push(cur);}
+            const sizes={};allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
+            cur.varieties.push({name:vn,sizes,images:[]});
+          });
+          return dm.filter(d=>d.name&&d.varieties.length>0);
+        };
+        let orderId='',client='',startDate='',deliveryDate='',notes='';
+        if(isLabelFormat){
+          const labelVal=label=>{const idx=rows.findIndex(r=>String(r[0]||'').toLowerCase().includes(label));return idx>=0?String(rows[idx][1]||'').trim():'';};
+          orderId=labelVal('order id');
+          client=labelVal('vendor name')||labelVal('vendor')||labelVal('supplier');
+          startDate=parseDate(labelVal('order date')||labelVal('start date')||labelVal('date'));
+          deliveryDate=parseDate(labelVal('expected delivery')||labelVal('delivery'));
+          notes=labelVal('notes');
+          const tblHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().trim()==='design name');
+          if(tblHdrIdx>=0){
+            const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
+            const szIdxMap={},allSizes=[];
+            hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,2,szIdxMap,allSizes);
+            status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
+            status.style.display='block';
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
+            return;
+          }
+        } else {
+          const headers=rows[0].map(h=>String(h).toLowerCase().trim());
+          const dataRow=rows[1]||[];
+          const getH=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&dataRow[i]!==undefined&&dataRow[i]!=='')return String(dataRow[i]).trim();}return '';};
+          orderId=getH('order id','orderid','order no');
+          client=getH('vendor','supplier','party');
+          startDate=parseDate(getH('order date','start date','date'));
+          deliveryDate=parseDate(getH('expected delivery','delivery'));
+          notes=getH('notes','remarks','comment');
+          const dnIdx=headers.findIndex(h=>h==='design name'||h==='design');
+          const dcIdx=headers.findIndex(h=>h==='design code'||h==='code');
+          const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
+          const szIdxMap={},allSizes=[];
+          headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+          if(dnIdx>=0&&vIdx>=0){
+            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes);
+            status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
+            status.style.display='block';
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
+            return;
+          }
+        }
+        status.textContent='✅ Excel read — fill designs manually below.';
+        status.style.display='block';
+        openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes});
+      }catch(err){status.textContent='⚠️ Could not read Excel file: '+err.message;status.style.display='block';}
+    };reader.readAsBinaryString(file);
+
+  } else if(file.type.startsWith('image/')){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const zone=document.getElementById('upload-zone');
+      if(zone)zone.innerHTML=`<img src="${e.target.result}" style="max-height:140px;border-radius:8px;margin:0 auto;display:block"><p style="margin-top:8px;font-size:11px;color:#666">Order image loaded for reference. Fill fields manually below.</p>`;
+    };reader.readAsDataURL(file);
+    status.textContent='📷 Order image loaded. Fill in the fields below based on the sheet.';status.style.display='block';
+  }
 }
 
 // ── Export / Print for Vendor Orders ─────────────────────────────────────────
