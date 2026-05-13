@@ -2460,9 +2460,32 @@ function _modalFocusable(){
 
 function openNewOrderModal(prefill){
   prefill=prefill||{};
-  window._modalSizes=prefill.sizes?[...prefill.sizes]:[...DEFAULT_SIZES];
-  window._modalVarieties=prefill.varieties?JSON.parse(JSON.stringify(prefill.varieties)):[];
-  if(!prefill._keepFile)window._uploadedOrderFile=null; // clear file unless re-opening from file parse
+  if(!prefill._keepFile)window._uploadedOrderFile=null;
+
+  // ── Resolve first design + extra designs ──────────────────────────────────
+  let firstDesign={};
+  if(prefill.designs&&prefill.designs.length>0){
+    firstDesign=prefill.designs[0];
+    window._modalExtraDesigns=prefill.designs.slice(1);
+  } else {
+    // backwards-compat: top-level dname/dcode/varieties/sizes
+    firstDesign={name:prefill.dname||'',code:prefill.dcode||'',varieties:prefill.varieties,sizes:prefill.sizes};
+    window._modalExtraDesigns=[];
+  }
+  window._modalSizes=firstDesign.sizes&&firstDesign.sizes.length?[...firstDesign.sizes]:[...DEFAULT_SIZES];
+  window._modalVarieties=firstDesign.varieties?JSON.parse(JSON.stringify(firstDesign.varieties)):[];
+
+  // ── Extra designs preview banner ──────────────────────────────────────────
+  const extraDesigns=window._modalExtraDesigns||[];
+  const extraBanner=extraDesigns.length>0
+    ? `<div style="background:#E1F5EE;border:1px solid #5DCAA5;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px">
+        <span style="font-weight:700;color:#0F6E56">📦 ${extraDesigns.length} more design${extraDesigns.length>1?'s':''} detected from file — will be created automatically:</span>
+        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">
+          ${extraDesigns.map(d=>`<span style="background:#fff;border:1px solid #5DCAA5;border-radius:5px;padding:2px 8px;color:#0F6E56;font-weight:600">${esc(d.name||'?')} <span style="font-weight:400;color:#888">[${esc(d.code||'?')}]</span></span>`).join('')}
+        </div>
+      </div>`
+    : '';
+
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" id="modal-overlay-main">
     <div class="modal" style="width:700px" role="dialog" aria-modal="true">
@@ -2486,6 +2509,8 @@ function openNewOrderModal(prefill){
         <input type="file" id="order-file-inp" accept=".xlsx,.xls,.csv,image/*" style="display:none" onchange="handleOrderFileInput(this)">
         <div id="import-status" style="font-size:11px;color:#0F6E56;margin-top:4px;display:none"></div>
       </div>
+
+      ${extraBanner}
 
       <div class="section-head"><span>Order info <span style="color:#A32D2D;font-size:10px">* all fields required</span></span></div>
       <div class="field-row">
@@ -2518,18 +2543,18 @@ function openNewOrderModal(prefill){
         </div>
       </div>
 
-      <div class="section-head"><span>First design <span style="color:#A32D2D;font-size:10px">* required</span></span></div>
+      <div class="section-head"><span>Design 1 <span style="color:#A32D2D;font-size:10px">* required</span>${extraDesigns.length>0?` <span style="font-weight:400;color:#888;font-size:10px">— ${extraDesigns.length+1} designs total from file</span>`:''}</span></div>
       <div class="field-row">
         <div class="field-group ac-wrap">
           <label>Design name <span style="color:#A32D2D">*</span></label>
-          <input id="no-dname" placeholder="e.g. Mogra Twist" autocomplete="off" value="${esc(prefill.dname||'')}"
+          <input id="no-dname" placeholder="e.g. Mogra Twist" autocomplete="off" value="${esc(firstDesign.name||'')}"
             oninput="showACModal(this,'dnames')" onblur="hideACModal('no-ac-dname')">
           <div class="ac-list" id="no-ac-dname" style="display:none"></div>
           <div class="err-msg" id="err-no-dname" style="display:none">Design name is required</div>
         </div>
         <div class="field-group ac-wrap">
           <label>Design code <span style="color:#A32D2D">*</span></label>
-          <input id="no-dcode" placeholder="e.g. MG-22" autocomplete="off" value="${esc(prefill.dcode||'')}"
+          <input id="no-dcode" placeholder="e.g. MG-22" autocomplete="off" value="${esc(firstDesign.code||'')}"
             oninput="showACModal(this,'dcodes')" onblur="hideACModal('no-ac-dcode')">
           <div class="ac-list" id="no-ac-dcode" style="display:none"></div>
           <div class="err-msg" id="err-no-dcode" style="display:none">Design code is required</div>
@@ -2543,7 +2568,7 @@ function openNewOrderModal(prefill){
       </div>
       <div id="no-size-headers" style="display:flex;gap:6px;flex-wrap:wrap;background:#f0efff;padding:8px 10px;border-radius:8px;border:1px solid #AFA9EC;margin-bottom:10px"></div>
 
-      <!-- Varieties -->
+      <!-- Varieties for Design 1 -->
       <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <span>🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span></span>
         <button class="icon-btn" id="btn-add-variety" onclick="addModalVariety()">+ Add variety</button>
@@ -2551,24 +2576,21 @@ function openNewOrderModal(prefill){
       <div id="no-variety-rows" style="display:flex;flex-direction:column;gap:6px"></div>
       <div class="err-msg" id="err-no-varieties" style="display:none;margin-top:4px">At least one variety with non-zero quantity is required</div>
 
-      <div style="font-size:11px;color:#aaa;margin-top:10px">All ${S.stageTemplates.length} stage templates will be applied. Customise after creation.</div>
+      <div style="font-size:11px;color:#aaa;margin-top:10px">All ${S.stageTemplates.length} stage templates will be applied to every design. Customise after creation.</div>
       <div class="modal-actions">
         <button id="btn-modal-cancel" onclick="closeModal()">Cancel</button>
-        <button class="primary" id="btn-modal-create" onclick="createOrder()">Create order</button>
+        <button class="primary" id="btn-modal-create" onclick="createOrder()">Create order${extraDesigns.length>0?' ('+( extraDesigns.length+1)+' designs)':''}</button>
       </div>
     </div>
   </div>`;
   renderModalSizeHeaders();
   renderModalVarieties();
-  // Disable all background focusable elements so Tab stays inside modal
   _modalDisableBackground();
-  // Install focus trap keydown handler on the overlay
   const overlay=document.getElementById('modal-overlay-main');
   if(overlay){
     overlay.addEventListener('click',e=>{if(e.target===overlay)closeModal();});
     overlay.addEventListener('keydown',_modalFocusTrap);
   }
-  // Focus the first field
   setTimeout(()=>{const f=document.getElementById('no-id');if(f)f.focus();},30);
 }
 
@@ -2843,21 +2865,31 @@ function createOrder(){
   }
   if(hasErr)return;
 
-  // Build design object
-  const sizes=Object.fromEntries(window._modalSizes.map(sz=>[sz,0]));
-  // Aggregate sizes from varieties
-  window._modalVarieties.forEach(v=>window._modalSizes.forEach(sz=>{sizes[sz]=(sizes[sz]||0)+(parseInt((v.sizes||{})[sz])||0);}));
-  const newStages=S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
-  const design={id:uid(),name:dname,code:dcode,sizesLocked:true,sizes,images:[],stages:newStages,varieties:JSON.parse(JSON.stringify(window._modalVarieties))};
+  // ── Build first design ────────────────────────────────────────────────────
+  const makeStageFresh=()=>S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
+  const buildDesignFromModal=(dName,dCode,szKeys,vList)=>{
+    const szObj=Object.fromEntries(szKeys.map(sz=>[sz,0]));
+    vList.forEach(v=>szKeys.forEach(sz=>{szObj[sz]=(szObj[sz]||0)+(parseInt((v.sizes||{})[sz])||0);}));
+    return {id:uid(),name:dName,code:dCode,sizesLocked:true,sizes:szObj,images:[],stages:makeStageFresh(),varieties:JSON.parse(JSON.stringify(vList))};
+  };
+
+  const firstDesign=buildDesignFromModal(dname,dcode,window._modalSizes,window._modalVarieties);
+
+  // ── Build extra designs from file ─────────────────────────────────────────
+  const extraDesignObjects=(window._modalExtraDesigns||[]).map(ed=>{
+    const szKeys=ed.sizes&&ed.sizes.length?ed.sizes:window._modalSizes;
+    return buildDesignFromModal(ed.name||'Design',ed.code||'',szKeys,ed.varieties||[]);
+  });
 
   const newOrder={
     id:uid(),orderId,client,startDate,
     priority:document.getElementById('no-prio').value,
     notes:document.getElementById('no-notes').value,
-    designs:[design],
+    designs:[firstDesign,...extraDesignObjects],
     attachedFile:window._uploadedOrderFile||null
   };
-  window._uploadedOrderFile=null; // clear after attaching
+  window._uploadedOrderFile=null;
+  window._modalExtraDesigns=[];
   S.orders.unshift(newOrder);
   S.openOrders.add(newOrder.id);
   S.openClients.add(client);
@@ -2871,50 +2903,51 @@ function downloadOrderTemplate(){
   if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
 
   const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
-  const numSizes=TMPL_SIZES.length;
-
-  // Samples — row totals computed manually so no formula objects needed
-  const samples=[
-    ['Classic Gold',  50, 80, 100, 80, 50, 20, 380],
-    ['Premium',       30, 60,  70, 60, 30, 10, 260],
-    ['Antique Rose',  20, 40,  50, 40, 20,  5, 175],
-    ['','','','','','','',''],
-    ['','','','','','','',''],
-    ['','','','','','','',''],
-  ];
+  // Columns: Design Name | Design Code | Variety Name | ...sizes | Row Total
+  const totalCols=3+TMPL_SIZES.length+1;
 
   const sheetData=[
     /* R1  */ ['🪬  BANGLE PRODUCTION TRACKER — New Order Entry Form'],
-    /* R2  */ ['Fill in Column B for order details. Add one variety per row in the Variety Quantities table below.'],
+    /* R2  */ ['Fill Column B for order details. In the table, each row = one variety. Leave Design Name & Code blank to continue the same design.'],
     /* R3  */ [],
-    /* R4  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────'],
-    /* R5  */ ['Order ID',       'ORD-001'],
-    /* R6  */ ['Client Name',    'Meena Traders'],
-    /* R7  */ ['Start Date',     '15-May-2026',  '', '', '', '', '', '(format: DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    /* R8  */ ['Design Name',    'Mogra Twist'],
-    /* R9  */ ['Design Code',    'MG-22'],
-    /* R10 */ ['Notes',          'Urgent delivery before Diwali'],
-    /* R11 */ [],
-    /* R12 */ ['─── VARIETY QUANTITIES ─────────────────────────────────────────────'],
-    /* R13 */ ['One variety per row. Add more rows if needed. Do not leave Variety Name blank.'],
-    /* R14 */ ['Variety Name', ...TMPL_SIZES, 'Row Total'],
-    ...samples,
+    /* R4  */ ['─── ORDER DETAILS ──────────────────────────────────────────────────────────────────────'],
+    /* R5  */ ['Order ID',    'ORD-001'],
+    /* R6  */ ['Client Name', 'Meena Traders'],
+    /* R7  */ ['Start Date',  '15-May-2026', '', '', '', '', '', '', '', '', '(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    /* R8  */ ['Notes',       'Urgent delivery before Diwali'],
+    /* R9  */ [],
+    /* R10 */ ['─── DESIGNS & VARIETY QUANTITIES ─────────────────────────────────────────────────────'],
+    /* R11 */ ['Each row = one variety. Leave Design Name & Code blank to continue same design. Add more rows as needed.'],
+    /* R12 */ ['Design Name', 'Design Code', 'Variety Name', ...TMPL_SIZES, 'Row Total'],
+    // Design 1 — Mogra Twist
+    /* R13 */ ['Mogra Twist', 'MG-22',  'Classic Gold',  50,  80, 100,  80, 50, 20, 380],
+    /* R14 */ ['',            '',        'Premium',       30,  60,  70,  60, 30, 10, 260],
+    /* R15 */ ['',            '',        'Antique Rose',  20,  40,  50,  40, 20,  5, 175],
+    // Design 2 — Lotus Bangle
+    /* R16 */ ['Lotus Bangle','LT-08',  'Gold',          40,  60,  80,  70, 40, 15, 305],
+    /* R17 */ ['',            '',        'Silver',        25,  45,  60,  50, 25,  8, 213],
+    /* R18 */ ['',            '',        'Rose Gold',     15,  30,  40,  30, 15,  5, 135],
+    // Blank rows for manager to fill more designs/varieties
+    /* R19 */ ['','','','','','','','','','',''],
+    /* R20 */ ['','','','','','','','','','',''],
+    /* R21 */ ['','','','','','','','','','',''],
+    /* R22 */ ['','','','','','','','','','',''],
   ];
 
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(sheetData);
 
-  // Column widths
-  ws['!cols']=[{wch:22},{wch:20},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:12}];
+  // Column widths: Design Name | Design Code | Variety Name | sizes | Total
+  ws['!cols']=[{wch:18},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
 
-  // Merge decorative/header rows across all columns
-  const lastCol=numSizes+1; // 0-based index of last column (Row Total)
+  // Merge banner/divider rows across all columns (0-based row indices)
+  const lc=totalCols-1;
   ws['!merges']=[
-    {s:{r:0,c:0},e:{r:0,c:lastCol}},   // Title
-    {s:{r:1,c:0},e:{r:1,c:lastCol}},   // Subtitle
-    {s:{r:3,c:0},e:{r:3,c:lastCol}},   // ORDER DETAILS divider
-    {s:{r:11,c:0},e:{r:11,c:lastCol}}, // VARIETY divider
-    {s:{r:12,c:0},e:{r:12,c:lastCol}}, // Instruction
+    {s:{r:0,c:0},e:{r:0,c:lc}},   // Title
+    {s:{r:1,c:0},e:{r:1,c:lc}},   // Subtitle
+    {s:{r:3,c:0},e:{r:3,c:lc}},   // ORDER DETAILS divider
+    {s:{r:9,c:0},e:{r:9,c:lc}},   // DESIGNS divider
+    {s:{r:10,c:0},e:{r:10,c:lc}}, // Table instruction
   ];
 
   XLSX.utils.book_append_sheet(wb,ws,'Order Form');
@@ -2943,55 +2976,63 @@ function processOrderFile(file){
     const reader=new FileReader();
     reader.onload=e=>{
       const text=e.target.result;
-      // Split rows; handle quoted commas by a simple state machine
       const parseCSVRow=line=>{const cells=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){cells.push(cur.trim());cur='';}else{cur+=ch;}}cells.push(cur.trim());return cells;};
       const rawRows=text.split('\n').map(parseCSVRow).filter(r=>r.some(c=>c));
       if(rawRows.length<2){status.textContent='CSV appears empty.';status.style.display='block';return;}
       const headers=rawRows[0].map(h=>h.toLowerCase().trim());
       const dataRows=rawRows.slice(1);
 
-      // Helper: get value from a row by matching header keywords
       const getFromRow=(row,...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&row[i])return String(row[i]).trim();}return '';};
+      const parseDateStr=raw=>{if(!raw)return '';const d=new Date(raw);return isNaN(d)?'':d.toISOString().split('T')[0];};
 
-      // Identify variety column and size columns (e.g. 2/4, 2/6, 2/8...)
-      const varietyIdx=headers.findIndex(h=>h==='variety'||h==='variety name');
+      // Column indices
+      const designNameIdx=headers.findIndex(h=>h==='design name'||h==='design');
+      const designCodeIdx=headers.findIndex(h=>h==='design code'||h==='code');
+      const varietyIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
       const sizeIdxMap={};
       headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h))sizeIdxMap[h]=i;});
-      const sizeKeys=Object.keys(sizeIdxMap);
+      const allSizes=Object.keys(sizeIdxMap);
 
-      // Order-level fields: take from first data row that has Order ID or Client
+      // Order-level fields from first row
       const orderRow=dataRows[0];
-      let startDate='';
-      const rawDate=getFromRow(orderRow,'start date','date','start');
-      if(rawDate){const d=new Date(rawDate);if(!isNaN(d))startDate=d.toISOString().split('T')[0];}
+      const orderId=getFromRow(orderRow,'order id','orderid','order no','order number');
+      const client=getFromRow(orderRow,'client','customer','party','buyer');
+      const startDate=parseDateStr(getFromRow(orderRow,'start date','date','start'))||new Date().toISOString().split('T')[0];
+      const notes=getFromRow(orderRow,'notes','remarks','comment');
 
-      // Collect varieties from ALL data rows (skip rows where Variety cell is blank)
-      const varieties=[];
+      // ── Group rows into designs ────────────────────────────────────────────
+      const designMap=[];      // [{name,code,varieties:[]}]
+      let curDesign=null;
+      let lastDName='',lastDCode='';
       dataRows.forEach(row=>{
+        // Carry-forward design name/code
+        const dn=designNameIdx>=0?String(row[designNameIdx]||'').trim():'';
+        const dc=designCodeIdx>=0?String(row[designCodeIdx]||'').trim():'';
+        if(dn)lastDName=dn;
+        if(dc)lastDCode=dc;
+        const effectiveDName=lastDName||getFromRow(row,'design name','design');
+        const effectiveDCode=lastDCode||getFromRow(row,'design code','code');
+
         const vName=varietyIdx>=0?String(row[varietyIdx]||'').trim():'';
-        if(!vName)return;
+        if(!vName)return; // skip rows without variety name
+
+        // Start new design group when name changes
+        if(!curDesign||curDesign.name!==effectiveDName){
+          curDesign={name:effectiveDName,code:effectiveDCode,sizes:allSizes,varieties:[]};
+          designMap.push(curDesign);
+        }
+
         const sizes={};
-        sizeKeys.forEach(sz=>{sizes[sz]=parseInt(row[sizeIdxMap[sz]])||0;});
-        varieties.push({name:vName,sizes,images:[]});
+        allSizes.forEach(sz=>{sizes[sz]=parseInt(row[sizeIdxMap[sz]])||0;});
+        curDesign.varieties.push({name:vName,sizes,images:[]});
       });
 
-      const prefill={
-        orderId:getFromRow(orderRow,'order id','order_id','orderid','order no','order number'),
-        client:getFromRow(orderRow,'client','customer','party','buyer'),
-        startDate:startDate||new Date().toISOString().split('T')[0],
-        dname:getFromRow(orderRow,'design name','design','item name','product'),
-        dcode:getFromRow(orderRow,'design code','code','item code','sku'),
-        notes:getFromRow(orderRow,'notes','remarks','comment'),
-        varieties:varieties.length>0?varieties:undefined,
-        sizes:sizeKeys.length>0?sizeKeys:undefined,
-        _keepFile:true
-      };
-
-      const vCount=varieties.length;
-      const szCount=sizeKeys.length;
-      status.textContent=`✅ CSV parsed — ${vCount} variet${vCount===1?'y':'ies'}, ${szCount} size${szCount===1?'':'s'} loaded. Review and create order.`;
+      const designs=designMap.filter(d=>d.varieties.length>0);
+      const dCount=designs.length;
+      const vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
+      status.textContent=`✅ CSV parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
       status.style.display='block';
-      closeModal();openNewOrderModal(prefill);
+      closeModal();openNewOrderModal({orderId,client,startDate,notes,designs:designs.length>0?designs:undefined,_keepFile:true});
     };reader.readAsText(file);
 
   } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
@@ -3026,78 +3067,84 @@ function processOrderFile(file){
         const varieties=[];
         const sizeKeys=[];
 
+        // ── Shared helper: group data rows into designs ──────────────────────
+        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes)=>{
+          const designMap=[];
+          let curDesign=null,lastDN='',lastDC='';
+          dataRows.forEach(row=>{
+            const dn=String(row[dnIdx]||'').trim();
+            const dc=String(row[dcIdx]||'').trim();
+            if(dn)lastDN=dn;
+            if(dc)lastDC=dc;
+            const vName=String(row[vIdx]||'').trim();
+            if(!vName)return;
+            if(!curDesign||curDesign.name!==lastDN){
+              curDesign={name:lastDN,code:lastDC,sizes:[...allSizes],varieties:[]};
+              designMap.push(curDesign);
+            }
+            const sizes={};
+            allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
+            curDesign.varieties.push({name:vName,sizes,images:[]});
+          });
+          return designMap.filter(d=>d.name&&d.varieties.length>0);
+        };
+
         if(isLabelFormat){
-          // ── NEW TEMPLATE FORMAT ─────────────────────────────────────────
-          // Read label:value pairs from col A : col B
-          const labelVal=(label)=>{
+          // ── NEW TEMPLATE FORMAT (label in col A, value in col B) ──────────
+          const labelVal=label=>{
             const idx=rows.findIndex(r=>String(r[0]||'').toLowerCase().includes(label));
             return idx>=0?String(rows[idx][1]||'').trim():'';
           };
           orderId=labelVal('order id');
           client=labelVal('client');
           startDate=parseDate(labelVal('start date')||labelVal('date'));
-          dname=labelVal('design name');
-          dcode=labelVal('design code');
           notes=labelVal('notes');
 
-          // Find "Variety Name" header row — then read varieties below it
-          const varietyHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().includes('variety name'));
-          if(varietyHdrIdx>=0){
-            const hdrRow=rows[varietyHdrIdx].map(h=>String(h).trim());
-            // Identify size columns by pattern 2/X
-            hdrRow.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){sizeKeys.push(h);}});
-            const szIdxMap={};
-            hdrRow.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h))szIdxMap[h]=i;});
-
-            rows.slice(varietyHdrIdx+1).forEach(row=>{
-              const vName=String(row[0]||'').trim();
-              if(!vName||vName.toLowerCase()==='variety name')return;
-              const sizes={};
-              Object.entries(szIdxMap).forEach(([sz,ci])=>{sizes[sz]=parseInt(row[ci])||0;});
-              varieties.push({name:vName,sizes,images:[]});
-            });
+          // Find "Design Name" header row (col 0 = "Design Name")
+          const tblHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().trim()==='design name');
+          if(tblHdrIdx>=0){
+            const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
+            const dnIdx=0,dcIdx=1,vIdx=2;
+            const szIdxMap={};const allSizes=[];
+            hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes);
+            const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
+            status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
+            status.style.display='block';
+            closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined,_keepFile:true});
+            return;
           }
 
         } else {
-          // ── OLD / GENERIC HEADER-ROW FORMAT (fallback) ──────────────────
+          // ── GENERIC HEADER-ROW FORMAT (fallback) ─────────────────────────
           const headers=rows[0].map(h=>String(h).toLowerCase().trim());
           const dataRow=rows[1]||[];
           const getH=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&dataRow[i]!==undefined&&dataRow[i]!=='')return String(dataRow[i]).trim();}return '';};
           orderId=getH('order id','orderid','order no','order number');
           client=getH('client','customer','party','buyer');
           startDate=parseDate(getH('start date','date','start'));
-          dname=getH('design name','design','item name','product');
-          dcode=getH('design code','code','item code','sku');
           notes=getH('notes','remarks','comment');
 
-          const vIdx=headers.findIndex(h=>h==='variety'||h==='variety name');
-          const szIdxMap={};
-          headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){sizeKeys.push(h);szIdxMap[h]=i;}});
-          if(vIdx>=0){
-            rows.slice(1).forEach(row=>{
-              const vName=String(row[vIdx]||'').trim();
-              if(!vName)return;
-              const sizes={};
-              Object.entries(szIdxMap).forEach(([sz,ci])=>{sizes[sz]=parseInt(row[ci])||0;});
-              varieties.push({name:vName,sizes,images:[]});
-            });
+          const dnIdx=headers.findIndex(h=>h==='design name'||h==='design');
+          const dcIdx=headers.findIndex(h=>h==='design code'||h==='code');
+          const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
+          const szIdxMap={};const allSizes=[];
+          headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+
+          if(dnIdx>=0&&vIdx>=0){
+            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes);
+            const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
+            status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
+            status.style.display='block';
+            closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined,_keepFile:true});
+            return;
           }
         }
 
-        const prefill={
-          orderId,client,
-          startDate:startDate||new Date().toISOString().split('T')[0],
-          dname,dcode,notes,
-          varieties:varieties.length>0?varieties:undefined,
-          sizes:sizeKeys.length>0?[...new Set(sizeKeys)]:undefined,
-          _keepFile:true
-        };
-
-        const vCount=varieties.length;
-        const szCount=[...new Set(sizeKeys)].length;
-        status.textContent=`✅ Excel parsed — ${vCount} variet${vCount===1?'y':'ies'}, ${szCount} size${szCount===1?'':'s'} loaded. Review and create order.`;
+        // ── Minimal fallback: no table found, prefill order fields only ─────
+        status.textContent='✅ Excel read — fill designs manually below.';
         status.style.display='block';
-        closeModal();openNewOrderModal(prefill);
+        closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,_keepFile:true});
       } catch(err){
         status.textContent='⚠️ Could not read Excel file: '+err.message;status.style.display='block';
       }
