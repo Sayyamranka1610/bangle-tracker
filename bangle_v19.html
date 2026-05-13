@@ -4643,23 +4643,27 @@ function doLogout(){
 })();
 
 // ── PUSH TO FIREBASE ──────────────────────────────────────────────────────────
+// NOTE: We wrap state as a JSON string inside {data:"..."} because the app uses
+// bangle size keys like "2/2", "2/4" — Firebase treats "/" as a path separator
+// and rejects such keys. Storing as a string value sidesteps this entirely.
 async function fbPush(silent){
   _fb.lastPush = Date.now();
   try{
     const { stateNoImages } = extractImages({
       ...S, openOrders:[...S.openOrders], openClients:[...S.openClients]
     });
+    // Wrap state as a plain string so Firebase never sees the "/" keys
     const payload = JSON.stringify({
-      ...stateNoImages,
-      _savedAt : new Date().toISOString(),
-      _device  : FB_DEVICE_ID
+      data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients]}),
+      savedAt : new Date().toISOString(),
+      device  : FB_DEVICE_ID
     });
     const r = await fetch(FB_DATA, {
       method : 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body   : payload
     });
-    if(!r.ok) throw new Error('HTTP ' + r.status);
+    if(!r.ok){ const msg = await r.text(); throw new Error('HTTP ' + r.status + ' — ' + msg); }
     const t = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     fbSetStatus('connected', 'Live · saved ' + t);
   } catch(e){
@@ -4681,18 +4685,21 @@ async function fbInit(){
   try{
     const resp = await fetch(FB_DATA);
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
+    const envelope = await resp.json();
 
-    if(data && data.orders){
-      const remoteMs = data._savedAt ? new Date(data._savedAt).getTime() : 0;
+    // Unwrap envelope: {data: "JSON string", savedAt, device}
+    const parsed = (envelope && envelope.data) ? JSON.parse(envelope.data) : null;
+
+    if(parsed && parsed.orders){
+      const remoteMs = envelope.savedAt ? new Date(envelope.savedAt).getTime() : 0;
       const localMs  = localStorage.getItem('bangle_saved_at')
                         ? new Date(localStorage.getItem('bangle_saved_at')).getTime() : 0;
       if(remoteMs > localMs + 2000){
         // Firebase is newer → load it
         histPush();
-        Object.assign(S, data);
-        S.openOrders  = new Set(data.openOrders  || []);
-        S.openClients = new Set(data.openClients || []);
+        Object.assign(S, parsed);
+        S.openOrders  = new Set(parsed.openOrders  || []);
+        S.openClients = new Set(parsed.openClients || []);
         save(); render();
         fbSetStatus('connected', 'Live · loaded latest data');
         showToast('⬇ Loaded latest data from database', 'green');
@@ -4720,18 +4727,20 @@ function fbStartListener(){
 
   _fb.es.addEventListener('put', (ev)=>{
     try{
-      const msg  = JSON.parse(ev.data);
-      const data = msg.data;
-      if(!data || !data.orders) return;
-      if(data._device === FB_DEVICE_ID) return; // own update — ignore
-      const remoteMs = data._savedAt ? new Date(data._savedAt).getTime() : 0;
+      const msg      = JSON.parse(ev.data);
+      const envelope = msg.data;                          // {data, savedAt, device}
+      if(!envelope || !envelope.data) return;
+      if(envelope.device === FB_DEVICE_ID) return;        // own update — ignore
+      const parsed   = JSON.parse(envelope.data);
+      if(!parsed || !parsed.orders) return;
+      const remoteMs = envelope.savedAt ? new Date(envelope.savedAt).getTime() : 0;
       const localMs  = localStorage.getItem('bangle_saved_at')
                         ? new Date(localStorage.getItem('bangle_saved_at')).getTime() : 0;
-      if(remoteMs <= localMs) return; // we already have this or newer
+      if(remoteMs <= localMs) return;                     // we already have this or newer
       // Apply remote state
-      Object.assign(S, data);
-      S.openOrders  = new Set(data.openOrders  || []);
-      S.openClients = new Set(data.openClients || []);
+      Object.assign(S, parsed);
+      S.openOrders  = new Set(parsed.openOrders  || []);
+      S.openClients = new Set(parsed.openClients || []);
       save(); render();
       fbSetStatus('connected', 'Live · updated from another device');
       showToast('🔄 Updated from another device', 'amber');
