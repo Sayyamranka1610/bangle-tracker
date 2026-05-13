@@ -612,12 +612,13 @@ input[type="date"]{min-width:118px}
       <button onclick="showPrintMenu()">🖨️ Print</button>
       <button onclick="openStageTemplateEditor()">⚙️ Stages</button>
       <button onclick="openAuditModal()">📋 Audit log</button>
-      <button class="primary" onclick="openNewOrderModal()">+ New order</button>
+      <button class="primary" id="btn-new-order" onclick="openNewOrderModal()">+ New order</button>
     </div>
   </div>
   <div class="stats" id="stats-bar"></div>
   <div class="main-tabs no-print">
     <div class="main-tab active" onclick="switchMain('orders')">📦 Orders (Client view)</div>
+    <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
     <div class="main-tab" onclick="switchMain('design')">🎨 Design view</div>
     <div class="main-tab" onclick="switchMain('analytics')">📊 Analytics</div>
     <div class="main-tab" onclick="switchMain('inventory')">🗄️ Inventory</div>
@@ -636,6 +637,7 @@ input[type="date"]{min-width:118px}
     <button class="filter-clear" onclick="clearFilters()">✕ Clear</button>
   </div>
   <div id="view-orders"></div>
+  <div id="view-vendor" style="display:none"></div>
   <div id="view-design" style="display:none"></div>
   <div id="view-analytics" style="display:none"></div>
   <div id="view-inventory" style="display:none"></div>
@@ -690,7 +692,11 @@ let S = {
   invPeriod:'monthly',    // 'weekly'|'monthly'|'yearly'
   invGroupBy:'name',      // 'name'|'code'
   stockItems:[],          // [{id,designName,designCode,variety,images:[{data,hash}],sizes:{},date,isOpeningBalance,notes}]
-  stockView:'gallery'     // 'gallery'|'table'
+  stockView:'gallery',    // 'gallery'|'table'
+  vendorOrders:[],        // [{id,orderId,vendor,startDate,deliveryDate,priority,status,notes,designs:[]}]
+  openVendorOrders:[],    // serialised as array, converted to Set on load
+  vendorActiveTabs:{},    // {orderId → 'details'|'designs'}
+  vendorFilters:{vendor:'',design:'',code:'',status:''}
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -716,6 +722,10 @@ try{
     S.invGroupBy=sv.invGroupBy||'name';
     S.stockItems=sv.stockItems||[];
     S.stockView=sv.stockView||'gallery';
+    S.vendorOrders=sv.vendorOrders||[];
+    S.openVendorOrders=sv.openVendorOrders||[];
+    S.vendorActiveTabs=sv.vendorActiveTabs||{};
+    S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:'',status:''};
     window._loadedFromStorage = true; // flag: real data loaded successfully
   } else {
     window._loadedFromStorage = false; // no saved data found — will use sample
@@ -948,6 +958,21 @@ function extractImages(state){
     });
   });
 
+  // Strip vendor order variety images
+  (cloned.vendorOrders||[]).forEach(o=>{
+    (o.designs||[]).forEach(d=>{
+      (d.varieties||[]).forEach(v=>{
+        (v.images||[]).forEach((img,ii)=>{
+          if(img.data&&img.data.startsWith('data:')){
+            const key=`img_vord_${d.id}_${ii}`;
+            imageMap[key]=img.data;
+            img.data='__IDB__'+key;
+          }
+        });
+      });
+    });
+  });
+
   (cloned.orders||[]).forEach(o=>{
     // Strip attached file data (large binary) — kept in IndexedDB only
     if(o.attachedFile&&o.attachedFile.data){
@@ -989,6 +1014,19 @@ function reinjectImages(state,imageMap){
           if(imageMap[key])img.data=imageMap[key];
         }
       });
+      (d.varieties||[]).forEach(v=>{
+        (v.images||[]).forEach(img=>{
+          if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
+            const key=img.data.slice(7);
+            if(imageMap[key])img.data=imageMap[key];
+          }
+        });
+      });
+    });
+  });
+  // Reinject vendor order variety images
+  (state.vendorOrders||[]).forEach(o=>{
+    (o.designs||[]).forEach(d=>{
       (d.varieties||[]).forEach(v=>{
         (v.images||[]).forEach(img=>{
           if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
@@ -1305,19 +1343,25 @@ function orderMatchesFilter(order){
 // ── RENDER CORE ────────────────────────────────────────────────────────────────
 function switchMain(view){
   S.mainView=view;
-  const views=['orders','design','analytics','inventory'];
+  const views=['orders','vendor','design','analytics','inventory'];
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',views[i]===view);});
   document.getElementById('view-orders').style.display=view==='orders'?'':'none';
+  document.getElementById('view-vendor').style.display=view==='vendor'?'':'none';
   document.getElementById('view-design').style.display=view==='design'?'':'none';
   document.getElementById('view-analytics').style.display=view==='analytics'?'':'none';
   document.getElementById('view-inventory').style.display=view==='inventory'?'':'none';
-  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory')?'none':'';
+  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor')?'none':'';
+  // Show/hide the "+ New order" button (only relevant on orders view)
+  const nb=document.getElementById('btn-new-order');
+  if(nb)nb.style.display=view==='vendor'?'none':'';
   if(view==='analytics')renderAnalytics();
   if(view==='inventory')renderInventory();
+  if(view==='vendor')renderVendorOrders();
   scheduleAutosave();
 }
 function render(){updateFilterOptions();renderStats();
   if(S.mainView==='orders')renderOrdersView();
+  else if(S.mainView==='vendor')renderVendorOrders();
   else if(S.mainView==='design')renderDesignView();
   else if(S.mainView==='inventory')renderInventory();
   else renderAnalytics();
@@ -3225,6 +3269,568 @@ function processOrderFile(file){
 }
 
 // ── PRINT ──────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// VENDOR ORDERS MODULE
+// Completely independent of client orders, inventory, and production stages.
+// Order IDs: VORD-01, VORD-02, ...
+// ══════════════════════════════════════════════════════════════════════════════
+
+function genVendorOrderId(){
+  const nums=S.vendorOrders.map(o=>{const m=o.orderId.match(/VORD-?(\d+)/i);return m?parseInt(m[1]):0;});
+  const next=nums.length?Math.max(...nums)+1:1;
+  return 'VORD-'+String(next).padStart(2,'0');
+}
+
+function vendorOrderAlert(vo){
+  if(vo.status==='received')return 'done';
+  if(!vo.deliveryDate)return 'ok';
+  const today=new Date().toISOString().split('T')[0];
+  if(vo.deliveryDate<today)return 'late';
+  const diff=(new Date(vo.deliveryDate)-new Date())/864e5;
+  if(diff<=7)return 'warn';
+  return 'ok';
+}
+function vendorOrderPct(vo){
+  return vo.status==='received'?100:vo.status==='partial'?50:0;
+}
+function vendorTotalQty(vo){
+  return (vo.designs||[]).reduce((a,d)=>{
+    const vs=d.varieties&&d.varieties.length?d.varieties:[{sizes:d.sizes}];
+    return a+vs.reduce((b,v)=>b+Object.values(v.sizes||{}).reduce((c,x)=>c+(parseInt(x)||0),0),0);
+  },0);
+}
+function vendorDesignQty(d){
+  const vs=d.varieties&&d.varieties.length?d.varieties:[{sizes:d.sizes}];
+  return vs.reduce((a,v)=>a+Object.values(v.sizes||{}).reduce((b,x)=>b+(parseInt(x)||0),0),0);
+}
+function vendorOrderMatchesFilter(vo){
+  const f=S.vendorFilters||{};
+  if(f.vendor&&vo.vendor!==f.vendor)return false;
+  if(f.design&&!vo.designs.some(d=>d.name===f.design))return false;
+  if(f.code&&!vo.designs.some(d=>d.code===f.code))return false;
+  if(f.status){
+    const al=vendorOrderAlert(vo);
+    if(f.status==='on track'&&al!=='ok')return false;
+    if(f.status==='due soon'&&al!=='warn')return false;
+    if(f.status==='overdue'&&al!=='late')return false;
+    if(f.status==='received'&&al!=='done')return false;
+  }
+  return true;
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function renderVendorOrders(){
+  const container=document.getElementById('view-vendor');
+  const filtered=S.vendorOrders.filter(vendorOrderMatchesFilter);
+
+  // Unique vendors / design names / codes for filter dropdowns
+  const allVendors=[...new Set(S.vendorOrders.map(o=>o.vendor).filter(Boolean))].sort();
+  const allDnames=[...new Set(S.vendorOrders.flatMap(o=>o.designs.map(d=>d.name)).filter(Boolean))].sort();
+  const allCodes=[...new Set(S.vendorOrders.flatMap(o=>o.designs.map(d=>d.code)).filter(Boolean))].sort();
+  const f=S.vendorFilters||{};
+
+  // Stats
+  const late=filtered.filter(o=>vendorOrderAlert(o)==='late').length;
+  const warn=filtered.filter(o=>vendorOrderAlert(o)==='warn').length;
+  const done=filtered.filter(o=>vendorOrderAlert(o)==='done').length;
+  const ok=filtered.length-late-warn-done;
+
+  // Group by vendor
+  const vendorMap={};
+  filtered.forEach(vo=>{
+    const v=vo.vendor||'(No vendor)';
+    if(!vendorMap[v])vendorMap[v]=[];
+    vendorMap[v].push(vo);
+  });
+
+  const vendorSections=Object.keys(vendorMap).sort().map(vendor=>{
+    const orders=vendorMap[vendor].sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+    const lateOrds=orders.filter(o=>vendorOrderAlert(o)==='late').length;
+    const isOpen=!(S.openVendorOrders||[]).includes('closed_'+vendor);
+    return`<div class="client-section">
+      <div class="client-header" onclick="toggleVendorSection('${esc(vendor)}')">
+        <div><h2>🏭 ${esc(vendor)}</h2><div class="client-meta">${orders.length} order${orders.length!==1?'s':''} · ${lateOrds} overdue</div></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();exportVendorSectionCSV('${esc(vendor)}')">📥 Export</button>
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();printVendorSection('${esc(vendor)}')">🖨️ Print</button>
+          <span class="chevron${isOpen?' open':''}">▶</span>
+        </div>
+      </div>
+      <div class="client-body${isOpen?'':' closed'}">
+        ${orders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo))).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML=`
+    <!-- Toolbar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;color:#534AB7">🏭 Vendor Orders</div>
+      <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats" style="margin-bottom:14px">
+      <div class="stat-card stat-total" style="cursor:default"><div class="stat-val">${S.vendorOrders.length}</div><div class="stat-lbl">Total</div></div>
+      <div class="stat-card stat-ontrack" style="cursor:default"><div class="stat-val">${ok}</div><div class="stat-lbl">On track</div></div>
+      <div class="stat-card stat-soon" style="cursor:default"><div class="stat-val">${warn}</div><div class="stat-lbl">Due soon</div></div>
+      <div class="stat-card stat-late" style="cursor:default"><div class="stat-val">${late}</div><div class="stat-lbl">Overdue</div></div>
+      <div class="stat-card stat-done" style="cursor:default"><div class="stat-val">${done}</div><div class="stat-lbl">Received</div></div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar" style="margin-bottom:14px">
+      <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
+      <div><label>Vendor</label>
+        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.vendor=this.value;renderVendorOrders()">
+          <option value="">All vendors</option>
+          ${allVendors.map(v=>`<option value="${esc(v)}"${f.vendor===v?' selected':''}>${esc(v)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label>Design name</label>
+        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.design=this.value;renderVendorOrders()">
+          <option value="">All designs</option>
+          ${allDnames.map(v=>`<option value="${esc(v)}"${f.design===v?' selected':''}>${esc(v)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label>Design code</label>
+        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.code=this.value;renderVendorOrders()">
+          <option value="">All codes</option>
+          ${allCodes.map(v=>`<option value="${esc(v)}"${f.code===v?' selected':''}>${esc(v)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label>Status</label>
+        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.status=this.value;renderVendorOrders()">
+          <option value="">All statuses</option>
+          <option value="on track"${f.status==='on track'?' selected':''}>On track</option>
+          <option value="due soon"${f.status==='due soon'?' selected':''}>Due soon</option>
+          <option value="overdue"${f.status==='overdue'?' selected':''}>Overdue</option>
+          <option value="received"${f.status==='received'?' selected':''}>Received</option>
+        </select>
+      </div>
+      <button class="filter-clear" onclick="S.vendorFilters={vendor:'',design:'',code:'',status:''};renderVendorOrders()">✕ Clear</button>
+    </div>
+
+    <!-- Vendor sections -->
+    ${S.vendorOrders.length===0
+      ?'<div class="empty-state"><div style="font-size:32px;margin-bottom:8px">🏭</div><div style="font-size:14px;font-weight:600;color:#888">No vendor orders yet</div><div style="font-size:12px;color:#aaa;margin-top:4px">Click "+ New Vendor Order" to get started</div></div>'
+      :filtered.length===0
+        ?'<div class="empty-state">No vendor orders match the current filters.</div>'
+        :vendorSections}`;
+}
+
+function toggleVendorSection(vendor){
+  const key='closed_'+vendor;
+  S.openVendorOrders=S.openVendorOrders||[];
+  const idx=S.openVendorOrders.indexOf(key);
+  if(idx>=0)S.openVendorOrders.splice(idx,1);
+  else S.openVendorOrders.push(key);
+  renderVendorOrders();save();
+}
+
+function buildVendorOrderCard(vo,vi){
+  const al=vendorOrderAlert(vo),p=vendorOrderPct(vo),qty=vendorTotalQty(vo);
+  const isOpen=(S.openVendorOrders||[]).includes('open_'+vo.id);
+  const at=S.vendorActiveTabs[vo.id]||'designs';
+  const ohIconMap={ok:'oh-icon-ok',warn:'oh-icon-warn',late:'oh-icon-late',done:'oh-icon-done'};
+  const ohChar={ok:'✓',warn:'!',late:'!',done:'✔'};
+
+  return`<div class="order-card al-${al}" id="voc-${vo.id}">
+    <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
+      <div class="oh-icon ${ohIconMap[al]||'oh-icon-ok'}">${ohChar[al]||'✓'}</div>
+      <div class="oh-left">
+        <div class="oh-title">${esc(vo.orderId)} · ${esc(vo.vendor)}</div>
+        <div class="oh-sub">${qty} pcs · ${vo.designs.length} design${vo.designs.length!==1?'s':''} · ${p}% · Started ${fmtDate(vo.startDate)}${vo.deliveryDate?' · Delivery: '+fmtDate(vo.deliveryDate):''}</div>
+      </div>
+      <div class="oh-right">
+        ${prioBadge(vo.priority)}
+        <span class="badge ${al==='done'?'b-done':al==='late'?'b-late':al==='warn'?'b-warn':'b-ok'}">${vo.status==='received'?'Received':vo.status==='partial'?'Partial':al==='late'?'Overdue':al==='warn'?'Due soon':'On track'}</span>
+        <button class="icon-btn no-print" onclick="event.stopPropagation();exportVendorOrderCSV('${vo.id}')" title="Export this vendor order">📥</button>
+        <button class="icon-btn no-print" onclick="event.stopPropagation();printVendorOrderById('${vo.id}')" title="Print this vendor order">🖨️</button>
+        <button class="icon-btn danger no-print" onclick="event.stopPropagation();delVendorOrder(${vi})">Delete</button>
+        <span class="chevron${isOpen?' open':''}">▶</span>
+      </div>
+    </div>
+    <div class="pbar-wrap"><div class="pbar-fill" style="width:${p}%"></div></div>
+    <div class="order-body${isOpen?' open':''}">
+      <div class="tabs no-print">
+        <div class="tab${at==='details'?' active':''}" onclick="setVendorTab('${vo.id}','details')">📋 Order details</div>
+        <div class="tab${at==='designs'?' active':''}" onclick="setVendorTab('${vo.id}','designs')">🎨 Designs &amp; Varieties</div>
+      </div>
+      <div class="tab-panel${at==='details'?' active':''}">
+        ${buildVendorDetailsPanel(vo,vi)}
+      </div>
+      <div class="tab-panel${at==='designs'?' active':''}">
+        ${buildVendorDesignsPanel(vo,vi)}
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildVendorDetailsPanel(vo,vi){
+  return`<div class="field-row">
+    <div class="field-group"><label>Vendor name</label>
+      <input value="${esc(vo.vendor)}" onchange="upVendorOrder(${vi},'vendor',this.value)">
+    </div>
+    <div class="field-group"><label>Order ID</label>
+      <input value="${esc(vo.orderId)}" onchange="upVendorOrder(${vi},'orderId',this.value)">
+    </div>
+  </div>
+  <div class="field-row">
+    <div class="field-group"><label>Order date</label>
+      <input type="date" value="${vo.startDate||''}" onchange="upVendorOrder(${vi},'startDate',this.value)">
+    </div>
+    <div class="field-group"><label>Expected delivery date</label>
+      <input type="date" value="${vo.deliveryDate||''}" onchange="upVendorOrder(${vi},'deliveryDate',this.value)">
+    </div>
+    <div class="field-group"><label>Priority</label>
+      <select onchange="upVendorOrder(${vi},'priority',this.value)">
+        <option value="normal"${vo.priority==='normal'?' selected':''}>Normal</option>
+        <option value="urgent"${vo.priority==='urgent'?' selected':''}>Urgent</option>
+        <option value="critical"${vo.priority==='critical'?' selected':''}>Critical</option>
+      </select>
+    </div>
+    <div class="field-group"><label>Status</label>
+      <select onchange="upVendorOrder(${vi},'status',this.value)">
+        <option value="pending"${vo.status==='pending'?' selected':''}>Pending</option>
+        <option value="partial"${vo.status==='partial'?' selected':''}>Partial receipt</option>
+        <option value="received"${vo.status==='received'?' selected':''}>Fully received</option>
+      </select>
+    </div>
+  </div>
+  <div class="field-group"><label>Notes</label>
+    <textarea class="notes-area" onchange="upVendorOrder(${vi},'notes',this.value)">${esc(vo.notes||'')}</textarea>
+  </div>`;
+}
+
+function buildVendorDesignsPanel(vo,vi){
+  let html=`<div class="section-head">Designs &amp; Varieties (${vo.designs.length}) — Order total: ${vendorTotalQty(vo)} pcs
+    <button class="sm" onclick="addVendorDesign(${vi})">+ Add design</button>
+  </div>`;
+  html+=vo.designs.map((d,di)=>{
+    const szKeys=Object.keys(d.sizes||{});
+    const varieties=d.varieties||[];
+    const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
+    const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
+    const sizeInputs=szKeys.map(sz=>`<div class="modal-size-cell"><label>${sz}</label>
+      <input class="qty-inp" style="width:52px;text-align:center;padding:4px 3px;font-size:11px" type="number" min="0" value="${colTotals[sz]||0}" readonly title="Auto-totalled from varieties"></div>`).join('');
+    const varTableHtml=varieties.length?`<div class="variety-table-wrap">
+      <table class="variety-table">
+        <thead><tr>
+          <th>Image</th><th>Variety name</th>
+          ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
+          <th>Total</th><th class="no-print">Del</th>
+        </tr></thead>
+        <tbody>
+          ${varieties.map((v,vri)=>{
+            const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+            const imgCells=(v.images||[]).map((img,ii)=>`<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`).join('');
+            return`<tr>
+              <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
+                <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
+              <td><input class="variety-name-inp" value="${esc(v.name||'')}" onchange="upVendorVariety(${vi},${di},${vri},'name',this.value)"></td>
+              ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
+              <td class="total-col">${rt}</td>
+              <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot><tr>
+          <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
+          ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
+          <td class="grand-total">${grandTotal}</td><td class="no-print"></td>
+        </tr></tfoot>
+      </table></div>`:'<p style="font-size:11px;color:#888;margin:6px 0">No varieties — add one below.</p>';
+    return`<div class="design-card">
+      <div class="design-card-head">
+        <div class="design-num">${di+1}</div>
+        <div style="flex:1">
+          <div class="field-row" style="margin-bottom:6px">
+            <div class="field-group"><label>Design name</label><input value="${esc(d.name)}" onchange="upVendorDesign(${vi},${di},'name',this.value)"></div>
+            <div class="field-group"><label>Design code</label><input value="${esc(d.code||'')}" onchange="upVendorDesign(${vi},${di},'code',this.value)"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${szKeys.map(sz=>`<span class="stock-size-chip">${sz}: ${colTotals[sz]||0}</span>`).join('')}
+            <span style="font-size:11px;font-weight:700;color:#0F6E56">Total: ${grandTotal} pcs</span>
+          </div>
+        </div>
+        <button class="icon-btn danger no-print" onclick="removeVendorDesign(${vi},${di})">Remove</button>
+      </div>
+      ${varTableHtml}
+      <div class="no-print" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="sm" onclick="addVendorVariety(${vi},${di})">+ Add variety</button>
+        <button class="sm" onclick="addVendorSizeColumn(${vi},${di})">+ Add size</button>
+      </div>
+    </div>`;
+  }).join('');
+  return html;
+}
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+function toggleVendorOrder(id){
+  S.openVendorOrders=S.openVendorOrders||[];
+  const key='open_'+id;
+  const idx=S.openVendorOrders.indexOf(key);
+  if(idx>=0)S.openVendorOrders.splice(idx,1);
+  else S.openVendorOrders.push(key);
+  renderVendorOrders();
+}
+function setVendorTab(id,tab){S.vendorActiveTabs[id]=tab;renderVendorOrders();}
+function upVendorOrder(vi,key,val){histPush();S.vendorOrders[vi][key]=val;save();renderVendorOrders();}
+function delVendorOrder(vi){
+  if(!confirm(`Delete ${S.vendorOrders[vi].orderId}? This cannot be undone.`))return;
+  histPush();
+  const id=S.vendorOrders[vi].id;
+  S.vendorOrders.splice(vi,1);
+  S.openVendorOrders=(S.openVendorOrders||[]).filter(k=>!k.includes(id));
+  delete S.vendorActiveTabs[id];
+  audit('VendorOrder','Deleted vendor order '+id);
+  save();renderVendorOrders();
+}
+function upVendorDesign(vi,di,key,val){histPush();S.vendorOrders[vi].designs[di][key]=val;save();renderVendorOrders();}
+function removeVendorDesign(vi,di){histPush();S.vendorOrders[vi].designs.splice(di,1);save();renderVendorOrders();}
+function addVendorDesign(vi){
+  histPush();
+  S.vendorOrders[vi].designs.push({id:uid(),name:'',code:'',sizes:Object.fromEntries(DEFAULT_SIZES.map(s=>[s,0])),varieties:[],images:[]});
+  save();renderVendorOrders();
+}
+function addVendorVariety(vi,di){
+  histPush();
+  const d=S.vendorOrders[vi].designs[di];
+  const szKeys=Object.keys(d.sizes||{});
+  d.varieties.push({name:'',sizes:Object.fromEntries(szKeys.map(s=>[s,0])),images:[]});
+  save();renderVendorOrders();
+}
+function removeVendorVariety(vi,di,vri){histPush();S.vendorOrders[vi].designs[di].varieties.splice(vri,1);save();renderVendorOrders();}
+function upVendorVariety(vi,di,vri,key,val){S.vendorOrders[vi].designs[di].varieties[vri][key]=val;save();renderVendorOrders();}
+function upVendorVarietySize(vi,di,vri,sz,val){
+  S.vendorOrders[vi].designs[di].varieties[vri].sizes[sz]=parseInt(val)||0;
+  // Recalculate design-level size total
+  const d=S.vendorOrders[vi].designs[di];
+  Object.keys(d.sizes||{}).forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
+  save();renderVendorOrders();
+}
+function addVendorSizeColumn(vi,di){
+  const sz=prompt('Enter size label (e.g. 2/16):');
+  if(!sz||!sz.trim())return;
+  const s=sz.trim();
+  histPush();
+  const d=S.vendorOrders[vi].designs[di];
+  if(d.sizes[s]!==undefined){alert('Size already exists.');return;}
+  d.sizes[s]=0;
+  (d.varieties||[]).forEach(v=>{v.sizes[s]=0;});
+  save();renderVendorOrders();
+}
+function addVVImg(vi,di,vri,inp){
+  const file=inp.files[0];if(!file)return;
+  inp.value='';
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    const data=ev.target.result;
+    const hash=await imgHash(data);
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,hash});
+    save();renderVendorOrders();
+  };
+  reader.readAsDataURL(file);
+}
+function delVVImg(vi,di,vri,ii){S.vendorOrders[vi].designs[di].varieties[vri].images.splice(ii,1);save();renderVendorOrders();}
+
+// ── New Vendor Order Modal ────────────────────────────────────────────────────
+function openNewVendorOrderModal(){
+  const mc=document.getElementById('modal-container');
+  const knownVendors=[...new Set(S.vendorOrders.map(o=>o.vendor).filter(Boolean))].sort();
+  const today=new Date().toISOString().split('T')[0];
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:560px">
+      <div class="modal-header"><div class="modal-icon">🏭</div><h3>New Vendor Order</h3></div>
+      <div class="field-row">
+        <div class="field-group">
+          <label>Vendor name <span style="color:#A32D2D">*</span></label>
+          <div class="ac-wrap">
+            <input id="vord-vendor" placeholder="e.g. Rathi Metals" oninput="voAC(this,'vord-vendor-ac',S.vendorOrders.map(o=>o.vendor).filter(Boolean))">
+            <div class="ac-list" id="vord-vendor-ac" style="display:none"></div>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>Order ID</label>
+          <input id="vord-id" value="${genVendorOrderId()}" placeholder="VORD-01">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group"><label>Order date <span style="color:#A32D2D">*</span></label>
+          <input type="date" id="vord-date" value="${today}">
+        </div>
+        <div class="field-group"><label>Expected delivery date</label>
+          <input type="date" id="vord-delivery">
+        </div>
+        <div class="field-group"><label>Priority</label>
+          <select id="vord-priority">
+            <option value="normal">Normal</option>
+            <option value="urgent">Urgent</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-group" style="margin-bottom:10px"><label>Notes</label>
+        <textarea id="vord-notes" class="notes-area" placeholder="Optional notes…"></textarea>
+      </div>
+      <div id="vord-err" class="err-msg" style="display:none"></div>
+      <div class="modal-actions">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="primary" onclick="createVendorOrder()">Create Vendor Order</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function voAC(inp,listId,options){
+  const q=inp.value.trim().toLowerCase();
+  const el=document.getElementById(listId);if(!el)return;
+  const matches=options.filter((x,i,a)=>a.indexOf(x)===i&&x.toLowerCase().includes(q)&&x.toLowerCase()!==q);
+  if(!q||!matches.length){el.style.display='none';return;}
+  el.innerHTML=matches.slice(0,8).map(x=>`<div class="ac-item" onclick="document.getElementById('${inp.id}').value='${esc(x)}';document.getElementById('${listId}').style.display='none'">${esc(x)}</div>`).join('');
+  el.style.display='block';
+}
+
+function createVendorOrder(){
+  const vendor=(document.getElementById('vord-vendor').value||'').trim();
+  const orderId=(document.getElementById('vord-id').value||'').trim()||genVendorOrderId();
+  const startDate=document.getElementById('vord-date').value;
+  const deliveryDate=document.getElementById('vord-delivery').value||'';
+  const priority=document.getElementById('vord-priority').value;
+  const notes=document.getElementById('vord-notes').value.trim();
+  const errEl=document.getElementById('vord-err');
+  if(!vendor){errEl.textContent='Please enter a vendor name.';errEl.style.display='block';return;}
+  if(!startDate){errEl.textContent='Please enter an order date.';errEl.style.display='block';return;}
+  histPush();
+  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,status:'pending',notes,designs:[]};
+  S.vendorOrders.push(newVO);
+  S.openVendorOrders=(S.openVendorOrders||[]);
+  S.openVendorOrders.push('open_'+newVO.id);
+  S.vendorActiveTabs[newVO.id]='designs';
+  audit('VendorOrder',`Created ${orderId} for ${vendor}`);
+  save();closeModal();renderVendorOrders();
+}
+
+// ── Export / Print for Vendor Orders ─────────────────────────────────────────
+function exportVendorOrderCSV(oid){
+  const vo=S.vendorOrders.find(o=>o.id===oid);if(!vo)return;
+  const allSizes=[...new Set(vo.designs.flatMap(d=>Object.keys(d.sizes||{})))];
+  const al=vendorOrderAlert(vo);
+  const rows=[
+    ['=== VENDOR ORDER EXPORT ===','Order ID:',vo.orderId],
+    ['Vendor',vo.vendor,'Order Date',fmtDate(vo.startDate),'Delivery Date',fmtDate(vo.deliveryDate),'Priority',vo.priority,'Status',vo.status],
+    vo.notes?['Notes',vo.notes]:[],
+    [],['--- Designs & Varieties ---'],
+    ['Design Name','Design Code','Variety Name',...allSizes,'Total Qty']
+  ];
+  vo.designs.forEach(d=>{
+    const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
+    varieties.forEach(v=>{
+      const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+      rows.push([d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+    });
+    const colTotals=allSizes.map(sz=>(d.varieties||[]).reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0));
+    rows.push(['','',`[${d.name} TOTAL]`,...colTotals,colTotals.reduce((a,v)=>a+v,0)]);
+    rows.push([]);
+  });
+  downloadCSV(csvEncode(rows.filter(r=>r.length>0)),`vendor_${vo.orderId}_${new Date().toISOString().split('T')[0]}.csv`);
+}
+
+function exportVendorSectionCSV(vendor){
+  const orders=S.vendorOrders.filter(o=>o.vendor===vendor);
+  const allSizes=[...new Set(orders.flatMap(o=>o.designs.flatMap(d=>Object.keys(d.sizes||{}))))];
+  const rows=[['=== VENDOR EXPORT ===','Vendor:',vendor],
+    ['Total Orders',orders.length,'Total Qty',orders.reduce((a,o)=>a+vendorTotalQty(o),0),'Exported',new Date().toLocaleString()],
+    [],['Order ID','Order Date','Delivery Date','Priority','Status','Design Name','Design Code','Variety',...allSizes,'Total Qty']
+  ];
+  orders.forEach(vo=>{
+    vo.designs.forEach(d=>{
+      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
+      varieties.forEach(v=>{
+        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+        rows.push([vo.orderId,fmtDate(vo.startDate),fmtDate(vo.deliveryDate),vo.priority,vo.status,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+      });
+    });
+  });
+  downloadCSV(csvEncode(rows),`vendor_${vendor.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.csv`);
+}
+
+function printVendorOrderById(oid){
+  const vo=S.vendorOrders.find(o=>o.id===oid);if(!vo)return;
+  openVendorPrintWindow(`Vendor Order: ${vo.orderId}`,[vo]);
+}
+function printVendorSection(vendor){
+  const orders=S.vendorOrders.filter(o=>o.vendor===vendor);
+  openVendorPrintWindow('Vendor: '+vendor,orders);
+}
+
+function openVendorPrintWindow(title,orders){
+  const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
+  const body=orders.map(vo=>{
+    const qty=vendorTotalQty(vo);
+    const designsHtml=vo.designs.map(d=>{
+      const szKeys=Object.keys(d.sizes||{});
+      const varieties=d.varieties||[];
+      const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
+      const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
+      const varCards=varieties.map(v=>{
+        const vImages=v.images||[];
+        const vTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+        const sizeQtyHtml=szKeys.map(sz=>`<span style="display:inline-block;margin:2px 3px;font-size:10px;background:#EEEDFE;border-radius:4px;padding:2px 6px"><strong>${sz}</strong>: ${(v.sizes||{})[sz]||0}</span>`).join('');
+        const imgHtml=vImages.length?vImages.map(img=>`<img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;display:block">`).join('<br style="margin:4px 0">')
+          :'<div style="width:160px;height:80px;background:#f0efff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#AFA9EC;border:1.5px dashed #AFA9EC">No image</div>';
+        return`<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;vertical-align:top;margin:0 12px 16px 0;max-width:180px">
+          ${imgHtml}
+          <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
+          <div style="text-align:center;line-height:1.6">${sizeQtyHtml}</div>
+          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} pcs</div>
+        </div>`;
+      }).join('');
+      return`<div style="margin-bottom:14px;padding:12px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
+        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code||'—'}]</span> — ${vendorDesignQty(d)} pcs</h3>
+        ${varieties.length?`<div style="margin-bottom:10px">${varCards}</div>`:''}
+        ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px">
+          <thead><tr style="background:#534AB7;color:#fff">
+            <th style="padding:5px 8px;text-align:left">Variety</th>
+            ${szKeys.map(sz=>`<th style="padding:5px 8px;text-align:center">${sz}</th>`).join('')}
+            <th style="padding:5px 8px;text-align:center">Total</th>
+          </tr></thead>
+          <tbody>${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
+            <td style="padding:4px 8px">${v.name}</td>
+            ${szKeys.map(sz=>`<td style="padding:4px 8px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
+            <td style="padding:4px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
+          </tr>`;}).join('')}</tbody>
+          <tfoot><tr style="background:#eeeffe;font-weight:700">
+            <td style="padding:5px 8px">Design total</td>
+            ${szKeys.map(sz=>`<td style="padding:5px 8px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
+            <td style="padding:5px 8px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
+          </tr></tfoot>
+        </table>`:''}
+      </div>`;
+    }).join('');
+    return`<div style="border:1px solid #D3D1C7;border-radius:10px;padding:14px;margin-bottom:16px;page-break-inside:avoid">
+      <h2 style="font-size:15px;margin-bottom:4px;color:#534AB7">${vo.orderId} · ${esc(vo.vendor)}</h2>
+      <p style="font-size:11px;color:#666;margin-bottom:6px">
+        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${vo.priority} · Status: ${vo.status} · ${qty} pcs total
+      </p>
+      ${vo.notes?`<p style="font-size:11px;color:#666;margin-bottom:10px">Notes: ${esc(vo.notes)}</p>`:''}
+      ${designsHtml}
+    </div>`;
+  }).join('');
+  w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
+    <style>body{font-family:system-ui;padding:20px;color:#1a1916;font-size:12px}
+    table{border-collapse:collapse}@media print{button{display:none!important}}</style>
+    </head><body>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #534AB7">
+      <h1 style="font-size:18px;color:#534AB7">🪬 Bangle Production Tracker — Vendor Orders</h1>
+      <div><strong>${title}</strong><br><span style="font-size:11px;color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+    </div>
+    <div style="margin-bottom:12px"><button onclick="window.print()" style="padding:8px 16px;background:#534AB7;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
+    ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
+  w.document.close();
+}
+
 // ── STAGES CONFIRM POPUP (used by client & order Export / Print buttons) ────────
 // Shows a two-choice modal asking whether to include production stages.
 // Stores callbacks on window globals so onclick strings stay clean.
