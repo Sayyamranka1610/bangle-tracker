@@ -618,10 +618,10 @@ input[type="date"]{min-width:118px}
   <div class="stats" id="stats-bar"></div>
   <div class="main-tabs no-print">
     <div class="main-tab active" onclick="switchMain('orders')">📦 Orders (Client view)</div>
-    <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
     <div class="main-tab" onclick="switchMain('design')">🎨 Design view</div>
     <div class="main-tab" onclick="switchMain('analytics')">📊 Analytics</div>
     <div class="main-tab" onclick="switchMain('inventory')">🗄️ Inventory</div>
+    <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
   </div>
   <div class="filter-bar no-print" id="filter-bar">
     <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
@@ -696,7 +696,7 @@ let S = {
   vendorOrders:[],        // [{id,orderId,vendor,startDate,deliveryDate,priority,status,notes,designs:[]}]
   openVendorOrders:[],    // serialised as array, converted to Set on load
   vendorActiveTabs:{},    // {orderId → 'details'|'designs'}
-  vendorFilters:{vendor:'',design:'',code:'',status:''}
+  vendorFilters:{vendor:'',design:'',code:''}
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -725,7 +725,7 @@ try{
     S.vendorOrders=sv.vendorOrders||[];
     S.openVendorOrders=sv.openVendorOrders||[];
     S.vendorActiveTabs=sv.vendorActiveTabs||{};
-    S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:'',status:''};
+    S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:''};
     window._loadedFromStorage = true; // flag: real data loaded successfully
   } else {
     window._loadedFromStorage = false; // no saved data found — will use sample
@@ -1343,7 +1343,7 @@ function orderMatchesFilter(order){
 // ── RENDER CORE ────────────────────────────────────────────────────────────────
 function switchMain(view){
   S.mainView=view;
-  const views=['orders','vendor','design','analytics','inventory'];
+  const views=['orders','design','analytics','inventory','vendor'];
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',views[i]===view);});
   document.getElementById('view-orders').style.display=view==='orders'?'':'none';
   document.getElementById('view-vendor').style.display=view==='vendor'?'':'none';
@@ -3282,16 +3282,12 @@ function genVendorOrderId(){
 }
 
 function vendorOrderAlert(vo){
-  if(vo.status==='received')return 'done';
   if(!vo.deliveryDate)return 'ok';
   const today=new Date().toISOString().split('T')[0];
   if(vo.deliveryDate<today)return 'late';
   const diff=(new Date(vo.deliveryDate)-new Date())/864e5;
   if(diff<=7)return 'warn';
   return 'ok';
-}
-function vendorOrderPct(vo){
-  return vo.status==='received'?100:vo.status==='partial'?50:0;
 }
 function vendorTotalQty(vo){
   return (vo.designs||[]).reduce((a,d)=>{
@@ -3308,13 +3304,6 @@ function vendorOrderMatchesFilter(vo){
   if(f.vendor&&vo.vendor!==f.vendor)return false;
   if(f.design&&!vo.designs.some(d=>d.name===f.design))return false;
   if(f.code&&!vo.designs.some(d=>d.code===f.code))return false;
-  if(f.status){
-    const al=vendorOrderAlert(vo);
-    if(f.status==='on track'&&al!=='ok')return false;
-    if(f.status==='due soon'&&al!=='warn')return false;
-    if(f.status==='overdue'&&al!=='late')return false;
-    if(f.status==='received'&&al!=='done')return false;
-  }
   return true;
 }
 
@@ -3332,8 +3321,7 @@ function renderVendorOrders(){
   // Stats
   const late=filtered.filter(o=>vendorOrderAlert(o)==='late').length;
   const warn=filtered.filter(o=>vendorOrderAlert(o)==='warn').length;
-  const done=filtered.filter(o=>vendorOrderAlert(o)==='done').length;
-  const ok=filtered.length-late-warn-done;
+  const ok=filtered.length-late-warn;
 
   // Group by vendor
   const vendorMap={};
@@ -3375,7 +3363,6 @@ function renderVendorOrders(){
       <div class="stat-card stat-ontrack" style="cursor:default"><div class="stat-val">${ok}</div><div class="stat-lbl">On track</div></div>
       <div class="stat-card stat-soon" style="cursor:default"><div class="stat-val">${warn}</div><div class="stat-lbl">Due soon</div></div>
       <div class="stat-card stat-late" style="cursor:default"><div class="stat-val">${late}</div><div class="stat-lbl">Overdue</div></div>
-      <div class="stat-card stat-done" style="cursor:default"><div class="stat-val">${done}</div><div class="stat-lbl">Received</div></div>
     </div>
 
     <!-- Filter bar -->
@@ -3399,16 +3386,7 @@ function renderVendorOrders(){
           ${allCodes.map(v=>`<option value="${esc(v)}"${f.code===v?' selected':''}>${esc(v)}</option>`).join('')}
         </select>
       </div>
-      <div><label>Status</label>
-        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.status=this.value;renderVendorOrders()">
-          <option value="">All statuses</option>
-          <option value="on track"${f.status==='on track'?' selected':''}>On track</option>
-          <option value="due soon"${f.status==='due soon'?' selected':''}>Due soon</option>
-          <option value="overdue"${f.status==='overdue'?' selected':''}>Overdue</option>
-          <option value="received"${f.status==='received'?' selected':''}>Received</option>
-        </select>
-      </div>
-      <button class="filter-clear" onclick="S.vendorFilters={vendor:'',design:'',code:'',status:''};renderVendorOrders()">✕ Clear</button>
+      <button class="filter-clear" onclick="S.vendorFilters={vendor:'',design:'',code:''};renderVendorOrders()">✕ Clear</button>
     </div>
 
     <!-- Vendor sections -->
@@ -3429,29 +3407,28 @@ function toggleVendorSection(vendor){
 }
 
 function buildVendorOrderCard(vo,vi){
-  const al=vendorOrderAlert(vo),p=vendorOrderPct(vo),qty=vendorTotalQty(vo);
+  const al=vendorOrderAlert(vo),qty=vendorTotalQty(vo);
   const isOpen=(S.openVendorOrders||[]).includes('open_'+vo.id);
   const at=S.vendorActiveTabs[vo.id]||'designs';
-  const ohIconMap={ok:'oh-icon-ok',warn:'oh-icon-warn',late:'oh-icon-late',done:'oh-icon-done'};
-  const ohChar={ok:'✓',warn:'!',late:'!',done:'✔'};
+  const ohIconMap={ok:'oh-icon-ok',warn:'oh-icon-warn',late:'oh-icon-late'};
+  const ohChar={ok:'✓',warn:'!',late:'!'};
 
   return`<div class="order-card al-${al}" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
       <div class="oh-icon ${ohIconMap[al]||'oh-icon-ok'}">${ohChar[al]||'✓'}</div>
       <div class="oh-left">
         <div class="oh-title">${esc(vo.orderId)} · ${esc(vo.vendor)}</div>
-        <div class="oh-sub">${qty} pcs · ${vo.designs.length} design${vo.designs.length!==1?'s':''} · ${p}% · Started ${fmtDate(vo.startDate)}${vo.deliveryDate?' · Delivery: '+fmtDate(vo.deliveryDate):''}</div>
+        <div class="oh-sub">${qty} pcs · ${vo.designs.length} design${vo.designs.length!==1?'s':''} · Started ${fmtDate(vo.startDate)}${vo.deliveryDate?' · Delivery: '+fmtDate(vo.deliveryDate):''}</div>
       </div>
       <div class="oh-right">
         ${prioBadge(vo.priority)}
-        <span class="badge ${al==='done'?'b-done':al==='late'?'b-late':al==='warn'?'b-warn':'b-ok'}">${vo.status==='received'?'Received':vo.status==='partial'?'Partial':al==='late'?'Overdue':al==='warn'?'Due soon':'On track'}</span>
+        <span class="badge ${al==='late'?'b-late':al==='warn'?'b-warn':'b-ok'}">${al==='late'?'Overdue':al==='warn'?'Due soon':'On track'}</span>
         <button class="icon-btn no-print" onclick="event.stopPropagation();exportVendorOrderCSV('${vo.id}')" title="Export this vendor order">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();printVendorOrderById('${vo.id}')" title="Print this vendor order">🖨️</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delVendorOrder(${vi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
     </div>
-    <div class="pbar-wrap"><div class="pbar-fill" style="width:${p}%"></div></div>
     <div class="order-body${isOpen?' open':''}">
       <div class="tabs no-print">
         <div class="tab${at==='details'?' active':''}" onclick="setVendorTab('${vo.id}','details')">📋 Order details</div>
@@ -3488,13 +3465,6 @@ function buildVendorDetailsPanel(vo,vi){
         <option value="normal"${vo.priority==='normal'?' selected':''}>Normal</option>
         <option value="urgent"${vo.priority==='urgent'?' selected':''}>Urgent</option>
         <option value="critical"${vo.priority==='critical'?' selected':''}>Critical</option>
-      </select>
-    </div>
-    <div class="field-group"><label>Status</label>
-      <select onchange="upVendorOrder(${vi},'status',this.value)">
-        <option value="pending"${vo.status==='pending'?' selected':''}>Pending</option>
-        <option value="partial"${vo.status==='partial'?' selected':''}>Partial receipt</option>
-        <option value="received"${vo.status==='received'?' selected':''}>Fully received</option>
       </select>
     </div>
   </div>
@@ -3703,7 +3673,7 @@ function createVendorOrder(){
   if(!vendor){errEl.textContent='Please enter a vendor name.';errEl.style.display='block';return;}
   if(!startDate){errEl.textContent='Please enter an order date.';errEl.style.display='block';return;}
   histPush();
-  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,status:'pending',notes,designs:[]};
+  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,designs:[]};
   S.vendorOrders.push(newVO);
   S.openVendorOrders=(S.openVendorOrders||[]);
   S.openVendorOrders.push('open_'+newVO.id);
@@ -3719,7 +3689,7 @@ function exportVendorOrderCSV(oid){
   const al=vendorOrderAlert(vo);
   const rows=[
     ['=== VENDOR ORDER EXPORT ===','Order ID:',vo.orderId],
-    ['Vendor',vo.vendor,'Order Date',fmtDate(vo.startDate),'Delivery Date',fmtDate(vo.deliveryDate),'Priority',vo.priority,'Status',vo.status],
+    ['Vendor',vo.vendor,'Order Date',fmtDate(vo.startDate),'Delivery Date',fmtDate(vo.deliveryDate),'Priority',vo.priority],
     vo.notes?['Notes',vo.notes]:[],
     [],['--- Designs & Varieties ---'],
     ['Design Name','Design Code','Variety Name',...allSizes,'Total Qty']
@@ -3742,14 +3712,14 @@ function exportVendorSectionCSV(vendor){
   const allSizes=[...new Set(orders.flatMap(o=>o.designs.flatMap(d=>Object.keys(d.sizes||{}))))];
   const rows=[['=== VENDOR EXPORT ===','Vendor:',vendor],
     ['Total Orders',orders.length,'Total Qty',orders.reduce((a,o)=>a+vendorTotalQty(o),0),'Exported',new Date().toLocaleString()],
-    [],['Order ID','Order Date','Delivery Date','Priority','Status','Design Name','Design Code','Variety',...allSizes,'Total Qty']
+    [],['Order ID','Order Date','Delivery Date','Priority','Design Name','Design Code','Variety',...allSizes,'Total Qty']
   ];
   orders.forEach(vo=>{
     vo.designs.forEach(d=>{
       const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
       varieties.forEach(v=>{
         const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-        rows.push([vo.orderId,fmtDate(vo.startDate),fmtDate(vo.deliveryDate),vo.priority,vo.status,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+        rows.push([vo.orderId,fmtDate(vo.startDate),fmtDate(vo.deliveryDate),vo.priority,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
       });
     });
   });
@@ -3812,7 +3782,7 @@ function openVendorPrintWindow(title,orders){
     return`<div style="border:1px solid #D3D1C7;border-radius:10px;padding:14px;margin-bottom:16px;page-break-inside:avoid">
       <h2 style="font-size:15px;margin-bottom:4px;color:#534AB7">${vo.orderId} · ${esc(vo.vendor)}</h2>
       <p style="font-size:11px;color:#666;margin-bottom:6px">
-        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${vo.priority} · Status: ${vo.status} · ${qty} pcs total
+        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${vo.priority} · ${qty} pcs total
       </p>
       ${vo.notes?`<p style="font-size:11px;color:#666;margin-bottom:10px">Notes: ${esc(vo.notes)}</p>`:''}
       ${designsHtml}
