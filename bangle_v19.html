@@ -1355,8 +1355,8 @@ function renderOrdersView(){
       <div class="client-header" onclick="toggleClient('${esc(client)}')">
         <div><h2>👤 ${esc(client)}</h2><div class="client-meta">${orders.length} order${orders.length!==1?'s':''} · ${lateOrds} overdue</div></div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();exportClientCSV('${esc(client)}')">📥 Export</button>
-          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();printClient('${esc(client)}')">🖨️ Print</button>
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();askClientExport('${esc(client)}')">📥 Export</button>
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();askClientPrint('${esc(client)}')">🖨️ Print</button>
           <span class="chevron${isOpen?' open':''}">▶</span>
         </div>
       </div>
@@ -1380,8 +1380,8 @@ function buildOrderCard(order,oi){
       </div>
       <div class="oh-right">
         ${prioBadge(order.priority)}${badgeHtml(al)}
-        <button class="icon-btn no-print" onclick="event.stopPropagation();exportOrderCSV('${order.id}')" title="Export this order to CSV">📥</button>
-        <button class="icon-btn no-print" onclick="event.stopPropagation();printOrderById('${order.id}')" title="Print this order">🖨️</button>
+        <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderExport('${order.id}')" title="Export this order">📥</button>
+        <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderPrint('${order.id}')" title="Print this order">🖨️</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delOrder(${oi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
@@ -3225,6 +3225,61 @@ function processOrderFile(file){
 }
 
 // ── PRINT ──────────────────────────────────────────────────────────────────────
+// ── STAGES CONFIRM POPUP (used by client & order Export / Print buttons) ────────
+// Shows a two-choice modal asking whether to include production stages.
+// Stores callbacks on window globals so onclick strings stay clean.
+function showStagesConfirm(actionWord, withStages, withoutStages){
+  window._scYes=withStages;
+  window._scNo=withoutStages;
+  const mc=document.getElementById('modal-container');
+  const verb=actionWord||'Export';
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:420px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEEDFE;color:#534AB7">${verb==='Print'?'🖨️':'📥'}</div>
+        <h3>${verb} — include production stages?</h3>
+      </div>
+      <p style="font-size:13px;color:#555;line-height:1.8;margin-bottom:16px">
+        Choose what data to include in this ${verb.toLowerCase()}:
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button style="text-align:left;padding:13px 16px;font-size:13px;border-radius:12px;border:1.5px solid #D0CCF5;background:#FAFAFD"
+          onclick="closeModal();window._scNo&&window._scNo()">
+          <div style="font-weight:700;color:#534AB7;margin-bottom:3px">📋 Order details + Designs &amp; Varieties only</div>
+          <div style="font-size:11px;color:#888">Includes order info, all variety images and size quantities. <strong>No production stages.</strong></div>
+        </button>
+        <button style="text-align:left;padding:13px 16px;font-size:13px;border-radius:12px;border:1.5px solid #A5D6A7;background:#F2FBF7"
+          onclick="closeModal();window._scYes&&window._scYes()">
+          <div style="font-weight:700;color:#1B5E20;margin-bottom:3px">✅ Everything — including Production Stages</div>
+          <div style="font-size:11px;color:#888">Also includes vendor, status, target dates and notes for every stage.</div>
+        </button>
+      </div>
+      <div class="modal-actions"><button onclick="closeModal()">Cancel</button></div>
+    </div>
+  </div>`;
+}
+
+function askClientExport(client){
+  showStagesConfirm('Export',
+    ()=>exportClientCSV(client,true),
+    ()=>exportClientCSV(client,false));
+}
+function askClientPrint(client){
+  showStagesConfirm('Print',
+    ()=>printClient(client,true),
+    ()=>printClient(client,false));
+}
+function askOrderExport(oid){
+  showStagesConfirm('Export',
+    ()=>exportOrderCSV(oid,true),
+    ()=>exportOrderCSV(oid,false));
+}
+function askOrderPrint(oid){
+  showStagesConfirm('Print',
+    ()=>printOrderById(oid,true),
+    ()=>printOrderById(oid,false));
+}
+
 function showPrintMenu(){
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -3376,11 +3431,11 @@ function printClient(clientName,includeStages){
   const orders=S.orders.filter(o=>o.client===clientName).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
   openPrintWindow('Client: '+clientName,orders,'all',includeStages);
 }
-function printOrderById(oid){
+function printOrderById(oid,includeStages){
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
-  const tab=S.activeTabs[oid]||'designs';
-  // For direct order print (not via menu), always include stages by default
-  openPrintWindow(`Order: ${order.orderId} (${tab} view)`,[order],tab,true);
+  // Always use 'all' tab so both Order Details and Designs & Varieties are printed.
+  // Production Stages section is shown only when includeStages===true.
+  openPrintWindow(`Order: ${order.orderId}`,[order],'all',includeStages!==false);
 }
 function printByDesign(code,includeStages){
   if(includeStages===undefined)includeStages=true;
@@ -3586,7 +3641,8 @@ function exportCSV(includeStages){
 }
 
 // ── EXPORT FOR A SINGLE ORDER ──────────────────────────────────────────────────
-function exportOrderCSV(oid){
+function exportOrderCSV(oid,includeStages){
+  if(includeStages===undefined)includeStages=true;
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
   const allSizes=getOrderSizes(order);
   const al=orderAlert(order);
@@ -3606,20 +3662,21 @@ function exportOrderCSV(oid){
       const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
       rows.push([d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length]);
     });
-    // Size totals row per design
     const colTotals=allSizes.map(sz=>(d.varieties||[]).reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0));
     rows.push(['','',`[${d.name} TOTAL]`,...colTotals,colTotals.reduce((a,v)=>a+v,0),'','']);
     rows.push([]);
   });
-  rows.push(['--- Production Stages ---']);
-  rows.push(['Design Name','Design Code','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Notes']);
-  order.designs.forEach(d=>{
-    d.stages.forEach((st,si)=>{
-      const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
-      rows.push([d.name,d.code,si+1,t.name,t.loc||'',st.vendor||'',st.status,getEffDays(order,d,si),fmtDate(designDeadline(order,d,si)),st.stageNote||'']);
+  if(includeStages){
+    rows.push(['--- Production Stages ---']);
+    rows.push(['Design Name','Design Code','Stage #','Stage Name','Location','Vendor','Status','Days Budget','Target Date','Notes']);
+    order.designs.forEach(d=>{
+      d.stages.forEach((st,si)=>{
+        const t=getTmpl(st.stageId)||{name:'Custom',loc:''};
+        rows.push([d.name,d.code,si+1,t.name,t.loc||'',st.vendor||'',st.status,getEffDays(order,d,si),fmtDate(designDeadline(order,d,si)),st.stageNote||'']);
+      });
+      rows.push([]);
     });
-    rows.push([]);
-  });
+  }
   downloadCSV(csvEncode(rows.filter(r=>r.length>0)),`order_${order.orderId}_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
