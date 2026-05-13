@@ -4495,18 +4495,31 @@ function exportDesignInvCSV(designKey,byField){
 
 // ── END INVENTORY MODULE ───────────────────────────────────────────────────────
 
+// ── Capture-phase Ctrl+S interceptor ─────────────────────────────────────────
+// Must run in capture phase (3rd arg = true) so we block the browser's native
+// "Save Page As" dialog BEFORE it fires — bubble-phase listeners are too late
+// on some browsers (Chrome/Edge). e.stopImmediatePropagation() also prevents
+// the bubble-phase listener below from calling manualSave() a second time.
+window.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    manualSave();
+  }
+}, true); // <-- capture phase
+
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){closeLightbox();closeModal();}
   if(e.key==='ArrowLeft'&&document.getElementById('lightbox').style.display!=='none')lbNav(-1,e);
   if(e.key==='ArrowRight'&&document.getElementById('lightbox').style.display!=='none')lbNav(1,e);
   if(e.key==='Tab')document.querySelectorAll('.ac-list').forEach(el=>el.style.display='none');
-  // Only intercept Ctrl+Z/Y/S when not focused on a text input or textarea
+  // Only intercept Ctrl+Z/Y when not focused on a text input or textarea
   const tag=(document.activeElement||{}).tagName||'';
   const isTextInput=tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT';
-  // Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo, Ctrl+S = save
+  // Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
   if((e.ctrlKey||e.metaKey)&&!isTextInput&&!e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();histUndo();}
   if((e.ctrlKey||e.metaKey)&&!isTextInput&&(e.key==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){e.preventDefault();histRedo();}
-  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();manualSave();}
+  // Ctrl+S handled above in capture phase — do NOT add it here again
 });
 
 // ── GLOBAL MODAL FOCUS TRAP ────────────────────────────────────────────────────
