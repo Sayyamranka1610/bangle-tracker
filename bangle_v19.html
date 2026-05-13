@@ -4059,80 +4059,186 @@ function hashSimilarity(h1,h2){return Math.round((1-hashDist(h1,h2)/64)*100);}
 
 // ── Render Physical Stock view ────────────────────────────────────────────────
 function renderStockView(container){
-  const items=S.stockItems||[];
+  const todayStr=invIsoDate(new Date());
   const searchActive=window._stockSearchHash||null;
 
-  // Sort: if searching, sort by similarity; else opening balances first, then by date desc
-  let displayItems=[...items];
+  // ── 1. Build design map from orders ──────────────────────────────────────
+  // designName → {name, code, varieties: Map(varName→{name,images[],sizes{}})}
+  const designMap=new Map();
+  S.orders.forEach(o=>{
+    (o.designs||[]).forEach(d=>{
+      if(!d.name)return;
+      if(!designMap.has(d.name))designMap.set(d.name,{name:d.name,code:d.code||'',varieties:new Map()});
+      const dm=designMap.get(d.name);
+      if(!dm.code&&d.code)dm.code=d.code;
+      (d.varieties||[]).forEach(v=>{
+        if(!v.name)return;
+        if(!dm.varieties.has(v.name))dm.varieties.set(v.name,{name:v.name,images:[],sizes:{}});
+        const ve=dm.varieties.get(v.name);
+        // Merge images (unique by data string)
+        (v.images||[]).forEach(img=>{if(img.data&&!ve.images.some(x=>x.data===img.data))ve.images.push(img);});
+        // Accumulate sizes across all orders
+        Object.entries(v.sizes||{}).forEach(([sz,qty])=>{ve.sizes[sz]=(ve.sizes[sz]||0)+(parseInt(qty)||0);});
+      });
+    });
+  });
+
+  // ── 2. Also add ledger-only designs (not yet in orders) ──────────────────
+  S.invLedger.forEach(e=>{
+    if(e.designName&&!designMap.has(e.designName))
+      designMap.set(e.designName,{name:e.designName,code:e.designCode||'',varieties:new Map()});
+  });
+
+  // ── 3. Compute live ledger balances for each design ───────────────────────
+  designMap.forEach((dm,dName)=>{
+    const bal=invBalance(dName,'designName',todayStr);
+    dm.ledgerFin=bal.fin; dm.ledgerRaw=bal.raw; dm.ledgerSemi=bal.semi;
+  });
+
+  // ── 4. Attach manual opening-balance entries (S.stockItems) ──────────────
+  const manualByDesign={};
+  (S.stockItems||[]).forEach(item=>{
+    if(!item.designName)return;
+    (manualByDesign[item.designName]||(manualByDesign[item.designName]=[])).push(item);
+    if(!designMap.has(item.designName)){
+      const bal=invBalance(item.designName,'designName',todayStr);
+      designMap.set(item.designName,{name:item.designName,code:item.designCode||'',varieties:new Map(),
+        ledgerFin:bal.fin,ledgerRaw:bal.raw,ledgerSemi:bal.semi});
+    }
+  });
+
+  // ── 5. Sort ───────────────────────────────────────────────────────────────
+  let designs=[...designMap.values()];
   if(searchActive){
-    displayItems=displayItems.map(item=>{
-      const bestSim=Math.max(0,...(item.images||[]).map(im=>hashSimilarity(searchActive,im.hash||'')));
-      return{...item,_sim:bestSim};
+    designs=designs.map(dm=>{
+      let bestSim=0;
+      dm.varieties.forEach(v=>(v.images||[]).forEach(img=>{
+        const s=hashSimilarity(searchActive,img.hash||'');if(s>bestSim)bestSim=s;
+      }));
+      (manualByDesign[dm.name]||[]).forEach(item=>(item.images||[]).forEach(img=>{
+        const s=hashSimilarity(searchActive,img.hash||'');if(s>bestSim)bestSim=s;
+      }));
+      return{...dm,_sim:bestSim};
     }).sort((a,b)=>b._sim-a._sim);
   } else {
-    displayItems.sort((a,b)=>{
-      if(a.isOpeningBalance&&!b.isOpeningBalance)return -1;
-      if(!a.isOpeningBalance&&b.isOpeningBalance)return 1;
-      return new Date(b.date)-new Date(a.date);
-    });
+    designs.sort((a,b)=>a.name.localeCompare(b.name));
   }
 
-  const totalPcs=items.reduce((a,it)=>a+Object.values(it.sizes||{}).reduce((b,v)=>b+(parseInt(v)||0),0),0);
+  // ── 6. Summary stats ──────────────────────────────────────────────────────
+  const totalFin=designs.reduce((a,d)=>a+(d.ledgerFin||0),0);
+  const totalRaw=designs.reduce((a,d)=>a+(d.ledgerRaw||0),0);
+  const totalSemi=designs.reduce((a,d)=>a+(d.ledgerSemi||0),0);
 
-  const galleryHtml=displayItems.length?displayItems.map(item=>{
-    const sizes=item.sizes||{};
-    const totalItem=Object.values(sizes).reduce((a,v)=>a+(parseInt(v)||0),0);
-    const sizeChips=Object.entries(sizes).filter(([,v])=>parseInt(v)>0)
-      .map(([sz,v])=>`<span class="stock-size-chip">${sz}: ${v}</span>`).join('');
-    const imgSrc=item.images&&item.images.length?item.images[0].data:'';
-    const simLabel=searchActive&&item._sim!=null?`<div class="match-badge">${item._sim}% match</div>`:'';
-    return`<div class="stock-card">
-      <div class="stock-card-img">
-        ${imgSrc?`<img src="${imgSrc}" alt="stock image" onclick="openLbDirect('${imgSrc}')">`:`<span style="font-size:32px;color:#D3D1C7">🖼️</span>`}
-        ${item.isOpeningBalance?'<div class="ob-badge">Opening Balance</div>':''}
-        ${simLabel}
+  // ── 7. Render design cards ────────────────────────────────────────────────
+  const galleryHtml=designs.length?designs.map(dm=>{
+    const varieties=[...dm.varieties.values()];
+    const manual=manualByDesign[dm.name]||[];
+    const simBadge=searchActive&&dm._sim!=null?`<div class="match-badge">${dm._sim}% match</div>`:'';
+
+    // First available image (from any variety or manual entry)
+    const firstImg=(varieties.find(v=>v.images&&v.images.length)||{images:[]}).images[0]?.data
+      ||(manual[0]?.images||[])[0]?.data||'';
+
+    // Variety rows with image + sizes
+    const varRowsHtml=varieties.map(v=>{
+      const sizes=v.sizes||{};
+      const totalVarPcs=Object.values(sizes).reduce((a,b)=>a+(parseInt(b)||0),0);
+      const sizeChips=Object.entries(sizes).filter(([,val])=>parseInt(val)>0)
+        .map(([sz,val])=>`<span class="stock-size-chip">${sz}: ${val}</span>`).join('');
+      const imgSrc=(v.images&&v.images.length)?v.images[0].data:'';
+      return`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-bottom:1px solid #EEEDFE;background:#fafafd">
+        <div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;border:1.5px solid #D0CCF5;background:#f4f3ef;display:flex;align-items:center;justify-content:center">
+          ${imgSrc?`<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openLbDirect('${imgSrc}')">`:`<span style="font-size:16px;color:#ccc">🖼️</span>`}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:#3C3489;margin-bottom:3px">🧵 ${esc(v.name)}</div>
+          <div class="stock-size-chips" style="margin-bottom:2px">${sizeChips||'<span style="font-size:10px;color:#aaa">No size data</span>'}</div>
+          <span style="font-size:10px;color:#0F6E56;font-weight:600">Order qty: ${totalVarPcs} pcs</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Manual opening balance rows
+    const manualHtml=manual.map(item=>{
+      const tot=Object.values(item.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+      const sizeChips=Object.entries(item.sizes||{}).filter(([,v])=>parseInt(v)>0)
+        .map(([sz,v])=>`<span class="stock-size-chip" style="background:#FFF3CD;color:#7a4800">${sz}:${v}</span>`).join('');
+      return`<div style="padding:7px 10px;background:linear-gradient(135deg,#FFF8E1,#FFF3CD);border-bottom:1px solid #FFD54F;font-size:11px">
+        <div style="font-weight:600;color:#854F0B;margin-bottom:3px">📋 Opening Balance · ${esc(item.variety||'All Varieties')} · ${item.date||''}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:3px">${sizeChips}</div>
+        <div style="color:#0F6E56;font-weight:700">Total: ${tot} pcs</div>
+        ${item.notes?`<div style="color:#aaa;font-size:10px;margin-top:2px">${esc(item.notes)}</div>`:''}
+        <div style="margin-top:5px;display:flex;gap:5px">
+          <button class="icon-btn sm" onclick="openEditStockModal('${item.id}')">✏️ Edit</button>
+          <button class="icon-btn sm danger" onclick="deleteStockItem('${item.id}')">✕ Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Ledger stock indicator badges
+    const ledgerBadges=[
+      dm.ledgerRaw?`<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:#FFF8E1;color:#E65100;border:1px solid #FFD54F">📦 Raw: ${dm.ledgerRaw}</span>`:'',
+      dm.ledgerSemi?`<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9">🔧 Semi: ${dm.ledgerSemi}</span>`:'',
+      `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7">✅ Finished: ${dm.ledgerFin}</span>`
+    ].filter(Boolean).join('');
+
+    return`<div class="stock-card" style="position:relative">
+      ${simBadge?`<div style="position:absolute;top:8px;right:8px;z-index:2">${simBadge}</div>`:''}
+      <div class="stock-card-img" style="${firstImg?'cursor:zoom-in':''}" ${firstImg?`onclick="openLbDirect('${firstImg}')"`:''}>
+        ${firstImg?`<img src="${firstImg}" alt="${esc(dm.name)}">`:`<span style="font-size:32px;color:#D3D1C7">🖼️</span>`}
       </div>
       <div class="stock-card-body">
-        <div class="stock-card-title">${esc(item.designName||'—')} <span style="font-size:11px;font-weight:400;color:#888">[${esc(item.designCode||'—')}]</span></div>
-        <div class="stock-card-sub">🧵 ${esc(item.variety||'—')}</div>
-        <div class="stock-size-chips">${sizeChips||'<span style="font-size:10px;color:#aaa">No quantities entered</span>'}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span class="stock-card-total">Total: ${totalItem} pcs</span>
-          <span style="font-size:10px;color:#888">${item.date||''}</span>
+        <div class="stock-card-title">${esc(dm.name)} <span style="font-size:11px;font-weight:400;color:#888">[${esc(dm.code||'—')}]</span></div>
+        <!-- Live ledger balances — auto-synced from Production Ledger -->
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 8px">${ledgerBadges}</div>
+        <!-- Variety breakdown from orders -->
+        ${varieties.length?`<div style="border:1.5px solid #D0CCF5;border-radius:10px;overflow:hidden;margin-bottom:8px">
+          <div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;font-size:10px;font-weight:700;padding:5px 10px;text-transform:uppercase;letter-spacing:.04em">📋 Variety Breakdown — from Orders</div>
+          ${varRowsHtml}
+        </div>`:''}
+        ${manualHtml?`<div style="border:1.5px solid #FFD54F;border-radius:10px;overflow:hidden;margin-bottom:8px">${manualHtml}</div>`:''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+          <span class="stock-card-total" style="background:linear-gradient(135deg,#E8F5E9,#D4EDDA);color:#1B5E20">✅ ${dm.ledgerFin} pcs Finished</span>
+          <button class="icon-btn sm" onclick="openInvDetail('${esc(dm.name)}','designName')" style="font-size:10px">📊 View Ledger</button>
         </div>
-        ${item.notes?`<div style="font-size:10px;color:#777;margin-top:5px">${esc(item.notes)}</div>`:''}
-        <div class="stock-card-actions">
-          <button class="icon-btn" style="font-size:11px" onclick="openEditStockModal('${item.id}')">✏️ Edit</button>
-          <button class="icon-btn danger" style="font-size:11px" onclick="deleteStockItem('${item.id}')">✕ Delete</button>
+        <div class="stock-card-actions" style="margin-top:8px">
+          <button class="icon-btn" onclick="openAddStockModal(true)" style="font-size:11px">📋 Add Opening Balance</button>
         </div>
       </div>
     </div>`;
-  }).join(''):`<div class="stock-empty">No stock entries yet.<br>Click <strong>+ Add Opening Balance</strong> to get started.</div>`;
+  }).join(''):`<div class="stock-empty">No designs found yet.<br>Create orders with design varieties, or add opening balances to get started.</div>`;
 
   const searchResultLabel=searchActive?`<div style="font-size:12px;color:#0F6E56;font-weight:600;margin-bottom:8px">🔍 Showing results sorted by image similarity — <button class="icon-btn" onclick="clearStockSearch()">✕ Clear search</button></div>`:'';
 
   container.innerHTML+=`
   <div class="stock-toolbar">
-    <strong style="color:#534AB7;font-size:13px">📦 Physical Stock — by Design, Variety & Size</strong>
+    <div>
+      <strong style="color:#534AB7;font-size:13px">📦 Physical Stock — Live from Production Ledger</strong>
+      <div style="font-size:11px;color:#888;margin-top:2px">Automatically syncs with Production Ledger closing stock</div>
+    </div>
     <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="openAddStockModal(true)" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer">📋 Add Opening Balance</button>
-      <button class="icon-btn" onclick="openAddStockModal(false)">➕ Add Stock Entry</button>
       <button class="icon-btn" onclick="exportStockExcel()">📥 Export Excel</button>
     </div>
   </div>
 
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    <div style="background:#EEEDFE;border-radius:10px;padding:10px 18px;text-align:center">
-      <div style="font-size:20px;font-weight:700;color:#534AB7">${items.length}</div>
-      <div style="font-size:11px;color:#777">Stock entries</div>
+  <!-- Live ledger summary -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    <div style="background:linear-gradient(135deg,#FFF8E1,#FFF3CD);border:1.5px solid #FFD54F;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
+      <div style="font-size:22px;font-weight:800;color:#E65100">${totalRaw.toLocaleString()}</div>
+      <div style="font-size:10px;font-weight:700;color:#F57F17;text-transform:uppercase;letter-spacing:.04em">📦 Raw Stock</div>
     </div>
-    <div style="background:#E1F5EE;border-radius:10px;padding:10px 18px;text-align:center">
-      <div style="font-size:20px;font-weight:700;color:#0F6E56">${totalPcs.toLocaleString()}</div>
-      <div style="font-size:11px;color:#777">Total pieces</div>
+    <div style="background:linear-gradient(135deg,#E3F2FD,#CDEAFC);border:1.5px solid #90CAF9;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
+      <div style="font-size:22px;font-weight:800;color:#0D47A1">${totalSemi.toLocaleString()}</div>
+      <div style="font-size:10px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:.04em">🔧 Semi-Finished</div>
     </div>
-    <div style="background:#FFF8E1;border-radius:10px;padding:10px 18px;text-align:center">
-      <div style="font-size:20px;font-weight:700;color:#854F0B">${items.filter(i=>i.isOpeningBalance).length}</div>
-      <div style="font-size:11px;color:#777">Opening balances</div>
+    <div style="background:linear-gradient(135deg,#E8F5E9,#D4EDDA);border:1.5px solid #A5D6A7;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
+      <div style="font-size:22px;font-weight:800;color:#1B5E20">${totalFin.toLocaleString()}</div>
+      <div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;letter-spacing:.04em">✅ Finished Stock</div>
+    </div>
+    <div style="background:linear-gradient(135deg,#EEEDFE,#E4E2F8);border:1.5px solid #AFA9EC;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
+      <div style="font-size:22px;font-weight:800;color:#3C3489">${designs.length}</div>
+      <div style="font-size:10px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.04em">🎨 Designs</div>
     </div>
   </div>
 
@@ -4142,8 +4248,8 @@ function renderStockView(container){
     ondrop="handleStockImgDrop(event)"
     onclick="document.getElementById('stock-search-inp').click()">
     <div style="font-size:24px;margin-bottom:6px">🔍</div>
-    <strong style="font-size:12px">Search by image — upload a photo of the design</strong>
-    <p style="font-size:11px;color:#888;margin-top:4px">Drop image here or click · Dashboard will show matching stock sorted by similarity</p>
+    <strong style="font-size:12px">Search by image — upload a photo of the design variety</strong>
+    <p style="font-size:11px;color:#888;margin-top:4px">Drop image here or click · Cards sorted by visual similarity</p>
   </div>
   <input type="file" id="stock-search-inp" accept="image/*" style="display:none" onchange="handleStockSearchFile(this)">
 
@@ -4594,41 +4700,49 @@ function openInvDetail(designKey,byField){
         const varietyRows=[];
         matchingDesigns.forEach(({o,d})=>{
           (d.varieties||[]).forEach(v=>{
-            const row={orderLabel:o.orderId+' – '+o.client,variety:v.name||'—',sizes:{}};
+            const row={orderLabel:o.orderId+' – '+o.client,variety:v.name||'—',sizes:{},images:v.images||[]};
             allSizes.forEach(sz=>{const q=parseInt((v.sizes||{})[sz])||0;sizeQty[sz]=(sizeQty[sz]||0)+q;row.sizes[sz]=q;});
             row.total=Object.values(row.sizes).reduce((a,v)=>a+v,0);
             if(row.total>0)varietyRows.push(row);
           });
         });
         if(!varietyRows.length)return '';
+        // Merge varieties with same name for image display (show first image per variety name)
+        const varImgMap={};
+        varietyRows.forEach(r=>{if(!varImgMap[r.variety]&&r.images&&r.images.length)varImgMap[r.variety]=r.images[0].data;});
         return`<div style="margin-bottom:12px">
-          <div style="font-size:12px;font-weight:600;color:#534AB7;margin-bottom:8px;display:flex;align-items:center;gap:8px">
-            📏 Size-wise Breakdown
+          <div style="font-size:12px;font-weight:700;color:#534AB7;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+            📏 Size-wise Breakdown by Variety
             <span style="font-size:10px;font-weight:400;color:#888">from all orders for this design</span>
           </div>
-          <div style="overflow-x:auto;border-radius:10px;border:1.5px solid #AFA9EC">
+          <div style="overflow-x:auto;border-radius:12px;border:1.5px solid #D0CCF5;box-shadow:0 2px 8px rgba(83,74,183,.07)">
           <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:500px">
             <thead>
-              <tr style="background:#534AB7;color:#fff">
-                <th style="padding:7px 10px;text-align:left">Order</th>
-                <th style="padding:7px 10px;text-align:left">Variety</th>
-                ${allSizes.map(sz=>`<th style="padding:7px 8px;text-align:center">${sz}</th>`).join('')}
-                <th style="padding:7px 10px;text-align:center">Total</th>
+              <tr style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff">
+                <th style="padding:8px 10px;text-align:left;white-space:nowrap">Order</th>
+                <th style="padding:8px 10px;text-align:left;white-space:nowrap">📷 Variety</th>
+                ${allSizes.map(sz=>`<th style="padding:8px 8px;text-align:center;white-space:nowrap">${sz}</th>`).join('')}
+                <th style="padding:8px 10px;text-align:center">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${varietyRows.map((r,ri)=>`<tr style="border-bottom:1px solid #E8E7E0;background:${ri%2?'#fafaf8':'#fff'}">
-                <td style="padding:5px 10px;font-size:10px;color:#888">${esc(r.orderLabel)}</td>
-                <td style="padding:5px 10px;font-weight:600;color:#3C3489">${esc(r.variety)}</td>
-                ${allSizes.map(sz=>`<td style="padding:5px 8px;text-align:center;color:${r.sizes[sz]>0?'#1a1916':'#ccc'}">${r.sizes[sz]>0?r.sizes[sz]:'—'}</td>`).join('')}
-                <td style="padding:5px 10px;text-align:center;font-weight:700;color:#534AB7">${r.total}</td>
-              </tr>`).join('')}
+              ${varietyRows.map((r,ri)=>{
+                const imgSrc=varImgMap[r.variety]||'';
+                const imgHtml=imgSrc?`<img src="${imgSrc}" onclick="openLbDirect('${imgSrc}')" style="width:32px;height:32px;border-radius:6px;object-fit:cover;border:1.5px solid #D0CCF5;cursor:zoom-in;vertical-align:middle;margin-right:5px">`
+                  :`<span style="display:inline-block;width:32px;height:32px;border-radius:6px;border:1.5px dashed #D0CCF5;background:#f7f6ff;text-align:center;line-height:32px;font-size:14px;vertical-align:middle;margin-right:5px;color:#ccc">🖼️</span>`;
+                return`<tr style="border-bottom:1px solid #EEEDFE;background:${ri%2?'#fafafd':'#fff'}">
+                  <td style="padding:6px 10px;font-size:10px;color:#888;white-space:nowrap">${esc(r.orderLabel)}</td>
+                  <td style="padding:6px 10px;font-weight:600;color:#3C3489;white-space:nowrap">${imgHtml}${esc(r.variety)}</td>
+                  ${allSizes.map(sz=>`<td style="padding:6px 8px;text-align:center;color:${r.sizes[sz]>0?'#1a1916':'#ccc'};font-weight:${r.sizes[sz]>0?'600':'400'}">${r.sizes[sz]>0?r.sizes[sz]:'—'}</td>`).join('')}
+                  <td style="padding:6px 10px;text-align:center;font-weight:700;color:#534AB7;background:#EEEDFE">${r.total}</td>
+                </tr>`;
+              }).join('')}
             </tbody>
             <tfoot>
-              <tr style="background:#EEEDFE;font-weight:700;border-top:2px solid #AFA9EC">
-                <td colspan="2" style="padding:6px 10px;color:#534AB7">Total across all orders →</td>
-                ${allSizes.map(sz=>`<td style="padding:6px 8px;text-align:center;color:#3C3489">${sizeQty[sz]||0}</td>`).join('')}
-                <td style="padding:6px 10px;text-align:center;background:#534AB7;color:#fff">${Object.values(sizeQty).reduce((a,v)=>a+v,0)}</td>
+              <tr style="background:linear-gradient(135deg,#EEEDFE,#E4E2F8);font-weight:700;border-top:2px solid #AFA9EC">
+                <td colspan="2" style="padding:7px 10px;color:#534AB7;font-size:11px">Grand Total →</td>
+                ${allSizes.map(sz=>`<td style="padding:7px 8px;text-align:center;color:#3C3489;font-weight:800">${sizeQty[sz]||0}</td>`).join('')}
+                <td style="padding:7px 10px;text-align:center;background:#534AB7;color:#fff;font-size:12px;font-weight:800">${Object.values(sizeQty).reduce((a,v)=>a+v,0)}</td>
               </tr>
             </tfoot>
           </table>
