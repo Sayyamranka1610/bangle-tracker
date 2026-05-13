@@ -2470,14 +2470,17 @@ function openNewOrderModal(prefill){
 
       <!-- File import zone -->
       <div style="margin-bottom:14px">
-        <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">📤 Import from file — optional (Excel / CSV / image)</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+          <div style="font-size:11px;font-weight:600;color:#534AB7">📤 Import from file <span style="font-weight:400;color:#888">— auto-fills all fields</span></div>
+          <button type="button" onclick="downloadOrderTemplate()" style="font-size:11px;padding:5px 12px;background:#534AB7;color:#fff;border:none;border-radius:7px;display:flex;align-items:center;gap:5px">📥 Download Excel Template</button>
+        </div>
         <div class="upload-order-zone" id="upload-zone"
           ondragover="event.preventDefault();this.classList.add('drag-over')"
           ondragleave="this.classList.remove('drag-over')"
           ondrop="handleOrderDrop(event)"
           onclick="document.getElementById('order-file-inp').click()">
           <div class="uo-icon">📂</div>
-          <strong style="font-size:12px">Drop Excel / CSV / image here, or click to browse</strong>
+          <strong style="font-size:12px">Drop the filled Excel template here, or click to browse</strong>
           <p>.xlsx · .csv · or a photo of the order sheet</p>
         </div>
         <input type="file" id="order-file-inp" accept=".xlsx,.xls,.csv,image/*" style="display:none" onchange="handleOrderFileInput(this)">
@@ -2863,6 +2866,61 @@ function createOrder(){
   rebuildVocab();closeModal();render();
 }
 
+// ── EXCEL TEMPLATE DOWNLOAD ───────────────────────────────────────────────────
+function downloadOrderTemplate(){
+  if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
+
+  const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
+  const numSizes=TMPL_SIZES.length;
+
+  // Samples — row totals computed manually so no formula objects needed
+  const samples=[
+    ['Classic Gold',  50, 80, 100, 80, 50, 20, 380],
+    ['Premium',       30, 60,  70, 60, 30, 10, 260],
+    ['Antique Rose',  20, 40,  50, 40, 20,  5, 175],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+  ];
+
+  const sheetData=[
+    /* R1  */ ['🪬  BANGLE PRODUCTION TRACKER — New Order Entry Form'],
+    /* R2  */ ['Fill in Column B for order details. Add one variety per row in the Variety Quantities table below.'],
+    /* R3  */ [],
+    /* R4  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────'],
+    /* R5  */ ['Order ID',       'ORD-001'],
+    /* R6  */ ['Client Name',    'Meena Traders'],
+    /* R7  */ ['Start Date',     '15-May-2026',  '', '', '', '', '', '(format: DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    /* R8  */ ['Design Name',    'Mogra Twist'],
+    /* R9  */ ['Design Code',    'MG-22'],
+    /* R10 */ ['Notes',          'Urgent delivery before Diwali'],
+    /* R11 */ [],
+    /* R12 */ ['─── VARIETY QUANTITIES ─────────────────────────────────────────────'],
+    /* R13 */ ['One variety per row. Add more rows if needed. Do not leave Variety Name blank.'],
+    /* R14 */ ['Variety Name', ...TMPL_SIZES, 'Row Total'],
+    ...samples,
+  ];
+
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(sheetData);
+
+  // Column widths
+  ws['!cols']=[{wch:22},{wch:20},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:12}];
+
+  // Merge decorative/header rows across all columns
+  const lastCol=numSizes+1; // 0-based index of last column (Row Total)
+  ws['!merges']=[
+    {s:{r:0,c:0},e:{r:0,c:lastCol}},   // Title
+    {s:{r:1,c:0},e:{r:1,c:lastCol}},   // Subtitle
+    {s:{r:3,c:0},e:{r:3,c:lastCol}},   // ORDER DETAILS divider
+    {s:{r:11,c:0},e:{r:11,c:lastCol}}, // VARIETY divider
+    {s:{r:12,c:0},e:{r:12,c:lastCol}}, // Instruction
+  ];
+
+  XLSX.utils.book_append_sheet(wb,ws,'Order Form');
+  XLSX.writeFile(wb,'Bangle_Order_Template.xlsx');
+}
+
 // ── FILE IMPORT (Mock / hookable) ──────────────────────────────────────────────
 function handleOrderDrop(e){
   e.preventDefault();document.getElementById('upload-zone').classList.remove('drag-over');
@@ -2948,59 +3006,96 @@ function processOrderFile(file){
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
         if(!rows||rows.length<1){status.textContent='Excel appears empty.';status.style.display='block';return;}
 
-        // Try row-based (header row + data row) format first
-        const headers=rows[0].map(h=>String(h).toLowerCase().trim());
-        const dataRow=rows[1]||[];
-        const get=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&dataRow[i]!==undefined&&dataRow[i]!=='')return String(dataRow[i]).trim();}return '';};
-
-        // Collect varieties from rows 1..n (if variety column exists)
-        const vIdx=headers.findIndex(h=>h.includes('variety')||h.includes('design name'));
-        const varieties=[];
-        if(vIdx>=0&&rows.length>1){
-          rows.slice(1).forEach(row=>{
-            const vName=String(row[vIdx]||'').trim();
-            if(!vName)return;
-            // Collect size columns: headers that match patterns like 2/2, 2/4, 2/6, etc.
-            const sizes={};
-            headers.forEach((h,hi)=>{
-              if(/^\d+\/\d+$/.test(h.trim())){
-                const val=parseInt(row[hi])||0;
-                if(val>0)sizes[h.trim()]=val;
-              }
-            });
-            varieties.push({name:vName,sizes,images:[]});
-          });
-        }
-
-        // Parse date (Excel serial or string)
-        let startDate='';
-        const rawDate=get('date','start');
-        if(rawDate){
-          const num=parseFloat(rawDate);
+        // ── Helper: parse a date string or Excel serial number ──────────────
+        const parseDate=raw=>{
+          if(!raw)return '';
+          const num=parseFloat(raw);
           if(!isNaN(num)&&num>10000){
-            // Excel serial date
-            const d=new Date(Math.round((num-25569)*86400*1000));
-            startDate=d.toISOString().split('T')[0];
-          } else {
-            // Try as string date
-            const d=new Date(rawDate);
-            if(!isNaN(d))startDate=d.toISOString().split('T')[0];
+            return new Date(Math.round((num-25569)*86400*1000)).toISOString().split('T')[0];
+          }
+          const d=new Date(String(raw));
+          return isNaN(d)?'':d.toISOString().split('T')[0];
+        };
+
+        // ── Detect format: label-in-col-A (new template) vs header-row (old) ─
+        // New template: col A contains labels like "Order ID", "Client Name" etc.
+        const colA=rows.map(r=>String(r[0]||'').toLowerCase().trim());
+        const isLabelFormat=colA.some(l=>l.includes('order id')||l.includes('client name'));
+
+        let orderId='',client='',startDate='',dname='',dcode='',notes='';
+        const varieties=[];
+        const sizeKeys=[];
+
+        if(isLabelFormat){
+          // ── NEW TEMPLATE FORMAT ─────────────────────────────────────────
+          // Read label:value pairs from col A : col B
+          const labelVal=(label)=>{
+            const idx=rows.findIndex(r=>String(r[0]||'').toLowerCase().includes(label));
+            return idx>=0?String(rows[idx][1]||'').trim():'';
+          };
+          orderId=labelVal('order id');
+          client=labelVal('client');
+          startDate=parseDate(labelVal('start date')||labelVal('date'));
+          dname=labelVal('design name');
+          dcode=labelVal('design code');
+          notes=labelVal('notes');
+
+          // Find "Variety Name" header row — then read varieties below it
+          const varietyHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().includes('variety name'));
+          if(varietyHdrIdx>=0){
+            const hdrRow=rows[varietyHdrIdx].map(h=>String(h).trim());
+            // Identify size columns by pattern 2/X
+            hdrRow.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){sizeKeys.push(h);}});
+            const szIdxMap={};
+            hdrRow.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h))szIdxMap[h]=i;});
+
+            rows.slice(varietyHdrIdx+1).forEach(row=>{
+              const vName=String(row[0]||'').trim();
+              if(!vName||vName.toLowerCase()==='variety name')return;
+              const sizes={};
+              Object.entries(szIdxMap).forEach(([sz,ci])=>{sizes[sz]=parseInt(row[ci])||0;});
+              varieties.push({name:vName,sizes,images:[]});
+            });
+          }
+
+        } else {
+          // ── OLD / GENERIC HEADER-ROW FORMAT (fallback) ──────────────────
+          const headers=rows[0].map(h=>String(h).toLowerCase().trim());
+          const dataRow=rows[1]||[];
+          const getH=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&dataRow[i]!==undefined&&dataRow[i]!=='')return String(dataRow[i]).trim();}return '';};
+          orderId=getH('order id','orderid','order no','order number');
+          client=getH('client','customer','party','buyer');
+          startDate=parseDate(getH('start date','date','start'));
+          dname=getH('design name','design','item name','product');
+          dcode=getH('design code','code','item code','sku');
+          notes=getH('notes','remarks','comment');
+
+          const vIdx=headers.findIndex(h=>h==='variety'||h==='variety name');
+          const szIdxMap={};
+          headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){sizeKeys.push(h);szIdxMap[h]=i;}});
+          if(vIdx>=0){
+            rows.slice(1).forEach(row=>{
+              const vName=String(row[vIdx]||'').trim();
+              if(!vName)return;
+              const sizes={};
+              Object.entries(szIdxMap).forEach(([sz,ci])=>{sizes[sz]=parseInt(row[ci])||0;});
+              varieties.push({name:vName,sizes,images:[]});
+            });
           }
         }
 
         const prefill={
-          orderId:get('order id','order_id','orderid','order no','order number'),
-          client:get('client','customer','party','buyer'),
+          orderId,client,
           startDate:startDate||new Date().toISOString().split('T')[0],
-          dname:get('design name','design','item name','product'),
-          dcode:get('design code','code','item code','sku'),
-          notes:get('notes','remarks','comment'),
+          dname,dcode,notes,
           varieties:varieties.length>0?varieties:undefined,
+          sizes:sizeKeys.length>0?[...new Set(sizeKeys)]:undefined,
           _keepFile:true
         };
 
-        const filled=Object.entries(prefill).filter(([k,v])=>v&&v!=''&&k!=='_keepFile').map(([k])=>k).join(', ');
-        status.textContent=`✅ Excel parsed — ${filled?'auto-filled: '+filled:'review fields below'}. Check and create order.`;
+        const vCount=varieties.length;
+        const szCount=[...new Set(sizeKeys)].length;
+        status.textContent=`✅ Excel parsed — ${vCount} variet${vCount===1?'y':'ies'}, ${szCount} size${szCount===1?'':'s'} loaded. Review and create order.`;
         status.style.display='block';
         closeModal();openNewOrderModal(prefill);
       } catch(err){
