@@ -2885,13 +2885,54 @@ function processOrderFile(file){
     const reader=new FileReader();
     reader.onload=e=>{
       const text=e.target.result;
-      const rows=text.split('\n').map(r=>r.split(',').map(c=>c.replace(/^"|"$/g,'').trim()));
-      if(rows.length<2){status.textContent='CSV appears empty.';status.style.display='block';return;}
-      const headers=rows[0].map(h=>h.toLowerCase());
-      const data=rows[1];
-      const get=(...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&data[i])return data[i];}return '';};
-      const prefill={orderId:get('order id','order_id','orderid'),client:get('client','customer'),startDate:get('date','start'),dname:get('design name','design'),dcode:get('code','design code'),_keepFile:true};
-      status.textContent='✅ CSV parsed — fields prefilled below. Review and create.';status.style.display='block';
+      // Split rows; handle quoted commas by a simple state machine
+      const parseCSVRow=line=>{const cells=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){cells.push(cur.trim());cur='';}else{cur+=ch;}}cells.push(cur.trim());return cells;};
+      const rawRows=text.split('\n').map(parseCSVRow).filter(r=>r.some(c=>c));
+      if(rawRows.length<2){status.textContent='CSV appears empty.';status.style.display='block';return;}
+      const headers=rawRows[0].map(h=>h.toLowerCase().trim());
+      const dataRows=rawRows.slice(1);
+
+      // Helper: get value from a row by matching header keywords
+      const getFromRow=(row,...keys)=>{for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0&&row[i])return String(row[i]).trim();}return '';};
+
+      // Identify variety column and size columns (e.g. 2/4, 2/6, 2/8...)
+      const varietyIdx=headers.findIndex(h=>h==='variety'||h==='variety name');
+      const sizeIdxMap={};
+      headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h))sizeIdxMap[h]=i;});
+      const sizeKeys=Object.keys(sizeIdxMap);
+
+      // Order-level fields: take from first data row that has Order ID or Client
+      const orderRow=dataRows[0];
+      let startDate='';
+      const rawDate=getFromRow(orderRow,'start date','date','start');
+      if(rawDate){const d=new Date(rawDate);if(!isNaN(d))startDate=d.toISOString().split('T')[0];}
+
+      // Collect varieties from ALL data rows (skip rows where Variety cell is blank)
+      const varieties=[];
+      dataRows.forEach(row=>{
+        const vName=varietyIdx>=0?String(row[varietyIdx]||'').trim():'';
+        if(!vName)return;
+        const sizes={};
+        sizeKeys.forEach(sz=>{sizes[sz]=parseInt(row[sizeIdxMap[sz]])||0;});
+        varieties.push({name:vName,sizes,images:[]});
+      });
+
+      const prefill={
+        orderId:getFromRow(orderRow,'order id','order_id','orderid','order no','order number'),
+        client:getFromRow(orderRow,'client','customer','party','buyer'),
+        startDate:startDate||new Date().toISOString().split('T')[0],
+        dname:getFromRow(orderRow,'design name','design','item name','product'),
+        dcode:getFromRow(orderRow,'design code','code','item code','sku'),
+        notes:getFromRow(orderRow,'notes','remarks','comment'),
+        varieties:varieties.length>0?varieties:undefined,
+        sizes:sizeKeys.length>0?sizeKeys:undefined,
+        _keepFile:true
+      };
+
+      const vCount=varieties.length;
+      const szCount=sizeKeys.length;
+      status.textContent=`✅ CSV parsed — ${vCount} variet${vCount===1?'y':'ies'}, ${szCount} size${szCount===1?'':'s'} loaded. Review and create order.`;
+      status.style.display='block';
       closeModal();openNewOrderModal(prefill);
     };reader.readAsText(file);
 
