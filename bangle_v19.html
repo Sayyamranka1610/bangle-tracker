@@ -1485,7 +1485,8 @@ function renderOrdersView(){
 }
 
 function buildOrderCard(order,oi){
-  const al=orderAlert(order),p=orderPct(order),qty=totalQty(order);
+  const al=orderAlert(order),p=orderPct(order);
+  const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   const isOpen=S.openOrders.has(order.id);
   const at=S.activeTabs[order.id]||'designs';
   return `<div class="order-card al-${al}" id="oc-${order.id}" data-active-tab="${at}">
@@ -1493,7 +1494,7 @@ function buildOrderCard(order,oi){
       <div class="oh-icon ${ohIconCls(al)}">${ohIconChar(al)}</div>
       <div class="oh-left">
         <div class="oh-title">${esc(order.orderId)} · ${esc(order.client)}</div>
-        <div class="oh-sub">${qty} pcs · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}</div>
+        <div class="oh-sub">${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}</div>
       </div>
       <div class="oh-right">
         ${prioBadge(order.priority)}${badgeHtml(al)}
@@ -1559,9 +1560,8 @@ function buildDetailsPanel(order,oi){
 }
 
 function buildDesignsPanel(order,oi){
-  const orderTotalQty=totalQty(order);
   return `<div class="section-head" style="margin-top:0">
-    <span>Designs &amp; Varieties (${order.designs.length}) — Order total: <strong>${orderTotalQty} pcs</strong></span>
+    <span>Designs &amp; Varieties (${order.designs.length}) — Order total: <strong>${formatQtyByUnit(orderQtyByUnit(order))}</strong></span>
     <button class="icon-btn primary" onclick="addDesign(${oi})">+ Add design</button>
   </div>
   ${order.designs.map((d,di)=>buildDesignCard(order,oi,d,di)).join('')}
@@ -3748,7 +3748,8 @@ function toggleVendorSection(vendor){
 }
 
 function buildVendorOrderCard(vo,vi){
-  const al=vendorOrderAlert(vo),qty=vendorTotalQty(vo);
+  const al=vendorOrderAlert(vo);
+  const qtyStr=formatQtyByUnit(vendorOrderQtyByUnit(vo));
   const isOpen=(S.openVendorOrders||[]).includes('open_'+vo.id);
   const at=S.vendorActiveTabs[vo.id]||'designs';
   const ohIconMap={ok:'oh-icon-ok',warn:'oh-icon-warn',late:'oh-icon-late'};
@@ -3759,7 +3760,7 @@ function buildVendorOrderCard(vo,vi){
       <div class="oh-icon ${ohIconMap[al]||'oh-icon-ok'}">${ohChar[al]||'✓'}</div>
       <div class="oh-left">
         <div class="oh-title">${esc(vo.orderId)} · ${esc(vo.vendor)}</div>
-        <div class="oh-sub">${qty} pcs · ${vo.designs.length} design${vo.designs.length!==1?'s':''} · Started ${fmtDate(vo.startDate)}${vo.deliveryDate?' · Delivery: '+fmtDate(vo.deliveryDate):''}</div>
+        <div class="oh-sub">${qtyStr} · ${vo.designs.length} design${vo.designs.length!==1?'s':''} · Started ${fmtDate(vo.startDate)}${vo.deliveryDate?' · Delivery: '+fmtDate(vo.deliveryDate):''}</div>
       </div>
       <div class="oh-right">
         ${prioBadge(vo.priority)}
@@ -4510,7 +4511,7 @@ function printVendorSection(vendor){
 function openVendorPrintWindow(title,orders){
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
   const body=orders.map(vo=>{
-    const qty=vendorTotalQty(vo);
+    const qtyStr=formatQtyByUnit(vendorOrderQtyByUnit(vo));
     const designsHtml=vo.designs.map(d=>{
       const szKeys=Object.keys(d.sizes||{});
       const varieties=d.varieties||[];
@@ -4526,11 +4527,11 @@ function openVendorPrintWindow(title,orders){
           ${imgHtml}
           <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
           <div style="text-align:center;line-height:1.6">${sizeQtyHtml}</div>
-          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} pcs</div>
+          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} ${esc(v.unit||'pcs')}</div>
         </div>`;
       }).join('');
       return`<div style="margin-bottom:14px;padding:12px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
-        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code||'—'}]</span> — ${vendorDesignQty(d)} pcs</h3>
+        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code||'—'}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
         ${varieties.length?`<div style="margin-bottom:10px">${varCards}</div>`:''}
         ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px">
           <thead><tr style="background:#534AB7;color:#fff">
@@ -4554,7 +4555,7 @@ function openVendorPrintWindow(title,orders){
     return`<div style="border:1px solid #D3D1C7;border-radius:10px;padding:14px;margin-bottom:16px;page-break-inside:avoid">
       <h2 style="font-size:15px;margin-bottom:4px;color:#534AB7">${vo.orderId} · ${esc(vo.vendor)}</h2>
       <p style="font-size:11px;color:#666;margin-bottom:6px">
-        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${vo.priority} · ${qty} pcs total
+        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${vo.priority} · Total: ${qtyStr}
       </p>
       ${vo.notes?`<p style="font-size:11px;color:#666;margin-bottom:10px">Notes: ${esc(vo.notes)}</p>`:''}
       ${designsHtml}
@@ -4802,7 +4803,7 @@ function doPrintAll(includeStages){
 function buildPrintableOrder(order,tabOverride,includeStages){
   if(includeStages===undefined)includeStages=true;
   const tab=tabOverride||(S.activeTabs[order.id]||'designs');
-  const qty=totalQty(order);
+  const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   let content='';
   if(tab==='details'||tab==='all'){
     content+=`<div style="margin-bottom:12px;padding:10px;background:#f7f6f2;border-radius:8px">
@@ -4830,12 +4831,12 @@ function buildPrintableOrder(order,tabOverride,includeStages){
           ${imgHtml}
           <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
           <div style="text-align:center;line-height:1.6">${sizeQtyHtml}</div>
-          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} pcs</div>
+          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} ${esc(v.unit||'pcs')}</div>
         </div>`;
       }).join('');
 
       return `<div style="margin-bottom:16px;padding:12px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
-        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code}]</span> — ${designQty(d)} pcs</h3>
+        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
         ${varieties.length?`<div style="margin-bottom:10px">${varietyCards}</div>`:''}
         ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
           <thead><tr style="background:#534AB7;color:#fff">
@@ -4886,7 +4887,7 @@ function buildPrintableOrder(order,tabOverride,includeStages){
   }
   return `<div style="border:1px solid #D3D1C7;border-radius:10px;padding:14px;margin-bottom:16px;page-break-inside:avoid">
     <h2 style="font-size:15px;margin-bottom:4px;color:#534AB7">${order.orderId} · ${order.client}</h2>
-    <p style="font-size:11px;color:#666;margin-bottom:10px">Start: ${fmtDate(order.startDate)} · Priority: ${order.priority} · ${qty} pcs total</p>
+    <p style="font-size:11px;color:#666;margin-bottom:10px">Start: ${fmtDate(order.startDate)} · Priority: ${order.priority} · Total: ${qtyStr}</p>
     ${content}
     ${order.notes?`<p style="font-size:11px;color:#666;margin-top:6px">Notes: ${order.notes}</p>`:''}
   </div>`;
