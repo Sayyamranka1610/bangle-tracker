@@ -949,9 +949,11 @@ function compressImageToThumb(dataUrl,maxDim=160){
   });
 }
 
-// Images smaller than this (chars) are safe to pass through to Firebase as-is.
-// Compressed thumbs (~20KB base64) are well under this. Large originals are stripped.
-const IMAGE_FB_THRESHOLD=80000; // ~60KB base64
+// Images smaller than this (chars) pass through to Firebase as-is.
+// Compressed thumbs (~20KB base64) are well under this. Threshold raised to
+// 500KB to be tolerant of slightly larger compressed images on different
+// devices — this ensures images reliably reach all devices via Firebase.
+const IMAGE_FB_THRESHOLD=500000; // ~375KB base64
 
 // Extract images from state — only strip images too large for Firebase.
 // Small/compressed images pass through so they sync across devices via Firebase.
@@ -1060,7 +1062,16 @@ async function loadImagesFromIDB(){
 }
 
 // ── CORE SAVE (quota-safe) ─────────────────────────────────────────────────────
+// Quick check for demo mode (avoids TDZ issue with IS_DEMO_MODE const)
+function _isDemoMode(){
+  try{ return new URLSearchParams(location.search).get('demo')==='1'; }catch(e){return false;}
+}
 function save(){
+  // Demo mode: never persist anything (preserves real user data on shared devices)
+  if(_isDemoMode()){
+    setSaveStatus('saved','🎬 Demo mode — changes not saved');
+    return;
+  }
   try{
     // Extract images to save separately in IndexedDB
     const{stateNoImages,imageMap}=extractImages({...S,openOrders:[...S.openOrders],openClients:[...S.openClients]});
@@ -1302,6 +1313,47 @@ function designQty(d){
   return Object.values(d.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
 }
 function totalQty(order){return order.designs.reduce((a,d)=>a+designQty(d),0)}
+
+// ── UNIT-AWARE TOTALS ────────────────────────────────────────────────────────
+// Quantities are tracked per variety. Each variety has its own unit (pcs/pairs/jotta).
+// These helpers group totals by unit so they're NOT clubbed together.
+// Returns: {pcs: 380, pairs: 50, jotta: 10}
+function designQtyByUnit(d){
+  const out={};
+  if(d.varieties&&d.varieties.length>0){
+    d.varieties.forEach(v=>{
+      const u=(v.unit||'pcs').toLowerCase();
+      const qty=Object.values(v.sizes||{}).reduce((a,q)=>a+(parseInt(q)||0),0);
+      out[u]=(out[u]||0)+qty;
+    });
+  } else {
+    const qty=Object.values(d.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+    if(qty>0) out['pcs']=qty;
+  }
+  return out;
+}
+function orderQtyByUnit(order){
+  const out={};
+  (order.designs||[]).forEach(d=>{
+    const dq=designQtyByUnit(d);
+    Object.keys(dq).forEach(u=>{out[u]=(out[u]||0)+dq[u];});
+  });
+  return out;
+}
+function vendorOrderQtyByUnit(vo){
+  const out={};
+  (vo.designs||[]).forEach(d=>{
+    const dq=designQtyByUnit(d);
+    Object.keys(dq).forEach(u=>{out[u]=(out[u]||0)+dq[u];});
+  });
+  return out;
+}
+// Format like "380 pcs, 50 pairs, 10 jotta" — only includes units with >0 qty
+function formatQtyByUnit(qByUnit){
+  const parts=Object.keys(qByUnit||{}).filter(u=>(qByUnit[u]||0)>0).sort()
+    .map(u=>qByUnit[u]+' '+u);
+  return parts.length?parts.join(', '):'0 pcs';
+}
 
 // Badge/class helpers
 function dotCls(order,design,i){
@@ -1666,7 +1718,7 @@ function buildDesignCard(order,oi,d,di){
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">
         ${badgeHtml(al)}
-        <span style="font-size:11px;color:#888">${designQty(d)} pcs</span>
+        <span style="font-size:11px;color:#888">${formatQtyByUnit(designQtyByUnit(d))}</span>
         <button class="icon-btn danger no-print" onclick="removeDesign(${oi},${di})">Remove</button>
       </div>
     </div>
@@ -1722,7 +1774,7 @@ function buildDesignCard(order,oi,d,di){
           +'</tr></tfoot>'):''}
       </table>
     </div>
-    <div class="size-total">Design total: <strong>${varieties.length?grandTotal:Object.values(d.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0)}</strong> pcs</div>
+    <div class="size-total">Design total: <strong>${formatQtyByUnit(designQtyByUnit(d))}</strong></div>
   </div>`;
 }
 
@@ -3779,7 +3831,7 @@ function buildVendorDetailsPanel(vo,vi){
 }
 
 function buildVendorDesignsPanel(vo,vi){
-  let html=`<div class="section-head">Designs &amp; Varieties (${vo.designs.length}) — Order total: ${vendorTotalQty(vo)} pcs
+  let html=`<div class="section-head">Designs &amp; Varieties (${vo.designs.length}) — Order total: ${formatQtyByUnit(vendorOrderQtyByUnit(vo))}
     <button class="sm" onclick="addVendorDesign(${vi})">+ Add design</button>
   </div>`;
   html+=vo.designs.map((d,di)=>{
@@ -3845,7 +3897,7 @@ function buildVendorDesignsPanel(vo,vi){
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             ${szKeys.map(sz=>`<span class="stock-size-chip">${sz}: ${colTotals[sz]||0}</span>`).join('')}
-            <span style="font-size:11px;font-weight:700;color:#0F6E56">Total: ${grandTotal} pcs</span>
+            <span style="font-size:11px;font-weight:700;color:#0F6E56">Total: ${formatQtyByUnit(designQtyByUnit(d))}</span>
           </div>
         </div>
         <button class="icon-btn danger no-print" onclick="removeVendorDesign(${vi},${di})">Remove</button>
@@ -4577,26 +4629,41 @@ function askOrderPrint(oid){
 }
 
 // ── SHARE APP ─────────────────────────────────────────────────────────────────
+const SHARE_BASE_URL = 'https://sayyamranka1610.github.io/bangle-tracker/';
+const SHARE_DEMO_URL = SHARE_BASE_URL + '?demo=1';
+const APP_TITLE      = 'Siddhi Bangle Tracker';
+const APP_DESC       = 'Production tracking dashboard — orders, designs, inventory & vendor management.';
+
+let _shareMode = 'demo'; // 'demo' = shows no real data | 'owner' = full access (login required)
+
 function shareApp(){
-  const APP_URL='https://sayyamranka1610.github.io/bangle-tracker/';
-  const APP_TITLE='Siddhi Bangle Tracker';
-  const APP_DESC='Production tracking dashboard — orders, designs, inventory & vendor management.';
-
-  // Try native Web Share API (works on mobile / modern browsers)
-  if(navigator.share){
-    navigator.share({title:APP_TITLE,text:APP_DESC,url:APP_URL}).catch(()=>{});
-    return;
-  }
-
-  // Fallback: show share modal with copy button
+  _shareMode = 'demo'; // Always default to safe demo share
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" id="modal-overlay-main" onclick="if(event.target===this)closeModal()" style="z-index:1200">
-    <div class="modal" style="width:480px;max-width:95vw" role="dialog" aria-modal="true">
+    <div class="modal" style="width:520px;max-width:95vw" role="dialog" aria-modal="true">
       <div class="modal-header">
         <div class="modal-icon" style="background:#EEF0FE;color:#534AB7;font-size:20px">🔗</div>
         <h3>Share Dashboard</h3>
       </div>
       <div style="padding:0 4px">
+
+        <!-- Toggle: Demo vs Owner -->
+        <div style="display:flex;gap:0;background:#f0efff;border:1.5px solid #AFA9EC;border-radius:10px;padding:3px;margin-bottom:14px">
+          <button id="share-mode-demo" onclick="setShareMode('demo')"
+            style="flex:1;padding:8px 12px;background:#534AB7;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">
+            🎬 Preview link (no data)
+          </button>
+          <button id="share-mode-owner" onclick="setShareMode('owner')"
+            style="flex:1;padding:8px 12px;background:transparent;color:#534AB7;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">
+            🔐 Full access (login)
+          </button>
+        </div>
+
+        <!-- Mode description -->
+        <div id="share-mode-desc" style="font-size:11px;color:#0F6E56;background:#E1F5EE;border:1px solid #5DCAA5;border-radius:8px;padding:8px 12px;margin-bottom:14px">
+          ✅ <strong>Preview mode:</strong> Recipient sees the app structure only. Your orders, vendors and images stay private.
+        </div>
+
         <!-- Link preview card -->
         <div style="background:linear-gradient(135deg,#f0efff,#fafafd);border:1.5px solid #AFA9EC;border-radius:12px;padding:16px 18px;margin-bottom:18px">
           <div style="font-size:12px;color:#888;margin-bottom:4px">Link preview (WhatsApp / Telegram)</div>
@@ -4608,26 +4675,13 @@ function shareApp(){
         <!-- URL row -->
         <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">Dashboard URL</div>
         <div style="display:flex;gap:8px;align-items:center;background:#f7f6ff;border:1.5px solid #AFA9EC;border-radius:10px;padding:10px 14px;margin-bottom:16px">
-          <span id="share-url-text" style="flex:1;font-size:13px;font-weight:600;color:#3C3489;word-break:break-all">${APP_URL}</span>
+          <span id="share-url-text" style="flex:1;font-size:13px;font-weight:600;color:#3C3489;word-break:break-all">${SHARE_DEMO_URL}</span>
           <button id="share-copy-btn" onclick="copyShareUrl()" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0">📋 Copy</button>
         </div>
 
         <!-- Share via buttons -->
         <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:8px">Share via</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
-          <a href="https://wa.me/?text=${encodeURIComponent(APP_TITLE+'\n'+APP_DESC+'\n'+APP_URL)}" target="_blank" rel="noopener"
-            style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#25D366;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
-            💬 WhatsApp
-          </a>
-          <a href="https://t.me/share/url?url=${encodeURIComponent(APP_URL)}&text=${encodeURIComponent(APP_TITLE+' — '+APP_DESC)}" target="_blank" rel="noopener"
-            style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#229ED9;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
-            ✈️ Telegram
-          </a>
-          <a href="mailto:?subject=${encodeURIComponent(APP_TITLE)}&body=${encodeURIComponent(APP_DESC+'\n\nOpen here: '+APP_URL)}"
-            style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#6C64CC;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
-            📧 Email
-          </a>
-        </div>
+        <div id="share-via-row" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px"></div>
       </div>
       <div class="modal-actions">
         <button onclick="closeModal()">Close</button>
@@ -4635,21 +4689,78 @@ function shareApp(){
     </div>
   </div>`;
   _modalDisableBackground();
+  setShareMode('demo'); // initial render of share-via links
+}
+
+function setShareMode(mode){
+  _shareMode = mode;
+  const url = (mode === 'owner') ? SHARE_BASE_URL : SHARE_DEMO_URL;
+  // Toggle button styles
+  const demoBtn  = document.getElementById('share-mode-demo');
+  const ownerBtn = document.getElementById('share-mode-owner');
+  if(demoBtn && ownerBtn){
+    if(mode === 'demo'){
+      demoBtn.style.background='#534AB7';demoBtn.style.color='#fff';
+      ownerBtn.style.background='transparent';ownerBtn.style.color='#534AB7';
+    } else {
+      ownerBtn.style.background='#534AB7';ownerBtn.style.color='#fff';
+      demoBtn.style.background='transparent';demoBtn.style.color='#534AB7';
+    }
+  }
+  // Update description box
+  const desc = document.getElementById('share-mode-desc');
+  if(desc){
+    if(mode === 'demo'){
+      desc.style.background='#E1F5EE';desc.style.borderColor='#5DCAA5';desc.style.color='#0F6E56';
+      desc.innerHTML='✅ <strong>Preview mode:</strong> Recipient sees the app structure only. Your orders, vendors and images stay private.';
+    } else {
+      desc.style.background='#FAEEDA';desc.style.borderColor='#EF9F27';desc.style.color='#BA7517';
+      desc.innerHTML='⚠️ <strong>Full access mode:</strong> Recipient will see all your real data after login. Only share with trusted users who have the password.';
+    }
+  }
+  // Update URL display
+  const urlEl = document.getElementById('share-url-text');
+  if(urlEl) urlEl.textContent = url;
+  // Rebuild share-via buttons
+  const row = document.getElementById('share-via-row');
+  if(row){
+    row.innerHTML = `
+      <a href="https://wa.me/?text=${encodeURIComponent(APP_TITLE+'\n'+APP_DESC+'\n'+url)}" target="_blank" rel="noopener"
+        style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#25D366;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
+        💬 WhatsApp
+      </a>
+      <a href="https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(APP_TITLE+' — '+APP_DESC)}" target="_blank" rel="noopener"
+        style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#229ED9;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
+        ✈️ Telegram
+      </a>
+      <a href="mailto:?subject=${encodeURIComponent(APP_TITLE)}&body=${encodeURIComponent(APP_DESC+'\n\nOpen here: '+url)}"
+        style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#6C64CC;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
+        📧 Email
+      </a>
+      ${navigator.share?`<button onclick="nativeShare()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#3C3489;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">📱 More…</button>`:''}
+    `;
+  }
+}
+
+function nativeShare(){
+  const url = (_shareMode === 'owner') ? SHARE_BASE_URL : SHARE_DEMO_URL;
+  if(navigator.share){
+    navigator.share({title:APP_TITLE, text:APP_DESC, url}).catch(()=>{});
+  }
 }
 
 function copyShareUrl(){
-  const url='https://sayyamranka1610.github.io/bangle-tracker/';
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(url).then(()=>{
-      const btn=document.getElementById('share-copy-btn');
-      if(btn){btn.textContent='✅ Copied!';btn.style.background='#0F6E56';setTimeout(()=>{btn.textContent='📋 Copy';btn.style.background='#534AB7';},2000);}
-    });
-  } else {
-    // Fallback
-    const ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.opacity='0';
-    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+  const url = (_shareMode === 'owner') ? SHARE_BASE_URL : SHARE_DEMO_URL;
+  const onDone = ()=>{
     const btn=document.getElementById('share-copy-btn');
     if(btn){btn.textContent='✅ Copied!';btn.style.background='#0F6E56';setTimeout(()=>{btn.textContent='📋 Copy';btn.style.background='#534AB7';},2000);}
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(onDone).catch(()=>{});
+  } else {
+    const ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    onDone();
   }
 }
 
@@ -7109,8 +7220,45 @@ function doLogout(){
   location.reload();
 }
 
+// Detect demo mode (?demo=1 URL parameter) — share-friendly preview, no real data
+const IS_DEMO_MODE = _isDemoMode();
+
 // On every page load — check session
 (function checkSession(){
+  if(IS_DEMO_MODE){
+    // ── DEMO MODE ─────────────────────────────────────────────────────────
+    // Skip login + Firebase entirely. Show a friendly empty dashboard with
+    // a banner explaining this is a preview/demo, not real data.
+    document.getElementById('login-screen').style.display = 'none';
+    const fbBar = document.getElementById('fb-bar');
+    if(fbBar) fbBar.style.display = 'none';
+    // Reset state to clean demo state
+    S.orders = [];
+    S.vendorOrders = [];
+    S.stockItems = [];
+    S.invLedger = [];
+    S.auditLog = [];
+    S.openOrders = new Set();
+    S.openClients = new Set();
+    // Show demo banner at the top
+    setTimeout(()=>{
+      const headerSub = document.getElementById('header-sub');
+      if(headerSub) headerSub.innerHTML = '🎬 <strong style="color:#534AB7">DEMO MODE</strong> — this is a preview. Real orders are private to the owner.';
+      // Inject a sticky banner
+      const banner = document.createElement('div');
+      banner.id = 'demo-banner';
+      banner.style.cssText = 'position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:14px 20px;border-radius:14px;font-size:13px;box-shadow:0 6px 20px rgba(83,74,183,.4);z-index:9999;max-width:340px;line-height:1.5';
+      banner.innerHTML = `
+        <div style="font-weight:700;margin-bottom:4px;font-size:14px">🎬 Demo Mode</div>
+        <div style="font-size:12px;opacity:.95">You're viewing a preview of <strong>Siddhi Bangle Tracker</strong>. The owner's real orders are private and not shown here.</div>
+        <div style="margin-top:8px;font-size:11px;opacity:.85">Want your own dashboard? Contact the owner.</div>
+        <button onclick="this.parentElement.remove()" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#fff;cursor:pointer;font-size:18px;opacity:.7">×</button>`;
+      document.body.appendChild(banner);
+      if(typeof render==='function') render();
+      if(typeof renderStats==='function') renderStats();
+    }, 100);
+    return;
+  }
   if(sessionStorage.getItem('bt_auth')){
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('fb-bar').style.display = '';
@@ -7150,6 +7298,7 @@ async function fbPush(silent){
 }
 
 function fbSchedulePush(){
+  if(_isDemoMode()) return;        // demo mode never pushes to the real DB
   if(!_fb.ready) return;
   clearTimeout(_fb.pushTimer);
   fbSetStatus('syncing', 'Saving…');
@@ -7168,26 +7317,26 @@ async function fbInit(){
     const parsed = (envelope && envelope.data) ? JSON.parse(envelope.data) : null;
 
     if(parsed && parsed.orders){
-      const remoteMs = envelope.savedAt ? new Date(envelope.savedAt).getTime() : 0;
-      const localMs  = localStorage.getItem('bangle_saved_at')
-                        ? new Date(localStorage.getItem('bangle_saved_at')).getTime() : 0;
-      if(remoteMs > localMs + 2000){
-        // Firebase is newer → load it
-        histPush();
-        Object.assign(S, parsed);
-        S.openOrders  = new Set(parsed.openOrders  || []);
-        S.openClients = new Set(parsed.openClients || []);
-        save(); render();
-        // Stamp local time as the remote's savedAt so next SSE comparison is correct
-        localStorage.setItem('bangle_saved_at', envelope.savedAt);
-        fbSetStatus('connected', 'Live · loaded latest data');
-        showToast('⬇ Loaded latest data from database', 'green');
-      } else {
-        await fbPush(true);
-      }
+      // ── REMOTE IS THE SOURCE OF TRUTH ─────────────────────────────────────
+      // Always load Firebase state at init. Local storage is just a cache.
+      // This prevents the "data reverts to original" bug where one device's
+      // stale localStorage could overwrite fresh remote data due to clock drift.
+      histPush();
+      Object.assign(S, parsed);
+      S.openOrders  = new Set(parsed.openOrders  || []);
+      S.openClients = new Set(parsed.openClients || []);
+      // Save to local cache WITHOUT triggering Firebase push (avoid echo)
+      _origSave();
+      // Stamp local time with remote's savedAt so SSE comparison is correct
+      localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
+      // Migrate any large images to compressed thumbs (one-time, persists across devices)
+      await migrateImagesToThumbs();
+      render();
+      fbSetStatus('connected', 'Live · loaded latest data');
     } else {
+      // Remote is empty — push local up as initial state
       await fbPush(true);
-      fbSetStatus('connected', 'Live · data uploaded');
+      fbSetStatus('connected', 'Live · uploaded local data');
     }
     _fb.ready = true;
     fbStartListener();
@@ -7196,6 +7345,43 @@ async function fbInit(){
     showToast('⚠ Could not connect to database', 'red');
     // Retry after 8s
     setTimeout(fbInit, 8000);
+  }
+}
+
+// ── IMAGE MIGRATION: recompress old large images to syncable thumbs ──────────
+// Older versions stored full-size images that couldn't sync via Firebase.
+// This walks through state and recompresses any leftover large images so they
+// pass the Firebase threshold and reach all devices on next push.
+async function migrateImagesToThumbs(){
+  let migrated = 0;
+  const compressArr = async (arr)=>{
+    if(!arr) return;
+    for(const img of arr){
+      if(img && img.data && typeof img.data === 'string'
+         && img.data.startsWith('data:') && img.data.length > IMAGE_FB_THRESHOLD){
+        try{
+          img.data = await compressImageToThumb(img.data);
+          migrated++;
+        }catch(e){ /* keep original if compression fails */ }
+      }
+    }
+  };
+  for(const o of (S.orders||[])){
+    for(const d of (o.designs||[])){
+      await compressArr(d.images);
+      for(const v of (d.varieties||[])) await compressArr(v.images);
+    }
+  }
+  for(const vo of (S.vendorOrders||[])){
+    for(const d of (vo.designs||[])){
+      for(const v of (d.varieties||[])) await compressArr(v.images);
+    }
+  }
+  for(const si of (S.stockItems||[])) await compressArr(si.images);
+  if(migrated > 0){
+    console.log('Migrated', migrated, 'large images to thumbs for cross-device sync');
+    showToast('🖼️ Optimised ' + migrated + ' image' + (migrated>1?'s':'') + ' for sync', 'green');
+    save(); // triggers fbSchedulePush via hook
   }
 }
 
@@ -7209,21 +7395,21 @@ function fbStartListener(){
       const msg      = JSON.parse(ev.data);
       const envelope = msg.data;                          // {data, savedAt, device}
       if(!envelope || !envelope.data) return;
-      if(envelope.device === FB_DEVICE_ID) return;        // own update — ignore
+      if(envelope.device === FB_DEVICE_ID) return;        // own update — ignore (skip self-echo)
       const parsed   = JSON.parse(envelope.data);
       if(!parsed || !parsed.orders) return;
-      const remoteMs = envelope.savedAt ? new Date(envelope.savedAt).getTime() : 0;
-      const localMs  = localStorage.getItem('bangle_saved_at')
-                        ? new Date(localStorage.getItem('bangle_saved_at')).getTime() : 0;
-      if(remoteMs <= localMs) return;                     // we already have this or newer
-      // Apply remote state
+      // ── REMOTE IS AUTHORITATIVE ────────────────────────────────────────────
+      // Apply remote state regardless of local clock comparison.
+      // Self-echo is filtered by FB_DEVICE_ID above, so this is always foreign.
       Object.assign(S, parsed);
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
-      save(); render();
-      // Use remote timestamp so future SSE events compare correctly (not local clock)
-      localStorage.setItem('bangle_saved_at', envelope.savedAt);
+      // Save to local cache without triggering Firebase push (avoid echo loop)
+      _origSave();
+      localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
+      render();
       fbSetStatus('connected', 'Live · synced');
+      showToast('🔄 Updated from another device', 'green');
     } catch(e){ /* ignore malformed events */ }
   });
 
