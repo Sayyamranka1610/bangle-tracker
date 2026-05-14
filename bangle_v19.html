@@ -1483,6 +1483,12 @@ function buildDetailsPanel(order,oi){
     <div class="field-group" style="max-width:105px"><label>Priority</label>
       <select onchange="upOrder(${oi},'priority',this.value)">${PRIO_OPTS.map(p=>`<option value="${p}"${order.priority===p?' selected':''}>${p}</option>`).join('')}</select>
     </div>
+    <div class="field-group" style="max-width:120px"><label>Bangle type</label>
+      <select onchange="upOrder(${oi},'bangleType',this.value)">
+        <option value="dye_gold"${(order.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
+        <option value="cnc"${order.bangleType==='cnc'?' selected':''}>CNC</option>
+      </select>
+    </div>
   </div>
   <label style="font-size:11px;color:#777;font-weight:500">Order notes</label>
   <textarea class="notes-area" onchange="upOrder(${oi},'notes',this.value)" placeholder="Notes...">${esc(order.notes||'')}</textarea>
@@ -2535,9 +2541,10 @@ function exportAuditCSV(){
 }
 
 // ── NEW ORDER MODAL ────────────────────────────────────────────────────────────
-// Modal-level state for sizes & varieties (mutable during modal session)
+// Modal-level state for sizes, varieties & bangle type (mutable during modal session)
 window._modalSizes=[...DEFAULT_SIZES];
 window._modalVarieties=[];
+window._modalBangleType='dye_gold'; // 'dye_gold' | 'cnc'
 
 // ── FOCUS TRAP HELPERS ─────────────────────────────────────────────────────────
 // Disables all focusable elements in the background when a modal is open,
@@ -2578,6 +2585,7 @@ function _modalFocusable(){
 function openNewOrderModal(prefill){
   prefill=prefill||{};
   if(!prefill._keepFile)window._uploadedOrderFile=null;
+  window._modalBangleType=prefill.bangleType||'dye_gold';
 
   // ── Resolve first design + extra designs ──────────────────────────────────
   let firstDesign={};
@@ -2654,6 +2662,13 @@ function openNewOrderModal(prefill){
           <label>Priority <span style="color:#A32D2D">*</span></label>
           <select id="no-prio">${PRIO_OPTS.map(p=>`<option value="${p}"${prefill.priority===p?' selected':''}>${p}</option>`).join('')}</select>
         </div>
+        <div class="field-group" style="max-width:140px">
+          <label>Bangle type</label>
+          <select id="no-btype" onchange="setModalBangleType(this.value)">
+            <option value="dye_gold"${(prefill.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
+            <option value="cnc"${prefill.bangleType==='cnc'?' selected':''}>CNC</option>
+          </select>
+        </div>
         <div class="field-group">
           <label>Notes <span style="font-size:10px;color:#aaa">(optional)</span></label>
           <input id="no-notes" placeholder="Optional notes" value="${esc(prefill.notes||'')}">
@@ -2685,9 +2700,9 @@ function openNewOrderModal(prefill){
       </div>
       <div id="no-size-headers" style="display:flex;gap:6px;flex-wrap:wrap;background:#f0efff;padding:8px 10px;border-radius:8px;border:1px solid #AFA9EC;margin-bottom:10px"></div>
 
-      <!-- Varieties for Design 1 -->
+      <!-- Varieties / Quantities for Design 1 -->
       <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span>🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span></span>
+        <span id="no-variety-label">🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span></span>
         <button class="icon-btn" id="btn-add-variety" onclick="addModalVariety()">+ Add variety</button>
       </div>
       <div id="no-variety-rows" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -2803,8 +2818,66 @@ function handleModalSizeHeaderTab(e, szI){
   }
 }
 
+// Switch bangle type in the open modal
+function setModalBangleType(type){
+  window._modalBangleType=type;
+  if(type==='cnc'){
+    // Ensure at least one variety exists (for quantities)
+    if(!window._modalVarieties.length){
+      window._modalVarieties=[{id:uid(),name:'Default',sizes:Object.fromEntries(window._modalSizes.map(s=>[s,0])),images:[]}];
+    }
+  }
+  // Update section label
+  const lbl=document.getElementById('no-variety-label');
+  if(lbl){
+    if(type==='cnc'){
+      lbl.innerHTML='📦 Quantities <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(enter quantity per size for this CNC design)</span>';
+    } else {
+      lbl.innerHTML='🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span>';
+    }
+  }
+  renderModalVarieties();
+}
+
 function renderModalVarieties(){
   const wrap=document.getElementById('no-variety-rows');if(!wrap)return;
+  const addVarBtn=document.getElementById('btn-add-variety');
+
+  // ── CNC MODE: simplified single-row quantity input ──────────────────────────
+  if(window._modalBangleType==='cnc'){
+    if(!window._modalVarieties.length){
+      window._modalVarieties=[{id:uid(),name:'Default',sizes:Object.fromEntries(window._modalSizes.map(s=>[s,0])),images:[]}];
+    }
+    if(addVarBtn)addVarBtn.style.display='none';
+    const v=window._modalVarieties[0];
+    const rowTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+    wrap.innerHTML=`<div class="modal-variety-row" style="background:#f7f6f2;border:1.5px dashed #AFA9EC">
+      <div class="modal-variety-row-head">
+        <span style="font-size:11px;font-weight:600;color:#534AB7">📦 CNC — Enter total quantities per size</span>
+        <span style="font-size:11px;color:#888;margin-left:auto">Total: <strong>${rowTotal}</strong></span>
+      </div>
+      <div class="modal-sizes-grid">
+        ${window._modalSizes.map((sz,szI)=>`<div class="modal-size-cell">
+          <label>${esc(sz)}</label>
+          <input type="number" min="0" value="${(v.sizes||{})[sz]||0}"
+            oninput="window._modalVarieties[0]=window._modalVarieties[0]||{sizes:{}};window._modalVarieties[0].sizes['${sz}']=parseInt(this.value)||0;updateModalVarietyTotal(0)"
+            onkeydown="handleModalQtyTab(event,0,${szI})">
+        </div>`).join('')}
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:#666">
+        Need separate variety breakdown?
+        <button type="button"
+          style="font-size:11px;padding:3px 10px;border:1px solid #AFA9EC;border-radius:6px;cursor:pointer;background:#fff;color:#534AB7;margin-left:4px"
+          onclick="document.getElementById('no-btype').value='dye_gold';setModalBangleType('dye_gold')">
+          + Add variety breakdown
+        </button>
+      </div>
+    </div>`;
+    return;
+  }
+
+  // ── DYE GOLD MODE: full variety table ──────────────────────────────────────
+  if(addVarBtn)addVarBtn.style.display='';
   if(!window._modalVarieties.length){
     wrap.innerHTML=`<div style="font-size:12px;color:#aaa;padding:8px 0">No varieties yet — click "+ Add variety".</div>`;
     return;
@@ -2968,6 +3041,8 @@ function createOrder(){
   const dname=document.getElementById('no-dname').value.trim();
   const dcode=document.getElementById('no-dcode').value.trim();
 
+  const bangleType=(document.getElementById('no-btype')?.value)||'dye_gold';
+
   let hasErr=false;
   if(!orderId){showFieldError('no-id','Order ID is required');hasErr=true;}
   if(!client){showFieldError('no-client','Client name is required');hasErr=true;}
@@ -2975,10 +3050,19 @@ function createOrder(){
   if(!dname){showFieldError('no-dname','Design name is required');hasErr=true;}
   if(!dcode){showFieldError('no-dcode','Design code is required');hasErr=true;}
 
-  // Validate varieties
-  const validVarieties=window._modalVarieties.filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
-  if(!window._modalVarieties.length||!validVarieties.length){
-    if(errV)errV.style.display='block';hasErr=true;
+  // Validate quantities / varieties
+  if(bangleType==='cnc'){
+    const cncTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt((window._modalVarieties[0]?.sizes||{})[sz])||0),0);
+    if(!cncTotal){
+      if(errV){errV.textContent='Please enter at least one quantity for this CNC design.';errV.style.display='block';}
+      hasErr=true;
+    }
+  } else {
+    const validVarieties=window._modalVarieties.filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
+    if(!window._modalVarieties.length||!validVarieties.length){
+      if(errV){errV.textContent='At least one variety with non-zero quantity is required';errV.style.display='block';}
+      hasErr=true;
+    }
   }
   if(hasErr)return;
 
@@ -3002,6 +3086,7 @@ function createOrder(){
     id:uid(),orderId,client,startDate,
     priority:document.getElementById('no-prio').value,
     notes:document.getElementById('no-notes').value,
+    bangleType,
     designs:[firstDesign,...extraDesignObjects],
     attachedFile:window._uploadedOrderFile||null
   };
@@ -3011,7 +3096,7 @@ function createOrder(){
   S.openOrders.add(newOrder.id);
   S.openClients.add(client);
   S.activeTabs[newOrder.id]='designs';
-  audit('Create order',`New order ${orderId} for ${client} created with ${window._modalVarieties.length} varieties`);
+  audit('Create order',`New order ${orderId} for ${client} (${bangleType==='cnc'?'CNC':'Dye Gold'}) created with ${window._modalVarieties.length} varieties`);
   rebuildVocab();closeModal();render();
 }
 
@@ -3185,6 +3270,7 @@ function processOrderFile(file){
         const sizeKeys=[];
 
         // ── Shared helper: group data rows into designs ──────────────────────
+        // vIdx=-1 means no variety column; rows with quantities get 'Default' variety name
         const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes)=>{
           const designMap=[];
           let curDesign=null,lastDN='',lastDC='';
@@ -3193,15 +3279,25 @@ function processOrderFile(file){
             const dc=String(row[dcIdx]||'').trim();
             if(dn)lastDN=dn;
             if(dc)lastDC=dc;
-            const vName=String(row[vIdx]||'').trim();
+            if(!lastDN)return; // no design context yet
+            const rawVName=vIdx>=0?String(row[vIdx]||'').trim():'';
+            const hasQty=allSizes.some(sz=>(parseInt(row[szIdxMap[sz]])||0)>0);
+            // Skip completely blank rows (no variety name AND no quantities)
+            if(!rawVName&&!hasQty)return;
+            // Auto-name variety 'Default' when cell is blank but has quantities
+            const vName=rawVName||(hasQty?'Default':'');
             if(!vName)return;
             if(!curDesign||curDesign.name!==lastDN){
               curDesign={name:lastDN,code:lastDC,sizes:[...allSizes],varieties:[]};
               designMap.push(curDesign);
             }
+            // Avoid duplicate variety names within a design — append suffix if needed
+            const existingNames=curDesign.varieties.map(v=>v.name);
+            let finalVName=vName;
+            if(existingNames.includes(finalVName)){let n=2;while(existingNames.includes(finalVName+' '+n))n++;finalVName=finalVName+' '+n;}
             const sizes={};
             allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
-            curDesign.varieties.push({name:vName,sizes,images:[]});
+            curDesign.varieties.push({name:finalVName,sizes,images:[]});
           });
           return designMap.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -3221,9 +3317,12 @@ function processOrderFile(file){
           const tblHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().trim()==='design name');
           if(tblHdrIdx>=0){
             const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
-            const dnIdx=0,dcIdx=1,vIdx=2;
+            const dnIdx=0,dcIdx=1;
             const szIdxMap={};const allSizes=[];
             hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+            // Detect variety column dynamically (first non-size column after Design Code that mentions "variety")
+            const szColSet=new Set(Object.values(szIdxMap));
+            const vIdx=hdr.findIndex((h,i)=>i>dcIdx&&!szColSet.has(i)&&/variety/i.test(h));
             const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
@@ -3244,11 +3343,12 @@ function processOrderFile(file){
 
           const dnIdx=headers.findIndex(h=>h==='design name'||h==='design');
           const dcIdx=headers.findIndex(h=>h==='design code'||h==='code');
+          // vIdx=-1 is fine — groupIntoDesigns will auto-name varieties 'Default'
           const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
           const szIdxMap={};const allSizes=[];
           headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
 
-          if(dnIdx>=0&&vIdx>=0){
+          if(dnIdx>=0){
             const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
@@ -3473,6 +3573,12 @@ function buildVendorDetailsPanel(vo,vi){
         <option value="critical"${vo.priority==='critical'?' selected':''}>Critical</option>
       </select>
     </div>
+    <div class="field-group" style="max-width:120px"><label>Bangle type</label>
+      <select onchange="upVendorOrder(${vi},'bangleType',this.value)">
+        <option value="dye_gold"${(vo.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
+        <option value="cnc"${vo.bangleType==='cnc'?' selected':''}>CNC</option>
+      </select>
+    </div>
   </div>
   <div class="field-group"><label>Notes</label>
     <textarea class="notes-area" onchange="upVendorOrder(${vi},'notes',this.value)">${esc(vo.notes||'')}</textarea>
@@ -3616,6 +3722,7 @@ function delVVImg(vi,di,vri,ii){S.vendorOrders[vi].designs[di].varieties[vri].im
 function openNewVendorOrderModal(prefill){
   prefill=prefill||{};
   if(!prefill._keepFile)window._uploadedOrderFile=null;
+  window._modalBangleType=prefill.bangleType||'dye_gold';
 
   // Resolve first design + extra designs
   let firstDesign={};
@@ -3692,6 +3799,13 @@ function openNewVendorOrderModal(prefill){
           <label>Priority</label>
           <select id="no-prio">${PRIO_OPTS.map(p=>`<option value="${p}"${prefill.priority===p?' selected':''}>${p}</option>`).join('')}</select>
         </div>
+        <div class="field-group" style="max-width:140px">
+          <label>Bangle type</label>
+          <select id="no-btype" onchange="setModalBangleType(this.value)">
+            <option value="dye_gold"${(prefill.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
+            <option value="cnc"${prefill.bangleType==='cnc'?' selected':''}>CNC</option>
+          </select>
+        </div>
         <div class="field-group">
           <label>Notes <span style="font-size:10px;color:#aaa">(optional)</span></label>
           <input id="no-notes" placeholder="Optional notes" value="${esc(prefill.notes||'')}">
@@ -3722,9 +3836,9 @@ function openNewVendorOrderModal(prefill){
       </div>
       <div id="no-size-headers" style="display:flex;gap:6px;flex-wrap:wrap;background:#f0efff;padding:8px 10px;border-radius:8px;border:1px solid #AFA9EC;margin-bottom:10px"></div>
 
-      <!-- Varieties -->
+      <!-- Varieties / Quantities -->
       <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span>🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span></span>
+        <span id="no-variety-label">🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span></span>
         <button class="icon-btn" id="btn-add-variety" onclick="addModalVariety()">+ Add variety</button>
       </div>
       <div id="no-variety-rows" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -3769,14 +3883,25 @@ function createVendorOrder(){
   const dname=(document.getElementById('no-dname').value||'').trim();
   const dcode=(document.getElementById('no-dcode').value||'').trim();
 
+  const bangleType=(document.getElementById('no-btype')?.value)||'dye_gold';
+
   let hasErr=false;
   if(!vendor){showFieldError('no-client','Vendor name is required');hasErr=true;}
   if(!startDate){showFieldError('no-date','Order date is required');hasErr=true;}
   if(!dname){showFieldError('no-dname','Design name is required');hasErr=true;}
 
-  const validVarieties=(window._modalVarieties||[]).filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
-  if(!(window._modalVarieties||[]).length||!validVarieties.length){
-    if(errV)errV.style.display='block';hasErr=true;
+  if(bangleType==='cnc'){
+    const cncTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt(((window._modalVarieties||[])[0]?.sizes||{})[sz])||0),0);
+    if(!cncTotal){
+      if(errV){errV.textContent='Please enter at least one quantity for this CNC design.';errV.style.display='block';}
+      hasErr=true;
+    }
+  } else {
+    const validVarieties=(window._modalVarieties||[]).filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
+    if(!(window._modalVarieties||[]).length||!validVarieties.length){
+      if(errV){errV.textContent='At least one variety with non-zero quantity is required';errV.style.display='block';}
+      hasErr=true;
+    }
   }
   if(hasErr)return;
 
@@ -3794,7 +3919,7 @@ function createVendorOrder(){
   });
 
   histPush();
-  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,
+  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,bangleType,
     designs:[firstDesign,...extraDesignObjects],attachedFile:window._uploadedOrderFile||null};
   window._uploadedOrderFile=null;
   window._modalExtraDesigns=[];
@@ -3921,15 +4046,22 @@ function processVendorOrderFile(file){
         };
         const colA=rows.map(r=>String(r[0]||'').toLowerCase().trim());
         const isLabelFormat=colA.some(l=>l.includes('order id')||l.includes('vendor name'));
+        // vIdx=-1 = no variety column; rows with quantities get 'Default' variety name
         const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes)=>{
           const dm=[];let cur=null,ldn='',ldc='';
           dataRows.forEach(row=>{
             const dn=String(row[dnIdx]||'').trim(),dc=String(row[dcIdx]||'').trim();
             if(dn)ldn=dn;if(dc)ldc=dc;
-            const vn=String(row[vIdx]||'').trim();if(!vn)return;
+            if(!ldn)return;
+            const rawVn=vIdx>=0?String(row[vIdx]||'').trim():'';
+            const hasQty=allSizes.some(sz=>(parseInt(row[szIdxMap[sz]])||0)>0);
+            if(!rawVn&&!hasQty)return;
+            const vn=rawVn||(hasQty?'Default':'');if(!vn)return;
             if(!cur||cur.name!==ldn){cur={name:ldn,code:ldc,sizes:[...allSizes],varieties:[]};dm.push(cur);}
+            const existNames=cur.varieties.map(v=>v.name);
+            let fvn=vn;if(existNames.includes(fvn)){let n=2;while(existNames.includes(fvn+' '+n))n++;fvn=fvn+' '+n;}
             const sizes={};allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
-            cur.varieties.push({name:vn,sizes,images:[]});
+            cur.varieties.push({name:fvn,sizes,images:[]});
           });
           return dm.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -3946,7 +4078,10 @@ function processVendorOrderFile(file){
             const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
             const szIdxMap={},allSizes=[];
             hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
-            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,2,szIdxMap,allSizes);
+            // Detect variety column dynamically
+            const szColSet=new Set(Object.values(szIdxMap));
+            const vIdx=hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,vIdx,szIdxMap,allSizes);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
             status.style.display='block';
             openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
@@ -3966,7 +4101,7 @@ function processVendorOrderFile(file){
           const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
           const szIdxMap={},allSizes=[];
           headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
-          if(dnIdx>=0&&vIdx>=0){
+          if(dnIdx>=0){
             const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
             status.style.display='block';
@@ -6689,6 +6824,8 @@ async function fbInit(){
         S.openOrders  = new Set(parsed.openOrders  || []);
         S.openClients = new Set(parsed.openClients || []);
         save(); render();
+        // Stamp local time as the remote's savedAt so next SSE comparison is correct
+        localStorage.setItem('bangle_saved_at', envelope.savedAt);
         fbSetStatus('connected', 'Live · loaded latest data');
         showToast('⬇ Loaded latest data from database', 'green');
       } else {
@@ -6730,6 +6867,8 @@ function fbStartListener(){
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
       save(); render();
+      // Use remote timestamp so future SSE events compare correctly (not local clock)
+      localStorage.setItem('bangle_saved_at', envelope.savedAt);
       fbSetStatus('connected', 'Live · synced');
     } catch(e){ /* ignore malformed events */ }
   });
