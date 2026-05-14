@@ -10,9 +10,12 @@
 <meta property="og:description" content="Production tracking dashboard — orders, designs, inventory & vendor management.">
 <meta property="og:url"         content="https://sayyamranka1610.github.io/bangle-tracker/">
 <meta property="og:site_name"   content="Siddhi Bangle Tracker">
-<meta name="twitter:card"       content="summary">
+<meta property="og:image"       content="https://sayyamranka1610.github.io/bangle-tracker/bangle-logo.png">
+<meta name="twitter:card"       content="summary_large_image">
 <meta name="twitter:title"      content="Siddhi Bangle Tracker">
 <meta name="twitter:description" content="Production tracking dashboard — orders, designs, inventory & vendor management.">
+<meta name="twitter:image"      content="https://sayyamranka1610.github.io/bangle-tracker/bangle-logo.png">
+<link rel="icon" type="image/png" href="bangle-logo.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -543,6 +546,8 @@ input[type="date"]{min-width:118px}
 .login-card{background:#fff;border-radius:20px;padding:2.5rem 2rem;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center}
 .login-logo{margin-bottom:18px;display:flex;justify-content:center}
 .bangle-icon{width:76px;height:76px;border-radius:50%;border:13px solid #7F77DD;background:transparent;position:relative;box-shadow:0 0 0 4px rgba(255,255,255,.25),0 12px 36px rgba(0,0,0,.28),inset 0 2px 6px rgba(255,255,255,.2)}
+.login-logo-img{width:96px;height:96px;border-radius:50%;object-fit:cover;object-position:center 70%;box-shadow:0 0 0 4px rgba(255,255,255,.25),0 12px 36px rgba(0,0,0,.28);border:3px solid #fff}
+.app-logo-img{width:40px;height:40px;border-radius:50%;object-fit:cover;object-position:center 70%;vertical-align:middle;margin-right:10px;box-shadow:0 2px 6px rgba(0,0,0,.2);border:2px solid rgba(255,255,255,.55);background:#fff;flex-shrink:0}
 .bangle-icon::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.35)}
 .bangle-icon::after{content:'';position:absolute;top:6px;left:50%;transform:translateX(-50%);width:18px;height:6px;border-radius:50%;background:rgba(255,255,255,.45)}
 .login-title{font-size:20px;font-weight:700;color:#1a1916;margin-bottom:4px}
@@ -578,7 +583,11 @@ input[type="date"]{min-width:118px}
 <!-- ── LOGIN SCREEN ───────────────────────────────────────────────────── -->
 <div id="login-screen">
   <div class="login-card" id="login-card">
-    <div class="login-logo"><div class="bangle-icon"></div></div>
+    <div class="login-logo">
+      <img class="login-logo-img" src="bangle-logo.png" alt="Siddhi Bangle Tracker"
+        onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <div class="bangle-icon" style="display:none"></div>
+    </div>
     <h2 class="login-title">Siddhi Bangle Tracker</h2>
     <p class="login-sub">Sign in to access the dashboard</p>
     <div class="login-field">
@@ -615,7 +624,14 @@ input[type="date"]{min-width:118px}
 <div id="toast-el" class="toast" style="display:none"></div>
 <div class="dash" id="app">
   <div class="header-band">
-    <div><h1>🪬 Siddhi Bangle Tracker</h1><p id="header-sub">Loading...</p></div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <img class="app-logo-img" src="bangle-logo.png" alt=""
+        onerror="this.style.display='none';this.nextElementSibling.querySelector('.fallback-emoji').style.display='inline'">
+      <div>
+        <h1 style="display:flex;align-items:center;gap:6px"><span class="fallback-emoji" style="display:none">🪬</span> Siddhi Bangle Tracker</h1>
+        <p id="header-sub">Loading...</p>
+      </div>
+    </div>
     <div class="header-actions no-print">
       <button onclick="shareApp()" title="Share this dashboard link">🔗 Share</button>
       <button onclick="showExportMenu()">📥 Export</button>
@@ -7410,7 +7426,7 @@ function fbStartListener(){
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
       render();
       fbSetStatus('connected', 'Live · synced');
-      showToast('🔄 Updated from another device', 'green');
+      // Silent sync — no toast; status bar dot is the only indicator
     } catch(e){ /* ignore malformed events */ }
   });
 
