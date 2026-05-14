@@ -712,6 +712,7 @@ let S = {
   stageTemplates: JSON.parse(JSON.stringify(DEFAULT_STAGES)),
   stageGroupDefs: JSON.parse(JSON.stringify(STAGE_GROUPS)), // editable group defs
   orders:[], openOrders:new Set(), openClients:new Set(),
+  openDesignStages:new Set(),    // design IDs whose Production Stages are expanded
   activeTabs:{}, auditLog:[], mainView:'orders',
   filters:{client:'',dname:'',dcode:'',status:''},
   vocabulary:{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']},
@@ -741,6 +742,7 @@ try{
     S.orders=sv.orders||[];
     S.openOrders=new Set(sv.openOrders||[]);
     S.openClients=new Set(sv.openClients||[]);
+    S.openDesignStages=new Set(sv.openDesignStages||[]);
     S.activeTabs=sv.activeTabs||{};
     S.auditLog=sv.auditLog||[];
     S.vocabulary=sv.vocabulary||{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']};
@@ -822,7 +824,7 @@ let _histIdx = -1; // pointer to current position
 let _histLock = false; // prevent recording during undo/redo
 
 function snapState(){
-  return JSON.stringify({...S,openOrders:[...S.openOrders],openClients:[...S.openClients]});
+  return JSON.stringify({...S,openOrders:[...S.openOrders],openClients:[...S.openClients],openDesignStages:[...(S.openDesignStages||[])]});
 }
 function histPush(){
   if(_histLock) return;
@@ -860,6 +862,7 @@ function loadSnap(snap){
   Object.assign(S, parsed);
   S.openOrders = new Set(parsed.openOrders||[]);
   S.openClients = new Set(parsed.openClients||[]);
+  S.openDesignStages = new Set(parsed.openDesignStages||[]);
   render();
 }
 function updateUndoRedoBtns(){
@@ -1090,7 +1093,7 @@ function save(){
   }
   try{
     // Extract images to save separately in IndexedDB
-    const{stateNoImages,imageMap}=extractImages({...S,openOrders:[...S.openOrders],openClients:[...S.openClients]});
+    const{stateNoImages,imageMap}=extractImages({...S,openOrders:[...S.openOrders],openClients:[...S.openClients],openDesignStages:[...(S.openDesignStages||[])]});
     // Save text data (no images) to localStorage — stays well under 5MB
     const data=JSON.stringify(stateNoImages);
     localStorage.setItem('bangle_prod_tracker',data);
@@ -1102,7 +1105,7 @@ function save(){
   }catch(e){
     // If localStorage still fails (e.g. private mode), try sessionStorage as fallback
     try{
-      const data=JSON.stringify({...S,openOrders:[...S.openOrders],openClients:[...S.openClients]});
+      const data=JSON.stringify({...S,openOrders:[...S.openOrders],openClients:[...S.openClients],openDesignStages:[...(S.openDesignStages||[])]});
       sessionStorage.setItem('bangle_session_fallback',data);
       setSaveStatus('saved','⚠ Saved (session only — localStorage blocked)');
     }catch(e2){
@@ -1117,7 +1120,7 @@ function save(){
 function backupToFile(){
   const data = {
     _meta:{ version:'v12', exportedAt:new Date().toISOString(), orders:S.orders.length },
-    state: {...S, openOrders:[...S.openOrders], openClients:[...S.openClients]}
+    state: {...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}
   };
   const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1657,31 +1660,73 @@ function buildStageGroup(order,oi,d,di,groupId,grouped){
 function buildStagesPanel(order,oi){
   const allDesigns=order.designs;
   if(!allDesigns.length)return '<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs — add a design first.</div>';
-  return allDesigns.map(function(d,di){
+  if(!S.openDesignStages)S.openDesignStages=new Set();
+  // Compact "Expand all / Collapse all" header for quick control
+  const allOpen=allDesigns.every(d=>S.openDesignStages.has(d.id));
+  const ctrlBar='<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px">'
+    +'<button class="icon-btn" onclick="toggleAllDesignStages(\''+order.id+'\','+(allOpen?'false':'true')+')">'
+    +(allOpen?'▾ Collapse all':'▸ Expand all')+'</button>'
+    +'</div>';
+  const sections=allDesigns.map(function(d,di){
+    const isOpen=S.openDesignStages.has(d.id);
     const grouped={raw:[],semi:[],finished:[]};
     d.stages.forEach(function(st,si){
       const g=getStageGroup(st.stageId);
       if(!grouped[g])grouped[g]=[];
       grouped[g].push({st:st,si:si});
     });
-    const pillsHtml=d.stages.map(function(st,si){
-      const t=getTmpl(st.stageId)||{name:'?'};
-      return '<span class="stage-pill '+pillCls(order,d,si)+'">'+dotLbl(d,si)+' '+esc(t.name)+'</span>'+(si<d.stages.length-1?'<span class="stage-arrow">›</span>':'');
-    }).join('');
-    return '<div class="design-stages-section">'
-      +'<div class="design-stages-head">'
-        +'<span>🎨 '+esc(d.name)+' <span style="color:#AFA9EC;font-weight:400">['+esc(d.code)+']</span> — '+d.stages.length+' stages</span>'
-        +'<div style="display:flex;gap:5px">'
-          +'<button class="icon-btn no-print" onclick="exportOrderCSV(\''+order.id+'\')" title="Export this order">📥</button>'
-          +'<button class="icon-btn no-print" onclick="printDesignWise(\''+order.id+'\',\''+d.id+'\')">🖨️</button>'
-        +'</div>'
+    // Status summary chip: "X / Y stages done"
+    const doneCount=d.stages.filter(s=>s.status==='done').length;
+    const totalCount=d.stages.length;
+    const statusChip='<span style="font-size:11px;color:#666;background:#f0efff;border:1px solid #AFA9EC;border-radius:14px;padding:2px 10px;font-weight:600">'
+      +doneCount+' / '+totalCount+' stages done</span>';
+    const chevron='<span class="chevron'+(isOpen?' open':'')+'" style="margin-right:6px;display:inline-block;transition:transform .15s;'+(isOpen?'transform:rotate(90deg)':'')+'">▶</span>';
+    // Click header to toggle — but stop click on action buttons from toggling
+    const headHtml='<div class="design-stages-head" style="cursor:pointer" onclick="toggleDesignStages(\''+d.id+'\')">'
+      +'<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +chevron+'🎨 '+esc(d.name)+' <span style="color:#AFA9EC;font-weight:400">['+esc(d.code)+']</span>'
+        +' <span style="color:#888;font-weight:400">— '+d.stages.length+' stages</span>'
+        +' '+statusChip
+      +'</span>'
+      +'<div style="display:flex;gap:5px" onclick="event.stopPropagation()">'
+        +'<button class="icon-btn no-print" onclick="exportOrderCSV(\''+order.id+'\')" title="Export this order">📥</button>'
+        +'<button class="icon-btn no-print" onclick="printDesignWise(\''+order.id+'\',\''+d.id+'\')">🖨️</button>'
       +'</div>'
-      +'<div class="stage-flow">'+pillsHtml+'</div>'
-      +buildStageGroup(order,oi,d,di,'raw',grouped)
-      +buildStageGroup(order,oi,d,di,'semi',grouped)
-      +buildStageGroup(order,oi,d,di,'finished',grouped)
     +'</div>';
+    // Body is rendered ONLY when expanded
+    let bodyHtml='';
+    if(isOpen){
+      const pillsHtml=d.stages.map(function(st,si){
+        const t=getTmpl(st.stageId)||{name:'?'};
+        return '<span class="stage-pill '+pillCls(order,d,si)+'">'+dotLbl(d,si)+' '+esc(t.name)+'</span>'+(si<d.stages.length-1?'<span class="stage-arrow">›</span>':'');
+      }).join('');
+      bodyHtml='<div class="stage-flow">'+pillsHtml+'</div>'
+        +buildStageGroup(order,oi,d,di,'raw',grouped)
+        +buildStageGroup(order,oi,d,di,'semi',grouped)
+        +buildStageGroup(order,oi,d,di,'finished',grouped);
+    }
+    return '<div class="design-stages-section">'+headHtml+bodyHtml+'</div>';
   }).join('');
+  return ctrlBar+sections;
+}
+
+// Toggle a design's production-stage section open/closed
+function toggleDesignStages(designId){
+  if(!S.openDesignStages)S.openDesignStages=new Set();
+  if(S.openDesignStages.has(designId))S.openDesignStages.delete(designId);
+  else S.openDesignStages.add(designId);
+  save();render();
+}
+// Expand or collapse all designs in an order at once
+function toggleAllDesignStages(orderId,openIt){
+  if(!S.openDesignStages)S.openDesignStages=new Set();
+  const order=S.orders.find(o=>o.id===orderId);
+  if(!order)return;
+  order.designs.forEach(d=>{
+    if(openIt)S.openDesignStages.add(d.id);
+    else S.openDesignStages.delete(d.id);
+  });
+  save();render();
 }
 
 function buildVarietyGallery(varieties){
@@ -7289,11 +7334,11 @@ async function fbPush(silent){
   _fb.lastPush = Date.now();
   try{
     const { stateNoImages } = extractImages({
-      ...S, openOrders:[...S.openOrders], openClients:[...S.openClients]
+      ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
     });
     // Wrap state as a plain string so Firebase never sees the "/" keys
     const payload = JSON.stringify({
-      data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients]}),
+      data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
       savedAt : new Date().toISOString(),
       device  : FB_DEVICE_ID
     });
@@ -7339,6 +7384,7 @@ async function fbInit(){
       Object.assign(S, parsed);
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
+      S.openDesignStages = new Set(parsed.openDesignStages || []);
       // Save to local cache WITHOUT triggering Firebase push (avoid echo)
       _origSave();
       // Stamp local time with remote's savedAt so SSE comparison is correct
@@ -7418,6 +7464,7 @@ function fbStartListener(){
       Object.assign(S, parsed);
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
+      S.openDesignStages = new Set(parsed.openDesignStages || []);
       // Save to local cache without triggering Firebase push (avoid echo loop)
       _origSave();
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
