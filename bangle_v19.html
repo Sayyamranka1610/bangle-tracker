@@ -4536,13 +4536,11 @@ function openVendorPrintWindow(title,orders){
       const varCards=varieties.map(v=>{
         const vImages=v.images||[];
         const vTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const sizeQtyHtml=szKeys.map(sz=>`<span style="display:inline-block;margin:2px 3px;font-size:10px;background:#EEEDFE;border-radius:4px;padding:2px 6px"><strong>${sz}</strong>: ${(v.sizes||{})[sz]||0}</span>`).join('');
         const imgHtml=vImages.length?vImages.map(img=>`<img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;display:block">`).join('<br style="margin:4px 0">')
           :'<div style="width:160px;height:80px;background:#f0efff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#AFA9EC;border:1.5px dashed #AFA9EC">No image</div>';
         return`<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;vertical-align:top;margin:0 12px 16px 0;max-width:180px">
           ${imgHtml}
           <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
-          <div style="text-align:center;line-height:1.6">${sizeQtyHtml}</div>
           <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} ${esc(v.unit||'pcs')}</div>
         </div>`;
       }).join('');
@@ -4835,18 +4833,17 @@ function buildPrintableOrder(order,tabOverride,includeStages){
       const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
       const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
 
-      // Build per-variety image cards with size quantities below
+      // Build per-variety image cards. Size breakdown is shown only in the
+      // table below — no redundant per-size chips above the table.
       const varietyCards=varieties.map(v=>{
         const vImages=v.images||[];
         const vTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const sizeQtyHtml=szKeys.map(sz=>`<span style="display:inline-block;margin:2px 3px;font-size:10px;background:#EEEDFE;border-radius:4px;padding:2px 6px"><strong>${sz}</strong>: ${(v.sizes||{})[sz]||0}</span>`).join('');
         const imgHtml=vImages.length
           ? vImages.map(img=>`<img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;display:block">`).join('<br style="margin:4px 0">')
           : '<div style="width:160px;height:80px;background:#f0efff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#AFA9EC;border:1.5px dashed #AFA9EC">No image</div>';
         return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;vertical-align:top;margin:0 12px 16px 0;max-width:180px">
           ${imgHtml}
           <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
-          <div style="text-align:center;line-height:1.6">${sizeQtyHtml}</div>
           <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} ${esc(v.unit||'pcs')}</div>
         </div>`;
       }).join('');
