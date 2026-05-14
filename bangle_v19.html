@@ -3,7 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bangle Production Tracker v19 — Drive Sync</title>
+<title>Siddhi Bangle Tracker</title>
+<!-- Open Graph / Link Preview -->
+<meta property="og:type"        content="website">
+<meta property="og:title"       content="Siddhi Bangle Tracker">
+<meta property="og:description" content="Production tracking dashboard — orders, designs, inventory & vendor management.">
+<meta property="og:url"         content="https://sayyamranka1610.github.io/bangle-tracker/">
+<meta property="og:site_name"   content="Siddhi Bangle Tracker">
+<meta name="twitter:card"       content="summary">
+<meta name="twitter:title"      content="Siddhi Bangle Tracker">
+<meta name="twitter:description" content="Production tracking dashboard — orders, designs, inventory & vendor management.">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -570,7 +579,7 @@ input[type="date"]{min-width:118px}
 <div id="login-screen">
   <div class="login-card" id="login-card">
     <div class="login-logo"><div class="bangle-icon"></div></div>
-    <h2 class="login-title">Bangle Production Tracker</h2>
+    <h2 class="login-title">Siddhi Bangle Tracker</h2>
     <p class="login-sub">Sign in to access the dashboard</p>
     <div class="login-field">
       <label>Username</label>
@@ -606,8 +615,9 @@ input[type="date"]{min-width:118px}
 <div id="toast-el" class="toast" style="display:none"></div>
 <div class="dash" id="app">
   <div class="header-band">
-    <div><h1>🪬 Bangle Production Tracker</h1><p id="header-sub">Loading...</p></div>
+    <div><h1>🪬 Siddhi Bangle Tracker</h1><p id="header-sub">Loading...</p></div>
     <div class="header-actions no-print">
+      <button onclick="shareApp()" title="Share this dashboard link">🔗 Share</button>
       <button onclick="showExportMenu()">📥 Export</button>
       <button onclick="showPrintMenu()">🖨️ Print</button>
       <button onclick="openStageTemplateEditor()">⚙️ Stages</button>
@@ -622,6 +632,7 @@ input[type="date"]{min-width:118px}
     <div class="main-tab" onclick="switchMain('analytics')">📊 Analytics</div>
     <div class="main-tab" onclick="switchMain('inventory')">🗄️ Inventory</div>
     <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
+    <div class="main-tab" onclick="switchMain('masters')">📋 Masters</div>
   </div>
   <div class="filter-bar no-print" id="filter-bar">
     <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
@@ -641,6 +652,7 @@ input[type="date"]{min-width:118px}
   <div id="view-design" style="display:none"></div>
   <div id="view-analytics" style="display:none"></div>
   <div id="view-inventory" style="display:none"></div>
+  <div id="view-masters" style="display:none"></div>
   <div id="empty-msg" class="empty-state" style="display:none">
     <div style="font-size:32px;margin-bottom:8px">○</div>
     <div style="font-size:14px;font-weight:600;color:#888">No orders yet</div>
@@ -686,7 +698,7 @@ let S = {
   orders:[], openOrders:new Set(), openClients:new Set(),
   activeTabs:{}, auditLog:[], mainView:'orders',
   filters:{client:'',dname:'',dcode:'',status:''},
-  vocabulary:{clients:[],dnames:[],dcodes:[]},
+  vocabulary:{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']},
   invLedger:[],           // [{id,date,designName,designCode,type,qty,orderId,note,source,autoType,stageRef,rejections}]
   // qty = pieces for ALL groups (raw, semi, finished)
   invPeriod:'monthly',    // 'weekly'|'monthly'|'yearly'
@@ -715,7 +727,9 @@ try{
     S.openClients=new Set(sv.openClients||[]);
     S.activeTabs=sv.activeTabs||{};
     S.auditLog=sv.auditLog||[];
-    S.vocabulary=sv.vocabulary||{clients:[],dnames:[],dcodes:[]};
+    S.vocabulary=sv.vocabulary||{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']};
+    if(!S.vocabulary.vendors)S.vocabulary.vendors=[];
+    if(!S.vocabulary.units||!S.vocabulary.units.length)S.vocabulary.units=['pcs','pairs','jotta'];
     S.mainView=sv.mainView||'orders';
     S.invLedger=sv.invLedger||[];
     S.invPeriod=sv.invPeriod||'monthly';
@@ -737,37 +751,8 @@ try{
 
 // Migration complete — all legacy keys handled in initial load block above
 
-// ── SAMPLE DATA (only if nothing was ever saved — first run only) ────────────
-if(!window._loadedFromStorage && !S.orders.length){
-  const td=new Date(),fmt=d=>d.toISOString().split('T')[0];
-  const mkStages=(ov=[])=>DEFAULT_STAGES.map((s,i)=>({stageId:s.id,status:ov[i]||'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:''}));
-  const mkVariety=(name,sizes)=>({id:uid(),name,sizes:Object.fromEntries(Object.keys(sizes).map(s=>[s,sizes[s]||0])),images:[]});
-  S.orders=[
-    {id:uid(),orderId:'ORD-041',client:'Kapoor Bangle Co.',startDate:fmt(new Date(td-6*864e5)),priority:'urgent',notes:'Rush order — prioritise plating',
-     designs:[
-       {id:uid(),name:'Mogra Twist',code:'MG-22',sizesLocked:true,sizes:{'2/2':750,'2/4':0,'2/6':0,'2/8':0,'2/10':0,'2/12':0},images:[],
-        varieties:[mkVariety('Classic',{'2/2':200,'2/4':150,'2/6':100,'2/8':100,'2/10':100,'2/12':100}),mkVariety('Bridal',{'2/2':150,'2/4':150,'2/6':100,'2/8':100,'2/10':100,'2/12':100})],
-        stages:mkStages(['done','done','done','done','in progress','pending','pending','pending','pending'])},
-       {id:uid(),name:'Plain Round',code:'PR-10',sizesLocked:true,sizes:{'2/2':350,'2/4':0,'2/6':0,'2/8':0,'2/10':0,'2/12':0},images:[],
-        varieties:[mkVariety('Standard',{'2/2':100,'2/4':80,'2/6':70,'2/8':50,'2/10':30,'2/12':20})],
-        stages:mkStages(['done','done','in progress','pending','pending','pending','pending','pending','pending'])}
-     ]},
-    {id:uid(),orderId:'ORD-042',client:'Mehta Exports',startDate:fmt(new Date(td-2*864e5)),priority:'normal',notes:'',
-     designs:[
-       {id:uid(),name:'Gold Carved',code:'GC-05',sizesLocked:true,sizes:{'2/2':800,'2/4':0,'2/6':0,'2/8':0,'2/10':0,'2/12':0},images:[],
-        varieties:[mkVariety('Party',{'2/2':0,'2/4':200,'2/6':300,'2/8':200,'2/10':100,'2/12':0})],
-        stages:mkStages(['done','done','in progress','pending','pending','pending','pending','pending','pending'])}
-     ]},
-    {id:uid(),orderId:'ORD-043',client:'Verma Traders',startDate:fmt(new Date(td-9*864e5)),priority:'critical',notes:'Overdue — escalate immediately',
-     designs:[
-       {id:uid(),name:'Antique Cuff',code:'AC-18',sizesLocked:true,sizes:{'2/2':700,'2/4':0,'2/6':0,'2/8':0,'2/10':0,'2/12':0},images:[],
-        varieties:[mkVariety('Classic',{'2/2':50,'2/4':100,'2/6':200,'2/8':200,'2/10':100,'2/12':50})],
-        stages:mkStages(['done','done','done','done','done','done','done','delayed','pending'])}
-     ]},
-  ];
-  S.openClients=new Set(['Kapoor Bangle Co.']);
-  rebuildVocab();
-}
+// ── NO SAMPLE DATA — fresh install starts empty, Firebase loads real data ─────
+// (sample data was removed to prevent dummy orders showing on new devices)
 
 // Ensure all stage entries have vendor/stageNote fields and group property
 S.orders.forEach(o=>o.designs.forEach(d=>(d.stages||[]).forEach(st=>{
@@ -943,24 +928,55 @@ async function idbGetAll(){
   });
 }
 
-// Extract all images from state, return {stateNoImages, imageMap}
+// Compress an image dataUrl to a small thumbnail for Firebase sync
+// Output is typically 10–25KB base64 (160px JPEG @ 0.75) — safe to store in Firebase
+function compressImageToThumb(dataUrl,maxDim=160){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){
+        if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}
+        else{w=Math.round(w*maxDim/h);h=maxDim;}
+      }
+      const c=document.createElement('canvas');
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',0.75));
+    };
+    img.onerror=()=>resolve(dataUrl); // fallback: use original
+    img.src=dataUrl;
+  });
+}
+
+// Images smaller than this (chars) are safe to pass through to Firebase as-is.
+// Compressed thumbs (~20KB base64) are well under this. Large originals are stripped.
+const IMAGE_FB_THRESHOLD=80000; // ~60KB base64
+
+// Extract images from state — only strip images too large for Firebase.
+// Small/compressed images pass through so they sync across devices via Firebase.
 function extractImages(state){
   const imageMap={};
-  const cloned=JSON.parse(JSON.stringify(state)); // deep clone
-  // Strip stockItems images
-  (cloned.stockItems||[]).forEach((it,idx)=>{
-    (it.images||[]).forEach((img,ii)=>{
-      if(img.data&&img.data.startsWith('data:')){
-        const key=`stkimg_${it.id}_${ii}`;
+  const cloned=JSON.parse(JSON.stringify(state));
+
+  // Helper: strip img.data only when too large for Firebase
+  const maybeStrip=(img,key)=>{
+    if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
+      if(img.data.length>IMAGE_FB_THRESHOLD){
         imageMap[key]=img.data;
         img.data='__IDB__'+key;
       }
-    });
+      // else: small image, leave in state — Firebase can handle it
+    }
+  };
+
+  // Stock item images
+  (cloned.stockItems||[]).forEach(it=>{
+    (it.images||[]).forEach((img,ii)=>{maybeStrip(img,`stkimg_${it.id}_${ii}`);});
   });
 
-  // Strip vendor order variety images
+  // Vendor orders: attached files ALWAYS stripped (can be large Excel/PDF)
   (cloned.vendorOrders||[]).forEach(o=>{
-    // Strip attached file data
     if(o.attachedFile&&o.attachedFile.data&&o.attachedFile.data.startsWith('data:')){
       const fKey=`file_vo_${o.id}`;
       imageMap[fKey]=o.attachedFile.data;
@@ -968,42 +984,22 @@ function extractImages(state){
     }
     (o.designs||[]).forEach(d=>{
       (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach((img,ii)=>{
-          if(img.data&&img.data.startsWith('data:')){
-            const key=`img_vord_${d.id}_${ii}`;
-            imageMap[key]=img.data;
-            img.data='__IDB__'+key;
-          }
-        });
+        (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_${d.id}_${ii}`);});
       });
     });
   });
 
+  // Client orders: attached files ALWAYS stripped; design/variety images only if large
   (cloned.orders||[]).forEach(o=>{
-    // Strip attached file data (large binary) — kept in IndexedDB only
     if(o.attachedFile&&o.attachedFile.data){
       const fKey=`file_o_${o.id}`;
       imageMap[fKey]=o.attachedFile.data;
       o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
     }
     (o.designs||[]).forEach(d=>{
-      // Design-level images
-      (d.images||[]).forEach((img,ii)=>{
-        if(img.data&&img.data.startsWith('data:')){
-          const imgKey=`img_d_${d.id}_${ii}`;
-          imageMap[imgKey]=img.data;
-          img.data='__IDB__'+imgKey; // replace with reference
-        }
-      });
-      // Variety-level images
+      (d.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_d_${d.id}_${ii}`);});
       (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach((img,ii)=>{
-          if(img.data&&img.data.startsWith('data:')){
-            const imgKey=`img_v_${v.id}_${ii}`;
-            imageMap[imgKey]=img.data;
-            img.data='__IDB__'+imgKey;
-          }
-        });
+        (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_v_${v.id}_${ii}`);});
       });
     });
   });
@@ -1243,12 +1239,24 @@ function audit(action,detail){
   if(S.auditLog.length>500)S.auditLog=S.auditLog.slice(0,500);
 }
 function rebuildVocab(){
-  const clients=new Set(),dnames=new Set(),dcodes=new Set();
+  // Preserve existing units and any manually-added entries
+  const existingUnits=(S.vocabulary&&S.vocabulary.units)||['pcs','pairs','jotta'];
+  const clients=new Set(S.vocabulary&&S.vocabulary.clients||[]);
+  const vendors=new Set(S.vocabulary&&S.vocabulary.vendors||[]);
+  const dnames=new Set(S.vocabulary&&S.vocabulary.dnames||[]);
+  const dcodes=new Set(S.vocabulary&&S.vocabulary.dcodes||[]);
   S.orders.forEach(o=>{
     if(o.client)clients.add(o.client);
     (o.designs||[]).forEach(d=>{if(d.name)dnames.add(d.name);if(d.code)dcodes.add(d.code);});
   });
-  S.vocabulary={clients:[...clients].sort(),dnames:[...dnames].sort(),dcodes:[...dcodes].sort()};
+  S.vendorOrders.forEach(vo=>{if(vo.vendor)vendors.add(vo.vendor);});
+  S.vocabulary={
+    clients:[...clients].sort(),
+    vendors:[...vendors].sort(),
+    dnames:[...dnames].sort(),
+    dcodes:[...dcodes].sort(),
+    units:existingUnits
+  };
 }
 
 // ── STAGE/DESIGN LOGIC ────────────────────────────────────────────────────────
@@ -1353,20 +1361,22 @@ function orderMatchesFilter(order){
 // ── RENDER CORE ────────────────────────────────────────────────────────────────
 function switchMain(view){
   S.mainView=view;
-  const views=['orders','design','analytics','inventory','vendor'];
+  const views=['orders','design','analytics','inventory','vendor','masters'];
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',views[i]===view);});
   document.getElementById('view-orders').style.display=view==='orders'?'':'none';
   document.getElementById('view-vendor').style.display=view==='vendor'?'':'none';
   document.getElementById('view-design').style.display=view==='design'?'':'none';
   document.getElementById('view-analytics').style.display=view==='analytics'?'':'none';
   document.getElementById('view-inventory').style.display=view==='inventory'?'':'none';
-  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor')?'none':'';
+  document.getElementById('view-masters').style.display=view==='masters'?'':'none';
+  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters')?'none':'';
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
-  if(nb)nb.style.display=view==='vendor'?'none':'';
+  if(nb)nb.style.display=(view==='vendor'||view==='masters')?'none':'';
   if(view==='analytics')renderAnalytics();
   if(view==='inventory')renderInventory();
   if(view==='vendor')renderVendorOrders();
+  if(view==='masters')renderMasters();
   scheduleAutosave();
 }
 function render(){updateFilterOptions();renderStats();
@@ -1374,6 +1384,7 @@ function render(){updateFilterOptions();renderStats();
   else if(S.mainView==='vendor')renderVendorOrders();
   else if(S.mainView==='design')renderDesignView();
   else if(S.mainView==='inventory')renderInventory();
+  else if(S.mainView==='masters')renderMasters();
   else renderAnalytics();
   scheduleAutosave();
 }
@@ -1677,6 +1688,7 @@ function buildDesignCard(order,oi,d,di){
           <tr>
             <th style="min-width:130px">Variety name</th>
             <th style="min-width:62px">Images</th>
+            <th style="min-width:72px">Unit</th>
             ${szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')}
             <th style="min-width:60px">Total</th>
             <th style="min-width:40px" class="no-print">Del</th>
@@ -1687,21 +1699,23 @@ function buildDesignCard(order,oi,d,di){
             const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
             const imgCells=(v.images||[]).map((img,ii)=>'<img class="variety-thumb" src="'+img.data+'" alt="" onclick="openLbDirect(\''+img.data+'\')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>').join('');
             const sizeCells=szKeys.map((sz,szI)=>'<td><input type="number" class="qty-inp" min="0" value="'+((v.sizes||{})[sz]||0)+'" oninput="this._dirty=true" onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}" onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')" tabindex="0"></td>').join('');
+            const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
             return '<tr>'
               +'<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" onchange="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>'
               +'<td><div class="variety-img-cell">'+imgCells
                 +'<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
                 +'<input type="file" id="vimg-'+d.id+'-'+vi+'" accept="image/*" multiple style="display:none" onchange="handleVarietyImg('+oi+','+di+','+vi+',this)">'
               +'</div></td>'
+              +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts+'</select></td>'
               +sizeCells
               +'<td class="total-col">'+rowTotal+'</td>'
               +'<td class="no-print"><button class="icon-btn danger" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>'
             +'</tr>';
           }).join('')}
-          ${varieties.length===0?('<tr><td colspan="'+(3+szKeys.length)+'" style="text-align:center;color:#aaa;padding:10px;font-size:11px">No varieties yet — click &quot;+ Add variety&quot;</td></tr>'):''}
+          ${varieties.length===0?('<tr><td colspan="'+(4+szKeys.length)+'" style="text-align:center;color:#aaa;padding:10px;font-size:11px">No varieties yet — click &quot;+ Add variety&quot;</td></tr>'):''}
         </tbody>
         ${varieties.length>0?('<tfoot><tr>'
-            +'<td colspan="2" style="text-align:right;color:#534AB7">Design total →</td>'
+            +'<td colspan="3" style="text-align:right;color:#534AB7">Design total →</td>'
             +szKeys.map(sz=>'<td><strong>'+(colTotals[sz]||0)+'</strong></td>').join('')
             +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
             +'<td class="no-print"></td>'
@@ -2140,9 +2154,10 @@ function autoSyncInventoryFromStages(oi,di){
 function addVariety(oi,di){
   const d=S.orders[oi].designs[di];if(!d.varieties)d.varieties=[];
   const szKeys=Object.keys(d.sizes||{});
-  d.varieties.push({id:uid(),name:'Variety '+(d.varieties.length+1),sizes:Object.fromEntries(szKeys.map(s=>[s,0])),images:[]});
+  d.varieties.push({id:uid(),name:'Variety '+(d.varieties.length+1),sizes:Object.fromEntries(szKeys.map(s=>[s,0])),images:[],unit:'pcs'});
   audit('Add variety',`Order ${S.orders[oi].orderId} design ${di+1}: variety added`);render();
 }
+function upVarietyUnit(oi,di,vi,val){S.orders[oi].designs[di].varieties[vi].unit=val;scheduleAutosave();}
 function removeVariety(oi,di,vi){
   if(!confirm('Remove this variety?'))return;
   S.orders[oi].designs[di].varieties.splice(vi,1);
@@ -2161,7 +2176,15 @@ function upVarietySize(oi,di,vi,sz,val){
 function handleVarietyImg(oi,di,vi,input){
   const files=Array.from(input.files);let loaded=0;
   const d=S.orders[oi].designs[di];if(!d.varieties[vi].images)d.varieties[vi].images=[];
-  files.forEach(f=>{const r=new FileReader();r.onload=e=>{d.varieties[vi].images.push({data:e.target.result,name:f.name});loaded++;if(loaded===files.length)render();};r.readAsDataURL(f);});
+  files.forEach(f=>{
+    const r=new FileReader();
+    r.onload=async e=>{
+      const compressed=await compressImageToThumb(e.target.result);
+      d.varieties[vi].images.push({data:compressed,name:f.name});
+      loaded++;if(loaded===files.length){save();render();}
+    };
+    r.readAsDataURL(f);
+  });
   input.value='';
 }
 function delVarietyImg(oi,di,vi,ii){S.orders[oi].designs[di].varieties[vi].images.splice(ii,1);render();}
@@ -2306,7 +2329,12 @@ function handleImgUpload(oi,di,input){
   const files=Array.from(input.files);let loaded=0;
   files.forEach(file=>{
     const reader=new FileReader();
-    reader.onload=e=>{S.orders[oi].designs[di].images.push({data:e.target.result,name:file.name});audit('Upload image',`Image "${file.name}" uploaded`);loaded++;if(loaded===files.length)render();};
+    reader.onload=async e=>{
+      const compressed=await compressImageToThumb(e.target.result);
+      S.orders[oi].designs[di].images.push({data:compressed,name:file.name});
+      audit('Upload image',`Image "${file.name}" uploaded`);
+      loaded++;if(loaded===files.length){save();render();}
+    };
     reader.readAsDataURL(file);
   });input.value='';
 }
@@ -2585,7 +2613,6 @@ function _modalFocusable(){
 function openNewOrderModal(prefill){
   prefill=prefill||{};
   if(!prefill._keepFile)window._uploadedOrderFile=null;
-  window._modalBangleType=prefill.bangleType||'dye_gold';
 
   // ── Resolve first design + extra designs ──────────────────────────────────
   let firstDesign={};
@@ -2599,6 +2626,8 @@ function openNewOrderModal(prefill){
   }
   window._modalSizes=firstDesign.sizes&&firstDesign.sizes.length?[...firstDesign.sizes]:[...DEFAULT_SIZES];
   window._modalVarieties=firstDesign.varieties?JSON.parse(JSON.stringify(firstDesign.varieties)):[];
+  // Determine bangleType: prefill.bangleType (from file parser) takes priority, then first design's type
+  window._modalBangleType=prefill.bangleType||(firstDesign.bangleType)||'dye_gold';
 
   // ── Extra designs preview banner ──────────────────────────────────────────
   const extraDesigns=window._modalExtraDesigns||[];
@@ -2667,6 +2696,7 @@ function openNewOrderModal(prefill){
           <select id="no-btype" onchange="setModalBangleType(this.value)">
             <option value="dye_gold"${(prefill.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
             <option value="cnc"${prefill.bangleType==='cnc'?' selected':''}>CNC</option>
+            <option value="both"${prefill.bangleType==='both'?' selected':''}>Both</option>
           </select>
         </div>
         <div class="field-group">
@@ -2824,7 +2854,7 @@ function setModalBangleType(type){
   if(type==='cnc'){
     // Ensure at least one variety exists (for quantities)
     if(!window._modalVarieties.length){
-      window._modalVarieties=[{id:uid(),name:'Default',sizes:Object.fromEntries(window._modalSizes.map(s=>[s,0])),images:[]}];
+      window._modalVarieties=[{id:uid(),name:'Default',sizes:Object.fromEntries(window._modalSizes.map(s=>[s,0])),images:[],unit:'pcs'}];
     }
   }
   // Update section label
@@ -2832,6 +2862,8 @@ function setModalBangleType(type){
   if(lbl){
     if(type==='cnc'){
       lbl.innerHTML='📦 Quantities <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(enter quantity per size for this CNC design)</span>';
+    } else if(type==='both'){
+      lbl.innerHTML='🧮 Varieties / Quantities <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(CNC + Dye Gold — all design types combined)</span>';
     } else {
       lbl.innerHTML='🧮 Varieties <span style="color:#A32D2D">*</span> <span style="font-weight:400;color:#888">(at least one variety with non-zero total required)</span>';
     }
@@ -2846,14 +2878,18 @@ function renderModalVarieties(){
   // ── CNC MODE: simplified single-row quantity input ──────────────────────────
   if(window._modalBangleType==='cnc'){
     if(!window._modalVarieties.length){
-      window._modalVarieties=[{id:uid(),name:'Default',sizes:Object.fromEntries(window._modalSizes.map(s=>[s,0])),images:[]}];
+      window._modalVarieties=[{id:uid(),name:'Default',sizes:Object.fromEntries(window._modalSizes.map(s=>[s,0])),images:[],unit:'pcs'}];
     }
     if(addVarBtn)addVarBtn.style.display='none';
     const v=window._modalVarieties[0];
     const rowTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+    const cncUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
     wrap.innerHTML=`<div class="modal-variety-row" style="background:#f7f6f2;border:1.5px dashed #AFA9EC">
       <div class="modal-variety-row-head">
         <span style="font-size:11px;font-weight:600;color:#534AB7">📦 CNC — Enter total quantities per size</span>
+        <label style="font-size:11px;color:#534AB7;font-weight:600;margin-left:12px">Unit:</label>
+        <select style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489"
+          onchange="window._modalVarieties[0]=window._modalVarieties[0]||{};window._modalVarieties[0].unit=this.value">${cncUnitOpts}</select>
         <span style="font-size:11px;color:#888;margin-left:auto">Total: <strong>${rowTotal}</strong></span>
       </div>
       <div class="modal-sizes-grid">
@@ -2884,12 +2920,16 @@ function renderModalVarieties(){
   }
   wrap.innerHTML=window._modalVarieties.map((v,vi)=>{
     const rowTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+    const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
     return `<div class="modal-variety-row">
       <div class="modal-variety-row-head">
         <span style="font-size:11px;font-weight:600;color:#534AB7;min-width:20px">${vi+1}</span>
         <input value="${esc(v.name||'Variety '+(vi+1))}" placeholder="Variety name" style="max-width:200px"
           onblur="if(this.value!==window._modalVarieties[${vi}].name){window._modalVarieties[${vi}].name=this.value;}"
           onkeydown="handleModalVarietyNameTab(event,${vi})">
+        <label style="font-size:11px;color:#534AB7;font-weight:600;margin-left:8px">Unit:</label>
+        <select style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489"
+          onchange="window._modalVarieties[${vi}].unit=this.value">${unitOpts}</select>
         <span style="font-size:11px;color:#888;margin-left:auto">Total: <strong>${rowTotal}</strong></span>
         <button class="icon-btn danger" tabindex="-1" onclick="window._modalVarieties.splice(${vi},1);renderModalVarieties()">✕</button>
       </div>
@@ -2906,7 +2946,7 @@ function renderModalVarieties(){
 }
 function addModalVariety(){
   const sizes=Object.fromEntries(window._modalSizes.map(s=>[s,0]));
-  window._modalVarieties.push({id:uid(),name:'Variety '+(window._modalVarieties.length+1),sizes,images:[]});
+  window._modalVarieties.push({id:uid(),name:'Variety '+(window._modalVarieties.length+1),sizes,images:[],unit:'pcs'});
   renderModalVarieties();
 }
 
@@ -3096,7 +3136,7 @@ function createOrder(){
   S.openOrders.add(newOrder.id);
   S.openClients.add(client);
   S.activeTabs[newOrder.id]='designs';
-  audit('Create order',`New order ${orderId} for ${client} (${bangleType==='cnc'?'CNC':'Dye Gold'}) created with ${window._modalVarieties.length} varieties`);
+  audit('Create order',`New order ${orderId} for ${client} (${bangleType==='cnc'?'CNC':bangleType==='both'?'Both':'Dye Gold'}) created with ${window._modalVarieties.length} varieties`);
   rebuildVocab();closeModal();render();
 }
 
@@ -3105,51 +3145,58 @@ function downloadOrderTemplate(){
   if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
 
   const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
-  // Columns: Design Name | Design Code | Variety Name | ...sizes | Row Total
-  const totalCols=3+TMPL_SIZES.length+1;
+  // Cols: CNC = Design Name|Design Code|Unit|6 sizes|Row Total = 10
+  //       DG  = Design Name|Design Code|Variety Name|Unit|6 sizes|Row Total = 11
+  const totalCols=11;
 
   const sheetData=[
-    /* R1  */ ['🪬  BANGLE PRODUCTION TRACKER — New Order Entry Form'],
-    /* R2  */ ['Fill Column B for order details. In the table, each row = one variety. Leave Design Name & Code blank to continue the same design.'],
-    /* R3  */ [],
-    /* R4  */ ['─── ORDER DETAILS ──────────────────────────────────────────────────────────────────────'],
-    /* R5  */ ['Order ID',    'ORD-001'],
-    /* R6  */ ['Client Name', 'Meena Traders'],
-    /* R7  */ ['Start Date',  '15-May-2026', '', '', '', '', '', '', '', '', '(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    /* R8  */ ['Notes',       'Urgent delivery before Diwali'],
-    /* R9  */ [],
-    /* R10 */ ['─── DESIGNS & VARIETY QUANTITIES ─────────────────────────────────────────────────────'],
-    /* R11 */ ['Each row = one variety. Leave Design Name & Code blank to continue same design. Add more rows as needed.'],
-    /* R12 */ ['Design Name', 'Design Code', 'Variety Name', ...TMPL_SIZES, 'Row Total'],
-    // Design 1 — Mogra Twist
-    /* R13 */ ['Mogra Twist', 'MG-22',  'Classic Gold',  50,  80, 100,  80, 50, 20, 380],
-    /* R14 */ ['',            '',        'Premium',       30,  60,  70,  60, 30, 10, 260],
-    /* R15 */ ['',            '',        'Antique Rose',  20,  40,  50,  40, 20,  5, 175],
-    // Design 2 — Lotus Bangle
-    /* R16 */ ['Lotus Bangle','LT-08',  'Gold',          40,  60,  80,  70, 40, 15, 305],
-    /* R17 */ ['',            '',        'Silver',        25,  45,  60,  50, 25,  8, 213],
-    /* R18 */ ['',            '',        'Rose Gold',     15,  30,  40,  30, 15,  5, 135],
-    // Blank rows for manager to fill more designs/varieties
-    /* R19 */ ['','','','','','','','','','',''],
-    /* R20 */ ['','','','','','','','','','',''],
-    /* R21 */ ['','','','','','','','','','',''],
-    /* R22 */ ['','','','','','','','','','',''],
+    /* R0  */ ['🪬  BANGLE PRODUCTION TRACKER — New Order Entry Form'],
+    /* R1  */ ['Fill Column B for order details. Use the CNC section for bangles with no variety, and Dye Gold section for bangles with varieties. Leave unused sections blank.'],
+    /* R2  */ [],
+    /* R3  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────────────────────────────────'],
+    /* R4  */ ['Order ID',    'ORD-001'],
+    /* R5  */ ['Client Name', 'Meena Traders'],
+    /* R6  */ ['Start Date',  '15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    /* R7  */ ['Notes',       'Urgent delivery before Diwali'],
+    /* R8  */ [],
+    /* R9  */ ['─── CNC DESIGNS & QUANTITIES ────────────────────────────────────────────────────────────────────'],
+    /* R10 */ ['Each row = one CNC design. Unit = pcs / pairs / jotta. Enter total quantities per size directly.'],
+    /* R11 */ ['Design Name','Design Code','Unit',...TMPL_SIZES,'Row Total'],
+    /* R12 */ ['Mogra Twist', 'MG-22', 'pcs', 50,  80, 100, 80, 50, 20, 380],
+    /* R13 */ ['Lotus Bangle','LT-08', 'pcs', 40,  60,  80, 70, 40, 15, 305],
+    /* R14 */ ['','','','','','','','','',''],
+    /* R15 */ ['','','','','','','','','',''],
+    /* R16 */ ['','','','','','','','','',''],
+    /* R17 */ [],
+    /* R18 */ ['─── DYE GOLD DESIGNS & VARIETIES ────────────────────────────────────────────────────────────────'],
+    /* R19 */ ['Each row = one variety. Unit = pcs / pairs / jotta. Leave Design Name & Code blank to continue same design.'],
+    /* R20 */ ['Design Name','Design Code','Variety Name','Unit',...TMPL_SIZES,'Row Total'],
+    /* R21 */ ['Mogra Twist', 'MG-22', 'Classic Gold','pcs', 50,  80, 100, 80, 50, 20, 380],
+    /* R22 */ ['',            '',      'Premium',     'pcs', 30,  60,  70, 60, 30, 10, 260],
+    /* R23 */ ['',            '',      'Antique Rose','pcs', 20,  40,  50, 40, 20,  5, 175],
+    /* R24 */ ['Lotus Bangle','LT-08', 'Gold',        'pairs',40, 60,  80, 70, 40, 15, 305],
+    /* R25 */ ['',            '',      'Silver',      'pairs',25, 45,  60, 50, 25,  8, 213],
+    /* R26 */ ['','','','','','','','','','',''],
+    /* R27 */ ['','','','','','','','','','',''],
+    /* R28 */ ['','','','','','','','','','',''],
+    /* R29 */ ['','','','','','','','','','',''],
   ];
 
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(sheetData);
 
-  // Column widths: Design Name | Design Code | Variety Name | sizes | Total
-  ws['!cols']=[{wch:18},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
+  // Column widths: Design Name|Design Code|Variety Name|Unit|sizes×6|Total
+  ws['!cols']=[{wch:20},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
 
-  // Merge banner/divider rows across all columns (0-based row indices)
   const lc=totalCols-1;
   ws['!merges']=[
     {s:{r:0,c:0},e:{r:0,c:lc}},   // Title
     {s:{r:1,c:0},e:{r:1,c:lc}},   // Subtitle
     {s:{r:3,c:0},e:{r:3,c:lc}},   // ORDER DETAILS divider
-    {s:{r:9,c:0},e:{r:9,c:lc}},   // DESIGNS divider
-    {s:{r:10,c:0},e:{r:10,c:lc}}, // Table instruction
+    {s:{r:9,c:0},e:{r:9,c:lc}},   // CNC DESIGNS divider
+    {s:{r:10,c:0},e:{r:10,c:lc}}, // CNC instruction
+    {s:{r:18,c:0},e:{r:18,c:lc}}, // DYE GOLD DESIGNS divider
+    {s:{r:19,c:0},e:{r:19,c:lc}}, // Dye Gold instruction
   ];
 
   XLSX.utils.book_append_sheet(wb,ws,'Order Form');
@@ -3271,7 +3318,8 @@ function processOrderFile(file){
 
         // ── Shared helper: group data rows into designs ──────────────────────
         // vIdx=-1 means no variety column; rows with quantities get 'Default' variety name
-        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes)=>{
+        // uIdx=-1 means no unit column; default unit = 'pcs'
+        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx)=>{
           const designMap=[];
           let curDesign=null,lastDN='',lastDC='';
           dataRows.forEach(row=>{
@@ -3297,7 +3345,8 @@ function processOrderFile(file){
             if(existingNames.includes(finalVName)){let n=2;while(existingNames.includes(finalVName+' '+n))n++;finalVName=finalVName+' '+n;}
             const sizes={};
             allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
-            curDesign.varieties.push({name:finalVName,sizes,images:[]});
+            const unit=uIdx>=0?String(row[uIdx]||'').trim()||'pcs':'pcs';
+            curDesign.varieties.push({name:finalVName,sizes,images:[],unit});
           });
           return designMap.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -3313,17 +3362,55 @@ function processOrderFile(file){
           startDate=parseDate(labelVal('start date')||labelVal('date'));
           notes=labelVal('notes');
 
-          // Find "Design Name" header row (col 0 = "Design Name")
+          // ── Helper: parse a section between startRow and endRow ─────────────
+          const parseSection=(startRowIdx,endRowIdx,forceNoVariety)=>{
+            const hdrIdx=rows.findIndex((r,i)=>i>startRowIdx&&i<endRowIdx&&String(r[0]||'').toLowerCase().trim()==='design name');
+            if(hdrIdx<0)return[];
+            const hdr=rows[hdrIdx].map(h=>String(h).trim());
+            const szIdxMap={},allSizes=[];
+            hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+            const szColSet=new Set(Object.values(szIdxMap));
+            const vIdx=forceNoVariety?-1:hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+            const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
+            return groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx);
+          };
+
+          // ── Detect two-section template (CNC + Dye Gold) ───────────────────
+          const cncSecIdx=colA.findIndex(l=>l.includes('cnc design'));
+          const dyeSecIdx=colA.findIndex(l=>l.includes('dye gold design')||l.includes('dye_gold design'));
+
+          if(cncSecIdx>=0||dyeSecIdx>=0){
+            let allDesigns=[],detectedBT='';
+            if(cncSecIdx>=0){
+              const cncEnd=dyeSecIdx>cncSecIdx?dyeSecIdx:rows.length;
+              const cncDesigns=parseSection(cncSecIdx,cncEnd,true);
+              cncDesigns.forEach(d=>{d.bangleType='cnc';});
+              if(cncDesigns.length){allDesigns.push(...cncDesigns);detectedBT='cnc';}
+            }
+            if(dyeSecIdx>=0){
+              const dyeDesigns=parseSection(dyeSecIdx,rows.length,false);
+              dyeDesigns.forEach(d=>{d.bangleType='dye_gold';});
+              if(dyeDesigns.length){allDesigns.push(...dyeDesigns);detectedBT=detectedBT==='cnc'?'both':'dye_gold';}
+            }
+            const dCount=allDesigns.length,vCount=allDesigns.reduce((a,d)=>a+d.varieties.length,0);
+            const btLabel=detectedBT==='both'?'CNC + Dye Gold':detectedBT==='cnc'?'CNC':'Dye Gold';
+            status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded (${btLabel}).`;
+            status.style.display='block';
+            closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:allDesigns.length?allDesigns:undefined,bangleType:detectedBT||'dye_gold',_keepFile:true});
+            return;
+          }
+
+          // ── Single-section format (old template / generic) ─────────────────
           const tblHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().trim()==='design name');
           if(tblHdrIdx>=0){
             const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
             const dnIdx=0,dcIdx=1;
             const szIdxMap={};const allSizes=[];
             hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
-            // Detect variety column dynamically (first non-size column after Design Code that mentions "variety")
             const szColSet=new Set(Object.values(szIdxMap));
             const vIdx=hdr.findIndex((h,i)=>i>dcIdx&&!szColSet.has(i)&&/variety/i.test(h));
-            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes);
+            const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
+            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
             status.style.display='block';
@@ -3347,9 +3434,11 @@ function processOrderFile(file){
           const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
           const szIdxMap={};const allSizes=[];
           headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+          const szColSetG=new Set(Object.values(szIdxMap));
+          const uIdxG=headers.findIndex((h,i)=>!szColSetG.has(i)&&/^unit$/i.test(h));
 
           if(dnIdx>=0){
-            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes);
+            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes,uIdxG);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
             status.style.display='block';
@@ -3415,6 +3504,108 @@ function vendorOrderMatchesFilter(vo){
   if(f.design&&!vo.designs.some(d=>d.name===f.design))return false;
   if(f.code&&!vo.designs.some(d=>d.code===f.code))return false;
   return true;
+}
+
+// ── MASTERS PANEL ─────────────────────────────────────────────────────────────
+function renderMasters(){
+  const container=document.getElementById('view-masters');
+  if(!container)return;
+  const v=S.vocabulary;
+  const sectionStyle='background:#fff;border-radius:12px;border:1px solid #E0DFFF;padding:18px 20px;margin-bottom:18px;box-shadow:0 2px 8px rgba(83,74,183,.06)';
+  const hStyle='font-size:14px;font-weight:700;color:#3C3489;margin-bottom:12px;display:flex;align-items:center;gap:8px';
+  const chipStyle='display:inline-flex;align-items:center;gap:5px;background:#f0efff;border:1px solid #AFA9EC;border-radius:20px;padding:4px 10px 4px 12px;font-size:12px;color:#3C3489;font-weight:500';
+  const addRowStyle='display:flex;gap:8px;align-items:center;margin-top:10px';
+
+  const makeChips=(items,listKey)=>items.map((item,i)=>
+    `<span style="${chipStyle}">${esc(item)}
+      <button onclick="masterDelete('${listKey}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0 0 0 2px;line-height:1" title="Remove">✕</button>
+    </span>`
+  ).join('');
+
+  const makeAddRow=(listKey,placeholder)=>`
+    <div style="${addRowStyle}">
+      <input id="master-inp-${listKey}" placeholder="${placeholder}" style="flex:1;max-width:240px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px" autocomplete="off">
+      <button onclick="masterAdd('${listKey}')" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">+ Add</button>
+    </div>`;
+
+  container.innerHTML=`
+    <div style="padding:20px;max-width:860px;margin:0 auto">
+      <div style="font-size:18px;font-weight:700;color:#3C3489;margin-bottom:6px">📋 Masters</div>
+      <div style="font-size:12px;color:#888;margin-bottom:20px">All masters are auto-populated from orders you create. You can also add entries manually here. These names appear as autocomplete suggestions during order creation.</div>
+
+      <!-- CLIENT MASTER -->
+      <div style="${sectionStyle}">
+        <div style="${hStyle}">👤 Client Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.clients||[]).length} entries)</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
+          ${(v.clients||[]).length?makeChips(v.clients,'clients'):'<span style="font-size:11px;color:#aaa">No clients yet — will auto-populate from orders.</span>'}
+        </div>
+        ${makeAddRow('clients','e.g. Meena Traders')}
+      </div>
+
+      <!-- VENDOR MASTER -->
+      <div style="${sectionStyle}">
+        <div style="${hStyle}">🏭 Vendor Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.vendors||[]).length} entries)</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
+          ${(v.vendors||[]).length?makeChips(v.vendors,'vendors'):'<span style="font-size:11px;color:#aaa">No vendors yet — will auto-populate from vendor orders.</span>'}
+        </div>
+        ${makeAddRow('vendors','e.g. Rathi Metals')}
+      </div>
+
+      <!-- DESIGN NAME/CODE MASTER -->
+      <div style="${sectionStyle}">
+        <div style="${hStyle}">🎨 Design Name / Code Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.dnames||[]).length} design names, ${(v.dcodes||[]).length} codes)</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:8px">Design Names</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px">
+              ${(v.dnames||[]).length?makeChips(v.dnames,'dnames'):'<span style="font-size:11px;color:#aaa">None yet.</span>'}
+            </div>
+            ${makeAddRow('dnames','e.g. Mogra Twist')}
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:8px">Design Codes</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px">
+              ${(v.dcodes||[]).length?makeChips(v.dcodes,'dcodes'):'<span style="font-size:11px;color:#aaa">None yet.</span>'}
+            </div>
+            ${makeAddRow('dcodes','e.g. MG-22')}
+          </div>
+        </div>
+      </div>
+
+      <!-- UNIT MASTER -->
+      <div style="${sectionStyle}">
+        <div style="${hStyle}">📏 Unit Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.units||[]).length} units)</span></div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px">Units available when entering variety quantities. Default: pcs, pairs, jotta.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
+          ${(v.units||[]).map((u,i)=>
+            `<span style="${chipStyle}">${esc(u)}
+              <button onclick="masterDelete('units',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0 0 0 2px;line-height:1" title="Remove">✕</button>
+            </span>`
+          ).join('')}
+        </div>
+        ${makeAddRow('units','e.g. dozen')}
+      </div>
+    </div>`;
+}
+
+function masterAdd(listKey){
+  const inp=document.getElementById('master-inp-'+listKey);
+  if(!inp)return;
+  const val=inp.value.trim();
+  if(!val)return;
+  if(!S.vocabulary[listKey])S.vocabulary[listKey]=[];
+  if(!S.vocabulary[listKey].includes(val)){
+    S.vocabulary[listKey].push(val);
+    if(listKey!=='units')S.vocabulary[listKey].sort();
+  }
+  inp.value='';
+  save();renderMasters();
+}
+
+function masterDelete(listKey,idx){
+  if(!S.vocabulary[listKey])return;
+  S.vocabulary[listKey].splice(idx,1);
+  save();renderMasters();
 }
 
 // ── Render ──────────────────────────────────────────────────────────────────
@@ -3577,6 +3768,7 @@ function buildVendorDetailsPanel(vo,vi){
       <select onchange="upVendorOrder(${vi},'bangleType',this.value)">
         <option value="dye_gold"${(vo.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
         <option value="cnc"${vo.bangleType==='cnc'?' selected':''}>CNC</option>
+        <option value="both"${vo.bangleType==='both'?' selected':''}>Both</option>
       </select>
     </div>
   </div>
@@ -3595,23 +3787,31 @@ function buildVendorDesignsPanel(vo,vi){
     const varieties=d.varieties||[];
     const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
     const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
-    const sizeInputs=szKeys.map(sz=>`<div class="modal-size-cell"><label>${sz}</label>
-      <input class="qty-inp" style="width:52px;text-align:center;padding:4px 3px;font-size:11px" type="number" min="0" value="${colTotals[sz]||0}" readonly title="Auto-totalled from varieties"></div>`).join('');
+
+    // ── Image gallery at top (same as client order) ───────────────────────────
+    const galleryHtml=buildVarietyGallery(varieties);
+
+    // ── Variety table ─────────────────────────────────────────────────────────
     const varTableHtml=varieties.length?`<div class="variety-table-wrap">
       <table class="variety-table">
         <thead><tr>
-          <th>Image</th><th>Variety name</th>
+          <th style="min-width:130px">Variety name</th>
+          <th style="min-width:62px">Images</th>
+          <th style="min-width:72px">Unit</th>
           ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
-          <th>Total</th><th class="no-print">Del</th>
+          <th style="min-width:60px">Total</th>
+          <th style="min-width:40px" class="no-print">Del</th>
         </tr></thead>
         <tbody>
           ${varieties.map((v,vri)=>{
             const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
             const imgCells=(v.images||[]).map((img,ii)=>`<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`).join('');
+            const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
             return`<tr>
+              <td><input class="variety-name-inp" value="${esc(v.name||'')}" onchange="upVendorVariety(${vi},${di},${vri},'name',this.value)"></td>
               <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
                 <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
-              <td><input class="variety-name-inp" value="${esc(v.name||'')}" onchange="upVendorVariety(${vi},${di},${vri},'name',this.value)"></td>
+              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
               ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
               <td class="total-col">${rt}</td>
               <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
@@ -3619,18 +3819,29 @@ function buildVendorDesignsPanel(vo,vi){
           }).join('')}
         </tbody>
         <tfoot><tr>
-          <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
+          <td colspan="3" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
           ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
           <td class="grand-total">${grandTotal}</td><td class="no-print"></td>
         </tr></tfoot>
       </table></div>`:'<p style="font-size:11px;color:#888;margin:6px 0">No varieties — add one below.</p>';
+
     return`<div class="design-card">
       <div class="design-card-head">
         <div class="design-num">${di+1}</div>
         <div style="flex:1">
           <div class="field-row" style="margin-bottom:6px">
-            <div class="field-group"><label>Design name</label><input value="${esc(d.name)}" onchange="upVendorDesign(${vi},${di},'name',this.value)"></div>
-            <div class="field-group"><label>Design code</label><input value="${esc(d.code||'')}" onchange="upVendorDesign(${vi},${di},'code',this.value)"></div>
+            <div class="field-group ac-wrap">
+              <label>Design name</label>
+              <input id="vd-inp-dname-${vi}-${di}" value="${esc(d.name)}" autocomplete="off"
+                oninput="voAC(this,'vd-ac-dname-${vi}-${di}',S.vocabulary.dnames||[])" onblur="hideACModal('vd-ac-dname-${vi}-${di}');if(this.value!==S.vendorOrders[${vi}].designs[${di}].name)upVendorDesign(${vi},${di},'name',this.value)">
+              <div class="ac-list" id="vd-ac-dname-${vi}-${di}" style="display:none"></div>
+            </div>
+            <div class="field-group ac-wrap">
+              <label>Design code</label>
+              <input id="vd-inp-dcode-${vi}-${di}" value="${esc(d.code||'')}" autocomplete="off"
+                oninput="voAC(this,'vd-ac-dcode-${vi}-${di}',S.vocabulary.dcodes||[])" onblur="hideACModal('vd-ac-dcode-${vi}-${di}');if(this.value!==S.vendorOrders[${vi}].designs[${di}].code)upVendorDesign(${vi},${di},'code',this.value)">
+              <div class="ac-list" id="vd-ac-dcode-${vi}-${di}" style="display:none"></div>
+            </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             ${szKeys.map(sz=>`<span class="stock-size-chip">${sz}: ${colTotals[sz]||0}</span>`).join('')}
@@ -3639,11 +3850,17 @@ function buildVendorDesignsPanel(vo,vi){
         </div>
         <button class="icon-btn danger no-print" onclick="removeVendorDesign(${vi},${di})">Remove</button>
       </div>
-      ${varTableHtml}
-      <div class="no-print" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="sm" onclick="addVendorVariety(${vi},${di})">+ Add variety</button>
-        <button class="sm" onclick="addVendorSizeColumn(${vi},${di})">+ Add size</button>
+      <!-- Variety image gallery at top -->
+      ${galleryHtml}
+      <!-- Variety table -->
+      <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <span>🧮 Varieties &amp; quantities by size</span>
+        <span class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="icon-btn" onclick="addVendorVariety(${vi},${di})">+ Add variety</button>
+          <button class="icon-btn" onclick="addVendorSizeColumn(${vi},${di})">+ Add size</button>
+        </span>
       </div>
+      ${varTableHtml}
     </div>`;
   }).join('');
   return html;
@@ -3681,7 +3898,7 @@ function addVendorVariety(vi,di){
   histPush();
   const d=S.vendorOrders[vi].designs[di];
   const szKeys=Object.keys(d.sizes||{});
-  d.varieties.push({name:'',sizes:Object.fromEntries(szKeys.map(s=>[s,0])),images:[]});
+  d.varieties.push({name:'',sizes:Object.fromEntries(szKeys.map(s=>[s,0])),images:[],unit:'pcs'});
   save();renderVendorOrders();
 }
 function removeVendorVariety(vi,di,vri){histPush();S.vendorOrders[vi].designs[di].varieties.splice(vri,1);save();renderVendorOrders();}
@@ -3709,9 +3926,9 @@ function addVVImg(vi,di,vri,inp){
   inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=ev.target.result;
-    const hash=await imgHash(data);
-    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,hash});
+    const compressed=await compressImageToThumb(ev.target.result);
+    const hash=await imgHash(compressed);
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data:compressed,hash});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -3722,7 +3939,6 @@ function delVVImg(vi,di,vri,ii){S.vendorOrders[vi].designs[di].varieties[vri].im
 function openNewVendorOrderModal(prefill){
   prefill=prefill||{};
   if(!prefill._keepFile)window._uploadedOrderFile=null;
-  window._modalBangleType=prefill.bangleType||'dye_gold';
 
   // Resolve first design + extra designs
   let firstDesign={};
@@ -3735,6 +3951,7 @@ function openNewVendorOrderModal(prefill){
   }
   window._modalSizes=firstDesign.sizes&&firstDesign.sizes.length?[...firstDesign.sizes]:[...DEFAULT_SIZES];
   window._modalVarieties=firstDesign.varieties?JSON.parse(JSON.stringify(firstDesign.varieties)):[];
+  window._modalBangleType=prefill.bangleType||(firstDesign.bangleType)||'dye_gold';
 
   const extraDesigns=window._modalExtraDesigns||[];
   const extraBanner=extraDesigns.length>0
@@ -3780,7 +3997,7 @@ function openNewVendorOrderModal(prefill){
         <div class="field-group ac-wrap">
           <label>Vendor name <span style="color:#A32D2D">*</span></label>
           <input id="no-client" placeholder="e.g. Rathi Metals" autocomplete="off" value="${esc(prefill.client||'')}"
-            oninput="voAC(this,'no-ac-client',S.vendorOrders.map(o=>o.vendor).filter(Boolean))" onblur="hideACModal('no-ac-client')">
+            oninput="voAC(this,'no-ac-client',S.vocabulary.vendors||[])" onblur="hideACModal('no-ac-client')">
           <div class="ac-list" id="no-ac-client" style="display:none"></div>
           <div class="err-msg" id="err-no-client" style="display:none">Vendor name is required</div>
         </div>
@@ -3804,6 +4021,7 @@ function openNewVendorOrderModal(prefill){
           <select id="no-btype" onchange="setModalBangleType(this.value)">
             <option value="dye_gold"${(prefill.bangleType||'dye_gold')==='dye_gold'?' selected':''}>Dye Gold</option>
             <option value="cnc"${prefill.bangleType==='cnc'?' selected':''}>CNC</option>
+            <option value="both"${prefill.bangleType==='both'?' selected':''}>Both</option>
           </select>
         </div>
         <div class="field-group">
@@ -3928,46 +4146,61 @@ function createVendorOrder(){
   S.openVendorOrders.push('open_'+newVO.id);
   S.vendorActiveTabs[newVO.id]='designs';
   audit('VendorOrder',`Created ${orderId} for ${vendor}`);
-  save();closeModal();renderVendorOrders();
+  rebuildVocab();save();closeModal();renderVendorOrders();
 }
 
 // ── Vendor Order Excel Template & File Import ─────────────────────────────────
 function downloadVendorOrderTemplate(){
   if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
   const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
-  const totalCols=3+TMPL_SIZES.length+1;
+  // Cols: CNC = Design Name|Design Code|Unit|6 sizes|Row Total = 10
+  //       DG  = Design Name|Design Code|Variety Name|Unit|6 sizes|Row Total = 11
+  const totalCols=11;
   const sheetData=[
-    ['🪬  BANGLE PRODUCTION TRACKER — Vendor Order Entry Form'],
-    ['Fill Column B for order details. In the table, each row = one variety. Leave Design Name & Code blank to continue the same design.'],
-    [],
-    ['─── ORDER DETAILS ──────────────────────────────────────────────────────────────────────'],
-    ['Order ID','VORD-01'],
-    ['Vendor Name','Rathi Metals'],
-    ['Order Date','15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    ['Expected Delivery','25-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    ['Notes','Urgent — deliver before festival season'],
-    [],
-    ['─── DESIGNS & VARIETY QUANTITIES ─────────────────────────────────────────────────────'],
-    ['Each row = one variety. Leave Design Name & Code blank to continue same design. Add more rows as needed.'],
-    ['Design Name','Design Code','Variety Name',...TMPL_SIZES,'Row Total'],
-    ['Mogra Twist','MG-22','Classic Gold',50,80,100,80,50,20,380],
-    ['','','Premium',30,60,70,60,30,10,260],
-    ['','','Antique Rose',20,40,50,40,20,5,175],
-    ['Lotus Bangle','LT-08','Gold',40,60,80,70,40,15,305],
-    ['','','Silver',25,45,60,50,25,8,213],
-    ['','','Rose Gold',15,30,40,30,15,5,135],
-    ['','','','','','','','','',''],
-    ['','','','','','','','','',''],
-    ['','','','','','','','','',''],
-    ['','','','','','','','','',''],
+    /* R0  */ ['🪬  BANGLE PRODUCTION TRACKER — Vendor Order Entry Form'],
+    /* R1  */ ['Fill Column B for order details. Use the CNC section for bangles with no variety, and Dye Gold section for bangles with varieties. Leave unused sections blank.'],
+    /* R2  */ [],
+    /* R3  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────────────────────────────────'],
+    /* R4  */ ['Order ID',          'VORD-01'],
+    /* R5  */ ['Vendor Name',       'Rathi Metals'],
+    /* R6  */ ['Order Date',        '15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    /* R7  */ ['Expected Delivery', '25-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    /* R8  */ ['Notes',             'Urgent — deliver before festival season'],
+    /* R9  */ [],
+    /* R10 */ ['─── CNC DESIGNS & QUANTITIES ────────────────────────────────────────────────────────────────────'],
+    /* R11 */ ['Each row = one CNC design. Unit = pcs / pairs / jotta. Enter total quantities per size directly.'],
+    /* R12 */ ['Design Name','Design Code','Unit',...TMPL_SIZES,'Row Total'],
+    /* R13 */ ['Mogra Twist', 'MG-22', 'pcs', 50,  80, 100, 80, 50, 20, 380],
+    /* R14 */ ['Lotus Bangle','LT-08', 'pcs', 40,  60,  80, 70, 40, 15, 305],
+    /* R15 */ ['','','','','','','','','',''],
+    /* R16 */ ['','','','','','','','','',''],
+    /* R17 */ ['','','','','','','','','',''],
+    /* R18 */ [],
+    /* R19 */ ['─── DYE GOLD DESIGNS & VARIETIES ────────────────────────────────────────────────────────────────'],
+    /* R20 */ ['Each row = one variety. Unit = pcs / pairs / jotta. Leave Design Name & Code blank to continue same design.'],
+    /* R21 */ ['Design Name','Design Code','Variety Name','Unit',...TMPL_SIZES,'Row Total'],
+    /* R22 */ ['Mogra Twist', 'MG-22', 'Classic Gold','pcs', 50,  80, 100, 80, 50, 20, 380],
+    /* R23 */ ['',            '',      'Premium',     'pcs', 30,  60,  70, 60, 30, 10, 260],
+    /* R24 */ ['',            '',      'Antique Rose','pcs', 20,  40,  50, 40, 20,  5, 175],
+    /* R25 */ ['Lotus Bangle','LT-08', 'Gold',        'pairs',40, 60,  80, 70, 40, 15, 305],
+    /* R26 */ ['',            '',      'Silver',      'pairs',25, 45,  60, 50, 25,  8, 213],
+    /* R27 */ ['','','','','','','','','','',''],
+    /* R28 */ ['','','','','','','','','','',''],
+    /* R29 */ ['','','','','','','','','','',''],
+    /* R30 */ ['','','','','','','','','','',''],
   ];
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(sheetData);
-  ws['!cols']=[{wch:18},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
+  ws['!cols']=[{wch:20},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
   const lc=totalCols-1;
   ws['!merges']=[
-    {s:{r:0,c:0},e:{r:0,c:lc}},{s:{r:1,c:0},e:{r:1,c:lc}},
-    {s:{r:3,c:0},e:{r:3,c:lc}},{s:{r:10,c:0},e:{r:10,c:lc}},{s:{r:11,c:0},e:{r:11,c:lc}},
+    {s:{r:0,c:0},e:{r:0,c:lc}},   // Title
+    {s:{r:1,c:0},e:{r:1,c:lc}},   // Subtitle
+    {s:{r:3,c:0},e:{r:3,c:lc}},   // ORDER DETAILS divider
+    {s:{r:10,c:0},e:{r:10,c:lc}}, // CNC DESIGNS divider
+    {s:{r:11,c:0},e:{r:11,c:lc}}, // CNC instruction
+    {s:{r:19,c:0},e:{r:19,c:lc}}, // DYE GOLD DESIGNS divider
+    {s:{r:20,c:0},e:{r:20,c:lc}}, // Dye Gold instruction
   ];
   XLSX.utils.book_append_sheet(wb,ws,'Vendor Order Form');
   XLSX.writeFile(wb,'Bangle_Vendor_Order_Template.xlsx');
@@ -4047,7 +4280,8 @@ function processVendorOrderFile(file){
         const colA=rows.map(r=>String(r[0]||'').toLowerCase().trim());
         const isLabelFormat=colA.some(l=>l.includes('order id')||l.includes('vendor name'));
         // vIdx=-1 = no variety column; rows with quantities get 'Default' variety name
-        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes)=>{
+        // uIdx=-1 = no unit column; default = 'pcs'
+        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx)=>{
           const dm=[];let cur=null,ldn='',ldc='';
           dataRows.forEach(row=>{
             const dn=String(row[dnIdx]||'').trim(),dc=String(row[dcIdx]||'').trim();
@@ -4061,7 +4295,8 @@ function processVendorOrderFile(file){
             const existNames=cur.varieties.map(v=>v.name);
             let fvn=vn;if(existNames.includes(fvn)){let n=2;while(existNames.includes(fvn+' '+n))n++;fvn=fvn+' '+n;}
             const sizes={};allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
-            cur.varieties.push({name:fvn,sizes,images:[]});
+            const unit=uIdx>=0?String(row[uIdx]||'').trim()||'pcs':'pcs';
+            cur.varieties.push({name:fvn,sizes,images:[],unit});
           });
           return dm.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -4073,15 +4308,55 @@ function processVendorOrderFile(file){
           startDate=parseDate(labelVal('order date')||labelVal('start date')||labelVal('date'));
           deliveryDate=parseDate(labelVal('expected delivery')||labelVal('delivery'));
           notes=labelVal('notes');
+
+          // ── Helper: parse a section between startRow and endRow ─────────────
+          const parseVSection=(startRowIdx,endRowIdx,forceNoVariety)=>{
+            const hdrIdx=rows.findIndex((r,i)=>i>startRowIdx&&i<endRowIdx&&String(r[0]||'').toLowerCase().trim()==='design name');
+            if(hdrIdx<0)return[];
+            const hdr=rows[hdrIdx].map(h=>String(h).trim());
+            const szIdxMap={},allSizes=[];
+            hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+            const szColSet=new Set(Object.values(szIdxMap));
+            const vIdx=forceNoVariety?-1:hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+            const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
+            return groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx);
+          };
+
+          // ── Detect two-section template (CNC + Dye Gold) ───────────────────
+          const vcncSecIdx=colA.findIndex(l=>l.includes('cnc design'));
+          const vdyeSecIdx=colA.findIndex(l=>l.includes('dye gold design')||l.includes('dye_gold design'));
+
+          if(vcncSecIdx>=0||vdyeSecIdx>=0){
+            let allDesigns=[],detectedBT='';
+            if(vcncSecIdx>=0){
+              const cncEnd=vdyeSecIdx>vcncSecIdx?vdyeSecIdx:rows.length;
+              const cncDesigns=parseVSection(vcncSecIdx,cncEnd,true);
+              cncDesigns.forEach(d=>{d.bangleType='cnc';});
+              if(cncDesigns.length){allDesigns.push(...cncDesigns);detectedBT='cnc';}
+            }
+            if(vdyeSecIdx>=0){
+              const dyeDesigns=parseVSection(vdyeSecIdx,rows.length,false);
+              dyeDesigns.forEach(d=>{d.bangleType='dye_gold';});
+              if(dyeDesigns.length){allDesigns.push(...dyeDesigns);detectedBT=detectedBT==='cnc'?'both':'dye_gold';}
+            }
+            const dCount=allDesigns.length,vCount=allDesigns.reduce((a,d)=>a+d.varieties.length,0);
+            const btLabel=detectedBT==='both'?'CNC + Dye Gold':detectedBT==='cnc'?'CNC':'Dye Gold';
+            status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded (${btLabel}).`;
+            status.style.display='block';
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:allDesigns.length?allDesigns:undefined,bangleType:detectedBT||'dye_gold'});
+            return;
+          }
+
+          // ── Single-section format (old template / generic) ─────────────────
           const tblHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().trim()==='design name');
           if(tblHdrIdx>=0){
             const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
             const szIdxMap={},allSizes=[];
             hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
-            // Detect variety column dynamically
             const szColSet=new Set(Object.values(szIdxMap));
             const vIdx=hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
-            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,vIdx,szIdxMap,allSizes);
+            const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
+            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,vIdx,szIdxMap,allSizes,uIdx);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
             status.style.display='block';
             openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
@@ -4101,8 +4376,10 @@ function processVendorOrderFile(file){
           const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
           const szIdxMap={},allSizes=[];
           headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
+          const szColSetV=new Set(Object.values(szIdxMap));
+          const uIdxV=headers.findIndex((h,i)=>!szColSetV.has(i)&&/^unit$/i.test(h));
           if(dnIdx>=0){
-            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes);
+            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes,uIdxV);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
             status.style.display='block';
             openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
@@ -4297,6 +4574,83 @@ function askOrderPrint(oid){
   showStagesConfirm('Print',
     ()=>printOrderById(oid,true),
     ()=>printOrderById(oid,false));
+}
+
+// ── SHARE APP ─────────────────────────────────────────────────────────────────
+function shareApp(){
+  const APP_URL='https://sayyamranka1610.github.io/bangle-tracker/';
+  const APP_TITLE='Siddhi Bangle Tracker';
+  const APP_DESC='Production tracking dashboard — orders, designs, inventory & vendor management.';
+
+  // Try native Web Share API (works on mobile / modern browsers)
+  if(navigator.share){
+    navigator.share({title:APP_TITLE,text:APP_DESC,url:APP_URL}).catch(()=>{});
+    return;
+  }
+
+  // Fallback: show share modal with copy button
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" id="modal-overlay-main" onclick="if(event.target===this)closeModal()" style="z-index:1200">
+    <div class="modal" style="width:480px;max-width:95vw" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEF0FE;color:#534AB7;font-size:20px">🔗</div>
+        <h3>Share Dashboard</h3>
+      </div>
+      <div style="padding:0 4px">
+        <!-- Link preview card -->
+        <div style="background:linear-gradient(135deg,#f0efff,#fafafd);border:1.5px solid #AFA9EC;border-radius:12px;padding:16px 18px;margin-bottom:18px">
+          <div style="font-size:12px;color:#888;margin-bottom:4px">Link preview (WhatsApp / Telegram)</div>
+          <div style="font-size:14px;font-weight:700;color:#3C3489;margin-bottom:3px">🪬 ${APP_TITLE}</div>
+          <div style="font-size:12px;color:#555;margin-bottom:6px">${APP_DESC}</div>
+          <div style="font-size:11px;color:#888">sayyamranka1610.github.io/bangle-tracker</div>
+        </div>
+
+        <!-- URL row -->
+        <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">Dashboard URL</div>
+        <div style="display:flex;gap:8px;align-items:center;background:#f7f6ff;border:1.5px solid #AFA9EC;border-radius:10px;padding:10px 14px;margin-bottom:16px">
+          <span id="share-url-text" style="flex:1;font-size:13px;font-weight:600;color:#3C3489;word-break:break-all">${APP_URL}</span>
+          <button id="share-copy-btn" onclick="copyShareUrl()" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0">📋 Copy</button>
+        </div>
+
+        <!-- Share via buttons -->
+        <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:8px">Share via</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+          <a href="https://wa.me/?text=${encodeURIComponent(APP_TITLE+'\n'+APP_DESC+'\n'+APP_URL)}" target="_blank" rel="noopener"
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#25D366;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
+            💬 WhatsApp
+          </a>
+          <a href="https://t.me/share/url?url=${encodeURIComponent(APP_URL)}&text=${encodeURIComponent(APP_TITLE+' — '+APP_DESC)}" target="_blank" rel="noopener"
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#229ED9;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
+            ✈️ Telegram
+          </a>
+          <a href="mailto:?subject=${encodeURIComponent(APP_TITLE)}&body=${encodeURIComponent(APP_DESC+'\n\nOpen here: '+APP_URL)}"
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#6C64CC;color:#fff;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none">
+            📧 Email
+          </a>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
+}
+
+function copyShareUrl(){
+  const url='https://sayyamranka1610.github.io/bangle-tracker/';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>{
+      const btn=document.getElementById('share-copy-btn');
+      if(btn){btn.textContent='✅ Copied!';btn.style.background='#0F6E56';setTimeout(()=>{btn.textContent='📋 Copy';btn.style.background='#534AB7';},2000);}
+    });
+  } else {
+    // Fallback
+    const ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    const btn=document.getElementById('share-copy-btn');
+    if(btn){btn.textContent='✅ Copied!';btn.style.background='#0F6E56';setTimeout(()=>{btn.textContent='📋 Copy';btn.style.background='#534AB7';},2000);}
+  }
 }
 
 function showPrintMenu(){
@@ -5606,9 +5960,9 @@ async function handleStockImgUpload(inp){
     await new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=async ev=>{
-        const data=ev.target.result;
-        const hash=await imgHash(data);
-        window._stockModalImages.push({data,hash});
+        const compressed=await compressImageToThumb(ev.target.result);
+        const hash=await imgHash(compressed);
+        window._stockModalImages.push({data:compressed,hash});
         resolve();
       };reader.readAsDataURL(file);
     });
