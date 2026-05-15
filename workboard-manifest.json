@@ -1,9 +1,10 @@
 {
+  "id": "/bangle-tracker/workboard.html",
   "name": "WorkBoard",
   "short_name": "WorkBoard",
   "description": "Team task management — assign, track and complete tasks across your organisation",
   "start_url": "/bangle-tracker/workboard.html?pwa=1",
-  "scope": "/bangle-tracker/",
+  "scope": "/bangle-tracker/workboard.html",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0f172a",

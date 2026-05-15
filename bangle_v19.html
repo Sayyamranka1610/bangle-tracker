@@ -1078,7 +1078,9 @@ function extractImages(state){
 
   // Client orders: attached files ALWAYS stripped; design/variety images only if large
   (cloned.orders||[]).forEach(o=>{
-    if(o.attachedFile&&o.attachedFile.data){
+    // Only strip when data is an actual data: URL — never double-strip an
+    // existing __IDB__ placeholder (that would corrupt IDB with the meta-string)
+    if(o.attachedFile&&o.attachedFile.data&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('data:')){
       const fKey=`file_o_${o.id}`;
       imageMap[fKey]=o.attachedFile.data;
       o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
@@ -1143,16 +1145,20 @@ async function downloadOrderAttachment(orderId){
   const order = S.orders.find(o => o.id === orderId);
   if(!order || !order.attachedFile){ alert('No attached file found.'); return; }
   let data = order.attachedFile.data;
-  if(typeof data === 'string' && data.startsWith('__IDB__')){
+  // Resolve __IDB__ placeholders (data was stripped to keep state small)
+  let attempts = 0;
+  while(typeof data === 'string' && data.startsWith('__IDB__') && attempts < 3){
     const key = data.slice(7);
     try{
       const value = await idbGet(key);
-      if(!value){ alert('Attached file data is no longer available locally.\n\nIt may have been uploaded from a different device. Re-upload the file here to attach it again.'); return; }
-      data = value;
-    }catch(e){ alert('Could not read attached file: ' + e.message); return; }
+      if(!value) break;
+      data = value;          // may itself be __IDB__ (if it was previously double-stripped by the old bug)
+    }catch(e){ break; }
+    attempts++;
   }
   if(typeof data !== 'string' || !data.startsWith('data:')){
-    alert('Attached file data is invalid.'); return;
+    alert('This file was attached on a different device (or before the latest sync fix) so its data isn\'t available on this device.\n\nFix: click "Remove" next to the filename, then re-attach the file by editing the order.');
+    return;
   }
   // Trigger a download
   const a = document.createElement('a');
@@ -7723,6 +7729,12 @@ if(_isStandalone){
 }
 
 async function installApp(){
+  // If running as standalone (PWA window), show "Already installed!" — matches
+  // the friendly UX of workboard's install button.
+  if(_isStandalone){
+    showAlreadyInstalled();
+    return;
+  }
   // Fast path: prompt is already ready — fire it immediately
   if(_deferredInstallPrompt){
     _deferredInstallPrompt.prompt();
@@ -7758,6 +7770,27 @@ async function installApp(){
   }
   // Still no prompt — Chrome isn't offering install. Fall back to instructions.
   showInstallInstructions();
+}
+
+function showAlreadyInstalled(){
+  const mc = document.getElementById('modal-container');
+  if(!mc) return;
+  mc.innerHTML = `<div class="modal-overlay" id="modal-overlay-main" onclick="if(event.target===this)closeModal()" style="z-index:1300">
+    <div class="modal" style="width:380px;max-width:96vw;text-align:center" role="dialog">
+      <div class="modal-header" style="justify-content:center">
+        <h3 style="margin:0">Install Siddhi Bangle Tracker</h3>
+      </div>
+      <div style="padding:24px 16px">
+        <div style="font-size:60px;line-height:1;margin-bottom:14px">✅</div>
+        <div style="font-size:18px;font-weight:700;color:#3C3489;margin-bottom:6px">Already Installed!</div>
+        <div style="font-size:13px;color:#666">Siddhi Bangle Tracker is running as an app on your device.</div>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()" class="primary" style="width:100%">Got it</button>
+      </div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
 }
 
 function showInstallInstructions(){
