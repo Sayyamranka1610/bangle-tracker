@@ -114,12 +114,17 @@ img{display:block}
 .tb-title{font-size:17px;font-weight:700;flex:1;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-right{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .tb-save{
-  display:none;height:34px;padding:0 12px;border-radius:8px;font-size:13px;font-weight:600;
-  background:var(--card2);color:var(--t2);border:1px solid var(--line);
-  align-items:center;gap:5px;
+  display:flex;height:34px;padding:0 10px;border-radius:8px;font-size:12px;font-weight:500;
+  background:transparent;color:var(--t3);border:none;
+  align-items:center;gap:5px;pointer-events:none;user-select:none;
 }
-.save-dot{width:7px;height:7px;border-radius:50%;background:var(--t3);flex-shrink:0;transition:.3s}
-.save-dot.ok{background:var(--ok)}
+.save-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--t3);flex-shrink:0;
+  transition:background .4s;
+}
+.save-dot.saving{background:var(--warn);animation:pulse .8s infinite alternate;}
+.save-dot.ok{background:var(--ok);}
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
 #tb-act{display:flex;align-items:center;gap:4px}
 
 /* ── Content ── */
@@ -130,7 +135,6 @@ img{display:block}
 }
 @media(min-width:768px){
   .content{padding:24px 24px 32px}
-  .tb-save{display:flex}
 }
 
 /* ── Bottom Nav ── */
@@ -509,10 +513,10 @@ textarea.fc{resize:vertical;min-height:80px;line-height:1.5}
       </button>
       <span class="tb-title" id="tbtitle">WorkBoard</span>
       <div class="tb-right">
-        <button class="tb-save" id="savebtn" onclick="manualSave()">
+        <div class="tb-save" id="savebtn">
           <span class="save-dot" id="sdot"></span>
-          <span id="savelbl">Save</span>
-        </button>
+          <span id="savelbl"></span>
+        </div>
         <div id="tb-act"></div>
         <button class="btn btn-sm btn-p" id="hd-install" onclick="showInstall()" style="display:none">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24"><path stroke="#fff" stroke-width="2" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 12l-4 4m0 0-4-4m4 4V4"/></svg>
@@ -718,16 +722,19 @@ function clearSess(){try{sessionStorage.removeItem(SE);}catch{}}
 // ════════════════════════════════════
 //  SAVE
 // ════════════════════════════════════
-async function manualSave(){
+// Auto-save on every data change — shows a brief dot animation
+async function autosave(){
   const dot=document.getElementById('sdot'),lbl=document.getElementById('savelbl');
+  if(dot){dot.classList.remove('ok');dot.classList.add('saving');}
   if(lbl)lbl.textContent='Saving…';
-  saveLS();await pushFB();_lastSaved=new Date();
-  const t=_lastSaved.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-  if(dot){dot.classList.add('ok');setTimeout(()=>dot.classList.remove('ok'),2000);}
-  if(lbl){lbl.textContent='Saved ✓';setTimeout(()=>lbl.textContent=`${t}`,1500);}
+  saveLS();
+  await pushFB();
+  _lastSaved=new Date();
+  if(dot){dot.classList.remove('saving');dot.classList.add('ok');setTimeout(()=>dot.classList.remove('ok'),2500);}
+  if(lbl){lbl.textContent='Saved ✓';setTimeout(()=>lbl.textContent='',2500);}
 }
-// Silent auto-save on every data change
-function autosave(){saveLS();pushFB();}
+// Ctrl+S still works — just triggers the same auto-save
+async function manualSave(){autosave();}
 
 // ════════════════════════════════════
 //  AUTH
@@ -752,13 +759,12 @@ function doLogout(){
 function startApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').classList.add('on');
-  document.getElementById('savebtn').style.display='flex';
   document.getElementById('hd-install').style.display='flex';
   S.view=isAdmin()?'overview':'tasks';
   S.filter='all';S.selMember='all';
   renderNav();checkDL();render();listenFB();
   _dlTimer=setInterval(checkDL,60000);
-  setInterval(()=>{saveLS();pushFB();},120000);
+  setInterval(()=>autosave(),30000); // background safety-net every 30 s
 }
 
 // ════════════════════════════════════
