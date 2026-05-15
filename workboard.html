@@ -8,6 +8,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#6366f1">
 <title>WorkBoard</title>
+<!-- PWA -->
+<link rel="manifest" href="workboard-manifest.json">
+<link rel="apple-touch-icon" href="workboard-icon-192.png">
+<meta name="apple-mobile-web-app-title" content="WorkBoard">
+<meta name="application-name" content="WorkBoard">
+<meta name="msapplication-TileColor" content="#6366f1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -1391,6 +1397,59 @@ async function init() {
   if (sid&&S.users[sid]) { S.currentUser=S.users[sid]; startApp(); }
 }
 init();
+
+// ── PWA: Register Service Worker ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('workboard-sw.js')
+      .then(reg => {
+        // Prompt user to update if a new SW is waiting
+        reg.addEventListener('updatefound', () => {
+          const newSW = reg.installing;
+          newSW.addEventListener('statechange', () => {
+            if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+              toast('App updated — refresh to get the latest version', 'info');
+            }
+          });
+        });
+      })
+      .catch(() => {}); // fail silently if SW can't register
+  });
+}
+
+// ── PWA: Show install prompt on Android Chrome ──
+let _deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstall = e;
+  // Show a subtle install banner after 3 s if not already installed
+  setTimeout(showInstallBanner, 3000);
+});
+window.addEventListener('appinstalled', () => {
+  _deferredInstall = null;
+  document.getElementById('install-banner')?.remove();
+  toast('WorkBoard installed! Find it on your home screen.', 'success');
+});
+
+function showInstallBanner() {
+  if (!_deferredInstall || document.getElementById('install-banner')) return;
+  if (window.matchMedia('(display-mode: standalone)').matches) return; // already installed
+  const banner = document.createElement('div');
+  banner.id = 'install-banner';
+  banner.style.cssText = 'position:fixed;bottom:calc(var(--nav-h) + var(--safe-bottom) + 12px);left:12px;right:12px;background:#1e293b;color:#fff;padding:12px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;z-index:998;box-shadow:0 8px 32px rgba(0,0,0,.3);font-family:var(--font);font-size:.84rem;';
+  banner.innerHTML = `
+    <img src="workboard-icon-192.png" style="width:36px;height:36px;border-radius:9px;flex-shrink:0">
+    <div style="flex:1"><strong style="display:block;font-size:.88rem">Add to Home Screen</strong><span style="color:rgba(255,255,255,.55);font-size:.78rem">Install WorkBoard as an app</span></div>
+    <button onclick="triggerInstall()" style="background:#6366f1;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:.82rem;cursor:pointer;font-family:var(--font)">Install</button>
+    <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.1);color:#fff;border:none;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;font-family:var(--font)">✕</button>`;
+  document.body.appendChild(banner);
+}
+async function triggerInstall() {
+  if (!_deferredInstall) return;
+  _deferredInstall.prompt();
+  const { outcome } = await _deferredInstall.userChoice;
+  if (outcome === 'accepted') { _deferredInstall = null; document.getElementById('install-banner')?.remove(); }
+}
 </script>
 </body>
 </html>

@@ -1,0 +1,33 @@
+{
+  "name": "WorkBoard",
+  "short_name": "WorkBoard",
+  "description": "Team task management — assign, track and complete tasks across your organisation",
+  "start_url": "/bangle-tracker/workboard.html?pwa=1",
+  "scope": "/bangle-tracker/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "lang": "en",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "workboard-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "workboard-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "workboard-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
