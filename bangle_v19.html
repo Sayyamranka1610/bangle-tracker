@@ -1334,6 +1334,32 @@ function audit(action,detail){
   S.auditLog.unshift({id:uid(),ts:new Date().toISOString(),action,detail});
   if(S.auditLog.length>500)S.auditLog=S.auditLog.slice(0,500);
 }
+// ── AUTO-NUMBERING ────────────────────────────────────────────────────────────
+// Order numbers (ORD-001, ORD-002, ...) are auto-assigned based on:
+//   1) Start date ascending (earliest date gets ORD-001)
+//   2) Creation timestamp ascending (within the same date, first-entered wins)
+// Whenever a new order is added or an existing order's startDate is changed,
+// renumberOrders() recalculates every order's orderId so the sequence stays
+// in strict chronological order.
+function renumberOrders(){
+  if(!Array.isArray(S.orders) || !S.orders.length) return;
+  // Ensure every order has a createdAt timestamp (migration for old data)
+  S.orders.forEach(o=>{
+    if(!o.createdAt) o.createdAt = new Date(0).toISOString(); // pre-dated to keep existing order
+  });
+  // Stable sort: by startDate, then createdAt. Don't mutate S.orders directly
+  // since some screens depend on insertion order; build an index map instead.
+  const sorted = [...S.orders].sort((a,b)=>{
+    const da = (a.startDate||'') + ' ' + (a.createdAt||'');
+    const db = (b.startDate||'') + ' ' + (b.createdAt||'');
+    return da.localeCompare(db);
+  });
+  sorted.forEach((o,i)=>{
+    const newId = 'ORD-' + String(i+1).padStart(3,'0');
+    if(o.orderId !== newId) o.orderId = newId;
+  });
+}
+
 function rebuildVocab(){
   // Preserve existing units and any manually-added entries
   const existingUnits=(S.vocabulary&&S.vocabulary.units)||['pcs','pairs','jotta'];
@@ -1620,7 +1646,7 @@ function buildDetailsPanel(order,oi){
       </div>`
     : '';
   return `<div class="field-row">
-    <div class="field-group"><label>Order ID</label><input value="${esc(order.orderId)}" onchange="upOrder(${oi},'orderId',this.value)"></div>
+    <div class="field-group"><label>Order ID <span style="font-size:10px;font-weight:400;color:#888">(auto)</span></label><input value="${esc(order.orderId)}" readonly style="background:#f0efff;color:#666;cursor:not-allowed" title="Order numbers are auto-assigned by start-date sequence"></div>
     <div class="field-group ac-wrap"><label>Client name</label>
       <input id="cl-inp-${oi}" value="${esc(order.client)}" autocomplete="off"
         oninput="showAC(this,'clients',${oi},'client',-1)" onchange="upOrderAC(${oi},'client',this.value)" onblur="hideAC('clients',${oi},-1)">
@@ -2039,7 +2065,14 @@ function renderAnalytics(){
 }
 
 // ── DATA MUTATIONS ─────────────────────────────────────────────────────────────
-function upOrder(oi,field,val){const prev=S.orders[oi][field];S.orders[oi][field]=val;audit('Edit order',`${S.orders[oi].orderId}: ${field} changed from "${prev}" to "${val}"`);render();}
+function upOrder(oi,field,val){
+  const prev=S.orders[oi][field];
+  S.orders[oi][field]=val;
+  audit('Edit order',`${S.orders[oi].orderId}: ${field} changed from "${prev}" to "${val}"`);
+  // If start date changed, renumber all orders so the sequence stays correct
+  if(field==='startDate') renumberOrders();
+  render();
+}
 function upOrderAC(oi,field,val){upOrder(oi,field,val);rebuildVocab();}
 function setTab(oid,tab){S.activeTabs[oid]=tab;render();}
 function toggleOrder(oid){S.openOrders.has(oid)?S.openOrders.delete(oid):S.openOrders.add(oid);render();}
@@ -2058,7 +2091,7 @@ function removeDesign(oi,di){
   audit('Remove design',`Order ${S.orders[oi].orderId}: "${d.name}" removed`);
   S.orders[oi].designs.splice(di,1);render();
 }
-function delOrder(oi){if(!confirm('Delete this order?'))return;audit('Delete order',`Order ${S.orders[oi].orderId} (${S.orders[oi].client}) deleted`);S.orders.splice(oi,1);render();}
+function delOrder(oi){if(!confirm('Delete this order?'))return;audit('Delete order',`Order ${S.orders[oi].orderId} (${S.orders[oi].client}) deleted`);S.orders.splice(oi,1);renumberOrders();render();}
 function upDesignStage(oi,di,si,val){
   // If trying to mark as 'done', enforce rules
   if(val==='done'){
@@ -2848,9 +2881,9 @@ function openNewOrderModal(prefill){
       <div class="section-head"><span>Order info <span style="color:#A32D2D;font-size:10px">* all fields required</span></span></div>
       <div class="field-row">
         <div class="field-group">
-          <label>Order ID <span style="color:#A32D2D">*</span></label>
-          <input id="no-id" placeholder="ORD-045" value="${esc(prefill.orderId||'')}">
-          <div class="err-msg" id="err-no-id" style="display:none">Order ID is required</div>
+          <label>Order ID <span style="font-size:10px;font-weight:400;color:#888">(auto-assigned)</span></label>
+          <input id="no-id" readonly value="(will be assigned by date sequence)" style="background:#f0efff;color:#888;cursor:not-allowed">
+          <div style="font-size:10px;color:#888;margin-top:3px">Order numbers are assigned automatically based on the start date — earliest date gets ORD-001, and the rest renumber as you add orders.</div>
         </div>
         <div class="field-group ac-wrap">
           <label>Client name <span style="color:#A32D2D">*</span></label>
@@ -2932,7 +2965,8 @@ function openNewOrderModal(prefill){
     overlay.addEventListener('click',e=>{if(e.target===overlay)closeModal();});
     overlay.addEventListener('keydown',_modalFocusTrap);
   }
-  setTimeout(()=>{const f=document.getElementById('no-id');if(f)f.focus();},30);
+  // Focus the client name field (Order ID is auto-assigned, no need to focus it)
+  setTimeout(()=>{const f=document.getElementById('no-client');if(f)f.focus();},30);
 }
 
 // ── MODAL FOCUS TRAP ──────────────────────────────────────────────────────────
@@ -3251,10 +3285,10 @@ function clearFieldError(id){
 }
 function createOrder(){
   // Clear all errors first
-  ['no-id','no-client','no-date','no-dname','no-dcode'].forEach(clearFieldError);
+  ['no-client','no-date','no-dname','no-dcode'].forEach(clearFieldError);
   const errV=document.getElementById('err-no-varieties');if(errV)errV.style.display='none';
 
-  const orderId=document.getElementById('no-id').value.trim();
+  // Order ID is auto-assigned by renumberOrders() based on start-date sequence.
   const client=document.getElementById('no-client').value.trim();
   const startDate=document.getElementById('no-date').value;
   const dname=document.getElementById('no-dname').value.trim();
@@ -3263,7 +3297,6 @@ function createOrder(){
   const bangleType=(document.getElementById('no-btype')?.value)||'dye_gold';
 
   let hasErr=false;
-  if(!orderId){showFieldError('no-id','Order ID is required');hasErr=true;}
   if(!client){showFieldError('no-client','Client name is required');hasErr=true;}
   if(!startDate){showFieldError('no-date','Start date is required');hasErr=true;}
   if(!dname){showFieldError('no-dname','Design name is required');hasErr=true;}
@@ -3302,7 +3335,10 @@ function createOrder(){
   });
 
   const newOrder={
-    id:uid(),orderId,client,startDate,
+    id:uid(),
+    orderId:'',          // placeholder — renumberOrders() will assign
+    createdAt:new Date().toISOString(),
+    client,startDate,
     priority:document.getElementById('no-prio').value,
     notes:document.getElementById('no-notes').value,
     bangleType,
@@ -3315,7 +3351,8 @@ function createOrder(){
   S.openOrders.add(newOrder.id);
   S.openClients.add(client);
   S.activeTabs[newOrder.id]='designs';
-  audit('Create order',`New order ${orderId} for ${client} (${bangleType==='cnc'?'CNC':bangleType==='both'?'Both':'Dye Gold'}) created with ${window._modalVarieties.length} varieties`);
+  renumberOrders(); // assigns ORD-XXX based on date sequence
+  audit('Create order',`New order ${newOrder.orderId} for ${client} (${bangleType==='cnc'?'CNC':bangleType==='both'?'Both':'Dye Gold'}) created with ${window._modalVarieties.length} varieties`);
   rebuildVocab();closeModal();render();
 }
 
@@ -3333,10 +3370,10 @@ function downloadOrderTemplate(){
     /* R1  */ ['Fill Column B for order details. Use the CNC section for bangles with no variety, and Dye Gold section for bangles with varieties. Leave unused sections blank.'],
     /* R2  */ [],
     /* R3  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────────────────────────────────'],
-    /* R4  */ ['Order ID',    'ORD-001'],
-    /* R5  */ ['Client Name', 'Meena Traders'],
-    /* R6  */ ['Start Date',  '15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    /* R7  */ ['Notes',       'Urgent delivery before Diwali'],
+    /* R4  */ ['Client Name', 'Meena Traders'],
+    /* R5  */ ['Start Date',  '15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
+    /* R6  */ ['Notes',       'Urgent delivery before Diwali'],
+    /* R7  */ ['','(Order ID is assigned automatically — do not fill)'],
     /* R8  */ [],
     /* R9  */ ['─── CNC DESIGNS & QUANTITIES ────────────────────────────────────────────────────────────────────'],
     /* R10 */ ['Each row = one CNC design. Unit = pcs / pairs / jotta. Enter total quantities per size directly.'],
@@ -7315,6 +7352,8 @@ function closeModal(){
 })();
 // Re-sync auto inventory entries for all orders on load
 S.orders.forEach((o,oi)=>o.designs.forEach((_,di)=>autoSyncInventoryFromStages(oi,di)));
+// Normalize order IDs to ORD-001, ORD-002, ... based on start-date sequence
+renumberOrders();
 // Seed undo history with initial loaded state
 _hist = [snapState()]; _histIdx = 0;
 updateUndoRedoBtns();
@@ -7492,6 +7531,7 @@ async function fbInit(){
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
       S.openDesignStages = new Set(parsed.openDesignStages || []);
+      renumberOrders(); // normalize any imported/synced data
       // Save to local cache WITHOUT triggering Firebase push (avoid echo)
       _origSave();
       // Stamp local time with remote's savedAt so SSE comparison is correct
@@ -7572,6 +7612,7 @@ function fbStartListener(){
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
       S.openDesignStages = new Set(parsed.openDesignStages || []);
+      renumberOrders(); // normalize any newly-synced order data
       // Save to local cache without triggering Firebase push (avoid echo loop)
       _origSave();
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
@@ -7636,6 +7677,7 @@ if(_isStandalone){
 }
 
 async function installApp(){
+  // Fast path: prompt is already ready — fire it immediately
   if(_deferredInstallPrompt){
     _deferredInstallPrompt.prompt();
     const { outcome } = await _deferredInstallPrompt.userChoice;
@@ -7646,7 +7688,29 @@ async function installApp(){
     }
     return;
   }
-  // No deferred prompt available — show step-by-step instructions
+  // Slow path: wait up to 4 seconds for Chrome to fire beforeinstallprompt.
+  // Most of the time it fires within a second of any user interaction.
+  showToast('⏳ Preparing install — please wait…','green');
+  const start = Date.now();
+  await new Promise(resolve => {
+    const tick = setInterval(()=>{
+      if(_deferredInstallPrompt || Date.now()-start > 4000){
+        clearInterval(tick);
+        resolve();
+      }
+    }, 150);
+  });
+  if(_deferredInstallPrompt){
+    _deferredInstallPrompt.prompt();
+    const { outcome } = await _deferredInstallPrompt.userChoice;
+    _deferredInstallPrompt = null;
+    if(outcome === 'accepted'){
+      const b = document.getElementById('btn-install-app-desktop');
+      if(b) b.style.display='none';
+    }
+    return;
+  }
+  // Still no prompt — Chrome isn't offering install. Fall back to instructions.
   showInstallInstructions();
 }
 
