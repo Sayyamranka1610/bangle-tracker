@@ -680,12 +680,19 @@ let _es=null, _dlTimer=null, _lastSaved=null, _deferredInstall=null;
 function isAdmin(){return !!(S.me&&(S.me.role==='owner'||S.me.role==='manager'));}
 function isOwner(){return !!(S.me&&S.me.role==='owner');}
 
-// Populate the login username dropdown from S.users
+// Populate the login username dropdown from S.users and pre-fill remembered credentials
 function fillLoginDropdown(){
   const sel=document.getElementById('lu');
   const users=Object.values(S.users).sort((a,b)=>a.name.localeCompare(b.name));
-  sel.innerHTML='<option value="" disabled selected>— Select your username —</option>'+
+  sel.innerHTML='<option value="" disabled>— Select your username —</option>'+
     users.map(u=>`<option value="${xe(u.username)}">${xe(u.name)}</option>`).join('');
+  const rem=loadRemember();
+  if(rem&&rem.username){
+    sel.value=rem.username;
+    if(rem.password)document.getElementById('lp').value=rem.password;
+  } else {
+    sel.selectedIndex=0;
+  }
 }
 
 // ════════════════════════════════════
@@ -719,6 +726,11 @@ function saveSess(id){try{sessionStorage.setItem(SE,id);}catch{}}
 function loadSess(){try{return sessionStorage.getItem(SE);}catch{return null;}}
 function clearSess(){try{sessionStorage.removeItem(SE);}catch{}}
 
+// Remember last login on this device
+const LR='wb_rem';
+function saveRemember(username,password){try{localStorage.setItem(LR,JSON.stringify({username,password}));}catch{}}
+function loadRemember(){try{return JSON.parse(localStorage.getItem(LR)||'null');}catch{return null;}}
+
 // ════════════════════════════════════
 //  SAVE
 // ════════════════════════════════════
@@ -746,6 +758,7 @@ function doLogin(){
   if(!u){e.textContent='Please select your username.';e.style.display='block';return;}
   const user=Object.values(S.users).find(x=>x.username.toLowerCase()===u&&x.password===p);
   if(!user){e.textContent='Incorrect password. Please try again.';e.style.display='block';return;}
+  saveRemember(user.username,p);   // remember on this device
   S.me=user;saveSess(user.id);startApp();
 }
 function doLogout(){
@@ -754,7 +767,7 @@ function doLogout(){
   if(_es){_es.close();_es=null;}
   document.getElementById('app').classList.remove('on');
   document.getElementById('login').style.display='flex';
-  fillLoginDropdown();document.getElementById('lu').selectedIndex=0;document.getElementById('lp').value='';
+  fillLoginDropdown(); // restores remembered username + password automatically
 }
 function startApp(){
   document.getElementById('login').style.display='none';
