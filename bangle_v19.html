@@ -7729,47 +7729,132 @@ if(_isStandalone){
 }
 
 async function installApp(){
-  // If running as standalone (PWA window), show "Already installed!" — matches
-  // the friendly UX of workboard's install button.
+  // If running as standalone (PWA window), show "Already installed!"
   if(_isStandalone){
     showAlreadyInstalled();
     return;
   }
   // Fast path: prompt is already ready — fire it immediately
   if(_deferredInstallPrompt){
+    await _firePrompt();
+    return;
+  }
+
+  // Slow path: do the cleanup that the user would otherwise have to do manually.
+  // 1. Force-refresh manifests so Chrome picks up the latest scopes
+  // 2. Update all service workers (workboard's stale SW with broad scope gets a chance to load the new narrower manifest)
+  // 3. Wait up to 10 seconds for beforeinstallprompt to fire
+  // 4. If it does, fire it. Otherwise reload the page once and try again.
+  const overlay = _showInstallProgress('Preparing install…');
+  try{
+    overlay.set('Refreshing app config…');
+    await Promise.allSettled([
+      fetch('manifest.json?ts='+Date.now(),{cache:'reload'}),
+      fetch('workboard-manifest.json?ts='+Date.now(),{cache:'reload'}),
+      fetch('bangle-sw.js?ts='+Date.now(),{cache:'reload'}),
+    ]);
+
+    overlay.set('Updating service workers…');
+    if('serviceWorker' in navigator){
+      try{
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.allSettled(regs.map(r => r.update().catch(()=>{})));
+      }catch(e){/* ignore */}
+    }
+
+    overlay.set('Waiting for browser to offer install…');
+    const ready = await _waitForPrompt(10000);
+    if(ready){
+      overlay.close();
+      await _firePrompt();
+      return;
+    }
+
+    // Chrome still hasn't offered. Most often: workboard's old broad scope is
+    // cached and Chrome thinks bangle is already installed under it. Forcing
+    // a page reload usually lets Chrome re-evaluate from the latest manifests.
+    // We mark a sessionStorage flag so we don't loop forever.
+    if(!sessionStorage.getItem('bt_install_retried')){
+      sessionStorage.setItem('bt_install_retried','1');
+      overlay.set('Reloading to retry install…');
+      await new Promise(r=>setTimeout(r,800));
+      location.reload();
+      return;
+    }
+    // Already retried — final fallback: open workboard URL in a new background
+    // tab to force Chrome to refresh workboard's manifest, then reload us.
+    overlay.set('Refreshing related app…');
+    try{
+      const w = window.open('workboard.html?refresh=1','_blank');
+      setTimeout(()=>{ try{ w && w.close(); }catch(e){} }, 1500);
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,2000));
+    sessionStorage.removeItem('bt_install_retried'); // allow another full cycle
+    overlay.set('Reloading…');
+    location.reload();
+  }catch(e){
+    overlay.close();
+    showToast('Install couldn\'t complete — please try again in a moment.','red');
+  }
+}
+
+// Auto-fire prompt on load if we were in the middle of an install attempt
+window.addEventListener('beforeinstallprompt',()=>{
+  if(sessionStorage.getItem('bt_install_retried')==='1' && !_isStandalone){
+    sessionStorage.removeItem('bt_install_retried');
+    // Give the page a moment to settle, then fire
+    setTimeout(()=>{ if(_deferredInstallPrompt) _firePrompt(); }, 800);
+  }
+});
+
+async function _firePrompt(){
+  if(!_deferredInstallPrompt) return false;
+  try{
     _deferredInstallPrompt.prompt();
     const { outcome } = await _deferredInstallPrompt.userChoice;
     _deferredInstallPrompt = null;
     if(outcome === 'accepted'){
       const b = document.getElementById('btn-install-app-desktop');
       if(b) b.style.display='none';
+      showToast('🎉 Installed!','green');
     }
-    return;
+    return true;
+  }catch(e){
+    return false;
   }
-  // Slow path: wait up to 4 seconds for Chrome to fire beforeinstallprompt.
-  // Most of the time it fires within a second of any user interaction.
-  showToast('⏳ Preparing install — please wait…','green');
-  const start = Date.now();
-  await new Promise(resolve => {
+}
+
+function _waitForPrompt(maxMs){
+  return new Promise(resolve => {
+    if(_deferredInstallPrompt){ resolve(true); return; }
+    const start = Date.now();
     const tick = setInterval(()=>{
-      if(_deferredInstallPrompt || Date.now()-start > 4000){
-        clearInterval(tick);
-        resolve();
-      }
+      if(_deferredInstallPrompt){ clearInterval(tick); resolve(true); }
+      else if(Date.now()-start > maxMs){ clearInterval(tick); resolve(false); }
     }, 150);
   });
-  if(_deferredInstallPrompt){
-    _deferredInstallPrompt.prompt();
-    const { outcome } = await _deferredInstallPrompt.userChoice;
-    _deferredInstallPrompt = null;
-    if(outcome === 'accepted'){
-      const b = document.getElementById('btn-install-app-desktop');
-      if(b) b.style.display='none';
-    }
-    return;
-  }
-  // Still no prompt — Chrome isn't offering install. Fall back to instructions.
-  showInstallInstructions();
+}
+
+function _showInstallProgress(initialText){
+  const mc = document.getElementById('modal-container');
+  if(!mc) return { set:()=>{}, close:()=>{} };
+  mc.innerHTML = `<div class="modal-overlay" id="modal-overlay-main" style="z-index:1400;background:rgba(15,15,30,.65)">
+    <div class="modal" style="width:340px;max-width:92vw;text-align:center" role="dialog">
+      <div style="padding:22px 12px 18px">
+        <div style="font-size:42px;margin-bottom:10px">📲</div>
+        <div style="font-size:14px;font-weight:700;color:#3C3489;margin-bottom:10px">Installing Siddhi Bangle Tracker</div>
+        <div id="install-progress-msg" style="font-size:12px;color:#666;min-height:18px">${esc(initialText||'Working…')}</div>
+        <div style="margin-top:14px;height:4px;background:#eee;border-radius:2px;overflow:hidden">
+          <div style="height:100%;background:linear-gradient(90deg,#534AB7,#7F77DD);width:30%;animation:installpulse 1.4s ease-in-out infinite"></div>
+        </div>
+        <style>@keyframes installpulse{0%{margin-left:-30%}100%{margin-left:100%}}</style>
+      </div>
+    </div>
+  </div>`;
+  return {
+    set(text){ const el=document.getElementById('install-progress-msg'); if(el) el.textContent = text; },
+    close(){ closeModal(); }
+  };
 }
 
 function showAlreadyInstalled(){
