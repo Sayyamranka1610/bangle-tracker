@@ -78,6 +78,17 @@ img{display:block}
 }
 .lfield input::placeholder{color:rgba(255,255,255,.28)}
 .lfield input:focus{border-color:var(--p);background:rgba(99,102,241,.2);box-shadow:0 0 0 4px rgba(99,102,241,.22)}
+.l-sel{
+  width:100%;padding:14px 16px;border-radius:10px;font-size:16px;
+  background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.12);
+  color:#fff;outline:none;transition:.2s;cursor:pointer;
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='rgba(255,255,255,0.45)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;
+  padding-right:42px;
+}
+.l-sel option{background:#1e1b4b;color:#fff}
+.l-sel:focus{border-color:var(--p);background-color:rgba(99,102,241,.2);box-shadow:0 0 0 4px rgba(99,102,241,.22)}
 .lerr{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.28);color:#fca5a5;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:14px;display:none}
 .lbtn{
   width:100%;height:52px;background:var(--p);color:#fff;font-weight:700;font-size:16px;
@@ -458,7 +469,7 @@ textarea.fc{resize:vertical;min-height:80px;line-height:1.5}
     </div>
     <div id="lerr" class="lerr"></div>
     <div class="lfield"><label>Username</label>
-      <input id="lu" type="text" placeholder="Enter your username" autocomplete="username" inputmode="text">
+      <select id="lu" class="l-sel"><option value="" disabled selected>— Select your username —</option></select>
     </div>
     <div class="lfield"><label>Password</label>
       <input id="lp" type="password" placeholder="Enter your password" autocomplete="current-password">
@@ -660,6 +671,20 @@ const COLORS=['#6366f1','#10b981','#f59e0b','#ef4444','#3b82f6','#8b5cf6','#ec48
 let _es=null, _dlTimer=null, _lastSaved=null, _deferredInstall=null;
 
 // ════════════════════════════════════
+//  ROLE HELPERS
+// ════════════════════════════════════
+function isAdmin(){return !!(S.me&&(S.me.role==='owner'||S.me.role==='manager'));}
+function isOwner(){return !!(S.me&&S.me.role==='owner');}
+
+// Populate the login username dropdown from S.users
+function fillLoginDropdown(){
+  const sel=document.getElementById('lu');
+  const users=Object.values(S.users).sort((a,b)=>a.name.localeCompare(b.name));
+  sel.innerHTML='<option value="" disabled selected>— Select your username —</option>'+
+    users.map(u=>`<option value="${xe(u.username)}">${xe(u.name)}</option>`).join('');
+}
+
+// ════════════════════════════════════
 //  FIREBASE
 // ════════════════════════════════════
 async function fbGet(p){try{const r=await fetch(`${FB}${p}.json`);return r.ok?await r.json():null;}catch{return null;}}
@@ -670,7 +695,7 @@ async function loadFB(){
   if(d.users)S.users=d.users;
   if(d.tasks)S.tasks=d.tasks;
   if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
-  saveLS();checkDL();render();
+  saveLS();checkDL();render();fillLoginDropdown();
 }
 function listenFB(){
   if(_es)return;
@@ -711,8 +736,9 @@ function doLogin(){
   const u=document.getElementById('lu').value.trim().toLowerCase();
   const p=document.getElementById('lp').value;
   const e=document.getElementById('lerr');e.style.display='none';
+  if(!u){e.textContent='Please select your username.';e.style.display='block';return;}
   const user=Object.values(S.users).find(x=>x.username.toLowerCase()===u&&x.password===p);
-  if(!user){e.textContent='Incorrect username or password.';e.style.display='block';return;}
+  if(!user){e.textContent='Incorrect password. Please try again.';e.style.display='block';return;}
   S.me=user;saveSess(user.id);startApp();
 }
 function doLogout(){
@@ -721,14 +747,14 @@ function doLogout(){
   if(_es){_es.close();_es=null;}
   document.getElementById('app').classList.remove('on');
   document.getElementById('login').style.display='flex';
-  document.getElementById('lu').value='';document.getElementById('lp').value='';
+  fillLoginDropdown();document.getElementById('lu').selectedIndex=0;document.getElementById('lp').value='';
 }
 function startApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').classList.add('on');
   document.getElementById('savebtn').style.display='flex';
   document.getElementById('hd-install').style.display='flex';
-  S.view=S.me.role==='owner'?'overview':'tasks';
+  S.view=isAdmin()?'overview':'tasks';
   S.filter='all';S.selMember='all';
   renderNav();checkDL();render();listenFB();
   _dlTimer=setInterval(checkDL,60000);
@@ -757,6 +783,7 @@ function saveTask(){
   const date=document.getElementById('t-date').value;
   if(!title){toast('Task title is required','bad');return;}
   if(!who){toast('Please select who this is for','bad');return;}
+  if(!isAdmin()&&who!==S.me.id){toast('You can only add tasks for yourself','bad');return;}
   if(!date){toast('Please set a deadline','bad');return;}
   const time=document.getElementById('t-time').value||'23:59';
   const dl=new Date(`${date}T${time}:00`).getTime();
@@ -876,7 +903,7 @@ function showAddTask(preWho){
   const tom=new Date();tom.setDate(tom.getDate()+1);
   document.getElementById('t-date').value=tom.toISOString().slice(0,10);
   document.getElementById('t-time').value='18:00';
-  fillWhoSelect(preWho||(S.me.role==='worker'?S.me.id:''));
+  fillWhoSelect(preWho||(isAdmin()?'':S.me.id));
   showM('m-task');setTimeout(()=>document.getElementById('t-title').focus(),300);
 }
 function showEditTask(id){
@@ -892,7 +919,13 @@ function showEditTask(id){
 }
 function fillWhoSelect(sel){
   const el=document.getElementById('t-who');
-  if(S.me.role==='worker'){el.innerHTML=`<option value="${S.me.id}" selected>${xe(S.me.name)}</option>`;return;}
+  if(!isAdmin()){
+    // Non-admins can only assign tasks to themselves
+    el.innerHTML=`<option value="${S.me.id}" selected>${xe(S.me.name)}</option>`;
+    el.disabled=true;
+    return;
+  }
+  el.disabled=false;
   el.innerHTML='<option value="">— Select person —</option>';
   Object.values(S.users).forEach(u=>{const o=document.createElement('option');o.value=u.id;o.textContent=u.name;if(u.id===sel)o.selected=true;el.appendChild(o);});
 }
@@ -902,7 +935,7 @@ function showTaskDet(id){
   const dl=t.deadline?new Date(t.deadline):null;
   const dlStr=dl?`${dl.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})} · ${dl.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`:'—';
   const isOv=t.status==='overdue',isDone=t.status==='completed';
-  const canAct=S.me.role==='owner'||S.me.id===t.assignedTo;
+  const canAct=isAdmin()||S.me.id===t.assignedTo;
   document.getElementById('det-body').innerHTML=`
     <div class="dt-badges">
       <span class="badge b-${t.status}">${slabel(t.status)}</span>
@@ -923,8 +956,10 @@ function showTaskDet(id){
   const add=(cls,txt,fn)=>{const b=document.createElement('button');b.className=`btn ${cls}`;b.innerHTML=txt;b.onclick=fn;foot.appendChild(b);};
   if(!isDone&&canAct)add('btn-ok',`<svg width="14" height="14" fill="none" viewBox="0 0 24 24"><path stroke="#fff" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Mark Complete`,()=>completeTask(id));
   if(isDone&&canAct)add('btn-s','Reopen',()=>reopenTask(id));
-  if(S.me.role==='owner'||S.me.id===t.createdBy){
+  if(isAdmin()||(S.me.id===t.assignedTo&&S.me.id===t.createdBy)){
     add('btn-s','Edit',()=>showEditTask(id));
+  }
+  if(isAdmin()){
     add('btn-bad','Delete',()=>delTask(id));
   }
   showM('m-det');
@@ -956,18 +991,18 @@ document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=
 // ════════════════════════════════════
 function renderNav(){
   const u=S.me;if(!u)return;
-  const isOwner=u.role==='owner';
-  const ov=Object.values(S.tasks).filter(t=>t.status==='overdue'&&(isOwner||t.assignedTo===u.id)).length;
+  const admin=isAdmin();
+  const ov=Object.values(S.tasks).filter(t=>t.status==='overdue'&&(admin||t.assignedTo===u.id)).length;
   // Sidebar user
   document.getElementById('sb-user').innerHTML=`
     <div class="av av-sq" style="background:${u.color||'#6366f1'};width:32px;height:32px;font-size:12px;border-radius:8px">${ini(u.name)}</div>
     <div class="sb-user-info"><strong>${xe(u.name)}</strong><span>${cap(u.role)}</span></div>`;
-  const items=isOwner
+  const items=admin
     ?[{id:'overview',i:iGrid(),l:'All Tasks'},{id:'tasks',i:iTask(),l:'My Tasks'},{id:'analytics',i:iChart(),l:'Analytics'},{id:'settings',i:iSet(),l:'Settings'}]
     :[{id:'tasks',i:iTask(),l:'My Tasks'}];
-  const bdg=(id)=>(ov>0&&(id==='overview'||(id==='tasks'&&!isOwner)))?`<span class="sni-badge">${ov}</span>`:'';
+  const bdg=(id)=>(ov>0&&(id==='overview'||(id==='tasks'&&!admin)))?`<span class="sni-badge">${ov}</span>`:'';
   document.getElementById('sb-nav').innerHTML=items.map(n=>`<div class="sni ${S.view===n.id?'on':''}" onclick="setView('${n.id}')">${n.i}${n.l}${bdg(n.id)}</div>`).join('');
-  const bBdg=(id)=>(ov>0&&(id==='overview'||(id==='tasks'&&!isOwner)))?`<span class="bn-dot">${ov}</span>`:'';
+  const bBdg=(id)=>(ov>0&&(id==='overview'||(id==='tasks'&&!admin)))?`<span class="bn-dot">${ov}</span>`:'';
   document.getElementById('bni').innerHTML=items.map(n=>`
     <div class="bn ${S.view===n.id?'on':''}" onclick="setView('${n.id}')">
       ${bBdg(n.id)}
@@ -1102,10 +1137,10 @@ function rSettings(){
   const members=Object.values(S.users).sort((a,b)=>a.name.localeCompare(b.name));
   document.getElementById('content').innerHTML=`
     <div class="pg-head"><div><div class="pg-title">Team Members</div><div class="pg-sub">Manage access to WorkBoard</div></div>
-      <button class="btn btn-p btn-sm" onclick="showAddUser()">
+      ${isOwner()?`<button class="btn btn-p btn-sm" onclick="showAddUser()">
         <svg width="13" height="13" fill="none" viewBox="0 0 24 24"><path stroke="#fff" stroke-width="2" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8m9 4v6m3-3h-6"/></svg>
         Add
-      </button>
+      </button>`:''}
     </div>
     <div class="mlist">
       ${members.map(u=>`<div class="mrow">
@@ -1115,8 +1150,8 @@ function rSettings(){
           <div class="mrow-meta">@${xe(u.username)} · ${cap(u.role)}${u.dept?' · '+xe(u.dept):''}</div>
         </div>
         <div class="mrow-acts">
-          <button class="btn btn-s btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
-          ${u.id!==S.me.id?`<button class="btn btn-bad btn-sm" onclick="delUser('${u.id}')">✕</button>`:''}
+          ${isOwner()||u.id===S.me.id?`<button class="btn btn-s btn-sm" onclick="showEditUser('${u.id}')">Edit</button>`:''}
+          ${isOwner()&&u.id!==S.me.id?`<button class="btn btn-bad btn-sm" onclick="delUser('${u.id}')">✕</button>`:''}
         </div>
       </div>`).join('')}
       ${members.length===0?empt('No members yet','Add your first team member'):''}
@@ -1236,7 +1271,7 @@ window.addEventListener('appinstalled',()=>{
 //  KEYBOARD
 // ════════════════════════════════════
 document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-document.getElementById('lu').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('lp').focus();});
+document.getElementById('lu').addEventListener('change',()=>document.getElementById('lp').focus());
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){document.querySelectorAll('.overlay.on').forEach(m=>closeM(m.id));closeSd();}
   if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();if(S.me)manualSave();}
@@ -1251,7 +1286,8 @@ async function init(){
     S.users['owner_default']={id:'owner_default',name:'Owner',username:'owner',password:'admin123',role:'owner',dept:'Management',color:'#6366f1'};
     saveLS();
   }
-  await loadFB();
+  fillLoginDropdown();   // populate dropdown immediately from local cache
+  await loadFB();        // loadFB calls fillLoginDropdown() again after fresh data
   const sid=loadSess();
   if(sid&&S.users[sid]){S.me=S.users[sid];startApp();}
 }
