@@ -1,0 +1,33 @@
+{
+  "name": "Siddhi Bangle Tracker",
+  "short_name": "Bangle Tracker",
+  "description": "Production tracking dashboard — orders, designs, inventory & vendor management.",
+  "start_url": "./bangle_v19.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a1750",
+  "theme_color": "#534AB7",
+  "lang": "en",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "bangle-logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "bangle-logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "bangle-logo.jpg",
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "maskable"
+    }
+  ]
+}

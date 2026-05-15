@@ -16,6 +16,13 @@
 <meta name="twitter:description" content="Production tracking dashboard — orders, designs, inventory & vendor management.">
 <meta name="twitter:image"      content="https://sayyamranka1610.github.io/bangle-tracker/bangle-logo.jpg">
 <link rel="icon" type="image/jpeg" href="bangle-logo.jpg">
+<!-- PWA / mobile-app support -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#534AB7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Siddhi Bangle Tracker">
+<link rel="apple-touch-icon" href="bangle-logo.jpg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -340,6 +347,59 @@ input[type="date"]{min-width:118px}
 
 .stage-group-raw{border-color:#FFD54F!important;}.stage-group-semi{border-color:#90CAF9!important;}.stage-group-finished{border-color:#A5D6A7!important;}
 .group-qty-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   MOBILE / TABLET RESPONSIVE STYLES
+   ─────────────────────────────────────────────────────────────────────────── */
+@media(max-width:900px){
+  body{font-size:13px}
+  .dash{padding:10px 8px!important}
+  .header-band{flex-direction:column;align-items:stretch!important;gap:10px;padding:14px 16px!important}
+  .header-band h1{font-size:17px!important}
+  .header-actions{flex-wrap:wrap;gap:6px!important;justify-content:flex-start!important}
+  .header-actions button{font-size:12px;padding:7px 10px;flex:1 1 auto;min-width:48%}
+  .stats{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
+  .stat-card{padding:10px 12px!important}
+  .stat-val{font-size:20px!important}
+  .stat-lbl{font-size:10px!important}
+  .main-tabs{overflow-x:auto;flex-wrap:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .main-tab{white-space:nowrap;font-size:12px!important;padding:8px 12px!important;flex-shrink:0}
+  .filter-bar{flex-direction:column;align-items:stretch!important;padding:10px 12px!important}
+  .filter-bar > div{width:100%}
+  .filter-bar select{width:100%}
+  .order-card{margin-bottom:10px}
+  .order-header{flex-wrap:wrap;padding:10px 12px!important}
+  .oh-title{font-size:13px!important}
+  .oh-sub{font-size:11px!important}
+  .oh-right{flex-wrap:wrap;gap:4px!important}
+  .field-row{flex-direction:column!important;gap:8px!important}
+  .field-group{max-width:none!important;width:100%}
+  .design-card{padding:10px!important}
+  .design-card-head{flex-direction:column;align-items:stretch!important;gap:8px!important}
+  .variety-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .variety-table{min-width:600px}
+  .modal{width:95vw!important;max-width:95vw!important;max-height:90vh;overflow-y:auto;margin:5vh auto!important}
+  .modal-overlay{padding:0!important}
+  .save-bar{padding:4px 8px;gap:6px}
+  .save-bar button{font-size:10px!important;padding:3px 7px!important}
+  .save-bar-status{font-size:10px!important;min-width:80px}
+  #fb-bar{padding:4px 10px;font-size:10px}
+  .stage-flow{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;padding-bottom:6px}
+  .design-stages-section{padding:8px!important}
+  .design-stages-head{flex-wrap:wrap;gap:6px!important;font-size:12px!important}
+  .login-card{max-width:92vw!important;padding:24px 18px!important}
+  /* Touch-friendly tap targets — minimum 36px */
+  button, .icon-btn, .main-tab{min-height:36px}
+  input[type=number],input[type=text],input[type=date],select,textarea{font-size:14px!important;padding:8px 10px!important;min-height:36px}
+}
+@media(max-width:480px){
+  body{font-size:12px}
+  .stats{grid-template-columns:1fr 1fr!important}
+  .header-band h1{font-size:15px!important}
+  .app-logo-img{width:32px!important;height:32px!important}
+  .modal{width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;margin:0!important;border-radius:0!important}
+  .login-logo-img{width:72px!important;height:72px!important}
+}
 
 @media print{
   .header-actions,.filter-bar,.main-tabs,.no-print{display:none!important}
@@ -7491,6 +7551,57 @@ window.save = function(){
 // ══════════════════════════════════════════════════════════════════════════════
 // ── END LOGIN + FIREBASE MODULE ───────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── PWA INSTALL + SERVICE WORKER ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// Register service worker for offline support + faster repeat loads.
+if('serviceWorker' in navigator && !_isDemoMode()){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js')
+      .then(reg=>{ console.log('SW registered:', reg.scope); })
+      .catch(err=>{ console.warn('SW registration failed:', err); });
+  });
+}
+
+// Detect the browser's "install" prompt and show an Install App button.
+let _deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt',(e)=>{
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  // Add an "📲 Install app" button to the header actions (if not already there)
+  const ha = document.querySelector('.header-actions');
+  if(ha && !document.getElementById('btn-install-app')){
+    const btn = document.createElement('button');
+    btn.id = 'btn-install-app';
+    btn.textContent = '📲 Install app';
+    btn.title = 'Install Siddhi Bangle Tracker as a mobile/desktop app';
+    btn.style.background = '#0F6E56';
+    btn.style.color = '#fff';
+    btn.onclick = installApp;
+    ha.insertBefore(btn, ha.firstChild);
+  }
+});
+async function installApp(){
+  if(!_deferredInstallPrompt){
+    alert('Your browser does not show the install prompt right now.\n\nOn iPhone Safari: tap the Share icon → "Add to Home Screen".\nOn Android Chrome: tap the menu (⋮) → "Add to Home screen" or "Install app".');
+    return;
+  }
+  _deferredInstallPrompt.prompt();
+  const { outcome } = await _deferredInstallPrompt.userChoice;
+  _deferredInstallPrompt = null;
+  if(outcome === 'accepted'){
+    const btn = document.getElementById('btn-install-app');
+    if(btn) btn.remove();
+    showToast('🎉 App installed — open from your home screen', 'green');
+  }
+}
+
+// If running as a standalone PWA, hide the install button (already installed)
+window.addEventListener('appinstalled',()=>{
+  const btn = document.getElementById('btn-install-app');
+  if(btn) btn.remove();
+});
 
 </script>
 </html>
