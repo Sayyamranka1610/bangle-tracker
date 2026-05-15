@@ -4644,57 +4644,73 @@ function openVendorPrintWindow(title,orders){
       const varieties=d.varieties||[];
       const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
       const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
-      const varCards=varieties.map(v=>{
-        const vImages=v.images||[];
-        const vTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const imgHtml=vImages.length?vImages.map(img=>`<img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;display:block">`).join('<br style="margin:4px 0">')
-          :'<div style="width:160px;height:80px;background:#f0efff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#AFA9EC;border:1.5px dashed #AFA9EC">No image</div>';
-        return`<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;vertical-align:top;margin:0 12px 16px 0;max-width:180px">
-          ${imgHtml}
-          <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
-          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} ${esc(v.unit||'pcs')}</div>
-        </div>`;
-      }).join('');
-      return`<div style="margin-bottom:14px;padding:12px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
-        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code||'—'}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
-        ${varieties.length?`<div style="margin-bottom:10px">${varCards}</div>`:''}
-        ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px">
-          <thead><tr style="background:#534AB7;color:#fff">
-            <th style="padding:5px 8px;text-align:left">Variety</th>
-            ${szKeys.map(sz=>`<th style="padding:5px 8px;text-align:center">${sz}</th>`).join('')}
-            <th style="padding:5px 8px;text-align:center">Total</th>
-          </tr></thead>
-          <tbody>${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
-            <td style="padding:4px 8px">${v.name}</td>
-            ${szKeys.map(sz=>`<td style="padding:4px 8px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
-            <td style="padding:4px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
-          </tr>`;}).join('')}</tbody>
-          <tfoot><tr style="background:#eeeffe;font-weight:700">
-            <td style="padding:5px 8px">Design total</td>
-            ${szKeys.map(sz=>`<td style="padding:5px 8px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
-            <td style="padding:5px 8px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
-          </tr></tfoot>
-        </table>`:''}
+
+      // Image strip — only render when at least one variety has images
+      const varietiesWithImages = varieties.filter(v => v.images && v.images.length > 0);
+      let imageStripHtml = '';
+      if (varietiesWithImages.length > 0) {
+        const cards = varietiesWithImages.map(v => {
+          const imgs = v.images.map(img => `<img src="${img.data}" style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #AFA9EC;display:block">`).join('');
+          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:3px;vertical-align:top;margin:0 8px 8px 0">
+            ${imgs}
+            <div style="font-size:10px;font-weight:600;color:#3C3489;text-align:center;max-width:120px">${esc(v.name||'Variety')}</div>
+          </div>`;
+        }).join('');
+        imageStripHtml = `<div style="margin:4px 0 8px">${cards}</div>`;
+      }
+
+      const tableHtml = varieties.length ? `<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:2px">
+        <thead><tr style="background:#534AB7;color:#fff">
+          <th style="padding:4px 6px;text-align:left">Variety</th>
+          <th style="padding:4px 6px;text-align:center">Unit</th>
+          ${szKeys.map(sz=>`<th style="padding:4px 6px;text-align:center">${sz}</th>`).join('')}
+          <th style="padding:4px 6px;text-align:center">Total</th>
+        </tr></thead>
+        <tbody>${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
+          <td style="padding:3px 6px">${esc(v.name||'')}</td>
+          <td style="padding:3px 6px;text-align:center;color:#666">${esc(v.unit||'pcs')}</td>
+          ${szKeys.map(sz=>`<td style="padding:3px 6px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
+          <td style="padding:3px 6px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
+        </tr>`;}).join('')}</tbody>
+        <tfoot><tr style="background:#eeeffe;font-weight:700">
+          <td colspan="2" style="padding:4px 6px">Design total</td>
+          ${szKeys.map(sz=>`<td style="padding:4px 6px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
+          <td style="padding:4px 6px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
+        </tr></tfoot>
+      </table>` : '<p style="font-size:10px;color:#888;margin:4px 0">No varieties</p>';
+
+      return `<div class="design-block" style="margin-bottom:10px;padding:8px;background:#f7f6f2;border-radius:6px">
+        <h3 style="font-size:12px;margin-bottom:4px;color:#534AB7">${esc(d.name)} <span style="font-weight:400;color:#666">[${esc(d.code||'—')}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
+        ${imageStripHtml}
+        ${tableHtml}
       </div>`;
     }).join('');
-    return`<div style="border:1px solid #D3D1C7;border-radius:10px;padding:14px;margin-bottom:16px;page-break-inside:avoid">
-      <h2 style="font-size:15px;margin-bottom:4px;color:#534AB7">${vo.orderId} · ${esc(vo.vendor)}</h2>
-      <p style="font-size:11px;color:#666;margin-bottom:6px">
-        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${vo.priority} · Total: ${qtyStr}
+    const notesLine = vo.notes ? `<div style="font-size:10px;color:#666;margin-bottom:6px">Notes: ${esc(vo.notes)}</div>` : '';
+    return `<div class="order-block" style="border:1px solid #D3D1C7;border-radius:6px;padding:8px 10px;margin-bottom:10px">
+      <h2 style="font-size:13px;margin-bottom:2px;color:#534AB7">${esc(vo.orderId)} · ${esc(vo.vendor)}</h2>
+      <p style="font-size:10px;color:#666;margin-bottom:6px">
+        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${esc(vo.priority)} · Total: ${qtyStr}
       </p>
-      ${vo.notes?`<p style="font-size:11px;color:#666;margin-bottom:10px">Notes: ${esc(vo.notes)}</p>`:''}
+      ${notesLine}
       ${designsHtml}
     </div>`;
   }).join('');
-  w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
-    <style>body{font-family:system-ui;padding:20px;color:#1a1916;font-size:12px}
-    table{border-collapse:collapse}@media print{button{display:none!important}}</style>
-    </head><body>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #534AB7">
-      <h1 style="font-size:18px;color:#534AB7">🪬 Bangle Production Tracker — Vendor Orders</h1>
-      <div><strong>${title}</strong><br><span style="font-size:11px;color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+  w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)}</title>
+    <style>
+      @page{margin:8mm 10mm}
+      body{font-family:system-ui;padding:0;margin:0;color:#1a1916;font-size:11px}
+      table{border-collapse:collapse}
+      img{max-width:100%}
+      .design-block{break-inside:avoid-page;page-break-inside:avoid}
+      .order-block{break-inside:auto;page-break-inside:auto}
+      @media print{button{display:none!important}.print-toolbar{display:none!important}}
+    </style>
+    </head><body style="padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;padding-bottom:6px;border-bottom:1.5px solid #534AB7">
+      <h1 style="font-size:14px;color:#534AB7;margin:0">🪬 Bangle Production Tracker — Vendor Orders</h1>
+      <div style="text-align:right;font-size:10px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
-    <div style="margin-bottom:12px"><button onclick="window.print()" style="padding:8px 16px;background:#534AB7;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
+    <div class="print-toolbar" style="margin-bottom:8px"><button onclick="window.print()" style="padding:6px 12px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨️ Print</button></div>
     ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
   w.document.close();
 }
@@ -4930,13 +4946,14 @@ function buildPrintableOrder(order,tabOverride,includeStages){
   const tab=tabOverride||(S.activeTabs[order.id]||'designs');
   const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   let content='';
+
+  // Compact one-line order summary (replaces the old big "Order details" box).
+  // Only renders the notes paragraph if notes exist.
   if(tab==='details'||tab==='all'){
-    content+=`<div style="margin-bottom:12px;padding:10px;background:#f7f6f2;border-radius:8px">
-      <h3 style="font-size:12px;margin-bottom:6px">Order details</h3>
-      <p style="font-size:11px">Client: ${order.client} · Start: ${fmtDate(order.startDate)} · Priority: ${order.priority}</p>
-      ${order.notes?`<p style="font-size:11px;color:#666;margin-top:4px">Notes: ${order.notes}</p>`:''}
-    </div>`;
+    const notesLine = order.notes ? `<div style="font-size:10px;color:#666;margin-bottom:6px">Notes: ${esc(order.notes)}</div>` : '';
+    content += notesLine;
   }
+
   if(tab==='designs'||tab==='all'){
     content+=order.designs.map(d=>{
       const szKeys=Object.keys(d.sizes||{});
@@ -4944,76 +4961,83 @@ function buildPrintableOrder(order,tabOverride,includeStages){
       const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
       const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
 
-      // Build per-variety image cards. Size breakdown is shown only in the
-      // table below — no redundant per-size chips above the table.
-      const varietyCards=varieties.map(v=>{
-        const vImages=v.images||[];
-        const vTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const imgHtml=vImages.length
-          ? vImages.map(img=>`<img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;display:block">`).join('<br style="margin:4px 0">')
-          : '<div style="width:160px;height:80px;background:#f0efff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#AFA9EC;border:1.5px dashed #AFA9EC">No image</div>';
-        return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;vertical-align:top;margin:0 12px 16px 0;max-width:180px">
-          ${imgHtml}
-          <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center">${esc(v.name||'Variety')}</div>
-          <div style="font-size:11px;font-weight:700;color:#534AB7">Total: ${vTotal} ${esc(v.unit||'pcs')}</div>
-        </div>`;
-      }).join('');
+      // Only varieties that actually have images get image cards
+      const varietiesWithImages = varieties.filter(v => v.images && v.images.length > 0);
+      let imageStripHtml = '';
+      if (varietiesWithImages.length > 0) {
+        const cards = varietiesWithImages.map(v => {
+          const vImgs = v.images;
+          const imgs = vImgs.map(img => `<img src="${img.data}" style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #AFA9EC;display:block">`).join('');
+          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:3px;vertical-align:top;margin:0 8px 8px 0">
+            ${imgs}
+            <div style="font-size:10px;font-weight:600;color:#3C3489;text-align:center;max-width:120px">${esc(v.name||'Variety')}</div>
+          </div>`;
+        }).join('');
+        imageStripHtml = `<div style="margin:4px 0 8px">${cards}</div>`;
+      }
 
-      return `<div style="margin-bottom:16px;padding:12px;background:#f7f6f2;border-radius:8px;page-break-inside:avoid">
-        <h3 style="font-size:14px;margin-bottom:8px;color:#534AB7">${d.name} <span style="font-weight:400;color:#666">[${d.code}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
-        ${varieties.length?`<div style="margin-bottom:10px">${varietyCards}</div>`:''}
-        ${varieties.length?`<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
-          <thead><tr style="background:#534AB7;color:#fff">
-            <th style="padding:5px 8px;text-align:left">Variety</th>
-            ${szKeys.map(sz=>`<th style="padding:5px 8px;text-align:center">${sz}</th>`).join('')}
-            <th style="padding:5px 8px;text-align:center">Total</th>
-          </tr></thead>
-          <tbody>
-            ${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
-              <td style="padding:4px 8px">${v.name}</td>
-              ${szKeys.map(sz=>`<td style="padding:4px 8px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
-              <td style="padding:4px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
-            </tr>`;}).join('')}
-          </tbody>
-          <tfoot><tr style="background:#eeeffe;font-weight:700">
-            <td style="padding:5px 8px">Design total</td>
-            ${szKeys.map(sz=>`<td style="padding:5px 8px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
-            <td style="padding:5px 8px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
-          </tr></tfoot>
-        </table>`:'<p style="font-size:11px;color:#888">No varieties</p>'}
+      const tableHtml = varieties.length ? `<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:2px">
+        <thead><tr style="background:#534AB7;color:#fff">
+          <th style="padding:4px 6px;text-align:left">Variety</th>
+          <th style="padding:4px 6px;text-align:center">Unit</th>
+          ${szKeys.map(sz=>`<th style="padding:4px 6px;text-align:center">${sz}</th>`).join('')}
+          <th style="padding:4px 6px;text-align:center">Total</th>
+        </tr></thead>
+        <tbody>
+          ${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
+            <td style="padding:3px 6px">${esc(v.name||'')}</td>
+            <td style="padding:3px 6px;text-align:center;color:#666">${esc(v.unit||'pcs')}</td>
+            ${szKeys.map(sz=>`<td style="padding:3px 6px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
+            <td style="padding:3px 6px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
+          </tr>`;}).join('')}
+        </tbody>
+        <tfoot><tr style="background:#eeeffe;font-weight:700">
+          <td colspan="2" style="padding:4px 6px">Design total</td>
+          ${szKeys.map(sz=>`<td style="padding:4px 6px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
+          <td style="padding:4px 6px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
+        </tr></tfoot>
+      </table>` : '<p style="font-size:10px;color:#888;margin:4px 0">No varieties</p>';
+
+      return `<div class="design-block" style="margin-bottom:10px;padding:8px;background:#f7f6f2;border-radius:6px">
+        <h3 style="font-size:12px;margin-bottom:4px;color:#534AB7">${esc(d.name)} <span style="font-weight:400;color:#666">[${esc(d.code)}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
+        ${imageStripHtml}
+        ${tableHtml}
       </div>`;
     }).join('');
   }
   if(includeStages&&(tab==='stages'||tab==='all')){
     content+=order.designs.map(d=>`
-      <div style="margin-bottom:12px;page-break-inside:avoid">
-        <h3 style="font-size:12px;margin-bottom:6px;color:#534AB7">Stages: ${d.name} [${d.code}]</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:10px">
+      <div class="design-block" style="margin-bottom:8px">
+        <h3 style="font-size:11px;margin-bottom:3px;color:#534AB7">Stages: ${esc(d.name)} [${esc(d.code)}]</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:9px">
           <thead><tr style="background:#534AB7;color:#fff">
-            <th style="padding:4px 8px">#</th><th style="padding:4px 8px">Stage</th>
-            <th style="padding:4px 8px">Vendor</th><th style="padding:4px 8px">Status</th>
-            <th style="padding:4px 8px">Due by</th><th style="padding:4px 8px">Notes</th>
+            <th style="padding:3px 6px">#</th><th style="padding:3px 6px">Stage</th>
+            <th style="padding:3px 6px">Vendor</th><th style="padding:3px 6px">Status</th>
+            <th style="padding:3px 6px">Due by</th><th style="padding:3px 6px">Notes</th>
           </tr></thead>
           <tbody>
             ${d.stages.map((st,si)=>{const tmpl=getTmpl(st.stageId)||{name:'?',loc:''};const dl=designDeadline(order,d,si);
               return`<tr style="border-bottom:1px solid #E8E7E0">
-                <td style="padding:4px 8px">${si+1}</td>
-                <td style="padding:4px 8px">${tmpl.name}<br><span style="color:#888;font-size:9px">${tmpl.loc}</span></td>
-                <td style="padding:4px 8px">${st.vendor||'—'}</td>
-                <td style="padding:4px 8px">${st.status}</td>
-                <td style="padding:4px 8px">${fmtDate(dl)}</td>
-                <td style="padding:4px 8px;font-size:10px;color:#666">${st.stageNote||'—'}</td>
+                <td style="padding:3px 6px">${si+1}</td>
+                <td style="padding:3px 6px">${esc(tmpl.name)}<br><span style="color:#888;font-size:8px">${esc(tmpl.loc)}</span></td>
+                <td style="padding:3px 6px">${esc(st.vendor||'—')}</td>
+                <td style="padding:3px 6px">${esc(st.status)}</td>
+                <td style="padding:3px 6px">${fmtDate(dl)}</td>
+                <td style="padding:3px 6px;font-size:9px;color:#666">${esc(st.stageNote||'—')}</td>
               </tr>`;
             }).join('')}
           </tbody>
         </table>
       </div>`).join('');
   }
-  return `<div style="border:1px solid #D3D1C7;border-radius:10px;padding:14px;margin-bottom:16px;page-break-inside:avoid">
-    <h2 style="font-size:15px;margin-bottom:4px;color:#534AB7">${order.orderId} · ${order.client}</h2>
-    <p style="font-size:11px;color:#666;margin-bottom:10px">Start: ${fmtDate(order.startDate)} · Priority: ${order.priority} · Total: ${qtyStr}</p>
+
+  // Outer wrapper: no page-break-inside:avoid (large orders would create
+  // blank pages). Let content flow naturally; design blocks above have
+  // their own page-break rules in <style>.
+  return `<div class="order-block" style="border:1px solid #D3D1C7;border-radius:6px;padding:8px 10px;margin-bottom:10px">
+    <h2 style="font-size:13px;margin-bottom:2px;color:#534AB7">${esc(order.orderId)} · ${esc(order.client)}</h2>
+    <p style="font-size:10px;color:#666;margin-bottom:6px">Start: ${fmtDate(order.startDate)} · Priority: ${esc(order.priority)} · Total: ${qtyStr}</p>
     ${content}
-    ${order.notes?`<p style="font-size:11px;color:#666;margin-top:6px">Notes: ${order.notes}</p>`:''}
   </div>`;
 }
 
@@ -5022,14 +5046,31 @@ function openPrintWindow(title,orders,tabOverride,includeStages){
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
   const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages)).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
-    <style>body{font-family:system-ui;padding:20px;color:#1a1916;font-size:12px}
-    table{border-collapse:collapse}@media print{button{display:none!important}}</style>
-    </head><body>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #534AB7">
-      <h1 style="font-size:18px;color:#534AB7">🪬 Bangle Production Tracker</h1>
-      <div><strong>${title}</strong><br><span style="font-size:11px;color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+    <style>
+      /* Tight page margins — no wasted paper */
+      @page{margin:8mm 10mm}
+      body{font-family:system-ui;padding:0;color:#1a1916;font-size:11px;margin:0}
+      table{border-collapse:collapse}
+      img{max-width:100%}
+      /* Design blocks: avoid splitting one design across two pages if it fits,
+         but otherwise let it flow rather than push to a new page (which would
+         leave the previous page mostly blank). */
+      .design-block{break-inside:avoid-page;page-break-inside:avoid}
+      /* Order blocks: do NOT add page-break:avoid — large orders with many
+         designs would force a new page and waste paper. Let them flow. */
+      .order-block{break-inside:auto;page-break-inside:auto}
+      @media print{
+        button{display:none!important}
+        body{padding:0}
+        .print-toolbar{display:none!important}
+      }
+    </style>
+    </head><body style="padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;padding-bottom:6px;border-bottom:1.5px solid #534AB7">
+      <h1 style="font-size:14px;color:#534AB7;margin:0">🪬 Bangle Production Tracker</h1>
+      <div style="text-align:right;font-size:10px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
-    <div style="margin-bottom:12px"><button onclick="window.print()" style="padding:8px 16px;background:#534AB7;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
+    <div class="print-toolbar" style="margin-bottom:8px"><button onclick="window.print()" style="padding:6px 12px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨️ Print</button></div>
     ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
   w.document.close();
 }
