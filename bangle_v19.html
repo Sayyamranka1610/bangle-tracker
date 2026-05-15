@@ -570,10 +570,32 @@ img,table,pre{max-width:100%}
   }
 
   /* === FIELD ROWS — stack vertically with consistent spacing === */
-  .field-row{flex-direction:column;gap:12px;margin-bottom:12px}
+  .field-row{flex-direction:column;gap:10px;margin-bottom:10px}
   .field-group{min-width:100%;max-width:100%}
-  .field-group label{font-size:11px;font-weight:700;color:#6C64CC;letter-spacing:.02em;margin-bottom:5px}
-  .field-group input,.field-group select{font-size:14px;padding:10px 12px;border-radius:9px}
+  .field-group label{font-size:11px;font-weight:700;color:#6C64CC;letter-spacing:.02em;margin-bottom:4px;display:block}
+  .field-group input,.field-group select,.field-group textarea{
+    font-size:14px !important;
+    padding:9px 11px !important;
+    border-radius:9px;
+    height:auto;
+    min-height:40px;
+    box-sizing:border-box;
+    width:100%;
+  }
+  /* iOS renders type="date" with extra chrome — keep it the same height as text inputs */
+  .field-group input[type="date"],.field-group input[type="time"],.field-group input[type="datetime-local"]{
+    min-height:40px !important;
+    max-height:40px !important;
+    line-height:1.2;
+    padding:8px 11px !important;
+    -webkit-appearance:none;
+    appearance:none;
+    background-color:#fff;
+  }
+  /* Compact long helper text shown under auto-id field */
+  .field-group .field-hint{font-size:10px;color:#888;margin-top:3px;line-height:1.35}
+  /* Optional fields like Notes get a shorter textarea on mobile */
+  .field-group textarea{min-height:56px;max-height:120px;resize:vertical}
 
   /* === DESIGN CARD === */
   .design-card{padding:14px;border-radius:12px;margin-bottom:12px}
@@ -1647,7 +1669,23 @@ function switchMain(view){
   if(view==='masters')renderMasters();
   scheduleAutosave();
 }
-function render(){updateFilterOptions();renderStats();
+function render(){
+  // ── PRESERVE FOCUSED INPUT (critical for mobile typing) ────────────────────
+  // render() rebuilds large chunks of DOM. If the user is mid-type in an
+  // input, the rebuilt DOM gets the OLD value from state and the user's
+  // unsaved keystrokes are lost (the dreaded "my edit reverted" bug).
+  // We snapshot the focused input's id, value, and selection range here,
+  // then re-apply them after render so the user's typing is preserved.
+  const ae = document.activeElement;
+  const focusInfo = (ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA') && ae.id) ? {
+    id: ae.id,
+    value: ae.value,
+    selStart: (typeof ae.selectionStart === 'number') ? ae.selectionStart : null,
+    selEnd:   (typeof ae.selectionEnd   === 'number') ? ae.selectionEnd   : null,
+    inputType: ae.type
+  } : null;
+
+  updateFilterOptions();renderStats();
   if(S.mainView==='orders')renderOrdersView();
   else if(S.mainView==='vendor')renderVendorOrders();
   else if(S.mainView==='design')renderDesignView();
@@ -1655,6 +1693,20 @@ function render(){updateFilterOptions();renderStats();
   else if(S.mainView==='masters')renderMasters();
   else renderAnalytics();
   scheduleAutosave();
+
+  // ── RESTORE FOCUS + VALUE + SELECTION ──────────────────────────────────────
+  if(focusInfo){
+    const newEl = document.getElementById(focusInfo.id);
+    if(newEl && (newEl.tagName==='INPUT' || newEl.tagName==='TEXTAREA')){
+      try{ newEl.value = focusInfo.value; }catch(e){}
+      try{ newEl.focus({preventScroll:true}); }catch(e){ try{ newEl.focus(); }catch(e2){} }
+      // setSelectionRange is only valid for some input types — guard it
+      if(focusInfo.selStart!=null && focusInfo.selEnd!=null
+         && ['text','search','url','tel','password','textarea'].includes(focusInfo.inputType||newEl.type)){
+        try{ newEl.setSelectionRange(focusInfo.selStart, focusInfo.selEnd); }catch(e){}
+      }
+    }
+  }
 }
 function renderStats(){
   const o=S.orders,lc=o.filter(x=>orderAlert(x)==='late').length,wc=o.filter(x=>orderAlert(x)==='warn').length,dc=o.filter(x=>orderAlert(x)==='done').length,oc=o.length-lc-wc-dc;
@@ -1760,7 +1812,8 @@ function buildDetailsPanel(order,oi){
     <div class="field-group"><label>Order ID <span style="font-size:10px;font-weight:400;color:#888">(auto)</span></label><input value="${esc(order.orderId)}" readonly style="background:#f0efff;color:#666;cursor:not-allowed" title="Order numbers are auto-assigned by start-date sequence"></div>
     <div class="field-group ac-wrap"><label>Client name</label>
       <input id="cl-inp-${oi}" value="${esc(order.client)}" autocomplete="off"
-        oninput="showAC(this,'clients',${oi},'client',-1)" onchange="upOrderAC(${oi},'client',this.value)" onblur="hideAC('clients',${oi},-1)">
+        oninput="S.orders[${oi}].client=this.value;scheduleAutosave();showAC(this,'clients',${oi},'client',-1)"
+        onblur="hideAC('clients',${oi},-1);rebuildVocab()">
       <div class="ac-list" id="ac-clients-${oi}--1" style="display:none"></div>
     </div>
     <div class="field-group" style="max-width:135px"><label>Start date</label>
@@ -1777,7 +1830,7 @@ function buildDetailsPanel(order,oi){
     </div>
   </div>
   <label style="font-size:11px;color:#777;font-weight:500">Order notes</label>
-  <textarea class="notes-area" onchange="upOrder(${oi},'notes',this.value)" placeholder="Notes...">${esc(order.notes||'')}</textarea>
+  <textarea class="notes-area" oninput="S.orders[${oi}].notes=this.value;scheduleAutosave()" placeholder="Notes...">${esc(order.notes||'')}</textarea>
   ${fileHtml}`;
 }
 
@@ -1970,13 +2023,13 @@ function buildDesignCard(order,oi,d,di){
         <div class="field-group ac-wrap" style="max-width:200px">
           <label>Design name</label>
           <input id="dname-${oi}-${di}" value="${esc(d.name)}" autocomplete="off" style="background:#fff" tabindex="0"
-            oninput="showAC(this,'dnames',${oi},'dname',${di})" onblur="hideAC('dnames',${oi},${di});if(this.value!==S.orders[${oi}].designs[${di}].name)upDesignAC(${oi},${di},'name',this.value)">
+            oninput="S.orders[${oi}].designs[${di}].name=this.value;scheduleAutosave();showAC(this,'dnames',${oi},'dname',${di})" onblur="hideAC('dnames',${oi},${di});if(this.value!==S.orders[${oi}].designs[${di}].name||true){rebuildVocab();}">
           <div class="ac-list" id="ac-dnames-${oi}-${di}" style="display:none"></div>
         </div>
         <div class="field-group ac-wrap" style="max-width:130px">
           <label>Design code</label>
           <input id="dcode-${oi}-${di}" value="${esc(d.code)}" autocomplete="off" style="background:#fff" tabindex="0"
-            oninput="showAC(this,'dcodes',${oi},'dcode',${di})" onblur="hideAC('dcodes',${oi},${di});if(this.value!==S.orders[${oi}].designs[${di}].code)upDesignAC(${oi},${di},'code',this.value)">
+            oninput="S.orders[${oi}].designs[${di}].code=this.value;scheduleAutosave();showAC(this,'dcodes',${oi},'dcode',${di})" onblur="hideAC('dcodes',${oi},${di});rebuildVocab()">
           <div class="ac-list" id="ac-dcodes-${oi}-${di}" style="display:none"></div>
         </div>
       </div>
@@ -2017,7 +2070,7 @@ function buildDesignCard(order,oi,d,di){
             const sizeCells=szKeys.map((sz,szI)=>'<td><input type="number" class="qty-inp" min="0" value="'+((v.sizes||{})[sz]||0)+'" oninput="this._dirty=true" onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}" onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')" tabindex="0"></td>').join('');
             const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
             return '<tr>'
-              +'<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" onchange="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>'
+              +'<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" oninput="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>'
               +'<td><div class="variety-img-cell">'+imgCells
                 +'<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
                 +'<input type="file" id="vimg-'+d.id+'-'+vi+'" accept="image/*" multiple style="display:none" onchange="handleVarietyImg('+oi+','+di+','+vi+',this)">'
@@ -2994,7 +3047,7 @@ function openNewOrderModal(prefill){
         <div class="field-group">
           <label>Order ID <span style="font-size:10px;font-weight:400;color:#888">(auto-assigned)</span></label>
           <input id="no-id" readonly value="(will be assigned by date sequence)" style="background:#f0efff;color:#888;cursor:not-allowed">
-          <div style="font-size:10px;color:#888;margin-top:3px">Order numbers are assigned automatically based on the start date — earliest date gets ORD-001, and the rest renumber as you add orders.</div>
+          <div class="field-hint" style="font-size:10px;color:#888;margin-top:3px">Auto-assigned by start-date sequence.</div>
         </div>
         <div class="field-group ac-wrap">
           <label>Client name <span style="color:#A32D2D">*</span></label>
@@ -4142,7 +4195,7 @@ function buildVendorDesignsPanel(vo,vi){
             const imgCells=(v.images||[]).map((img,ii)=>`<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`).join('');
             const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
             return`<tr>
-              <td><input class="variety-name-inp" value="${esc(v.name||'')}" onchange="upVendorVariety(${vi},${di},${vri},'name',this.value)"></td>
+              <td><input class="variety-name-inp" value="${esc(v.name||'')}" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
               <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
                 <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
               <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
