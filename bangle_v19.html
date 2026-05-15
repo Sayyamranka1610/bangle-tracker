@@ -440,167 +440,235 @@ img,table,pre{max-width:100%}
 .toast.red{border-color:#F09595;background:#5a1a1a}
 
 /* ══════════════════════════════════════════════════════════════════
-   MOBILE RESPONSIVE — tablet (≤768px) and phone (≤480px)
+   MOBILE RESPONSIVE — clean, hierarchical, bird's-eye-view first
    ══════════════════════════════════════════════════════════════════ */
 @media (max-width:768px){
-  /* Prevent iOS auto-zoom on input focus */
-  input,select,textarea{font-size:16px!important}
+  /* === GLOBAL TYPOGRAPHY === */
+  body{font-size:14px;line-height:1.45;-webkit-text-size-adjust:100%}
+  input,select,textarea{font-size:16px!important}  /* prevent iOS zoom-on-focus */
+  .dash{padding:8px}
 
-  /* Tighter dashboard padding */
-  .dash{padding:.5rem}
-
-  /* ── Drive bar & Save bar: horizontal scroll instead of wrapping ── */
-  .fb-bar,.save-bar{
-    overflow-x:auto;
-    flex-wrap:nowrap;
-    -webkit-overflow-scrolling:touch;
-    padding:6px 12px;
-    scrollbar-width:none;
-  }
-  .fb-bar::-webkit-scrollbar,.save-bar::-webkit-scrollbar{display:none}
-  #fb-status-txt{white-space:nowrap;font-size:10px}
-  .save-bar-status{min-width:auto;white-space:nowrap}
+  /* === SAVE BAR + FB BAR (top status strips) === */
+  .save-bar,.fb-bar{padding:6px 12px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .save-bar::-webkit-scrollbar,.fb-bar::-webkit-scrollbar{display:none}
+  .save-bar-status,#fb-status-txt{font-size:11px;min-width:auto;white-space:nowrap}
+  .save-bar button,.fb-bar button{font-size:11px;padding:5px 10px;flex-shrink:0;white-space:nowrap;min-height:32px}
   .save-bar-sep{flex-shrink:0}
 
-  /* ── Header ── */
-  .header-band{padding:12px 14px;border-radius:10px;gap:8px}
-  .header-band h1{font-size:15px}
-  .header-band p{font-size:10px}
-  .header-actions{width:100%;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;gap:6px;scrollbar-width:none}
+  /* === MAIN HEADER (logo + title + actions) === */
+  .header-band{padding:14px 16px;flex-direction:column;align-items:stretch;gap:10px;border-radius:14px;margin-bottom:12px}
+  .header-band h1{font-size:18px;font-weight:700}
+  .header-band p{font-size:11px;opacity:.85}
+  .app-logo-img{width:36px!important;height:36px!important;margin-right:8px!important}
+  .header-actions{width:100%;display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
   .header-actions::-webkit-scrollbar{display:none}
-  .header-actions button{flex-shrink:0;font-size:11px;padding:6px 10px;min-height:36px}
+  .header-actions button{flex-shrink:0;font-size:12px;padding:8px 14px;min-height:38px;font-weight:600}
 
-  /* ── Stats: 3 columns ── */
-  .stats{grid-template-columns:repeat(3,1fr);gap:6px}
-  .stat-card{padding:10px 10px}
-  .stat-val{font-size:18px}
-  .stat-lbl{font-size:10px}
+  /* === STATS CARDS — 2-col grid with proper hierarchy === */
+  .stats{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+  .stat-card{padding:14px 16px;border-radius:14px}
+  .stat-val{font-size:26px;font-weight:800;line-height:1}
+  .stat-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;opacity:.7;margin-top:6px}
 
-  /* ── Main tabs: horizontal scroll ── */
-  .main-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;gap:4px;padding-bottom:4px;scrollbar-width:none}
+  /* === MAIN NAVIGATION TABS === */
+  .main-tabs{overflow-x:auto;flex-wrap:nowrap;gap:6px;padding-bottom:6px;scrollbar-width:none;margin-bottom:12px;-webkit-overflow-scrolling:touch}
   .main-tabs::-webkit-scrollbar{display:none}
-  .main-tab{white-space:nowrap;flex-shrink:0;padding:8px 14px;font-size:12px}
+  .main-tab{white-space:nowrap;flex-shrink:0;padding:10px 18px;font-size:13px;border-radius:10px;font-weight:600}
 
-  /* ── Filter bar ── */
-  .filter-bar{padding:8px 12px;gap:8px}
-  .filter-bar select,.filter-bar input{max-width:100%}
+  /* === FILTER BAR === */
+  .filter-bar{padding:12px 14px;gap:10px;border-radius:14px;display:grid;grid-template-columns:1fr 1fr;align-items:end}
+  .filter-bar > label{grid-column:1/-1;font-size:11px;color:#6C64CC;font-weight:700;margin-bottom:-4px}
+  .filter-bar > div{width:100%;min-width:0}
+  .filter-bar label{font-size:10px;margin-bottom:4px}
+  .filter-bar select{font-size:14px;padding:9px 28px 9px 10px;width:100%}
+  .filter-clear{grid-column:1/-1;padding:8px 12px;font-size:12px;width:auto;justify-self:start}
 
-  /* ── Order cards ── */
-  .order-header{padding:10px 12px;gap:8px}
-  .oh-title{font-size:12px}
-  .oh-sub{font-size:10px}
-  .oh-right{flex-wrap:wrap;gap:4px;max-width:100%}
-  .oh-icon{width:28px;height:28px;font-size:12px;border-radius:7px}
-  .order-body{padding:10px}
-  .client-body{padding:8px}
+  /* === CLIENT GROUP (e.g. "Selva Gold · 1 order") === */
+  .client-wrap{margin-bottom:10px;border-radius:14px;overflow:hidden}
+  .client-header{padding:14px 16px}
+  .client-name,.client-header h2{font-size:15px;font-weight:700}
+  .client-stats{font-size:11px;opacity:.85}
+  .client-actions button{font-size:11px;padding:6px 12px;min-height:32px}
+  .client-body{padding:10px 8px 8px}
 
-  /* ── Tabs inside order detail: horizontal scroll ── */
-  .tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  /* === ORDER CARD — single-row bird's-eye when collapsed === */
+  .order-card{margin-bottom:8px;border-radius:12px;overflow:hidden;background:#fff;border:1px solid #eae8f8}
+  .order-header{
+    display:flex !important;
+    align-items:center !important;
+    gap:10px !important;
+    padding:14px 14px !important;
+    flex-wrap:nowrap !important;       /* critical: no wrapping */
+    cursor:pointer;
+  }
+  .oh-icon{
+    width:36px;height:36px;
+    font-size:14px;
+    border-radius:9px;
+    flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .oh-left{
+    flex:1 1 0 !important;
+    min-width:0 !important;            /* critical: allows ellipsis */
+    overflow:hidden;
+  }
+  .oh-title{
+    font-size:14px !important;
+    font-weight:700 !important;
+    color:#1a1916;
+    white-space:nowrap !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    line-height:1.3;
+  }
+  .oh-sub{
+    font-size:11px !important;
+    color:#666;
+    white-space:nowrap !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    margin-top:3px !important;
+    line-height:1.3;
+  }
+  .oh-right{
+    flex-shrink:0 !important;
+    display:flex !important;
+    align-items:center !important;
+    gap:6px !important;
+    flex-wrap:nowrap !important;
+    max-width:none !important;
+  }
+  /* In the bird's-eye view, hide everything except status badge + chevron.
+     Action buttons live inside the expanded body's bottom action bar. */
+  .oh-right .icon-btn{display:none !important}
+  .oh-right .badge{font-size:9px !important;padding:2px 7px !important;line-height:1.5}
+  /* Hide "Normal" priority badge on mobile — only show urgent priorities */
+  .oh-right .b-prio{display:none !important}
+  .chevron{font-size:12px;width:16px;text-align:center;color:#888}
+
+  /* Progress bar under header */
+  .pbar-wrap{height:3px}
+
+  /* === EXPANDED ORDER BODY === */
+  .order-body{padding:0 !important}
+  .order-body.open{padding:14px !important}
+
+  /* === IN-ORDER TABS === */
+  .tabs{overflow-x:auto;flex-wrap:nowrap;gap:4px;scrollbar-width:none;margin-bottom:12px;padding-bottom:4px}
   .tabs::-webkit-scrollbar{display:none}
-  .tab{white-space:nowrap;flex-shrink:0;padding:7px 12px}
+  .tab{white-space:nowrap;flex-shrink:0;padding:8px 14px;font-size:12px;border-radius:8px;font-weight:600}
 
-  /* ── Field rows: 2-column grid ── */
-  .field-row{flex-wrap:wrap}
-  .field-group{min-width:calc(50% - 5px)}
+  /* === MOBILE ACTION BAR — shows inside expanded order body === */
+  .mobile-action-bar{
+    display:flex !important;gap:6px;margin-top:14px;padding-top:12px;
+    border-top:1px solid #eae8f8;flex-wrap:wrap;
+  }
+  .mobile-action-bar button{
+    flex:1;min-width:90px;font-size:12px;padding:9px 12px;
+    border-radius:9px;font-weight:600;min-height:38px;
+  }
 
-  /* ── Stage items ── */
-  .stage-item-top{flex-wrap:wrap;gap:6px}
-  .stage-status-sel{max-width:100%!important;width:100%!important}
-  .stage-name-wrap{min-width:100px}
+  /* === FIELD ROWS — stack vertically with consistent spacing === */
+  .field-row{flex-direction:column;gap:12px;margin-bottom:12px}
+  .field-group{min-width:100%;max-width:100%}
+  .field-group label{font-size:11px;font-weight:700;color:#6C64CC;letter-spacing:.02em;margin-bottom:5px}
+  .field-group input,.field-group select{font-size:14px;padding:10px 12px;border-radius:9px}
 
-  /* ── Analytics: single column ── */
+  /* === DESIGN CARD === */
+  .design-card{padding:14px;border-radius:12px;margin-bottom:12px}
+  .design-card-head{display:flex;flex-direction:column;gap:10px;align-items:stretch !important}
+  .design-card-head > div{width:100%}
+  .design-num{width:30px;height:30px;font-size:13px;border-radius:8px;flex-shrink:0}
+
+  /* === VARIETY TABLE — horizontally scrollable with visual hint === */
+  .variety-table-wrap{
+    overflow-x:auto;margin:0 -8px;padding:0 8px;
+    -webkit-overflow-scrolling:touch;
+    scroll-snap-type:x proximity;
+    position:relative;
+  }
+  .variety-table{font-size:11px;min-width:max-content}
+  .variety-table th{font-size:10px;padding:7px 6px;font-weight:700;white-space:nowrap}
+  .variety-table td{font-size:11px;padding:5px 6px}
+  .variety-table .sz-head{font-size:10px;padding:7px 4px}
+  .qty-inp{width:42px !important;font-size:13px !important;padding:5px 4px !important;text-align:center}
+  .variety-name-inp{font-size:13px;padding:6px 8px;min-width:120px}
+
+  /* === STAGE FLOW (pill row) === */
+  .stage-flow{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;padding:0 0 8px;-webkit-overflow-scrolling:touch}
+  .stage-flow::-webkit-scrollbar{display:none}
+  .stage-pill{white-space:nowrap;flex-shrink:0;font-size:10px;padding:5px 10px}
+  .stage-arrow{flex-shrink:0}
+
+  /* === STAGE GROUPS === */
+  .stage-group{padding:12px;margin-bottom:10px;border-radius:12px}
+  .stage-group-head{flex-wrap:wrap;gap:6px;font-size:13px}
+  .stage-item{padding:12px;border-radius:10px;margin-bottom:8px}
+  .stage-item-top{flex-direction:column;align-items:stretch !important;gap:8px !important}
+  .stage-item-bottom{flex-direction:column !important;gap:8px !important}
+  .stage-name-wrap{width:100%;min-width:0}
+  .stage-status-sel,.stage-vendor-inp,.stage-date-inp,.stage-notes-area,.stage-days-inp{
+    width:100% !important;max-width:100% !important
+  }
+
+  /* === DESIGN STAGES (collapsible per-design) === */
+  .design-stages-section{padding:0;margin-bottom:10px;border-radius:12px;overflow:hidden;border:1px solid #eae8f8}
+  .design-stages-head{padding:14px;flex-wrap:wrap;gap:8px !important;font-size:13px}
+
+  /* === MODALS as bottom sheets === */
+  .modal-overlay{padding:0;align-items:flex-end}
+  .modal{
+    width:100% !important;max-width:100% !important;
+    border-radius:18px 18px 0 0;
+    max-height:92vh;padding:18px 16px;
+  }
+  .modal-header h3{font-size:16px}
+  .modal-actions{flex-wrap:wrap;gap:8px;margin-top:14px}
+  .modal-actions button{flex:1;min-width:100px;padding:11px;font-size:13px;min-height:42px}
+
+  /* === DESIGN VIEW === */
+  .design-imgs-gallery{grid-template-columns:repeat(2,1fr);gap:10px}
+  .gallery-img-card img{height:140px}
+
+  /* === ANALYTICS === */
   .analytics-grid{grid-template-columns:1fr}
   .bar-label{width:90px;font-size:10px}
 
-  /* ── Inventory summary: 2 columns ── */
+  /* === INVENTORY === */
   .inv-summary-grid{grid-template-columns:repeat(2,1fr);gap:8px}
-  .inv-sum-val{font-size:16px}
-
-  /* ── Metrics: 2 columns ── */
+  .inv-sum-val{font-size:18px}
   .metric-grid{grid-template-columns:repeat(2,1fr);gap:8px}
   .metric-val{font-size:18px}
-
-  /* ── Inventory table: scrollable ── */
   .inv-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-
-  /* ── Modal: bottom sheet ── */
-  .modal-overlay{padding:0;align-items:flex-end}
-  .modal{
-    width:100%!important;
-    max-width:100%!important;
-    border-radius:18px 18px 0 0;
-    max-height:92vh;
-    padding:1.2rem 1rem;
-  }
-  .modal-actions{flex-wrap:wrap}
-  .modal-actions button{flex:1;min-width:120px}
-
-  /* ── Toast: full width at bottom ── */
-  .toast{
-    left:12px!important;
-    right:12px!important;
-    bottom:14px!important;
-    transform:none!important;
-    text-align:center;
-  }
-
-  /* ── Design gallery ── */
-  .design-imgs-gallery{grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px}
-  .gallery-img-card img{height:90px}
-
-  /* ── Design card ── */
-  .design-card{padding:10px}
-  .design-stages-section{padding:10px}
-
-  /* ── Variety table: add touch scroll indicator ── */
-  .variety-table-wrap{-webkit-overflow-scrolling:touch}
-
-  /* ── Inventory toolbar ── */
-  .inv-toolbar{padding:8px 12px;gap:8px}
+  .inv-toolbar{padding:10px 12px;gap:8px;flex-wrap:wrap}
   .inv-period-tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
-  .inv-period-tab{white-space:nowrap;flex-shrink:0}
+  .inv-period-tab{white-space:nowrap;flex-shrink:0;font-size:12px;padding:8px 14px}
+
+  /* === TOAST === */
+  .toast{
+    left:12px !important;right:12px !important;bottom:18px !important;
+    transform:none !important;text-align:center;border-radius:12px;font-size:13px;padding:12px 16px;
+  }
 }
 
-/* ── Small phones (≤480px) ── */
+/* === EXTRA SMALL PHONES (≤ 480px) === */
 @media (max-width:480px){
-  /* Stats: 2 columns */
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .stat-val{font-size:16px}
-
-  /* Tighter header */
-  .header-band h1{font-size:13px}
-  .header-actions button{font-size:10px;padding:5px 8px}
-
-  /* Fields: full width */
-  .field-group{min-width:100%}
-
-  /* Stage bottom row: stack vertically */
-  .stage-item-bottom{flex-direction:column;gap:6px}
-  .stage-vendor-inp,.stage-date-inp,.stage-notes-area,.stage-days-inp{
-    max-width:100%!important;width:100%!important
-  }
-
-  /* Modal padding */
-  .modal{padding:1rem .75rem}
-
-  /* Inventory: compact */
-  .inv-sum-card{padding:10px 12px}
-  .inv-sum-val{font-size:15px}
-
-  /* Design gallery: smaller thumbnails */
-  .design-imgs-gallery{grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:6px}
-  .gallery-img-card img{height:76px}
-  .gallery-add-card{min-height:106px}
-
-  /* Badges smaller */
-  .badge{font-size:10px;padding:2px 7px}
-  .oh-right .badge{font-size:9px}
+  body{font-size:13px}
+  .dash{padding:6px}
+  .header-band h1{font-size:16px}
+  .stat-val{font-size:22px}
   .stat-lbl{font-size:9px}
-
-  /* Analytics */
-  .metric-val{font-size:16px}
-  .inv-sum-val{font-size:15px}
-  .bar-label{width:70px}
+  .stats{gap:6px}
+  .stat-card{padding:12px 12px}
+  .oh-icon{width:34px;height:34px}
+  .oh-title{font-size:13px !important}
+  .oh-sub{font-size:10px !important}
+  .design-imgs-gallery{grid-template-columns:1fr}
+  .gallery-img-card img{height:200px}
+  .modal{padding:14px 12px}
+  .filter-bar{padding:10px 12px}
+  .filter-bar label{font-size:9px}
 }
 
 /* ── Login screen ── */
@@ -1667,6 +1735,12 @@ function buildOrderCard(order,oi){
       </div>
       <div class="tab-panel${at==='stages'?' active':''}" data-tab="stages">
         ${buildStagesPanel(order,oi)}
+      </div>
+      <!-- Mobile-only action bar (hidden on desktop via CSS) -->
+      <div class="mobile-action-bar no-print" style="display:none">
+        <button onclick="askOrderExport('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
+        <button onclick="askOrderPrint('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
+        <button onclick="delOrder(${oi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
       </div>
     </div>
   </div>`;
@@ -3982,6 +4056,12 @@ function buildVendorOrderCard(vo,vi){
       </div>
       <div class="tab-panel${at==='designs'?' active':''}">
         ${buildVendorDesignsPanel(vo,vi)}
+      </div>
+      <!-- Mobile-only action bar -->
+      <div class="mobile-action-bar no-print" style="display:none">
+        <button onclick="exportVendorOrderCSV('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
+        <button onclick="printVendorOrderById('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
+        <button onclick="delVendorOrder(${vi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
       </div>
     </div>
   </div>`;
