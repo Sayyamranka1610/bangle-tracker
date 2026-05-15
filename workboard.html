@@ -1054,7 +1054,7 @@ function rMyTasks(){
       ${statC(cnt.overdue,'Overdue','#ef4444','⏰')}${statC(cnt.completed,'Done','#10b981','✓')}
     </div>
     <div class="chips">
-      ${['all','pending','in_progress','overdue','completed'].map(s=>`<div class="chip ${S.filter===s?'on':''}" onclick="setF('${s}')">${fl(s)}${cnt[s]?' <span style="opacity:.7;font-size:11px">(${cnt[s]})</span>':''}</div>`).join('')}
+      ${['all','pending','in_progress','overdue','completed'].map(s=>`<div class="chip ${S.filter===s?'on':''}" onclick="setF('${s}')">${fl(s)}${cnt[s]?` <span style="opacity:.7;font-size:11px">(${cnt[s]})</span>`:''}</div>`).join('')}
     </div>
     ${list.length===0?empt('No tasks here','Change the filter or tap + to add a task'):`<div class="tlist">${list.map(t=>tCard(t,true)).join('')}</div>`}`;
 }
