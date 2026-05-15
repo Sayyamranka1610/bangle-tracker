@@ -7564,7 +7564,7 @@ window.save = function(){
 // Register service worker for offline support + faster repeat loads.
 if('serviceWorker' in navigator && !_isDemoMode()){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('sw.js')
+    navigator.serviceWorker.register('bangle-sw.js')
       .then(reg=>{ console.log('SW registered:', reg.scope); })
       .catch(err=>{ console.warn('SW registration failed:', err); });
   });

@@ -1,9 +1,10 @@
 {
+  "id": "siddhi-bangle-tracker",
   "name": "Siddhi Bangle Tracker",
   "short_name": "Bangle Tracker",
   "description": "Production tracking dashboard — orders, designs, inventory & vendor management.",
-  "start_url": "./bangle_v19.html",
-  "scope": "./",
+  "start_url": "/bangle-tracker/bangle_v19.html?pwa=bangle",
+  "scope": "/bangle-tracker/bangle_v19.html",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#1a1750",
