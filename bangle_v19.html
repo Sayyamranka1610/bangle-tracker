@@ -701,7 +701,7 @@ img,table,pre{max-width:100%}
       <button class="ha-desktop" onclick="showPrintMenu()">🖨️ Print</button>
       <button class="ha-desktop" onclick="openStageTemplateEditor()">⚙️ Stages</button>
       <button class="ha-desktop" onclick="openAuditModal()">📋 Audit log</button>
-      <button class="ha-desktop" id="btn-install-app-desktop" onclick="installApp()" style="display:none;background:#0F6E56!important;color:#fff!important">📲 Install app</button>
+      <button class="ha-desktop" id="btn-install-app-desktop" onclick="installApp()" style="background:#0F6E56!important;color:#fff!important;border-color:#0F6E56!important">📲 Install app</button>
       <!-- Mobile: just New Order + ☰ More button -->
       <button class="primary" id="btn-new-order" onclick="openNewOrderModal()">+ New order</button>
       <button class="ha-mobile-menu" onclick="openMobileMenu()" title="More actions" aria-label="More actions">☰ Menu</button>
@@ -7578,16 +7578,21 @@ const _isStandalone = (window.matchMedia('(display-mode: standalone)').matches) 
 window.addEventListener('beforeinstallprompt',(e)=>{
   e.preventDefault();
   _deferredInstallPrompt = e;
-  // Show the desktop install button (visible on Chrome/Edge desktop + Android)
-  const b = document.getElementById('btn-install-app-desktop');
-  if(b && !_isStandalone) b.style.display = '';
 });
 
 window.addEventListener('appinstalled',()=>{
   const b = document.getElementById('btn-install-app-desktop');
   if(b) b.style.display='none';
-  showToast('🎉 App installed — open from your home screen','green');
+  showToast('🎉 App installed — open from your home screen / start menu','green');
 });
+
+// Hide the install button if the app is already running in standalone mode
+if(_isStandalone){
+  document.addEventListener('DOMContentLoaded',()=>{
+    const b = document.getElementById('btn-install-app-desktop');
+    if(b) b.style.display='none';
+  });
+}
 
 async function installApp(){
   if(_deferredInstallPrompt){
