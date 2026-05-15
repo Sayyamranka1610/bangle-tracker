@@ -362,6 +362,47 @@ img,table,pre{max-width:100%}
   .ha-mobile-menu{display:inline-flex!important;align-items:center;gap:4px}
 }
 
+/* ── TOUCH DEVICE ROBUSTNESS ───────────────────────────────────────────────
+   Targets touchscreens specifically (phones + tablets). Makes interactive
+   elements obviously tappable, removes iOS 300ms tap delay, and improves
+   visual feedback. */
+@media(hover:none) and (pointer:coarse){
+  button, .icon-btn, .main-tab, .tab, select, input, textarea, a, [onclick]{
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(83, 74, 183, .18);
+  }
+  /* Custom dropdown arrow so iOS users see selects are tappable */
+  select{
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, #534AB7 50%),
+                      linear-gradient(135deg, #534AB7 50%, transparent 50%);
+    background-position: calc(100% - 16px) 55%, calc(100% - 11px) 55%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 28px !important;
+  }
+  /* Minimum touch target — 44px is Apple HIG recommendation */
+  button, .icon-btn, .main-tab, .tab, select, input[type=text], input[type=number],
+  input[type=date], input[type=email], input[type=password]{
+    min-height: 40px;
+  }
+  /* Visible tap state */
+  button:active, .icon-btn:active, .main-tab:active, .tab:active, .order-header:active{
+    opacity: .75;
+    transform: scale(.98);
+  }
+  /* Filter dropdowns get extra padding/visibility on mobile */
+  .filter-bar select{
+    font-size: 14px !important;
+    padding: 10px 32px 10px 12px !important;
+    background-color: #fff !important;
+    border: 1.5px solid #AFA9EC !important;
+  }
+  /* Autocomplete suggestion items: bigger tap zones */
+  .ac-item{padding: 12px 14px !important; font-size: 14px !important}
+}
+
 @media print{
   .header-actions,.filter-bar,.main-tabs,.no-print{display:none!important}
   .client-body{display:block!important}
@@ -2500,7 +2541,7 @@ function showAC(input,vocab,oi,field,di){
   const filtered=list.filter(v=>v.toLowerCase().includes(val)&&v!==input.value);
   const listId=`ac-${vocab}-${oi}-${di}`;const el=document.getElementById(listId);if(!el)return;
   if(!filtered.length){el.style.display='none';return;}
-  el.innerHTML=filtered.map(v=>`<div class="ac-item" onmousedown="pickAC('${esc(v)}','${vocab}',${oi},'${field}',${di})">${esc(v)}</div>`).join('');
+  el.innerHTML=filtered.map(v=>`<div class="ac-item" onpointerdown="event.preventDefault();pickAC('${esc(v).replace(/'/g,"\\'")}','${vocab}',${oi},'${field}',${di})">${esc(v)}</div>`).join('');
   el.style.display='block';
 }
 function hideAC(vocab,oi,di){setTimeout(()=>{const el=document.getElementById(`ac-${vocab}-${oi}-${di}`);if(el)el.style.display='none';},200);}
@@ -3193,7 +3234,7 @@ function showACModal(input,vocab){
   const listId=input.id==='no-client'?'no-ac-client':input.id==='no-dname'?'no-ac-dname':'no-ac-dcode';
   const el=document.getElementById(listId);
   if(!el||!filtered.length){if(el)el.style.display='none';return;}
-  el.innerHTML=filtered.map(v=>`<div class="ac-item" onmousedown="document.getElementById('${input.id}').value='${esc(v)}';document.getElementById('${listId}').style.display='none';clearFieldError('${input.id}')">${esc(v)}</div>`).join('');
+  el.innerHTML=filtered.map(v=>`<div class="ac-item" onpointerdown="event.preventDefault();document.getElementById('${input.id}').value='${esc(v).replace(/'/g,"\\'")}';document.getElementById('${listId}').style.display='none';clearFieldError('${input.id}')">${esc(v)}</div>`).join('');
   el.style.display='block';
 }
 function hideACModal(id){setTimeout(()=>{const el=document.getElementById(id);if(el)el.style.display='none';},200);}
@@ -4223,7 +4264,7 @@ function voAC(inp,listId,options){
   const el=document.getElementById(listId);if(!el)return;
   const matches=options.filter((x,i,a)=>a.indexOf(x)===i&&x.toLowerCase().includes(q)&&x.toLowerCase()!==q);
   if(!q||!matches.length){el.style.display='none';return;}
-  el.innerHTML=matches.slice(0,8).map(x=>`<div class="ac-item" onmousedown="document.getElementById('${inp.id}').value='${esc(x)}';document.getElementById('${listId}').style.display='none'">${esc(x)}</div>`).join('');
+  el.innerHTML=matches.slice(0,8).map(x=>`<div class="ac-item" onpointerdown="event.preventDefault();document.getElementById('${inp.id}').value='${esc(x).replace(/'/g,"\\'")}';document.getElementById('${listId}').style.display='none'">${esc(x)}</div>`).join('');
   el.style.display='block';
 }
 
