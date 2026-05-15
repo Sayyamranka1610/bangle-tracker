@@ -349,56 +349,17 @@ input[type="date"]{min-width:118px}
 .group-qty-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
 
 /* ───────────────────────────────────────────────────────────────────────────
-   MOBILE / TABLET RESPONSIVE STYLES
+   CRITICAL: prevent horizontal page scroll at every viewport width
    ─────────────────────────────────────────────────────────────────────────── */
-@media(max-width:900px){
-  body{font-size:13px}
-  .dash{padding:10px 8px!important}
-  .header-band{flex-direction:column;align-items:stretch!important;gap:10px;padding:14px 16px!important}
-  .header-band h1{font-size:17px!important}
-  .header-actions{flex-wrap:wrap;gap:6px!important;justify-content:flex-start!important}
-  .header-actions button{font-size:12px;padding:7px 10px;flex:1 1 auto;min-width:48%}
-  .stats{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
-  .stat-card{padding:10px 12px!important}
-  .stat-val{font-size:20px!important}
-  .stat-lbl{font-size:10px!important}
-  .main-tabs{overflow-x:auto;flex-wrap:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
-  .main-tab{white-space:nowrap;font-size:12px!important;padding:8px 12px!important;flex-shrink:0}
-  .filter-bar{flex-direction:column;align-items:stretch!important;padding:10px 12px!important}
-  .filter-bar > div{width:100%}
-  .filter-bar select{width:100%}
-  .order-card{margin-bottom:10px}
-  .order-header{flex-wrap:wrap;padding:10px 12px!important}
-  .oh-title{font-size:13px!important}
-  .oh-sub{font-size:11px!important}
-  .oh-right{flex-wrap:wrap;gap:4px!important}
-  .field-row{flex-direction:column!important;gap:8px!important}
-  .field-group{max-width:none!important;width:100%}
-  .design-card{padding:10px!important}
-  .design-card-head{flex-direction:column;align-items:stretch!important;gap:8px!important}
-  .variety-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .variety-table{min-width:600px}
-  .modal{width:95vw!important;max-width:95vw!important;max-height:90vh;overflow-y:auto;margin:5vh auto!important}
-  .modal-overlay{padding:0!important}
-  .save-bar{padding:4px 8px;gap:6px}
-  .save-bar button{font-size:10px!important;padding:3px 7px!important}
-  .save-bar-status{font-size:10px!important;min-width:80px}
-  #fb-bar{padding:4px 10px;font-size:10px}
-  .stage-flow{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;padding-bottom:6px}
-  .design-stages-section{padding:8px!important}
-  .design-stages-head{flex-wrap:wrap;gap:6px!important;font-size:12px!important}
-  .login-card{max-width:92vw!important;padding:24px 18px!important}
-  /* Touch-friendly tap targets — minimum 36px */
-  button, .icon-btn, .main-tab{min-height:36px}
-  input[type=number],input[type=text],input[type=date],select,textarea{font-size:14px!important;padding:8px 10px!important;min-height:36px}
-}
-@media(max-width:480px){
-  body{font-size:12px}
-  .stats{grid-template-columns:1fr 1fr!important}
-  .header-band h1{font-size:15px!important}
-  .app-logo-img{width:32px!important;height:32px!important}
-  .modal{width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;margin:0!important;border-radius:0!important}
-  .login-logo-img{width:72px!important;height:72px!important}
+html,body{max-width:100vw;overflow-x:hidden}
+.dash,.header-band,.stats,.main-tabs,.filter-bar,#view-orders,#view-vendor,#view-design,#view-analytics,#view-inventory,#view-masters{max-width:100%}
+img,table,pre{max-width:100%}
+
+/* Header actions: desktop shows all buttons, mobile shows ☰ Menu hamburger */
+.ha-mobile-menu{display:none;background:rgba(255,255,255,.18)!important;font-weight:700!important}
+@media(max-width:768px){
+  .ha-desktop{display:none!important}
+  .ha-mobile-menu{display:inline-flex!important;align-items:center;gap:4px}
 }
 
 @media print{
@@ -693,12 +654,16 @@ input[type="date"]{min-width:118px}
       </div>
     </div>
     <div class="header-actions no-print">
-      <button onclick="shareApp()" title="Share this dashboard link">🔗 Share</button>
-      <button onclick="showExportMenu()">📥 Export</button>
-      <button onclick="showPrintMenu()">🖨️ Print</button>
-      <button onclick="openStageTemplateEditor()">⚙️ Stages</button>
-      <button onclick="openAuditModal()">📋 Audit log</button>
+      <!-- Desktop / tablet: all buttons visible -->
+      <button class="ha-desktop" onclick="shareApp()" title="Share this dashboard link">🔗 Share</button>
+      <button class="ha-desktop" onclick="showExportMenu()">📥 Export</button>
+      <button class="ha-desktop" onclick="showPrintMenu()">🖨️ Print</button>
+      <button class="ha-desktop" onclick="openStageTemplateEditor()">⚙️ Stages</button>
+      <button class="ha-desktop" onclick="openAuditModal()">📋 Audit log</button>
+      <button class="ha-desktop" id="btn-install-app-desktop" onclick="installApp()" style="display:none;background:#0F6E56!important;color:#fff!important">📲 Install app</button>
+      <!-- Mobile: just New Order + ☰ More button -->
       <button class="primary" id="btn-new-order" onclick="openNewOrderModal()">+ New order</button>
+      <button class="ha-mobile-menu" onclick="openMobileMenu()" title="More actions" aria-label="More actions">☰ Menu</button>
     </div>
   </div>
   <div class="stats" id="stats-bar"></div>
@@ -7564,44 +7529,124 @@ if('serviceWorker' in navigator && !_isDemoMode()){
   });
 }
 
-// Detect the browser's "install" prompt and show an Install App button.
+// ── INSTALL APP (always available) ─────────────────────────────────────────
 let _deferredInstallPrompt = null;
+const _isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+const _isStandalone = (window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone;
+
 window.addEventListener('beforeinstallprompt',(e)=>{
   e.preventDefault();
   _deferredInstallPrompt = e;
-  // Add an "📲 Install app" button to the header actions (if not already there)
-  const ha = document.querySelector('.header-actions');
-  if(ha && !document.getElementById('btn-install-app')){
-    const btn = document.createElement('button');
-    btn.id = 'btn-install-app';
-    btn.textContent = '📲 Install app';
-    btn.title = 'Install Siddhi Bangle Tracker as a mobile/desktop app';
-    btn.style.background = '#0F6E56';
-    btn.style.color = '#fff';
-    btn.onclick = installApp;
-    ha.insertBefore(btn, ha.firstChild);
-  }
+  // Show the desktop install button (visible on Chrome/Edge desktop + Android)
+  const b = document.getElementById('btn-install-app-desktop');
+  if(b && !_isStandalone) b.style.display = '';
 });
+
+window.addEventListener('appinstalled',()=>{
+  const b = document.getElementById('btn-install-app-desktop');
+  if(b) b.style.display='none';
+  showToast('🎉 App installed — open from your home screen','green');
+});
+
 async function installApp(){
-  if(!_deferredInstallPrompt){
-    alert('Your browser does not show the install prompt right now.\n\nOn iPhone Safari: tap the Share icon → "Add to Home Screen".\nOn Android Chrome: tap the menu (⋮) → "Add to Home screen" or "Install app".');
+  if(_deferredInstallPrompt){
+    _deferredInstallPrompt.prompt();
+    const { outcome } = await _deferredInstallPrompt.userChoice;
+    _deferredInstallPrompt = null;
+    if(outcome === 'accepted'){
+      const b = document.getElementById('btn-install-app-desktop');
+      if(b) b.style.display='none';
+    }
     return;
   }
-  _deferredInstallPrompt.prompt();
-  const { outcome } = await _deferredInstallPrompt.userChoice;
-  _deferredInstallPrompt = null;
-  if(outcome === 'accepted'){
-    const btn = document.getElementById('btn-install-app');
-    if(btn) btn.remove();
-    showToast('🎉 App installed — open from your home screen', 'green');
-  }
+  // No deferred prompt available — show step-by-step instructions
+  showInstallInstructions();
 }
 
-// If running as a standalone PWA, hide the install button (already installed)
-window.addEventListener('appinstalled',()=>{
-  const btn = document.getElementById('btn-install-app');
-  if(btn) btn.remove();
-});
+function showInstallInstructions(){
+  const mc = document.getElementById('modal-container');
+  if(!mc) return;
+  let stepsHtml;
+  if(_isIOS){
+    stepsHtml = `
+      <div style="font-size:13px;color:#3C3489;font-weight:700;margin-bottom:10px">📱 Install on iPhone / iPad</div>
+      <ol style="font-size:12px;line-height:1.7;color:#444;padding-left:22px;margin:0">
+        <li>Make sure you're using <strong>Safari</strong> (not Chrome — Apple restricts install to Safari only).</li>
+        <li>Tap the <strong>Share icon</strong> <span style="display:inline-block;width:18px;height:18px;border:1.5px solid #534AB7;border-radius:4px;text-align:center;font-size:11px;line-height:14px;vertical-align:middle">↑</span> at the bottom of Safari.</li>
+        <li>Scroll down and tap <strong>"Add to Home Screen"</strong>.</li>
+        <li>Tap <strong>"Add"</strong> in the top-right corner.</li>
+      </ol>
+      <div style="font-size:11px;color:#888;margin-top:10px">The bangle icon will appear on your home screen — tap it to open the app full-screen, just like a native app.</div>`;
+  } else if(/Android/.test(navigator.userAgent)){
+    stepsHtml = `
+      <div style="font-size:13px;color:#3C3489;font-weight:700;margin-bottom:10px">📱 Install on Android</div>
+      <ol style="font-size:12px;line-height:1.7;color:#444;padding-left:22px;margin:0">
+        <li>Make sure you're using <strong>Chrome</strong> or <strong>Edge</strong>.</li>
+        <li>Tap the <strong>menu</strong> (⋮) in the top-right corner of the browser.</li>
+        <li>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</li>
+        <li>Confirm <strong>"Install"</strong>.</li>
+      </ol>
+      <div style="font-size:11px;color:#888;margin-top:10px">If you see "Install app" appear at the top of the menu, that's the one. The bangle icon will appear in your app drawer like a regular app.</div>`;
+  } else {
+    stepsHtml = `
+      <div style="font-size:13px;color:#3C3489;font-weight:700;margin-bottom:10px">💻 Install on Desktop</div>
+      <ol style="font-size:12px;line-height:1.7;color:#444;padding-left:22px;margin:0">
+        <li>Use <strong>Chrome</strong> or <strong>Edge</strong>.</li>
+        <li>Look for an install icon (⊕) at the right end of the address bar.</li>
+        <li>Click it, then click <strong>"Install"</strong>.</li>
+      </ol>
+      <div style="font-size:11px;color:#888;margin-top:10px">If you don't see the icon yet, browse the dashboard for a minute — Chrome typically shows it after a short interaction with the page.</div>`;
+  }
+  mc.innerHTML = `<div class="modal-overlay" id="modal-overlay-main" onclick="if(event.target===this)closeModal()" style="z-index:1300">
+    <div class="modal" style="width:440px;max-width:95vw" role="dialog">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#0F6E56;color:#fff;font-size:18px">📲</div>
+        <h3>Install Siddhi Bangle Tracker</h3>
+      </div>
+      <div style="padding:4px">
+        ${stepsHtml}
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()" class="primary" style="width:100%">Got it</button>
+      </div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
+}
+
+// ── MOBILE MENU (☰) ─────────────────────────────────────────────────────────
+function openMobileMenu(){
+  const mc = document.getElementById('modal-container');
+  if(!mc) return;
+  const installBtnHtml = _isStandalone ? '' : `
+    <button onclick="closeModal();installApp()" class="mm-btn" style="background:#0F6E56;color:#fff;font-weight:700">
+      <span style="font-size:18px">📲</span><span>Install app on this device</span>
+    </button>`;
+  mc.innerHTML = `<div class="modal-overlay" id="modal-overlay-main" onclick="if(event.target===this)closeModal()" style="z-index:1200">
+    <div class="modal" style="width:380px;max-width:96vw" role="dialog">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEF0FE;color:#534AB7;font-size:18px">☰</div>
+        <h3>Menu</h3>
+      </div>
+      <style>
+        .mm-btn{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;font-size:14px;font-weight:600;color:#3C3489;background:#f7f6ff;border:1.5px solid #AFA9EC;border-radius:11px;cursor:pointer;text-align:left;transition:transform .1s}
+        .mm-btn:active{transform:scale(.98)}
+      </style>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+        ${installBtnHtml}
+        <button onclick="closeModal();shareApp()" class="mm-btn"><span style="font-size:18px">🔗</span><span>Share dashboard</span></button>
+        <button onclick="closeModal();showExportMenu()" class="mm-btn"><span style="font-size:18px">📥</span><span>Export data</span></button>
+        <button onclick="closeModal();showPrintMenu()" class="mm-btn"><span style="font-size:18px">🖨️</span><span>Print</span></button>
+        <button onclick="closeModal();openStageTemplateEditor()" class="mm-btn"><span style="font-size:18px">⚙️</span><span>Edit stages</span></button>
+        <button onclick="closeModal();openAuditModal()" class="mm-btn"><span style="font-size:18px">📋</span><span>Audit log</span></button>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()" style="width:100%">Close</button>
+      </div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
+}
 
 </script>
 </html>
