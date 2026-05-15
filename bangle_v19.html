@@ -1096,6 +1096,11 @@ function extractImages(state){
 // Re-inject images from imageMap back into state
 function reinjectImages(state,imageMap){
   (state.orders||[]).forEach(o=>{
+    // ── Client order attached file (was missing — caused dead download link!) ──
+    if(o.attachedFile&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('__IDB__')){
+      const key=o.attachedFile.data.slice(7);
+      if(imageMap[key])o.attachedFile.data=imageMap[key];
+    }
     (o.designs||[]).forEach(d=>{
       (d.images||[]).forEach(img=>{
         if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
@@ -1130,6 +1135,32 @@ function reinjectImages(state,imageMap){
       });
     });
   });
+}
+
+// Download an order's attached file — works whether data is inline (base64
+// data URL) or stripped to an "__IDB__" placeholder (fetches from IndexedDB)
+async function downloadOrderAttachment(orderId){
+  const order = S.orders.find(o => o.id === orderId);
+  if(!order || !order.attachedFile){ alert('No attached file found.'); return; }
+  let data = order.attachedFile.data;
+  if(typeof data === 'string' && data.startsWith('__IDB__')){
+    const key = data.slice(7);
+    try{
+      const value = await idbGet(key);
+      if(!value){ alert('Attached file data is no longer available locally.\n\nIt may have been uploaded from a different device. Re-upload the file here to attach it again.'); return; }
+      data = value;
+    }catch(e){ alert('Could not read attached file: ' + e.message); return; }
+  }
+  if(typeof data !== 'string' || !data.startsWith('data:')){
+    alert('Attached file data is invalid.'); return;
+  }
+  // Trigger a download
+  const a = document.createElement('a');
+  a.href = data;
+  a.download = order.attachedFile.name || 'attachment';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>document.body.removeChild(a),100);
 }
 
 // Load images from IDB and inject into state (called on startup)
@@ -1639,7 +1670,7 @@ function buildDetailsPanel(order,oi){
   const fileHtml=order.attachedFile
     ? `<div style="margin-top:10px;padding:8px 12px;background:#E1F5EE;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="font-size:11px;font-weight:600;color:#0F6E56">📎 Attached file:</span>
-        <a href="${order.attachedFile.data}" download="${esc(order.attachedFile.name)}"
+        <a href="#" onclick="downloadOrderAttachment('${order.id}');return false;"
           style="font-size:11px;color:#534AB7;font-weight:600;text-decoration:underline;cursor:pointer">${esc(order.attachedFile.name)}</a>
         <span style="font-size:10px;color:#888">(click to download)</span>
         <button class="icon-btn danger no-print" style="font-size:10px;padding:2px 8px" onclick="upOrder(${oi},'attachedFile',null)">Remove</button>
@@ -4696,37 +4727,43 @@ function openVendorPrintWindow(title,orders){
         imageStripHtml = `<div style="margin:4px 0 8px">${cards}</div>`;
       }
 
-      const tableHtml = varieties.length ? `<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:2px">
+      const tableHtml = varieties.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;table-layout:fixed">
+        <colgroup>
+          <col style="width:auto">
+          <col style="width:46px">
+          ${szKeys.map(()=>`<col style="width:42px">`).join('')}
+          <col style="width:54px">
+        </colgroup>
         <thead><tr style="background:#534AB7;color:#fff">
-          <th style="padding:4px 6px;text-align:left">Variety</th>
-          <th style="padding:4px 6px;text-align:center">Unit</th>
-          ${szKeys.map(sz=>`<th style="padding:4px 6px;text-align:center">${sz}</th>`).join('')}
-          <th style="padding:4px 6px;text-align:center">Total</th>
+          <th style="padding:6px 8px;text-align:left;font-weight:700;font-size:12px">Variety</th>
+          <th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">Unit</th>
+          ${szKeys.map(sz=>`<th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">${sz}</th>`).join('')}
+          <th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">Total</th>
         </tr></thead>
-        <tbody>${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
-          <td style="padding:3px 6px">${esc(v.name||'')}</td>
-          <td style="padding:3px 6px;text-align:center;color:#666">${esc(v.unit||'pcs')}</td>
-          ${szKeys.map(sz=>`<td style="padding:3px 6px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
-          <td style="padding:3px 6px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
+        <tbody>${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #ddd">
+          <td style="padding:5px 8px;font-weight:600">${esc(v.name||'')}</td>
+          <td style="padding:5px 4px;text-align:center;color:#444">${esc(v.unit||'pcs')}</td>
+          ${szKeys.map(sz=>`<td style="padding:5px 4px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
+          <td style="padding:5px 4px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
         </tr>`;}).join('')}</tbody>
         <tfoot><tr style="background:#eeeffe;font-weight:700">
-          <td colspan="2" style="padding:4px 6px">Design total</td>
-          ${szKeys.map(sz=>`<td style="padding:4px 6px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
-          <td style="padding:4px 6px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
+          <td colspan="2" style="padding:6px 8px;text-align:right">Design total →</td>
+          ${szKeys.map(sz=>`<td style="padding:6px 4px;text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
+          <td style="padding:6px 4px;text-align:center;background:#534AB7;color:#fff;font-weight:700">${grandTotal}</td>
         </tr></tfoot>
-      </table>` : '<p style="font-size:10px;color:#888;margin:4px 0">No varieties</p>';
+      </table>` : '<p style="font-size:12px;color:#888;margin:4px 0">No varieties</p>';
 
-      return `<div class="design-block" style="margin-bottom:10px;padding:8px;background:#f7f6f2;border-radius:6px">
-        <h3 style="font-size:12px;margin-bottom:4px;color:#534AB7">${esc(d.name)} <span style="font-weight:400;color:#666">[${esc(d.code||'—')}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
+      return `<div class="design-block" style="margin-bottom:14px;padding:10px 12px;background:#f7f6f2;border-radius:6px;border-left:3px solid #534AB7">
+        <h3 style="font-size:15px;margin-bottom:6px;color:#3C3489;font-weight:700">${esc(d.name)} <span style="font-weight:500;color:#555">[${esc(d.code||'—')}]</span> <span style="font-weight:700;color:#534AB7"> — ${formatQtyByUnit(designQtyByUnit(d))}</span></h3>
         ${imageStripHtml}
         ${tableHtml}
       </div>`;
     }).join('');
-    const notesLine = vo.notes ? `<div style="font-size:10px;color:#666;margin-bottom:6px">Notes: ${esc(vo.notes)}</div>` : '';
-    return `<div class="order-block" style="border:1px solid #D3D1C7;border-radius:6px;padding:8px 10px;margin-bottom:10px">
-      <h2 style="font-size:13px;margin-bottom:2px;color:#534AB7">${esc(vo.orderId)} · ${esc(vo.vendor)}</h2>
-      <p style="font-size:10px;color:#666;margin-bottom:6px">
-        Order Date: ${fmtDate(vo.startDate)} · Delivery: ${fmtDate(vo.deliveryDate)||'—'} · Priority: ${esc(vo.priority)} · Total: ${qtyStr}
+    const notesLine = vo.notes ? `<div style="font-size:12px;color:#444;margin-bottom:8px"><strong>Notes:</strong> ${esc(vo.notes)}</div>` : '';
+    return `<div class="order-block" style="border:1.5px solid #534AB7;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+      <h2 style="font-size:18px;margin-bottom:4px;color:#3C3489;font-weight:700">${esc(vo.orderId)} · <span style="color:#534AB7">${esc(vo.vendor)}</span></h2>
+      <p style="font-size:13px;color:#333;margin-bottom:8px">
+        <strong>Order Date:</strong> ${fmtDate(vo.startDate)} &nbsp;·&nbsp; <strong>Delivery:</strong> ${fmtDate(vo.deliveryDate)||'—'} &nbsp;·&nbsp; <strong>Priority:</strong> ${esc(vo.priority)} &nbsp;·&nbsp; <strong>Total:</strong> <span style="font-weight:700;color:#534AB7">${qtyStr}</span>
       </p>
       ${notesLine}
       ${designsHtml}
@@ -4735,19 +4772,19 @@ function openVendorPrintWindow(title,orders){
   w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)}</title>
     <style>
       @page{margin:8mm 10mm}
-      body{font-family:system-ui;padding:0;margin:0;color:#1a1916;font-size:11px}
+      body{font-family:system-ui;padding:0;margin:0;color:#1a1916;font-size:13px;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
       .design-block{break-inside:avoid-page;page-break-inside:avoid}
       .order-block{break-inside:auto;page-break-inside:auto}
-      @media print{button{display:none!important}.print-toolbar{display:none!important}}
+      @media print{button{display:none!important}.print-toolbar{display:none!important}body{font-size:13px}}
     </style>
     </head><body style="padding:12px 14px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;padding-bottom:6px;border-bottom:1.5px solid #534AB7">
-      <h1 style="font-size:14px;color:#534AB7;margin:0">🪬 Bangle Production Tracker — Vendor Orders</h1>
-      <div style="text-align:right;font-size:10px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
+      <h1 style="font-size:18px;color:#534AB7;margin:0;font-weight:700">🪬 Bangle Production Tracker — Vendor Orders</h1>
+      <div style="text-align:right;font-size:12px"><strong>${esc(title)}</strong><br><span style="color:#888;font-size:11px">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
-    <div class="print-toolbar" style="margin-bottom:8px"><button onclick="window.print()" style="padding:6px 12px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨️ Print</button></div>
+    <div class="print-toolbar" style="margin-bottom:10px"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
     ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
   w.document.close();
 }
@@ -4987,7 +5024,7 @@ function buildPrintableOrder(order,tabOverride,includeStages){
   // Compact one-line order summary (replaces the old big "Order details" box).
   // Only renders the notes paragraph if notes exist.
   if(tab==='details'||tab==='all'){
-    const notesLine = order.notes ? `<div style="font-size:10px;color:#666;margin-bottom:6px">Notes: ${esc(order.notes)}</div>` : '';
+    const notesLine = order.notes ? `<div style="font-size:12px;color:#444;margin-bottom:8px"><strong>Notes:</strong> ${esc(order.notes)}</div>` : '';
     content += notesLine;
   }
 
@@ -5007,36 +5044,42 @@ function buildPrintableOrder(order,tabOverride,includeStages){
           const imgs = vImgs.map(img => `<img src="${img.data}" style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #AFA9EC;display:block">`).join('');
           return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:3px;vertical-align:top;margin:0 8px 8px 0">
             ${imgs}
-            <div style="font-size:10px;font-weight:600;color:#3C3489;text-align:center;max-width:120px">${esc(v.name||'Variety')}</div>
+            <div style="font-size:12px;font-weight:700;color:#3C3489;text-align:center;max-width:120px">${esc(v.name||'Variety')}</div>
           </div>`;
         }).join('');
-        imageStripHtml = `<div style="margin:4px 0 8px">${cards}</div>`;
+        imageStripHtml = `<div style="margin:6px 0 10px">${cards}</div>`;
       }
 
-      const tableHtml = varieties.length ? `<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:2px">
+      const tableHtml = varieties.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;table-layout:fixed">
+        <colgroup>
+          <col style="width:auto">
+          <col style="width:46px">
+          ${szKeys.map(()=>`<col style="width:42px">`).join('')}
+          <col style="width:54px">
+        </colgroup>
         <thead><tr style="background:#534AB7;color:#fff">
-          <th style="padding:4px 6px;text-align:left">Variety</th>
-          <th style="padding:4px 6px;text-align:center">Unit</th>
-          ${szKeys.map(sz=>`<th style="padding:4px 6px;text-align:center">${sz}</th>`).join('')}
-          <th style="padding:4px 6px;text-align:center">Total</th>
+          <th style="padding:6px 8px;text-align:left;font-weight:700;font-size:12px">Variety</th>
+          <th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">Unit</th>
+          ${szKeys.map(sz=>`<th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">${sz}</th>`).join('')}
+          <th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">Total</th>
         </tr></thead>
         <tbody>
-          ${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #eee">
-            <td style="padding:3px 6px">${esc(v.name||'')}</td>
-            <td style="padding:3px 6px;text-align:center;color:#666">${esc(v.unit||'pcs')}</td>
-            ${szKeys.map(sz=>`<td style="padding:3px 6px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
-            <td style="padding:3px 6px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
+          ${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #ddd">
+            <td style="padding:5px 8px;font-weight:600">${esc(v.name||'')}</td>
+            <td style="padding:5px 4px;text-align:center;color:#444">${esc(v.unit||'pcs')}</td>
+            ${szKeys.map(sz=>`<td style="padding:5px 4px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
+            <td style="padding:5px 4px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
           </tr>`;}).join('')}
         </tbody>
         <tfoot><tr style="background:#eeeffe;font-weight:700">
-          <td colspan="2" style="padding:4px 6px">Design total</td>
-          ${szKeys.map(sz=>`<td style="padding:4px 6px;text-align:center">${colTotals[sz]||0}</td>`).join('')}
-          <td style="padding:4px 6px;text-align:center;background:#534AB7;color:#fff">${grandTotal}</td>
+          <td colspan="2" style="padding:6px 8px;text-align:right">Design total →</td>
+          ${szKeys.map(sz=>`<td style="padding:6px 4px;text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
+          <td style="padding:6px 4px;text-align:center;background:#534AB7;color:#fff;font-weight:700">${grandTotal}</td>
         </tr></tfoot>
-      </table>` : '<p style="font-size:10px;color:#888;margin:4px 0">No varieties</p>';
+      </table>` : '<p style="font-size:12px;color:#888;margin:4px 0">No varieties</p>';
 
-      return `<div class="design-block" style="margin-bottom:10px;padding:8px;background:#f7f6f2;border-radius:6px">
-        <h3 style="font-size:12px;margin-bottom:4px;color:#534AB7">${esc(d.name)} <span style="font-weight:400;color:#666">[${esc(d.code)}]</span> — ${formatQtyByUnit(designQtyByUnit(d))}</h3>
+      return `<div class="design-block" style="margin-bottom:14px;padding:10px 12px;background:#f7f6f2;border-radius:6px;border-left:3px solid #534AB7">
+        <h3 style="font-size:15px;margin-bottom:6px;color:#3C3489;font-weight:700">${esc(d.name)} <span style="font-weight:500;color:#555">[${esc(d.code)}]</span> <span style="font-weight:700;color:#534AB7"> — ${formatQtyByUnit(designQtyByUnit(d))}</span></h3>
         ${imageStripHtml}
         ${tableHtml}
       </div>`;
@@ -5044,23 +5087,26 @@ function buildPrintableOrder(order,tabOverride,includeStages){
   }
   if(includeStages&&(tab==='stages'||tab==='all')){
     content+=order.designs.map(d=>`
-      <div class="design-block" style="margin-bottom:8px">
-        <h3 style="font-size:11px;margin-bottom:3px;color:#534AB7">Stages: ${esc(d.name)} [${esc(d.code)}]</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:9px">
+      <div class="design-block" style="margin-bottom:10px">
+        <h3 style="font-size:13px;margin-bottom:4px;color:#3C3489;font-weight:700">Stages: ${esc(d.name)} <span style="font-weight:500;color:#555">[${esc(d.code)}]</span></h3>
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead><tr style="background:#534AB7;color:#fff">
-            <th style="padding:3px 6px">#</th><th style="padding:3px 6px">Stage</th>
-            <th style="padding:3px 6px">Vendor</th><th style="padding:3px 6px">Status</th>
-            <th style="padding:3px 6px">Due by</th><th style="padding:3px 6px">Notes</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:700">#</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:700">Stage</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:700">Vendor</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:700">Status</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:700">Due by</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:700">Notes</th>
           </tr></thead>
           <tbody>
             ${d.stages.map((st,si)=>{const tmpl=getTmpl(st.stageId)||{name:'?',loc:''};const dl=designDeadline(order,d,si);
               return`<tr style="border-bottom:1px solid #E8E7E0">
-                <td style="padding:3px 6px">${si+1}</td>
-                <td style="padding:3px 6px">${esc(tmpl.name)}<br><span style="color:#888;font-size:8px">${esc(tmpl.loc)}</span></td>
-                <td style="padding:3px 6px">${esc(st.vendor||'—')}</td>
-                <td style="padding:3px 6px">${esc(st.status)}</td>
-                <td style="padding:3px 6px">${fmtDate(dl)}</td>
-                <td style="padding:3px 6px;font-size:9px;color:#666">${esc(st.stageNote||'—')}</td>
+                <td style="padding:4px 8px">${si+1}</td>
+                <td style="padding:4px 8px;font-weight:600">${esc(tmpl.name)}<br><span style="color:#888;font-size:10px;font-weight:400">${esc(tmpl.loc)}</span></td>
+                <td style="padding:4px 8px">${esc(st.vendor||'—')}</td>
+                <td style="padding:4px 8px">${esc(st.status)}</td>
+                <td style="padding:4px 8px">${fmtDate(dl)}</td>
+                <td style="padding:4px 8px;color:#666">${esc(st.stageNote||'—')}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -5071,9 +5117,9 @@ function buildPrintableOrder(order,tabOverride,includeStages){
   // Outer wrapper: no page-break-inside:avoid (large orders would create
   // blank pages). Let content flow naturally; design blocks above have
   // their own page-break rules in <style>.
-  return `<div class="order-block" style="border:1px solid #D3D1C7;border-radius:6px;padding:8px 10px;margin-bottom:10px">
-    <h2 style="font-size:13px;margin-bottom:2px;color:#534AB7">${esc(order.orderId)} · ${esc(order.client)}</h2>
-    <p style="font-size:10px;color:#666;margin-bottom:6px">Start: ${fmtDate(order.startDate)} · Priority: ${esc(order.priority)} · Total: ${qtyStr}</p>
+  return `<div class="order-block" style="border:1.5px solid #534AB7;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+    <h2 style="font-size:18px;margin-bottom:4px;color:#3C3489;font-weight:700">${esc(order.orderId)} · <span style="color:#534AB7">${esc(order.client)}</span></h2>
+    <p style="font-size:13px;color:#333;margin-bottom:10px"><strong>Start:</strong> ${fmtDate(order.startDate)} &nbsp;·&nbsp; <strong>Priority:</strong> ${esc(order.priority)} &nbsp;·&nbsp; <strong>Total:</strong> <span style="font-weight:700;color:#534AB7">${qtyStr}</span></p>
     ${content}
   </div>`;
 }
@@ -5086,7 +5132,7 @@ function openPrintWindow(title,orders,tabOverride,includeStages){
     <style>
       /* Tight page margins — no wasted paper */
       @page{margin:8mm 10mm}
-      body{font-family:system-ui;padding:0;color:#1a1916;font-size:11px;margin:0}
+      body{font-family:system-ui;padding:0;color:#1a1916;font-size:13px;margin:0;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
       /* Design blocks: avoid splitting one design across two pages if it fits,
@@ -5098,16 +5144,16 @@ function openPrintWindow(title,orders,tabOverride,includeStages){
       .order-block{break-inside:auto;page-break-inside:auto}
       @media print{
         button{display:none!important}
-        body{padding:0}
+        body{padding:0;font-size:13px}
         .print-toolbar{display:none!important}
       }
     </style>
     </head><body style="padding:12px 14px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;padding-bottom:6px;border-bottom:1.5px solid #534AB7">
-      <h1 style="font-size:14px;color:#534AB7;margin:0">🪬 Bangle Production Tracker</h1>
-      <div style="text-align:right;font-size:10px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
+      <h1 style="font-size:18px;color:#534AB7;margin:0;font-weight:700">🪬 Bangle Production Tracker</h1>
+      <div style="text-align:right;font-size:12px"><strong>${esc(title)}</strong><br><span style="color:#888;font-size:11px">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
-    <div class="print-toolbar" style="margin-bottom:8px"><button onclick="window.print()" style="padding:6px 12px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨️ Print</button></div>
+    <div class="print-toolbar" style="margin-bottom:10px"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
     ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
   w.document.close();
 }
@@ -7726,8 +7772,7 @@ function showInstallInstructions(){
         <li>Tap the <strong>Share icon</strong> <span style="display:inline-block;width:18px;height:18px;border:1.5px solid #534AB7;border-radius:4px;text-align:center;font-size:11px;line-height:14px;vertical-align:middle">↑</span> at the bottom of Safari.</li>
         <li>Scroll down and tap <strong>"Add to Home Screen"</strong>.</li>
         <li>Tap <strong>"Add"</strong> in the top-right corner.</li>
-      </ol>
-      <div style="font-size:11px;color:#888;margin-top:10px">The bangle icon will appear on your home screen — tap it to open the app full-screen, just like a native app.</div>`;
+      </ol>`;
   } else if(/Android/.test(navigator.userAgent)){
     stepsHtml = `
       <div style="font-size:13px;color:#3C3489;font-weight:700;margin-bottom:10px">📱 Install on Android</div>
@@ -7736,20 +7781,33 @@ function showInstallInstructions(){
         <li>Tap the <strong>menu</strong> (⋮) in the top-right corner of the browser.</li>
         <li>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</li>
         <li>Confirm <strong>"Install"</strong>.</li>
-      </ol>
-      <div style="font-size:11px;color:#888;margin-top:10px">If you see "Install app" appear at the top of the menu, that's the one. The bangle icon will appear in your app drawer like a regular app.</div>`;
+      </ol>`;
   } else {
     stepsHtml = `
       <div style="font-size:13px;color:#3C3489;font-weight:700;margin-bottom:10px">💻 Install on Desktop</div>
+      <div style="background:#FAEEDA;border:1px solid #EF9F27;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#7a4d10">
+        <strong>If you don't see an install icon in the address bar, your browser thinks the app is already installed under another scope (often Workboard).</strong>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#3C3489;margin:8px 0 6px">Try this exact sequence:</div>
       <ol style="font-size:12px;line-height:1.7;color:#444;padding-left:22px;margin:0">
-        <li>Use <strong>Chrome</strong> or <strong>Edge</strong>.</li>
-        <li>Look for an install icon (⊕) at the right end of the address bar.</li>
-        <li>Click it, then click <strong>"Install"</strong>.</li>
+        <li>Open a new tab and go to <code style="background:#f0efff;padding:1px 5px;border-radius:3px">chrome://apps</code></li>
+        <li>If you see any item called "Siddhi Bangle Tracker" or "Bangle Tracker" → right-click → <strong>Remove from Chrome</strong>. <em>(Don't remove Workboard.)</em></li>
+        <li>Go to <code style="background:#f0efff;padding:1px 5px;border-radius:3px">chrome://serviceworker-internals</code> and click <strong>Unregister</strong> next to every entry on this domain.</li>
+        <li>Come back to this tab and press <strong>Ctrl+Shift+R</strong> to hard-refresh.</li>
+        <li>Wait 5 seconds, then look at the right edge of the address bar — a small <strong>⊕</strong> (or screen with arrow) icon should now appear.</li>
+        <li>Click it → click <strong>Install</strong>.</li>
       </ol>
-      <div style="font-size:11px;color:#888;margin-top:10px">If you don't see the icon yet, browse the dashboard for a minute — Chrome typically shows it after a short interaction with the page.</div>`;
+      <div style="font-size:11px;color:#888;margin-top:12px">If that still doesn't show the ⊕ icon, the most reliable workaround is the menu route:<br><strong>Chrome menu (⋮) → Cast, save and share → Install Siddhi Bangle Tracker…</strong></div>`;
   }
+  // Diagnostic info the user can copy to me if it still doesn't work
+  const diag = {
+    standalone: _isStandalone,
+    deferredPrompt: !!_deferredInstallPrompt,
+    SW: 'serviceWorker' in navigator,
+    UA: navigator.userAgent.slice(0,120)
+  };
   mc.innerHTML = `<div class="modal-overlay" id="modal-overlay-main" onclick="if(event.target===this)closeModal()" style="z-index:1300">
-    <div class="modal" style="width:440px;max-width:95vw" role="dialog">
+    <div class="modal" style="width:520px;max-width:96vw" role="dialog">
       <div class="modal-header">
         <div class="modal-icon" style="background:#0F6E56;color:#fff;font-size:18px">📲</div>
         <h3>Install Siddhi Bangle Tracker</h3>
@@ -7757,6 +7815,10 @@ function showInstallInstructions(){
       <div style="padding:4px">
         ${stepsHtml}
       </div>
+      <details style="margin-top:14px;font-size:10px;color:#888">
+        <summary style="cursor:pointer">Diagnostic info (share with support if it still fails)</summary>
+        <pre style="background:#f4f3ef;padding:8px;border-radius:6px;margin-top:6px;overflow:auto;font-size:10px">${esc(JSON.stringify(diag,null,2))}</pre>
+      </details>
       <div class="modal-actions">
         <button onclick="closeModal()" class="primary" style="width:100%">Got it</button>
       </div>
