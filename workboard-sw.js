@@ -151,6 +151,19 @@ async function runBackgroundCheck() {
       }
     }
 
+    // Update app-icon badge with overdue task count
+    const overdueCount = myTasks.filter(t =>
+      t.status === 'overdue' ||
+      (t.deadline && t.deadline < now && t.status !== 'completed')
+    ).length;
+    try {
+      if ('setAppBadge' in self.navigator) {
+        overdueCount > 0
+          ? await self.navigator.setAppBadge(overdueCount)
+          : await self.navigator.clearAppBadge();
+      }
+    } catch (_) {}
+
     // Persist updated state
     await nsCache.put('user-state', new Response(JSON.stringify({
       userId:    state.userId,

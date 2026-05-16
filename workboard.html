@@ -97,6 +97,20 @@ img{display:block}
 }
 .lbtn:active{background:var(--pd);transform:scale(.98)}
 
+/* ── Notification permission banner ── */
+#notif-banner{
+  display:none;flex-shrink:0;align-items:center;gap:10px;
+  background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%);
+  padding:10px 16px;font-size:13px;color:#fff;
+}
+#notif-banner span{flex:1;font-weight:500;line-height:1.3}
+.nb-enable{
+  background:rgba(255,255,255,.22);color:#fff;border:1.5px solid rgba(255,255,255,.4);
+  border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;
+  white-space:nowrap;flex-shrink:0;
+}
+.nb-close{color:rgba(255,255,255,.55);font-size:20px;padding:2px 4px;flex-shrink:0;line-height:1}
+
 /* ══════════════════════════════════════════
    APP SHELL
 ══════════════════════════════════════════ */
@@ -524,6 +538,12 @@ textarea.fc{resize:vertical;min-height:80px;line-height:1.5}
         </button>
       </div>
     </header>
+    <!-- Notification permission banner — shown if permission not yet granted -->
+    <div id="notif-banner">
+      <span>🔔 Enable notifications to receive task alerts</span>
+      <button class="nb-enable" onclick="enableNotifs()">Enable</button>
+      <button class="nb-close" onclick="dismissNotifBanner()">✕</button>
+    </div>
     <div class="content" id="content"></div>
     <button class="fab" id="fab" onclick="showAddTask()">
       <svg width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="#fff" stroke-width="2.5" stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
@@ -741,10 +761,44 @@ let _nfSent=new Set();
 function loadNfSent(){try{_nfSent=new Set(JSON.parse(localStorage.getItem(NF_KEY)||'[]'));}catch{_nfSent=new Set();}}
 function markNfSent(k){_nfSent.add(k);try{localStorage.setItem(NF_KEY,JSON.stringify([..._nfSent].slice(-500)));}catch{}}
 
-async function requestNotifPerm(){
+// Show banner if permission not yet decided (called after login)
+function showNotifBannerIfNeeded(){
   if(!('Notification' in window))return;
-  if(Notification.permission==='default')await Notification.requestPermission();
+  if(Notification.permission==='default'){
+    document.getElementById('notif-banner').style.display='flex';
+  }
 }
+
+// Called when user taps "Enable" — MUST be a direct user gesture for iOS
+async function enableNotifs(){
+  if(!('Notification' in window))return;
+  const result=await Notification.requestPermission();
+  document.getElementById('notif-banner').style.display='none';
+  if(result==='granted'){
+    toast('Notifications enabled!','ok');
+    initNotifBaseline();
+    checkNotifs();
+    setupBgNotifs();
+  }else{
+    toast('Notifications blocked — enable in device settings','bad');
+  }
+}
+function dismissNotifBanner(){
+  document.getElementById('notif-banner').style.display='none';
+  try{localStorage.setItem('wb_nf_dismiss','1');}catch{}
+}
+
+// App-icon badge count — shows overdue task count on the icon
+async function updateBadge(){
+  if(!S.me)return;
+  const count=Object.values(S.tasks).filter(t=>t.assignedTo===S.me.id&&t.status==='overdue').length;
+  try{
+    if('setAppBadge' in navigator){
+      count>0?await navigator.setAppBadge(count):await navigator.clearAppBadge();
+    }
+  }catch{}
+}
+async function clearBadge(){try{if('clearAppBadge' in navigator)await navigator.clearAppBadge();}catch{}}
 
 function sendNotif(title,body,tag){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
@@ -858,6 +912,7 @@ async function doLogout(){
   if(_es){_es.close();_es=null;}
   // Clear SW background state so notifications stop after sign-out
   try{const c=await caches.open('wb-notif-state');await c.delete('user-state');}catch{}
+  clearBadge(); // remove icon badge on sign-out
   document.getElementById('app').classList.remove('on');
   document.getElementById('login').style.display='flex';
   fillLoginDropdown(); // restores remembered username + password automatically
@@ -872,10 +927,15 @@ async function startApp(){
   _dlTimer=setInterval(checkDL,60000);
   setInterval(()=>autosave(),30000); // background safety-net every 30 s
   // Notifications
-  await requestNotifPerm();
-  initNotifBaseline(); // mark all existing tasks as seen — no spam on login
-  checkNotifs();       // check for any immediate alerts
-  setupBgNotifs();     // register SW background sync + persist state
+  initNotifBaseline(); // mark existing tasks as seen so no spam on login
+  if(Notification.permission==='granted'){
+    checkNotifs();
+    setupBgNotifs();
+  } else if(Notification.permission==='default'){
+    const dismissed=localStorage.getItem('wb_nf_dismiss');
+    if(!dismissed) showNotifBannerIfNeeded(); // user taps Enable → direct gesture
+  }
+  updateBadge(); // set icon badge immediately
 }
 
 // ════════════════════════════════════
@@ -1150,6 +1210,7 @@ function render(){
   else if(S.view==='overview')rOverview();
   else if(S.view==='analytics')rAnalytics();
   else if(S.view==='settings')rSettings();
+  updateBadge(); // refresh app-icon badge after every render
 }
 
 // Sort: active tasks first by earliest deadline, completed tasks at bottom
