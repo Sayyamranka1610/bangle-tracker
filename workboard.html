@@ -706,7 +706,7 @@ async function loadFB(){
   if(d.users)S.users=d.users;
   if(d.tasks)S.tasks=d.tasks;
   if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
-  saveLS();checkDL();render();fillLoginDropdown();checkNotifs();
+  saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
 }
 function listenFB(){
   if(_es)return;
@@ -789,6 +789,38 @@ function checkNotifs(){
   });
 }
 
+// Push current user + seen-task state into SW cache so background
+// checks know who is logged in and what has already been notified
+async function saveBgState(){
+  if(!S.me||!('caches' in window))return;
+  try{
+    const c=await caches.open('wb-notif-state');
+    const seenTasks=Object.values(S.tasks).filter(t=>t.assignedTo===S.me.id).map(t=>t.id);
+    await c.put('user-state',new Response(JSON.stringify({
+      userId:S.me.id,
+      seenTasks,
+      notified:[..._nfSent],
+    })));
+  }catch{}
+}
+
+// Register Periodic Background Sync so SW fires every ~15 min even when app is closed
+async function setupBgNotifs(){
+  if(!('serviceWorker' in navigator))return;
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    await saveBgState(); // write current state first
+    if('periodicSync' in reg){
+      // Check permission (Chrome/Android requires this)
+      let perm='granted';
+      try{const ps=await navigator.permissions.query({name:'periodic-background-sync'});perm=ps.state;}catch{}
+      if(perm==='granted'){
+        await reg.periodicSync.register('wb-notif-check',{minInterval:15*60*1000});
+      }
+    }
+  }catch{}
+}
+
 // ════════════════════════════════════
 //  SAVE
 // ════════════════════════════════════
@@ -802,6 +834,7 @@ async function autosave(){
   _lastSaved=new Date();
   if(dot){dot.classList.remove('saving');dot.classList.add('ok');setTimeout(()=>dot.classList.remove('ok'),2500);}
   if(lbl){lbl.textContent='Saved ✓';setTimeout(()=>lbl.textContent='',2500);}
+  saveBgState(); // keep SW background state in sync after every save
 }
 // Ctrl+S still works — just triggers the same auto-save
 async function manualSave(){autosave();}
@@ -819,10 +852,12 @@ function doLogin(){
   saveRemember(user.username,p);   // remember on this device
   S.me=user;saveSess(user.id);startApp();
 }
-function doLogout(){
+async function doLogout(){
   S.me=null;clearSess();
   if(_dlTimer)clearInterval(_dlTimer);
   if(_es){_es.close();_es=null;}
+  // Clear SW background state so notifications stop after sign-out
+  try{const c=await caches.open('wb-notif-state');await c.delete('user-state');}catch{}
   document.getElementById('app').classList.remove('on');
   document.getElementById('login').style.display='flex';
   fillLoginDropdown(); // restores remembered username + password automatically
@@ -840,6 +875,7 @@ async function startApp(){
   await requestNotifPerm();
   initNotifBaseline(); // mark all existing tasks as seen — no spam on login
   checkNotifs();       // check for any immediate alerts
+  setupBgNotifs();     // register SW background sync + persist state
 }
 
 // ════════════════════════════════════
