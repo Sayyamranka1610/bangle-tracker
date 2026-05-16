@@ -1070,6 +1070,10 @@ function setSaveStatus(state, msg){
 let _autosaveTimer = null;
 function scheduleAutosave(){
   setSaveStatus('saving');
+  // Mark local changes as pending IMMEDIATELY (not after the 800ms debounce),
+  // so a remote sync arriving in the gap can't wipe a just-made change such
+  // as a freshly created order.
+  try{ if(_fb) _fb.pendingLocal = true; }catch(e){}
   clearTimeout(_autosaveTimer);
   _autosaveTimer = setTimeout(()=>{ save(); }, 800);
 }
@@ -2087,6 +2091,10 @@ function buildDesignCard(order,oi,d,di){
   const varieties=d.varieties;
   const al=designAlert(order,d);
   const locked=d.sizesLocked===true;
+  // CNC designs have no varieties — the design CODE is the leaf item.
+  // For them, the table's first column shows the Design Code (not a
+  // variety name), and there's no "+ Add variety".
+  const isCnc=d.bangleType==='cnc';
 
   // Compute variety table totals
   const colTotals={};
@@ -2103,12 +2111,12 @@ function buildDesignCard(order,oi,d,di){
             oninput="if(S.orders[${oi}]&&S.orders[${oi}].designs[${di}]){S.orders[${oi}].designs[${di}].name=this.value;scheduleAutosave();}"
             onblur="rebuildVocab()">
         </div>
-        <div class="field-group" style="max-width:130px">
+        ${isCnc?'':`<div class="field-group" style="max-width:130px">
           <label>Design code</label>
           <input id="dcode-${oi}-${di}" value="${esc(d.code)}" autocomplete="off" style="background:#fff" tabindex="0"
             oninput="if(S.orders[${oi}]&&S.orders[${oi}].designs[${di}]){S.orders[${oi}].designs[${di}].code=this.value;scheduleAutosave();}"
             onblur="rebuildVocab()">
-        </div>
+        </div>`}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">
         ${badgeHtml(al)}
@@ -2122,9 +2130,9 @@ function buildDesignCard(order,oi,d,di){
 
     <!-- VARIETY TABLE -->
     <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-      <span>🧮 Varieties &amp; quantities by size</span>
+      <span>${isCnc?'📦 Design code &amp; quantities by size':'🧮 Varieties &amp; quantities by size'}</span>
       <span class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="icon-btn" onclick="addVariety(${oi},${di})">+ Add variety</button>
+        ${isCnc?'':`<button class="icon-btn" onclick="addVariety(${oi},${di})">+ Add variety</button>`}
         ${!locked?`<button class="icon-btn" onclick="addSizeToDesign(${oi},${di})">+ Add size</button>`:'<span style="font-size:10px;color:#AFA9EC;padding:4px 0">Sizes locked (set at order creation)</span>'}
       </span>
     </div>
@@ -2132,7 +2140,7 @@ function buildDesignCard(order,oi,d,di){
       <table class="variety-table">
         <thead>
           <tr>
-            <th style="min-width:130px">Variety name</th>
+            <th style="min-width:130px">${isCnc?'Design code':'Variety name'}</th>
             <th style="min-width:62px">Images</th>
             ${szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')}
             <th style="min-width:60px">Total</th>
@@ -2146,8 +2154,14 @@ function buildDesignCard(order,oi,d,di){
             const imgCells=(v.images||[]).map((img,ii)=>'<img class="variety-thumb" src="'+img.data+'" alt="" onclick="openLbDirect(\''+img.data+'\')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>').join('');
             const sizeCells=szKeys.map((sz,szI)=>'<td><input type="number" class="qty-inp" min="0" value="'+((v.sizes||{})[sz]||0)+'" oninput="upVarietySizeSilent('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value);this._dirty=true" onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}" onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')" tabindex="0"></td>').join('');
             const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
+            const firstCell=isCnc
+              ? '<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Design code" oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}" onblur="rebuildVocab()" tabindex="0"></td>'
+              : '<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" oninput="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>';
+            const delCell=isCnc
+              ? '<td class="no-print"><button class="icon-btn danger" onclick="removeDesign('+oi+','+di+')" title="Remove this design code">✕</button></td>'
+              : '<td class="no-print"><button class="icon-btn danger" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>';
             return '<tr>'
-              +'<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" oninput="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>'
+              +firstCell
               +'<td><div class="variety-img-cell">'+imgCells
                 +'<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
                 +'<input type="file" id="vimg-'+d.id+'-'+vi+'" accept="image/*" multiple style="display:none" onchange="handleVarietyImg('+oi+','+di+','+vi+',this)">'
@@ -2155,7 +2169,7 @@ function buildDesignCard(order,oi,d,di){
               +sizeCells
               +'<td class="total-col">'+rowTotal+'</td>'
               +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts+'</select></td>'
-              +'<td class="no-print"><button class="icon-btn danger" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>'
+              +delCell
             +'</tr>';
           }).join('')}
           ${varieties.length===0?('<tr><td colspan="'+(4+szKeys.length)+'" style="text-align:center;color:#aaa;padding:10px;font-size:11px">No varieties yet — click &quot;+ Add variety&quot;</td></tr>'):''}
@@ -2333,7 +2347,7 @@ function removeDesign(oi,di){
   audit('Remove design',`Order ${S.orders[oi].orderId}: "${d.name}" removed`);
   S.orders[oi].designs.splice(di,1);render();
 }
-function delOrder(oi){if(!confirm('Delete this order?'))return;audit('Delete order',`Order ${S.orders[oi].orderId} (${S.orders[oi].client}) deleted`);S.orders.splice(oi,1);renumberOrders();render();}
+function delOrder(oi){if(!confirm('Delete this order?'))return;audit('Delete order',`Order ${S.orders[oi].orderId} (${S.orders[oi].client}) deleted`);S.orders.splice(oi,1);renumberOrders();save();render();try{fbPushNow();}catch(e){}}
 function upDesignStage(oi,di,si,val){
   // If trying to mark as 'done', enforce rules
   if(val==='done'){
@@ -3601,7 +3615,10 @@ function createOrder(){
   S.activeTabs[newOrder.id]='designs';
   renumberOrders(); // assigns ORD-XXX based on date sequence
   audit('Create order',`New order ${newOrder.orderId} for ${client} (${bangleType==='cnc'?'CNC':bangleType==='both'?'Both':'Dye Gold'}) created with ${window._modalVarieties.length} varieties`);
-  rebuildVocab();closeModal();render();
+  rebuildVocab();closeModal();
+  save();                       // write to localStorage immediately
+  render();
+  try{ fbPushNow(); }catch(e){} // push the new order to Firebase right away
 }
 
 // ── EXCEL TEMPLATE DOWNLOAD ───────────────────────────────────────────────────
@@ -4379,7 +4396,7 @@ function delVendorOrder(vi){
   S.openVendorOrders=(S.openVendorOrders||[]).filter(k=>!k.includes(id));
   delete S.vendorActiveTabs[id];
   audit('VendorOrder','Deleted vendor order '+id);
-  save();renderVendorOrders();
+  save();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 function upVendorDesign(vi,di,key,val){histPush();S.vendorOrders[vi].designs[di][key]=val;save();renderVendorOrders();}
 function removeVendorDesign(vi,di){histPush();S.vendorOrders[vi].designs.splice(di,1);save();renderVendorOrders();}
@@ -4640,7 +4657,7 @@ function createVendorOrder(){
   S.openVendorOrders.push('open_'+newVO.id);
   S.vendorActiveTabs[newVO.id]='designs';
   audit('VendorOrder',`Created ${orderId} for ${vendor}`);
-  rebuildVocab();save();closeModal();renderVendorOrders();
+  rebuildVocab();save();closeModal();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 
 // ── Vendor Order Excel Template & File Import ─────────────────────────────────
@@ -7819,6 +7836,18 @@ function fbSchedulePush(){
     _fb.pushTimer = null;
     fbPush(false);
   }, 10000);
+}
+
+// Push to Firebase RIGHT NOW — used for structural changes (create / delete
+// an order) so they reach the cloud immediately and can't be lost if the tab
+// is closed, or wiped by a stale remote sync arriving in the meantime.
+function fbPushNow(){
+  if(_isDemoMode()) return;
+  if(!_fb.ready) return;
+  _fb.pendingLocal = true;          // protect until the push confirms
+  clearTimeout(_fb.pushTimer);
+  _fb.pushTimer = null;
+  fbPush(false);
 }
 
 // ── USER-EDITING GUARD ───────────────────────────────────────────────────────
