@@ -1162,13 +1162,22 @@ function extractImages(state){
     (it.images||[]).forEach((img,ii)=>{maybeStrip(img,`stkimg_${it.id}_${ii}`);});
   });
 
-  // Vendor orders: attached files ALWAYS stripped (can be large Excel/PDF)
-  (cloned.vendorOrders||[]).forEach(o=>{
-    if(o.attachedFile&&o.attachedFile.data&&o.attachedFile.data.startsWith('data:')){
-      const fKey=`file_vo_${o.id}`;
-      imageMap[fKey]=o.attachedFile.data;
-      o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
+  // Attached files: only stripped to IDB when too large for Firebase.
+  // Small files (most order Excel templates ~10-30KB) pass through to
+  // Firebase so they download on every device, not just the uploader's.
+  const maybeStripFile=(o,fKey)=>{
+    if(o.attachedFile&&o.attachedFile.data&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('data:')){
+      if(o.attachedFile.data.length>IMAGE_FB_THRESHOLD){
+        imageMap[fKey]=o.attachedFile.data;
+        o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
+      }
+      // else: small file — leave inline so it syncs via Firebase
     }
+  };
+
+  // Vendor orders
+  (cloned.vendorOrders||[]).forEach(o=>{
+    maybeStripFile(o,`file_vo_${o.id}`);
     (o.designs||[]).forEach(d=>{
       (d.varieties||[]).forEach(v=>{
         (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_${d.id}_${ii}`);});
@@ -1176,15 +1185,9 @@ function extractImages(state){
     });
   });
 
-  // Client orders: attached files ALWAYS stripped; design/variety images only if large
+  // Client orders
   (cloned.orders||[]).forEach(o=>{
-    // Only strip when data is an actual data: URL — never double-strip an
-    // existing __IDB__ placeholder (that would corrupt IDB with the meta-string)
-    if(o.attachedFile&&o.attachedFile.data&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('data:')){
-      const fKey=`file_o_${o.id}`;
-      imageMap[fKey]=o.attachedFile.data;
-      o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
-    }
+    maybeStripFile(o,`file_o_${o.id}`);
     (o.designs||[]).forEach(d=>{
       (d.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_d_${d.id}_${ii}`);});
       (d.varieties||[]).forEach(v=>{
@@ -2113,9 +2116,9 @@ function buildDesignCard(order,oi,d,di){
           <tr>
             <th style="min-width:130px">Variety name</th>
             <th style="min-width:62px">Images</th>
-            <th style="min-width:72px">Unit</th>
             ${szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')}
             <th style="min-width:60px">Total</th>
+            <th style="min-width:72px">Unit</th>
             <th style="min-width:40px" class="no-print">Del</th>
           </tr>
         </thead>
@@ -2131,18 +2134,19 @@ function buildDesignCard(order,oi,d,di){
                 +'<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
                 +'<input type="file" id="vimg-'+d.id+'-'+vi+'" accept="image/*" multiple style="display:none" onchange="handleVarietyImg('+oi+','+di+','+vi+',this)">'
               +'</div></td>'
-              +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts+'</select></td>'
               +sizeCells
               +'<td class="total-col">'+rowTotal+'</td>'
+              +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts+'</select></td>'
               +'<td class="no-print"><button class="icon-btn danger" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>'
             +'</tr>';
           }).join('')}
           ${varieties.length===0?('<tr><td colspan="'+(4+szKeys.length)+'" style="text-align:center;color:#aaa;padding:10px;font-size:11px">No varieties yet — click &quot;+ Add variety&quot;</td></tr>'):''}
         </tbody>
         ${varieties.length>0?('<tfoot><tr>'
-            +'<td colspan="3" style="text-align:right;color:#534AB7">Design total →</td>'
+            +'<td colspan="2" style="text-align:right;color:#534AB7">Design total →</td>'
             +szKeys.map(sz=>'<td><strong>'+(colTotals[sz]||0)+'</strong></td>').join('')
             +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
+            +'<td></td>'
             +'<td class="no-print"></td>'
           +'</tr></tfoot>'):''}
       </table>
@@ -4273,9 +4277,9 @@ function buildVendorDesignsPanel(vo,vi){
         <thead><tr>
           <th style="min-width:130px">Variety name</th>
           <th style="min-width:62px">Images</th>
-          <th style="min-width:72px">Unit</th>
           ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
           <th style="min-width:60px">Total</th>
+          <th style="min-width:72px">Unit</th>
           <th style="min-width:40px" class="no-print">Del</th>
         </tr></thead>
         <tbody>
@@ -4287,17 +4291,17 @@ function buildVendorDesignsPanel(vo,vi){
               <td><input class="variety-name-inp" value="${esc(v.name||'')}" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
               <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
                 <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
-              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
               ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
               <td class="total-col">${rt}</td>
+              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
               <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
             </tr>`;
           }).join('')}
         </tbody>
         <tfoot><tr>
-          <td colspan="3" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
+          <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
           ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
-          <td class="grand-total">${grandTotal}</td><td class="no-print"></td>
+          <td class="grand-total">${grandTotal}</td><td></td><td class="no-print"></td>
         </tr></tfoot>
       </table></div>`:'<p style="font-size:11px;color:#888;margin:6px 0">No varieties — add one below.</p>';
 
@@ -7838,10 +7842,14 @@ function _flushPendingRemote(){
 
 // Applies a remote Firebase state to the app
 function _applyRemoteState(parsed, savedAt){
+  // Preserve LOCAL UI state — which production-stage panels are expanded is a
+  // per-device view preference, not shared data. Keeping it local stops a
+  // remote sync from collapsing panels the user just opened.
+  const keepDesignStages = S.openDesignStages;
   Object.assign(S, parsed);
   S.openOrders  = new Set(parsed.openOrders  || []);
   S.openClients = new Set(parsed.openClients || []);
-  S.openDesignStages = new Set(parsed.openDesignStages || []);
+  S.openDesignStages = keepDesignStages || new Set();
   renumberOrders();
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
@@ -7866,10 +7874,11 @@ async function fbInit(){
       // This prevents the "data reverts to original" bug where one device's
       // stale localStorage could overwrite fresh remote data due to clock drift.
       histPush();
+      const keepDStages = S.openDesignStages;
       Object.assign(S, parsed);
       S.openOrders  = new Set(parsed.openOrders  || []);
       S.openClients = new Set(parsed.openClients || []);
-      S.openDesignStages = new Set(parsed.openDesignStages || []);
+      S.openDesignStages = keepDStages || new Set(parsed.openDesignStages || []);
       renumberOrders(); // normalize any imported/synced data
       // Save to local cache WITHOUT triggering Firebase push (avoid echo)
       _origSave();
