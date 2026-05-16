@@ -2041,17 +2041,17 @@ function buildDesignCard(order,oi,d,di){
     <div class="design-card-head">
       <div class="design-num">${di+1}</div>
       <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap">
-        <div class="field-group ac-wrap" style="max-width:200px">
+        <div class="field-group" style="max-width:200px">
           <label>Design name</label>
           <input id="dname-${oi}-${di}" value="${esc(d.name)}" autocomplete="off" style="background:#fff" tabindex="0"
-            oninput="S.orders[${oi}].designs[${di}].name=this.value;scheduleAutosave();showAC(this,'dnames',${oi},'dname',${di})" onblur="hideAC('dnames',${oi},${di});if(this.value!==S.orders[${oi}].designs[${di}].name||true){rebuildVocab();}">
-          <div class="ac-list" id="ac-dnames-${oi}-${di}" style="display:none"></div>
+            oninput="if(S.orders[${oi}]&&S.orders[${oi}].designs[${di}]){S.orders[${oi}].designs[${di}].name=this.value;scheduleAutosave();}"
+            onblur="rebuildVocab()">
         </div>
-        <div class="field-group ac-wrap" style="max-width:130px">
+        <div class="field-group" style="max-width:130px">
           <label>Design code</label>
           <input id="dcode-${oi}-${di}" value="${esc(d.code)}" autocomplete="off" style="background:#fff" tabindex="0"
-            oninput="S.orders[${oi}].designs[${di}].code=this.value;scheduleAutosave();showAC(this,'dcodes',${oi},'dcode',${di})" onblur="hideAC('dcodes',${oi},${di});rebuildVocab()">
-          <div class="ac-list" id="ac-dcodes-${oi}-${di}" style="display:none"></div>
+            oninput="if(S.orders[${oi}]&&S.orders[${oi}].designs[${di}]){S.orders[${oi}].designs[${di}].code=this.value;scheduleAutosave();}"
+            onblur="rebuildVocab()">
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">
@@ -7621,7 +7621,7 @@ const FB_DEVICE_ID = (()=>{
   return id;
 })();
 
-let _fb = { es: null, lastPush: 0, pushTimer: null, ready: false };
+let _fb = { es: null, lastPush: 0, pushTimer: null, ready: false, pendingLocal: false };
 
 // ── STATUS BAR ───────────────────────────────────────────────────────────────
 function fbSetStatus(state, msg){
@@ -7727,9 +7727,13 @@ async function fbPush(silent){
       body   : payload
     });
     if(!r.ok){ const msg = await r.text(); throw new Error('HTTP ' + r.status + ' — ' + msg); }
+    // Our local changes are now safely in Firebase — clear the "dirty" flag
+    // so incoming remote updates are allowed to apply again.
+    _fb.pendingLocal = false;
     const t = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     fbSetStatus('connected', 'Live · saved ' + t);
   } catch(e){
+    // Keep pendingLocal = true so we retry and keep protecting local edits
     fbSetStatus('error', 'Save failed — ' + e.message);
     if(!silent) showToast('⚠ Database save failed', 'red');
   }
@@ -7743,6 +7747,10 @@ async function fbPush(silent){
 function fbSchedulePush(){
   if(_isDemoMode()) return;        // demo mode never pushes to the real DB
   if(!_fb.ready) return;
+  // Mark that we have local changes not yet in Firebase. While this flag is
+  // true, incoming remote updates are SKIPPED so they can't overwrite the
+  // user's in-progress / unpushed edits.
+  _fb.pendingLocal = true;
   if(_fb.pushTimer) return;        // a push is already queued — it'll include this change
   fbSetStatus('syncing', 'Sync queued…');
   _fb.pushTimer = setTimeout(()=>{
@@ -7772,6 +7780,9 @@ document.addEventListener('focusin', e=>{
 // Applies a queued remote update once the user has stopped editing
 function _flushPendingRemote(){
   if(!_pendingRemote) return;
+  // If we now have unpushed local changes, the queued remote snapshot is
+  // stale — discard it rather than overwrite the user's newer edits.
+  if(_fb.pendingLocal){ _pendingRemote = null; return; }
   if(_userIsEditing()){
     setTimeout(_flushPendingRemote, 1500);   // still editing — check again shortly
     return;
@@ -7889,9 +7900,18 @@ function fbStartListener(){
       if(envelope.device === FB_DEVICE_ID) return;        // own update — ignore (skip self-echo)
       const parsed   = JSON.parse(envelope.data);
       if(!parsed || !parsed.orders) return;
+      // ── PROTECT UNPUSHED LOCAL CHANGES ─────────────────────────────────────
+      // If we have local edits that haven't reached Firebase yet, this remote
+      // snapshot is OLDER than our state — applying it would wipe the user's
+      // edit (the "5mm siver → silver reverts" bug). Skip it; our own queued
+      // push will become the source of truth shortly.
+      if(_fb.pendingLocal){
+        fbSetStatus('connected', 'Your changes take priority — syncing…');
+        return;
+      }
       // ── DEFER IF THE USER IS EDITING ───────────────────────────────────────
-      // Never overwrite an in-progress edit. If the user is actively typing,
-      // queue this remote update and apply it once they pause.
+      // Belt-and-braces: even with no pending push flagged, never overwrite an
+      // in-progress edit. Queue and apply once the user pauses.
       if(_userIsEditing()){
         _pendingRemote = { parsed, savedAt: envelope.savedAt };
         fbSetStatus('connected', 'Update queued (you\'re editing)…');
