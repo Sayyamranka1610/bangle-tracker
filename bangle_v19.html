@@ -119,6 +119,14 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 /* Design card */
 .design-card{border-radius:12px;padding:14px;margin-bottom:12px;border:1.5px solid #AFA9EC;background:linear-gradient(135deg,#EEEDFE 0%,#f0effe 100%)}
 .design-card-head{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+/* Design-name grouping — all codes of one design name shown together */
+.design-name-group{margin-bottom:16px;border:1.5px solid #C7C2F0;border-radius:14px;overflow:hidden;background:#fbfaff}
+.design-name-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  padding:11px 16px;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff}
+.design-name-group-head .dng-title{font-size:14px;font-weight:700;letter-spacing:.01em}
+.design-name-group-head .dng-meta{font-size:11px;font-weight:600;opacity:.9;background:rgba(255,255,255,.16);padding:3px 10px;border-radius:20px}
+.design-name-group-body{padding:12px 12px 4px}
+.design-name-group-body .design-card{margin-bottom:10px}
 .design-num{width:26px;height:26px;border-radius:50%;background:#534AB7;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
 /* Gallery */
 .design-imgs-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;margin:10px 0}
@@ -1856,11 +1864,38 @@ function buildDetailsPanel(order,oi){
 }
 
 function buildDesignsPanel(order,oi){
+  // Group designs by Design Name. Designs that share a name (e.g. all the
+  // "8MM CNC" codes) are shown together under one name header, with each
+  // design code listed below it.
+  const groups=[];
+  const byName={};
+  order.designs.forEach((d,di)=>{
+    const key=(d.name||'(unnamed)');
+    let g=byName[key];
+    if(!g){g={name:key,items:[]};byName[key]=g;groups.push(g);}
+    g.items.push({d,di});
+  });
+  const groupsHtml=groups.map(g=>{
+    // Aggregate quantity for this whole name group, grouped by unit
+    const groupQty={};
+    g.items.forEach(it=>{
+      const dq=designQtyByUnit(it.d);
+      Object.keys(dq).forEach(u=>{groupQty[u]=(groupQty[u]||0)+dq[u];});
+    });
+    const cards=g.items.map(it=>buildDesignCard(order,oi,it.d,it.di)).join('');
+    return `<div class="design-name-group">
+      <div class="design-name-group-head">
+        <span class="dng-title">🎨 ${esc(g.name)}</span>
+        <span class="dng-meta">${g.items.length} design code${g.items.length!==1?'s':''} · ${formatQtyByUnit(groupQty)}</span>
+      </div>
+      <div class="design-name-group-body">${cards}</div>
+    </div>`;
+  }).join('');
   return `<div class="section-head" style="margin-top:0">
     <span>Designs &amp; Varieties (${order.designs.length}) — Order total: <strong>${formatQtyByUnit(orderQtyByUnit(order))}</strong></span>
     <button class="icon-btn primary" onclick="addDesign(${oi})">+ Add design</button>
   </div>
-  ${order.designs.map((d,di)=>buildDesignCard(order,oi,d,di)).join('')}
+  ${groupsHtml}
   ${!order.designs.length?'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>':''}`;
 }
 
@@ -3730,9 +3765,15 @@ function processOrderFile(file){
         // ── Shared helper: group data rows into designs ──────────────────────
         // vIdx=-1 means no variety column; rows with quantities get 'Default' variety name
         // uIdx=-1 means no unit column; default unit = 'pcs'
+        // Each distinct (Design Name + Design Code) pair becomes its own design.
+        // CNC rows (no variety column) → one design per row, with a single
+        // 'Default' variety holding that code's quantities.
+        // Dye Gold rows → rows sharing the same name+code are grouped as
+        // multiple varieties under that one design.
         const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx)=>{
           const designMap=[];
-          let curDesign=null,lastDN='',lastDC='';
+          const byKey={};
+          let lastDN='',lastDC='';
           dataRows.forEach(row=>{
             const dn=String(row[dnIdx]||'').trim();
             const dc=String(row[dcIdx]||'').trim();
@@ -3741,23 +3782,24 @@ function processOrderFile(file){
             if(!lastDN)return; // no design context yet
             const rawVName=vIdx>=0?String(row[vIdx]||'').trim():'';
             const hasQty=allSizes.some(sz=>(parseInt(row[szIdxMap[sz]])||0)>0);
-            // Skip completely blank rows (no variety name AND no quantities)
             if(!rawVName&&!hasQty)return;
-            // Auto-name variety 'Default' when cell is blank but has quantities
             const vName=rawVName||(hasQty?'Default':'');
             if(!vName)return;
-            if(!curDesign||curDesign.name!==lastDN){
-              curDesign={name:lastDN,code:lastDC,sizes:[...allSizes],varieties:[]};
-              designMap.push(curDesign);
+            // Group by NAME + CODE (each pair = one design)
+            const key=lastDN+' '+lastDC;
+            let design=byKey[key];
+            if(!design){
+              design={name:lastDN,code:lastDC,sizes:[...allSizes],varieties:[]};
+              byKey[key]=design;
+              designMap.push(design);
             }
-            // Avoid duplicate variety names within a design — append suffix if needed
-            const existingNames=curDesign.varieties.map(v=>v.name);
+            const existingNames=design.varieties.map(v=>v.name);
             let finalVName=vName;
             if(existingNames.includes(finalVName)){let n=2;while(existingNames.includes(finalVName+' '+n))n++;finalVName=finalVName+' '+n;}
             const sizes={};
             allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
             const unit=uIdx>=0?String(row[uIdx]||'').trim()||'pcs':'pcs';
-            curDesign.varieties.push({name:finalVName,sizes,images:[],unit});
+            design.varieties.push({name:finalVName,sizes,images:[],unit});
           });
           return designMap.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -4716,7 +4758,7 @@ function processVendorOrderFile(file){
         // vIdx=-1 = no variety column; rows with quantities get 'Default' variety name
         // uIdx=-1 = no unit column; default = 'pcs'
         const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx)=>{
-          const dm=[];let cur=null,ldn='',ldc='';
+          const dm=[];const byKey={};let ldn='',ldc='';
           dataRows.forEach(row=>{
             const dn=String(row[dnIdx]||'').trim(),dc=String(row[dcIdx]||'').trim();
             if(dn)ldn=dn;if(dc)ldc=dc;
@@ -4725,7 +4767,9 @@ function processVendorOrderFile(file){
             const hasQty=allSizes.some(sz=>(parseInt(row[szIdxMap[sz]])||0)>0);
             if(!rawVn&&!hasQty)return;
             const vn=rawVn||(hasQty?'Default':'');if(!vn)return;
-            if(!cur||cur.name!==ldn){cur={name:ldn,code:ldc,sizes:[...allSizes],varieties:[]};dm.push(cur);}
+            const key=ldn+' '+ldc;
+            let cur=byKey[key];
+            if(!cur){cur={name:ldn,code:ldc,sizes:[...allSizes],varieties:[]};byKey[key]=cur;dm.push(cur);}
             const existNames=cur.varieties.map(v=>v.name);
             let fvn=vn;if(existNames.includes(fvn)){let n=2;while(existNames.includes(fvn+' '+n))n++;fvn=fvn+' '+n;}
             const sizes={};allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
