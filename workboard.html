@@ -706,7 +706,7 @@ async function loadFB(){
   if(d.users)S.users=d.users;
   if(d.tasks)S.tasks=d.tasks;
   if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
-  saveLS();checkDL();render();fillLoginDropdown();
+  saveLS();checkDL();render();fillLoginDropdown();checkNotifs();
 }
 function listenFB(){
   if(_es)return;
@@ -721,15 +721,73 @@ function listenFB(){
 const LS='wb_v2';
 function saveLS(){try{localStorage.setItem(LS,JSON.stringify({users:S.users,tasks:S.tasks,customRoles:S.customRoles}));}catch{}}
 function loadLS(){try{const d=JSON.parse(localStorage.getItem(LS)||'null');if(!d)return;if(d.users)S.users=d.users;if(d.tasks)S.tasks=d.tasks;if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;}catch{}}
+// ── Persistent session (localStorage so tab/browser close doesn't log out) ──
 const SE='wb_sess';
-function saveSess(id){try{sessionStorage.setItem(SE,id);}catch{}}
-function loadSess(){try{return sessionStorage.getItem(SE);}catch{return null;}}
-function clearSess(){try{sessionStorage.removeItem(SE);}catch{}}
+function saveSess(id){try{localStorage.setItem(SE,id);}catch{}}
+function loadSess(){try{return localStorage.getItem(SE);}catch{return null;}}
+function clearSess(){try{localStorage.removeItem(SE);}catch{}}
 
 // Remember last login on this device
 const LR='wb_rem';
 function saveRemember(username,password){try{localStorage.setItem(LR,JSON.stringify({username,password}));}catch{}}
 function loadRemember(){try{return JSON.parse(localStorage.getItem(LR)||'null');}catch{return null;}}
+
+// ════════════════════════════════════
+//  NOTIFICATIONS
+// ════════════════════════════════════
+const NF_KEY='wb_nf';
+let _nfSent=new Set();
+
+function loadNfSent(){try{_nfSent=new Set(JSON.parse(localStorage.getItem(NF_KEY)||'[]'));}catch{_nfSent=new Set();}}
+function markNfSent(k){_nfSent.add(k);try{localStorage.setItem(NF_KEY,JSON.stringify([..._nfSent].slice(-500)));}catch{}}
+
+async function requestNotifPerm(){
+  if(!('Notification' in window))return;
+  if(Notification.permission==='default')await Notification.requestPermission();
+}
+
+function sendNotif(title,body,tag){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  if(_nfSent.has(tag))return; // already sent
+  try{
+    new Notification(title,{body,icon:'/bangle-tracker/workboard-icon-192.png',badge:'/bangle-tracker/workboard-icon-192.png',tag,renotify:true});
+  }catch{}
+  markNfSent(tag);
+}
+
+// Mark all current tasks as seen so we don't spam on first login
+function initNotifBaseline(){
+  if(!S.me)return;
+  Object.values(S.tasks).forEach(t=>{
+    if(t.assignedTo===S.me.id)markNfSent(`new_${t.id}`);
+  });
+}
+
+// Called after every Firebase sync and every checkDL tick
+function checkNotifs(){
+  if(!S.me||Notification.permission!=='granted')return;
+  const now=Date.now();
+  Object.values(S.tasks).forEach(t=>{
+    if(t.assignedTo!==S.me.id)return;
+    // 1️⃣ New task assigned
+    const newKey=`new_${t.id}`;
+    if(!_nfSent.has(newKey)){
+      sendNotif('📋 New Task Assigned',`"${t.title}" has been assigned to you`,newKey);
+    }
+    if(!t.deadline||t.status==='completed')return;
+    const left=t.deadline-now;
+    // 2️⃣ 30-min warning (only if deadline is within 0–30 min from now)
+    const w30Key=`w30_${t.id}`;
+    if(!_nfSent.has(w30Key)&&left>0&&left<=30*60*1000){
+      sendNotif('⏰ Deadline in 30 Minutes',`"${t.title}" is due very soon — wrap it up!`,w30Key);
+    }
+    // 3️⃣ Deadline breached
+    const ovKey=`ov_${t.id}`;
+    if(!_nfSent.has(ovKey)&&left<0){
+      sendNotif('🚨 Task Overdue',`"${t.title}" deadline has passed. Please justify the delay.`,ovKey);
+    }
+  });
+}
 
 // ════════════════════════════════════
 //  SAVE
@@ -769,7 +827,7 @@ function doLogout(){
   document.getElementById('login').style.display='flex';
   fillLoginDropdown(); // restores remembered username + password automatically
 }
-function startApp(){
+async function startApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').classList.add('on');
   document.getElementById('hd-install').style.display='flex';
@@ -778,6 +836,10 @@ function startApp(){
   renderNav();checkDL();render();listenFB();
   _dlTimer=setInterval(checkDL,60000);
   setInterval(()=>autosave(),30000); // background safety-net every 30 s
+  // Notifications
+  await requestNotifPerm();
+  initNotifBaseline(); // mark all existing tasks as seen — no spam on login
+  checkNotifs();       // check for any immediate alerts
 }
 
 // ════════════════════════════════════
@@ -789,6 +851,7 @@ function checkDL(){
     if((t.status==='pending'||t.status==='in_progress')&&t.deadline&&t.deadline<now){t.status='overdue';changed=true;}
   });
   if(changed){saveLS();pushFB();render();}
+  checkNotifs(); // fire any pending deadline notifications
 }
 
 // ════════════════════════════════════
@@ -1053,9 +1116,18 @@ function render(){
   else if(S.view==='settings')rSettings();
 }
 
+// Sort: active tasks first by earliest deadline, completed tasks at bottom
+function sortTasks(arr){
+  return arr.slice().sort((a,b)=>{
+    const aDone=a.status==='completed',bDone=b.status==='completed';
+    if(aDone!==bDone)return aDone?1:-1;
+    return (a.deadline||0)-(b.deadline||0);
+  });
+}
+
 // ── My Tasks ──
 function rMyTasks(){
-  const all=Object.values(S.tasks).filter(t=>t.assignedTo===S.me.id).sort((a,b)=>(a.deadline||0)-(b.deadline||0));
+  const all=sortTasks(Object.values(S.tasks).filter(t=>t.assignedTo===S.me.id));
   const cnt={all:all.length,pending:0,in_progress:0,overdue:0,completed:0};
   all.forEach(t=>{if(cnt[t.status]!==undefined)cnt[t.status]++;});
   const list=S.filter==='all'?all:all.filter(t=>t.status===S.filter);
@@ -1081,8 +1153,7 @@ function rOverview(){
   // Tasks for selected member
   const sel=S.selMember;
   const filtered=sel==='all'?all:all.filter(t=>t.assignedTo===sel);
-  const flist=S.filter==='all'?filtered:filtered.filter(t=>t.status===S.filter);
-  flist.sort((a,b)=>(a.deadline||0)-(b.deadline||0));
+  const flist=sortTasks(S.filter==='all'?filtered:filtered.filter(t=>t.status===S.filter));
   document.getElementById('content').innerHTML=`
     <div class="stats">
       ${statC(cnt.all,'Total','#6366f1','📋')}${statC(cnt.in_progress,'In Progress','#3b82f6','⚡')}
@@ -1300,7 +1371,7 @@ document.addEventListener('keydown',e=>{
 //  INIT
 // ════════════════════════════════════
 async function init(){
-  loadLS();
+  loadLS();loadNfSent();
   if(Object.keys(S.users).length===0){
     S.users['owner_default']={id:'owner_default',name:'Owner',username:'owner',password:'admin123',role:'owner',dept:'Management',color:'#6366f1'};
     saveLS();
