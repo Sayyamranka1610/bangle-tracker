@@ -980,6 +980,18 @@ function fmtShort(d){
   return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
 }
 function getTmpl(id){return S.stageTemplates.find(t=>t.id===id)||null}
+// Returns a stage's own name/loc/group. Stages snapshot these at order
+// creation, so editing/deleting global stage templates later never affects
+// (or "Unknown"-s) the stages of orders already created.
+function stageInfo(st){
+  const t=getTmpl(st.stageId);
+  return {
+    name : st.name || (t&&t.name) || 'Stage',
+    loc  : (st.loc!=null&&st.loc!=='') ? st.loc : ((t&&t.loc)||''),
+    group: st.group || (t&&t.group) || 'semi'
+  };
+}
+function stGroup(st){ return st.group || getStageGroup(st.stageId); }
 // ── STORAGE KEY (single canonical key – never changes) ────────────────────────
 const STORAGE_KEY = 'bangle_prod_tracker';
 
@@ -1904,27 +1916,28 @@ function buildDesignsPanel(order,oi){
 
 // ── STAGE ROW BUILDER (standalone fn - no nested backticks) ──────────────────
 function buildStageRow(order,oi,d,di,st,si,gDef,isRaw){
-  const t=getTmpl(st.stageId)||{name:'Unknown',loc:'',days:1,urgDays:1};
-  const dl=designDeadline(order,d,si);
-  const effD=getEffDays(order,d,si);
-  const iCls=siCls(order,d,si);
-  const dCls=dotCls(order,d,si);
-  const dLbl=dotLbl(d,si);
-  const statusOpts=STATUS_OPTS.map(function(o){
-    return '<option value="'+o+'"'+(st.status===o?' selected':'')+'>'+o+'</option>';
-  }).join('');
-  return '<div class="stage-item '+iCls+'" style="margin-bottom:6px">'
+  const info=stageInfo(st);
+  const isDone=st.status==='done';
+  const dotCls=isDone?'sd-done':'sd-idle';
+  const dotLbl=isDone?'✓':(si+1);
+  // Vendor / party field is not relevant for in-house receiving / packaging
+  // stages — hide it for "Receive designed pieces", "Receive plated bangles"
+  // and "Packaging".
+  const nm=info.name.toLowerCase();
+  const hideVendor = nm.includes('designed piece') || nm.includes('plated bangle') || nm.includes('packaging');
+  return '<div class="stage-item" style="margin-bottom:6px">'
     +'<div class="stage-item-top">'
-      +'<div class="stage-dot '+dCls+'">'+dLbl+'</div>'
+      +'<div class="stage-dot '+dotCls+'">'+dotLbl+'</div>'
       +'<div class="stage-name-wrap">'
-        +'<div class="stage-name-txt">'+esc(t.name)+'</div>'
-        +'<div class="stage-loc">'+esc(t.loc)+' · due '+fmtShort(dl)+'</div>'
+        +'<div class="stage-name-txt">'+esc(info.name)+'</div>'
+        +(info.loc?'<div class="stage-loc">'+esc(info.loc)+'</div>':'')
       +'</div>'
-      +'<span style="font-size:10px;color:#888;flex-shrink:0">Days:</span>'
-      +'<input type="number" class="stage-days-inp" value="'+effD+'" min="1" title="Days budget" onblur="upDesignStageDays('+oi+','+di+','+si+',this.value)" tabindex="0">'
-      +'<span style="font-size:10px;color:#888;flex-shrink:0">Done by:</span>'
-      +'<input type="date" class="stage-date-inp" value="'+(st.completionDate||'')+'" title="Target date" onchange="upDesignStageDate('+oi+','+di+','+si+',this.value)" tabindex="0">'
-      +'<select class="stage-status-sel" onchange="upDesignStage('+oi+','+di+','+si+',this.value)" tabindex="0">'+statusOpts+'</select>'
+      +'<span style="font-size:10px;color:#888;flex-shrink:0">Completion date:</span>'
+      +'<input type="date" class="stage-date-inp" value="'+(st.completionDate||'')+'" title="Date this stage was completed" onchange="upDesignStageDate('+oi+','+di+','+si+',this.value)" tabindex="0">'
+      +'<select class="stage-status-sel" onchange="upDesignStage('+oi+','+di+','+si+',this.value)" tabindex="0">'
+        +'<option value="pending"'+(!isDone?' selected':'')+'>Pending</option>'
+        +'<option value="done"'+(isDone?' selected':'')+'>Done</option>'
+      +'</select>'
       +'<span class="no-print" style="display:flex;gap:3px">'
         +'<button class="icon-btn" onclick="mvDesignStage('+oi+','+di+','+si+',-1)">↑</button>'
         +'<button class="icon-btn" onclick="mvDesignStage('+oi+','+di+','+si+',1)">↓</button>'
@@ -1936,10 +1949,10 @@ function buildStageRow(order,oi,d,di,st,si,gDef,isRaw){
         +'<label style="font-size:10px;color:'+gDef.color+';font-weight:600">Qty (pcs)</label>'
         +'<input type="number" min="0" step="1" style="width:90px!important;font-size:11px;padding:4px 5px;border-color:'+gDef.border+';background:'+gDef.light+'" value="'+(st.qty!=null?st.qty:'')+'" placeholder="e.g. 200 pcs" onblur="upDesignStageQty('+oi+','+di+','+si+',this.value,\''+gDef.id+'\')" tabindex="0">'
       +'</div>'
-      +'<div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px">'
+      +(hideVendor?'':'<div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px">'
         +'<label style="font-size:10px;color:#777;font-weight:500">Vendor / party</label>'
         +'<input class="stage-vendor-inp" value="'+esc(st.vendor||'')+'" placeholder="e.g. Ram Cutting Works, Ali Karigar..." onblur="upDesignStageVendor('+oi+','+di+','+si+',this.value)" tabindex="0">'
-      +'</div>'
+      +'</div>')
       +'<div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:180px">'
         +'<label style="font-size:10px;color:#777;font-weight:500">Stage notes</label>'
         +'<textarea class="stage-notes-area" placeholder="Notes specific to this stage..." onblur="upDesignStageNote('+oi+','+di+','+si+',this.value)" tabindex="0">'+esc(st.stageNote||'')+'</textarea>'
@@ -1986,7 +1999,7 @@ function buildStagesPanel(order,oi){
     const isOpen=S.openDesignStages.has(d.id);
     const grouped={raw:[],semi:[],finished:[]};
     d.stages.forEach(function(st,si){
-      const g=getStageGroup(st.stageId);
+      const g=stGroup(st);
       if(!grouped[g])grouped[g]=[];
       grouped[g].push({st:st,si:si});
     });
@@ -2012,8 +2025,9 @@ function buildStagesPanel(order,oi){
     let bodyHtml='';
     if(isOpen){
       const pillsHtml=d.stages.map(function(st,si){
-        const t=getTmpl(st.stageId)||{name:'?'};
-        return '<span class="stage-pill '+pillCls(order,d,si)+'">'+dotLbl(d,si)+' '+esc(t.name)+'</span>'+(si<d.stages.length-1?'<span class="stage-arrow">›</span>':'');
+        const info=stageInfo(st);
+        const done=st.status==='done';
+        return '<span class="stage-pill '+(done?'sp-done':'sp-idle')+'">'+(done?'✓':(si+1))+' '+esc(info.name)+'</span>'+(si<d.stages.length-1?'<span class="stage-arrow">›</span>':'');
       }).join('');
       bodyHtml='<div class="stage-flow">'+pillsHtml+'</div>'
         +buildStageGroup(order,oi,d,di,'raw',grouped)
@@ -2322,7 +2336,7 @@ function upDesignStage(oi,di,si,val){
     const order=S.orders[oi];
     const design=order.designs[di];
     const st=design.stages[si];
-    const groupId=getStageGroup(st.stageId);
+    const groupId=stGroup(st);
     const isRaw=groupId==='raw';
     const unit='pcs'; // all groups now use pcs
 
@@ -2418,7 +2432,7 @@ function autoSyncInventoryFromStages(oi,di){
   function groupStagesOf(groupId){
     return design.stages
       .map((st,si)=>({st,si,tmpl:getTmpl(st.stageId)}))
-      .filter(({st})=>getStageGroup(st.stageId)===groupId);
+      .filter(({st})=>stGroup(st)===groupId);
   }
 
   // Helper: make a ledger entry
@@ -2660,10 +2674,6 @@ function openAddDesignStageToGroup(oi,di,groupId){
         <div class="field-group"><label>Stage name</label><input id="ns-name" placeholder="e.g. Quality check"></div>
         <div class="field-group"><label>Location</label><input id="ns-loc" placeholder="e.g. Factory"></div>
       </div>
-      <div class="field-row">
-        <div class="field-group" style="max-width:110px"><label>Normal days</label><input id="ns-days" type="number" value="1" min="1"></div>
-        <div class="field-group" style="max-width:110px"><label>Urgent days</label><input id="ns-urg" type="number" value="1" min="1"></div>
-      </div>
       <div class="modal-actions">
         <button onclick="closeModal()">Cancel</button>
         <button class="primary" onclick="addCustomDesignStage(${oi},${di},'${groupId}')">Add custom stage</button>
@@ -2679,20 +2689,18 @@ function addDesignStageFromTmpl(oi,di,groupId){
   const sel=document.getElementById('add-stg-sel');if(!sel)return;
   // ensure template has the right group
   const t=S.stageTemplates.find(x=>x.id===sel.value);
-  if(t&&groupId)t.group=groupId;
-  S.orders[oi].designs[di].stages.push({stageId:sel.value,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null});
+  S.orders[oi].designs[di].stages.push({stageId:sel.value,name:t?t.name:'Stage',loc:t?t.loc:'',group:groupId||(t&&t.group)||'semi',status:'pending',completionDate:null,vendor:'',stageNote:'',qty:null});
   audit('Add stage',`Order ${S.orders[oi].orderId}, design "${S.orders[oi].designs[di].name}": stage added`);
   closeModal();render();
 }
 function addCustomDesignStage(oi,di,groupId){
   const name=document.getElementById('ns-name').value.trim();
   const loc=document.getElementById('ns-loc').value.trim();
-  const days=parseInt(document.getElementById('ns-days').value)||1;
-  const urgDays=parseInt(document.getElementById('ns-urg').value)||1;
   if(!name){alert('Please enter a stage name');return;}
-  const t={id:uid(),name,loc,days,urgDays,group:groupId||'semi'};S.stageTemplates.push(t);
-  S.orders[oi].designs[di].stages.push({stageId:t.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null});
-  audit('Add custom stage',`Custom stage "${name}" added to ${groupId||'semi'} group`);closeModal();render();
+  // Custom stage is added only to THIS design (self-contained, not a global
+  // template) so it doesn't leak into other orders.
+  S.orders[oi].designs[di].stages.push({stageId:uid(),name,loc,group:groupId||'semi',status:'pending',completionDate:null,vendor:'',stageNote:'',qty:null});
+  audit('Add custom stage',`Custom stage "${name}" added to design "${S.orders[oi].designs[di].name}"`);closeModal();render();
 }
 
 // ── TAB NAVIGATION HELPER FOR VARIETY QTY CELLS ───────────────────────────────
@@ -3553,7 +3561,9 @@ function createOrder(){
   if(hasErr)return;
 
   // ── Build first design ────────────────────────────────────────────────────
-  const makeStageFresh=()=>S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
+  // Snapshot name/loc/group into each stage so later stage-template edits
+  // never affect this order — template changes apply to NEW orders only.
+  const makeStageFresh=()=>S.stageTemplates.map(s=>({stageId:s.id,name:s.name,loc:s.loc,group:s.group,status:'pending',completionDate:null,vendor:'',stageNote:'',qty:null}));
   const buildDesignFromModal=(dName,dCode,szKeys,vList)=>{
     const szObj=Object.fromEntries(szKeys.map(sz=>[sz,0]));
     vList.forEach(v=>szKeys.forEach(sz=>{szObj[sz]=(szObj[sz]||0)+(parseInt((v.sizes||{})[sz])||0);}));
