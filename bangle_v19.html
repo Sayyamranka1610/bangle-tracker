@@ -181,6 +181,8 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .stage-notes-area{font-size:11px;min-height:38px;resize:vertical;flex:1;min-width:160px;width:auto!important}
 /* Stage flow pills */
 .stage-flow{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin:6px 0}
+/* Always-visible stage-flow strip under a collapsed design header */
+.stage-flow-peek{padding:8px 14px 10px;margin:0;cursor:pointer;border-top:1px dashed #E0DEF3}
 .stage-pill{display:flex;align-items:center;gap:3px;padding:4px 9px;border-radius:20px;font-size:10px;font-weight:500;border:1.5px solid transparent;white-space:nowrap}
 .sp-done{background:#E1F5EE;border-color:#1D9E75;color:#085041}.sp-active{background:#E6F1FB;border-color:#378ADD;color:#0C447C}
 .sp-warn{background:#FAEEDA;border-color:#EF9F27;color:#633806}.sp-late{background:#FCEBEB;border-color:#E24B4A;color:#791F1F}.sp-idle{background:#F1EFE8;border-color:#B4B2A9;color:#5F5E5A}
@@ -2021,20 +2023,22 @@ function buildStagesPanel(order,oi){
         +'<button class="icon-btn no-print" onclick="printDesignWise(\''+order.id+'\',\''+d.id+'\')">🖨️</button>'
       +'</div>'
     +'</div>';
-    // Body is rendered ONLY when expanded
+    // Stage-flow pills — ALWAYS shown (collapsed or expanded) so the current
+    // stage is visible at a glance without expanding the section.
+    const pillsHtml=d.stages.map(function(st,si){
+      const info=stageInfo(st);
+      const done=st.status==='done';
+      return '<span class="stage-pill '+(done?'sp-done':'sp-idle')+'">'+(done?'✓':(si+1))+' '+esc(info.name)+'</span>'+(si<d.stages.length-1?'<span class="stage-arrow">›</span>':'');
+    }).join('');
+    const flowHtml=d.stages.length?'<div class="stage-flow stage-flow-peek" onclick="toggleDesignStages(\''+d.id+'\')">'+pillsHtml+'</div>':'';
+    // Full editable stage groups — only when expanded
     let bodyHtml='';
     if(isOpen){
-      const pillsHtml=d.stages.map(function(st,si){
-        const info=stageInfo(st);
-        const done=st.status==='done';
-        return '<span class="stage-pill '+(done?'sp-done':'sp-idle')+'">'+(done?'✓':(si+1))+' '+esc(info.name)+'</span>'+(si<d.stages.length-1?'<span class="stage-arrow">›</span>':'');
-      }).join('');
-      bodyHtml='<div class="stage-flow">'+pillsHtml+'</div>'
-        +buildStageGroup(order,oi,d,di,'raw',grouped)
+      bodyHtml=buildStageGroup(order,oi,d,di,'raw',grouped)
         +buildStageGroup(order,oi,d,di,'semi',grouped)
         +buildStageGroup(order,oi,d,di,'finished',grouped);
     }
-    return '<div class="design-stages-section">'+headHtml+bodyHtml+'</div>';
+    return '<div class="design-stages-section">'+headHtml+flowHtml+bodyHtml+'</div>';
   }).join('');
   return ctrlBar+sections;
 }
