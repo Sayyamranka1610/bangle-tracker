@@ -872,6 +872,7 @@ let S = {
   activeTabs:{}, auditLog:[], mainView:'orders',
   filters:{client:'',dname:'',dcode:'',status:''},
   vocabulary:{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']},
+  vocabularyManual:{clients:[],vendors:[],dnames:[],dcodes:[]}, // manually-added master entries (persist across rebuilds)
   invLedger:[],           // [{id,date,designName,designCode,type,qty,orderId,note,source,autoType,stageRef,rejections}]
   // qty = pieces for ALL groups (raw, semi, finished)
   invPeriod:'monthly',    // 'weekly'|'monthly'|'yearly'
@@ -904,6 +905,7 @@ try{
     S.vocabulary=sv.vocabulary||{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']};
     if(!S.vocabulary.vendors)S.vocabulary.vendors=[];
     if(!S.vocabulary.units||!S.vocabulary.units.length)S.vocabulary.units=['pcs','pairs','jotta'];
+    S.vocabularyManual=sv.vocabularyManual||{clients:[],vendors:[],dnames:[],dcodes:[]};
     S.mainView=sv.mainView||'orders';
     S.invLedger=sv.invLedger||[];
     S.invPeriod=sv.invPeriod||'monthly';
@@ -1488,22 +1490,28 @@ function renumberOrders(){
 }
 
 function rebuildVocab(){
-  // Preserve existing units and any manually-added entries
+  // Units stay persistent (not derived from orders).
   const existingUnits=(S.vocabulary&&S.vocabulary.units)||['pcs','pairs','jotta'];
-  const clients=new Set(S.vocabulary&&S.vocabulary.clients||[]);
-  const vendors=new Set(S.vocabulary&&S.vocabulary.vendors||[]);
-  const dnames=new Set(S.vocabulary&&S.vocabulary.dnames||[]);
-  const dcodes=new Set(S.vocabulary&&S.vocabulary.dcodes||[]);
+  // Manually-added master entries are preserved separately so they survive
+  // a fresh rebuild. (S.vocabularyManual is populated by the Masters panel.)
+  const man=S.vocabularyManual||{clients:[],vendors:[],dnames:[],dcodes:[]};
+  // ── Build clients/vendors/dnames/dcodes FRESH from current orders ──────────
+  // Fresh (not merged) so an edited design name / client name REPLACES the old
+  // value in the masters instead of leaving the stale one behind forever.
+  const clients=new Set(man.clients||[]);
+  const vendors=new Set(man.vendors||[]);
+  const dnames=new Set(man.dnames||[]);
+  const dcodes=new Set(man.dcodes||[]);
   S.orders.forEach(o=>{
     if(o.client)clients.add(o.client);
     (o.designs||[]).forEach(d=>{if(d.name)dnames.add(d.name);if(d.code)dcodes.add(d.code);});
   });
   S.vendorOrders.forEach(vo=>{if(vo.vendor)vendors.add(vo.vendor);});
   S.vocabulary={
-    clients:[...clients].sort(),
-    vendors:[...vendors].sort(),
-    dnames:[...dnames].sort(),
-    dcodes:[...dcodes].sort(),
+    clients:[...clients].filter(Boolean).sort(),
+    vendors:[...vendors].filter(Boolean).sort(),
+    dnames:[...dnames].filter(Boolean).sort(),
+    dcodes:[...dcodes].filter(Boolean).sort(),
     units:existingUnits
   };
 }
@@ -1622,17 +1630,30 @@ function ohIconChar(al){if(al==='late')return'!';if(al==='warn')return'~';if(al=
 // ── FILTERS ────────────────────────────────────────────────────────────────────
 function updateFilterOptions(){
   rebuildVocab();
+  const activeId = document.activeElement && document.activeElement.id;
   ['client','dname','dcode'].forEach(k=>{
     const el=document.getElementById('f-'+k);if(!el)return;
+    // Don't rebuild a dropdown the user is currently interacting with —
+    // rebuilding its <option>s mid-interaction makes the picker misbehave.
+    if(el.id===activeId) return;
     const cur=el.value;
     const arr=k==='client'?S.vocabulary.clients:k==='dname'?S.vocabulary.dnames:S.vocabulary.dcodes;
     const lbl=k==='client'?'All clients':k==='dname'?'All designs':'All codes';
-    el.innerHTML=`<option value="">${lbl}</option>`+arr.map(v=>`<option value="${esc(v)}"${cur===v?' selected':''}>${esc(v)}</option>`).join('');
+    const newHtml=`<option value="">${lbl}</option>`+arr.map(v=>`<option value="${esc(v)}"${cur===v?' selected':''}>${esc(v)}</option>`).join('');
+    // Only touch the DOM if the option list actually changed (avoids flicker)
+    if(el.innerHTML!==newHtml) el.innerHTML=newHtml;
   });
 }
+// Applying a filter only re-renders the order/design LIST — it must NOT
+// rebuild the filter dropdowns themselves (that breaks the picker on mobile).
 function applyFilters(){
   S.filters={client:document.getElementById('f-client')?.value||'',dname:document.getElementById('f-dname')?.value||'',dcode:document.getElementById('f-dcode')?.value||'',status:document.getElementById('f-status')?.value||''};
-  render();
+  renderStats();
+  if(S.mainView==='orders')renderOrdersView();
+  else if(S.mainView==='design')renderDesignView();
+  else if(S.mainView==='analytics')renderAnalytics();
+  else if(S.mainView==='inventory')renderInventory();
+  scheduleAutosave();
 }
 function clearFilters(){
   S.filters={client:'',dname:'',dcode:'',status:''};
@@ -2067,7 +2088,7 @@ function buildDesignCard(order,oi,d,di){
           ${varieties.map((v,vi)=>{
             const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
             const imgCells=(v.images||[]).map((img,ii)=>'<img class="variety-thumb" src="'+img.data+'" alt="" onclick="openLbDirect(\''+img.data+'\')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>').join('');
-            const sizeCells=szKeys.map((sz,szI)=>'<td><input type="number" class="qty-inp" min="0" value="'+((v.sizes||{})[sz]||0)+'" oninput="this._dirty=true" onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}" onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')" tabindex="0"></td>').join('');
+            const sizeCells=szKeys.map((sz,szI)=>'<td><input type="number" class="qty-inp" min="0" value="'+((v.sizes||{})[sz]||0)+'" oninput="upVarietySizeSilent('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value);this._dirty=true" onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}" onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')" tabindex="0"></td>').join('');
             const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
             return '<tr>'
               +'<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" oninput="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>'
@@ -2548,6 +2569,16 @@ function upVarietySize(oi,di,vi,sz,val){
   const szKeys=Object.keys(d.sizes||{});
   szKeys.forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
   render();
+}
+// Save a size quantity to state WITHOUT re-rendering (used on every keystroke
+// so the value is never lost even if the blur event fails to fire on mobile).
+function upVarietySizeSilent(oi,di,vi,sz,val){
+  const d=S.orders[oi].designs[di];
+  if(!d.varieties[vi].sizes)d.varieties[vi].sizes={};
+  d.varieties[vi].sizes[sz]=parseInt(val)||0;
+  const szKeys=Object.keys(d.sizes||{});
+  szKeys.forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
+  scheduleAutosave();
 }
 function handleVarietyImg(oi,di,vi,input){
   const files=Array.from(input.files);let loaded=0;
@@ -3973,18 +4004,34 @@ function masterAdd(listKey){
   if(!inp)return;
   const val=inp.value.trim();
   if(!val)return;
-  if(!S.vocabulary[listKey])S.vocabulary[listKey]=[];
-  if(!S.vocabulary[listKey].includes(val)){
-    S.vocabulary[listKey].push(val);
-    if(listKey!=='units')S.vocabulary[listKey].sort();
+  if(listKey==='units'){
+    if(!S.vocabulary.units)S.vocabulary.units=[];
+    if(!S.vocabulary.units.includes(val))S.vocabulary.units.push(val);
+  } else {
+    // Store in the persistent manual list so it survives rebuildVocab()
+    if(!S.vocabularyManual)S.vocabularyManual={clients:[],vendors:[],dnames:[],dcodes:[]};
+    if(!S.vocabularyManual[listKey])S.vocabularyManual[listKey]=[];
+    if(!S.vocabularyManual[listKey].includes(val))S.vocabularyManual[listKey].push(val);
+    rebuildVocab(); // merge the new manual entry into S.vocabulary
   }
   inp.value='';
   save();renderMasters();
 }
 
 function masterDelete(listKey,idx){
-  if(!S.vocabulary[listKey])return;
-  S.vocabulary[listKey].splice(idx,1);
+  if(listKey==='units'){
+    if(!S.vocabulary.units)return;
+    S.vocabulary.units.splice(idx,1);
+  } else {
+    // Remove from both the live vocab and the persistent manual list
+    const val=(S.vocabulary[listKey]||[])[idx];
+    if(val==null)return;
+    S.vocabulary[listKey].splice(idx,1);
+    if(S.vocabularyManual&&S.vocabularyManual[listKey]){
+      const mi=S.vocabularyManual[listKey].indexOf(val);
+      if(mi>=0)S.vocabularyManual[listKey].splice(mi,1);
+    }
+  }
   save();renderMasters();
 }
 
@@ -7687,12 +7734,63 @@ async function fbPush(silent){
   }
 }
 
+// ── PUSH THROTTLE — sync to Firebase at most once every 10 seconds ───────────
+// Instead of pushing 1.5s after every keystroke (heavy), we throttle: the first
+// change schedules a push 10s out, and every change within that window is
+// included in that single push (fbPush always reads the current live state).
+// This keeps the dashboard light and operations smooth.
 function fbSchedulePush(){
   if(_isDemoMode()) return;        // demo mode never pushes to the real DB
   if(!_fb.ready) return;
-  clearTimeout(_fb.pushTimer);
-  fbSetStatus('syncing', 'Saving…');
-  _fb.pushTimer = setTimeout(()=> fbPush(false), 1500);
+  if(_fb.pushTimer) return;        // a push is already queued — it'll include this change
+  fbSetStatus('syncing', 'Sync queued…');
+  _fb.pushTimer = setTimeout(()=>{
+    _fb.pushTimer = null;
+    fbPush(false);
+  }, 10000);
+}
+
+// ── USER-EDITING GUARD ───────────────────────────────────────────────────────
+// Tracks whether the user is actively typing/editing. Remote SSE updates are
+// DEFERRED while the user is editing so a sync can never wipe an in-progress
+// edit. The deferred update is applied once the user pauses.
+let _lastUserInput = 0;
+let _pendingRemote = null;
+function _userIsEditing(){
+  // Editing if a text field is focused, OR the user typed within the last 5s
+  const ae = document.activeElement;
+  const focused = ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.tagName==='SELECT');
+  return focused || (Date.now() - _lastUserInput < 5000);
+}
+document.addEventListener('input', ()=>{ _lastUserInput = Date.now(); }, true);
+document.addEventListener('focusin', e=>{
+  if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT'))
+    _lastUserInput = Date.now();
+}, true);
+
+// Applies a queued remote update once the user has stopped editing
+function _flushPendingRemote(){
+  if(!_pendingRemote) return;
+  if(_userIsEditing()){
+    setTimeout(_flushPendingRemote, 1500);   // still editing — check again shortly
+    return;
+  }
+  const { parsed, savedAt } = _pendingRemote;
+  _pendingRemote = null;
+  _applyRemoteState(parsed, savedAt);
+}
+
+// Applies a remote Firebase state to the app
+function _applyRemoteState(parsed, savedAt){
+  Object.assign(S, parsed);
+  S.openOrders  = new Set(parsed.openOrders  || []);
+  S.openClients = new Set(parsed.openClients || []);
+  S.openDesignStages = new Set(parsed.openDesignStages || []);
+  renumberOrders();
+  _origSave();
+  localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
+  render();
+  fbSetStatus('connected', 'Live · synced');
 }
 
 // ── INIT: LOAD THEN LISTEN ────────────────────────────────────────────────────
@@ -7790,20 +7888,16 @@ function fbStartListener(){
       if(envelope.device === FB_DEVICE_ID) return;        // own update — ignore (skip self-echo)
       const parsed   = JSON.parse(envelope.data);
       if(!parsed || !parsed.orders) return;
-      // ── REMOTE IS AUTHORITATIVE ────────────────────────────────────────────
-      // Apply remote state regardless of local clock comparison.
-      // Self-echo is filtered by FB_DEVICE_ID above, so this is always foreign.
-      Object.assign(S, parsed);
-      S.openOrders  = new Set(parsed.openOrders  || []);
-      S.openClients = new Set(parsed.openClients || []);
-      S.openDesignStages = new Set(parsed.openDesignStages || []);
-      renumberOrders(); // normalize any newly-synced order data
-      // Save to local cache without triggering Firebase push (avoid echo loop)
-      _origSave();
-      localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
-      render();
-      fbSetStatus('connected', 'Live · synced');
-      // Silent sync — no toast; status bar dot is the only indicator
+      // ── DEFER IF THE USER IS EDITING ───────────────────────────────────────
+      // Never overwrite an in-progress edit. If the user is actively typing,
+      // queue this remote update and apply it once they pause.
+      if(_userIsEditing()){
+        _pendingRemote = { parsed, savedAt: envelope.savedAt };
+        fbSetStatus('connected', 'Update queued (you\'re editing)…');
+        setTimeout(_flushPendingRemote, 1500);
+        return;
+      }
+      _applyRemoteState(parsed, envelope.savedAt);
     } catch(e){ /* ignore malformed events */ }
   });
 
