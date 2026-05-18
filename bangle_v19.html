@@ -1152,6 +1152,28 @@ function compressImageToThumb(dataUrl,maxDim=160){
   });
 }
 
+// High-quality version stored locally (IndexedDB) for print output.
+// 1200px max dimension @ 0.92 quality — sharp at 65mm×90mm on A4 @ 300dpi.
+// Never sent to Firebase (always stripped by extractImages).
+function compressImageForPrint(dataUrl,maxDim=1200){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){
+        if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}
+        else{w=Math.round(w*maxDim/h);h=maxDim;}
+      }
+      const c=document.createElement('canvas');
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',0.92));
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
+
 // Images smaller than this (chars) pass through to Firebase as-is.
 // Compressed thumbs (~20KB base64) are well under this. Threshold raised to
 // 500KB to be tolerant of slightly larger compressed images on different
@@ -1164,7 +1186,8 @@ function extractImages(state){
   const imageMap={};
   const cloned=JSON.parse(JSON.stringify(state));
 
-  // Helper: strip img.data only when too large for Firebase
+  // Helper: strip img.data only when too large for Firebase.
+  // Always strips img.hqData (print-quality image — never sent to Firebase).
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
       if(img.data.length>IMAGE_FB_THRESHOLD){
@@ -1172,6 +1195,11 @@ function extractImages(state){
         img.data='__IDB__'+key;
       }
       // else: small image, leave in state — Firebase can handle it
+    }
+    // hqData: always store in IDB only (too large for Firebase)
+    if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
+      imageMap[key+'_hq']=img.hqData;
+      img.hqData='__IDB__'+key+'_hq';
     }
   };
 
@@ -1218,6 +1246,15 @@ function extractImages(state){
 
 // Re-inject images from imageMap back into state
 function reinjectImages(state,imageMap){
+  // Helper: reinject both data and hqData fields
+  const reImg=(img)=>{
+    if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
+      const key=img.data.slice(7);if(imageMap[key])img.data=imageMap[key];
+    }
+    if(typeof img.hqData==='string'&&img.hqData.startsWith('__IDB__')){
+      const key=img.hqData.slice(7);if(imageMap[key])img.hqData=imageMap[key];
+    }
+  };
   (state.orders||[]).forEach(o=>{
     // ── Client order attached file (was missing — caused dead download link!) ──
     if(o.attachedFile&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('__IDB__')){
@@ -1225,20 +1262,8 @@ function reinjectImages(state,imageMap){
       if(imageMap[key])o.attachedFile.data=imageMap[key];
     }
     (o.designs||[]).forEach(d=>{
-      (d.images||[]).forEach(img=>{
-        if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
-          const key=img.data.slice(7);
-          if(imageMap[key])img.data=imageMap[key];
-        }
-      });
-      (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach(img=>{
-          if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
-            const key=img.data.slice(7);
-            if(imageMap[key])img.data=imageMap[key];
-          }
-        });
-      });
+      (d.images||[]).forEach(img=>reImg(img));
+      (d.varieties||[]).forEach(v=>{(v.images||[]).forEach(img=>reImg(img));});
     });
   });
   // Reinject vendor order attached files + variety images
@@ -1248,14 +1273,7 @@ function reinjectImages(state,imageMap){
       if(imageMap[key])o.attachedFile.data=imageMap[key];
     }
     (o.designs||[]).forEach(d=>{
-      (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach(img=>{
-          if(typeof img.data==='string'&&img.data.startsWith('__IDB__')){
-            const key=img.data.slice(7);
-            if(imageMap[key])img.data=imageMap[key];
-          }
-        });
-      });
+      (d.varieties||[]).forEach(v=>{(v.images||[]).forEach(img=>reImg(img));});
     });
   });
 }
@@ -2785,8 +2803,10 @@ function handleVarietyImg(oi,di,vi,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const compressed=await compressImageToThumb(e.target.result);
-      d.varieties[vi].images.push({data:compressed,name:f.name});
+      const raw=e.target.result;
+      const compressed=await compressImageToThumb(raw);
+      const hq=await compressImageForPrint(raw);
+      d.varieties[vi].images.push({data:compressed,hqData:hq,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -2834,8 +2854,10 @@ function handleDesignLevelImg(oi,di,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const compressed=await compressImageToThumb(e.target.result);
-      d.images.push({data:compressed,name:f.name});
+      const raw=e.target.result;
+      const compressed=await compressImageToThumb(raw);
+      const hq=await compressImageForPrint(raw);
+      d.images.push({data:compressed,hqData:hq,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -3001,8 +3023,10 @@ function handleImgUpload(oi,di,input){
   files.forEach(file=>{
     const reader=new FileReader();
     reader.onload=async e=>{
-      const compressed=await compressImageToThumb(e.target.result);
-      S.orders[oi].designs[di].images.push({data:compressed,name:file.name});
+      const raw=e.target.result;
+      const compressed=await compressImageToThumb(raw);
+      const hq=await compressImageForPrint(raw);
+      S.orders[oi].designs[di].images.push({data:compressed,hqData:hq,name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -3012,7 +3036,7 @@ function handleImgUpload(oi,di,input){
 function deleteImg(oi,di,ii){if(!confirm('Remove image?'))return;S.orders[oi].designs[di].images.splice(ii,1);render();}
 function openLightbox(designId,startIdx){
   let images=[];S.orders.forEach(o=>o.designs.forEach(d=>{if(d.id===designId)images=d.images||[];}));
-  _lbImages=images.map(i=>i.data);_lbIdx=startIdx||0;showLightboxImg();
+  _lbImages=images.map(i=>i.hqData||i.data);_lbIdx=startIdx||0;showLightboxImg();
 }
 function openLbDirect(src){_lbImages=[src];_lbIdx=0;showLightboxImg();}
 function showLightboxImg(){
@@ -5475,8 +5499,8 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
       // ── MODE: images grouped at top ─────────────────────────────────────────
       if(imgMode==='top'){
         const allImgs=g.items.flatMap(d=>[
-          ...(d.images||[]).map(img=>({src:img.data,label:d.code||d.name})),
-          ...((d.varieties||[])).flatMap(v=>(v.images||[]).map(img=>({src:img.data,label:v.name||d.code})))
+          ...(d.images||[]).map(img=>({src:img.hqData||img.data,label:d.code||d.name})),
+          ...((d.varieties||[])).flatMap(v=>(v.images||[]).map(img=>({src:img.hqData||img.data,label:v.name||d.code})))
         ]);
         const gallery=allImgs.length
           ?'<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 14px 10px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
@@ -5610,12 +5634,13 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
         const dImgs=[...(d.images||[]),...(d.varieties||[]).flatMap(v=>v.images||[])];
 
         // Image panel (always 65mm × 90mm primary image + small thumbnails below)
+        // hqData preferred for print — 1200px/0.92 quality; falls back to 160px thumb
         const imgPanel='<div style="flex-shrink:0;width:65mm;margin-right:8mm">'
           +(dImgs.length
-            ?'<img src="'+dImgs[0].data+'" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">'
+            ?'<img src="'+(dImgs[0].hqData||dImgs[0].data)+'" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">'
              +(dImgs.length>1
                ?'<div style="display:flex;flex-wrap:wrap;gap:3mm;margin-top:3mm">'
-                 +dImgs.slice(1,5).map(img=>'<img src="'+img.data+'" style="width:29mm;height:29mm;object-fit:cover;border-radius:5px;border:1.5px solid #AFA9EC">').join('')
+                 +dImgs.slice(1,5).map(img=>'<img src="'+(img.hqData||img.data)+'" style="width:29mm;height:29mm;object-fit:cover;border-radius:5px;border:1.5px solid #AFA9EC">').join('')
                +'</div>'
                :'')
             :'<div style="width:65mm;height:90mm;background:#f0efff;border:2px dashed #AFA9EC;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#AFA9EC">No image</div>')
@@ -5734,12 +5759,10 @@ function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
       body{font-family:system-ui;padding:0;color:#1a1916;font-size:13px;margin:0;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
-      /* Design blocks: avoid splitting one design across two pages if it fits,
-         but otherwise let it flow rather than push to a new page (which would
-         leave the previous page mostly blank). */
-      .design-block{break-inside:avoid-page;page-break-inside:avoid}
-      /* Order blocks: do NOT add page-break:avoid — large orders with many
-         designs would force a new page and waste paper. Let them flow. */
+      /* Design blocks and order blocks both flow freely across pages.
+         Individual cards have break-inside:avoid as inline style so they
+         never split mid-card. Groups and orders never force a new page. */
+      .design-block{break-inside:auto;page-break-inside:auto}
       .order-block{break-inside:auto;page-break-inside:auto}
       @media print{
         button{display:none!important}
