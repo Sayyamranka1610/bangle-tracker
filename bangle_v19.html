@@ -749,7 +749,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
 <div class="fb-bar no-print" id="fb-bar" style="display:none">
   <div class="fb-dot" id="fb-dot"></div>
   <span id="fb-status-txt">Connecting…</span>
-  <span id="fb-current-user" style="font-size:11px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(255,255,255,.12);border-radius:20px;font-weight:600"></span><button class="fb-logout-btn" onclick="doLogout()">⏻ Sign out</button>
+  <span id="fb-current-user" style="font-size:11px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(255,255,255,.12);border-radius:20px;font-weight:600"></span><button class="fb-logout-btn" onclick="openMyPasswordModal()" title="Change my password" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);margin-right:4px">🔑</button><button class="fb-logout-btn" onclick="doLogout()">⏻ Sign out</button>
 </div>
 <div id="readonly-banner" style="display:none;background:#BF360C;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:1000">
   🔒 Read-only — <span id="ro-banner-user">another user</span> is currently editing on another device. Your changes won't be saved.
@@ -767,7 +767,9 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
     <p class="login-sub">Sign in to access the dashboard</p>
     <div class="login-field">
       <label>Username</label>
-      <input type="text" id="login-user" placeholder="Enter username" autocomplete="username">
+      <select id="login-user" style="width:100%;padding:12px 14px;border:1.5px solid #C0BFBA;border-radius:10px;font-size:14px;color:#3C3489;background:#fff;cursor:pointer">
+        <option value="" disabled selected>Loading users…</option>
+      </select>
     </div>
     <div class="login-field">
       <label>Password</label>
@@ -3170,7 +3172,21 @@ function addTmpl(){S.stageTemplates.push({id:uid(),name:'New stage',loc:'',days:
 
 // ── AUDIT MODAL — ADMIN PROTECTED ─────────────────────────────────────────────
 function openAuditModal(){
-  showAuditLogin();
+  // Owner: already authenticated — bypass the separate audit password screen
+  if(_currentUser?.role==='owner'){
+    openAuditTrail();
+    return;
+  }
+  // Member: no access at all
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:360px;text-align:center">
+      <div style="font-size:40px;margin-bottom:10px">🔒</div>
+      <h3 style="margin-bottom:8px">Access Restricted</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:18px;line-height:1.6">The Audit Log is only accessible to the <strong>owner</strong>. Please contact the owner if you need to review changes.</p>
+      <button class="primary" onclick="closeModal()">Close</button>
+    </div>
+  </div>`;
 }
 
 function showAuditLogin(errMsg){
@@ -4619,6 +4635,14 @@ function renderMasters(){
         ${makeAddRow('units','e.g. dozen')}
       </div>
 
+      <!-- MY ACCOUNT — visible to members only (owners use the full User Accounts panel below) -->
+      ${_currentUser && _currentUser.role!=='owner' ? `
+      <div style="${sectionStyle}">
+        <div style="${hStyle}">🔑 My Account</div>
+        <div style="font-size:11px;color:#888;margin-bottom:12px">Manage your own login credentials. Contact the owner to change your username or role.</div>
+        <button onclick="openMyPasswordModal()" style="padding:8px 18px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600">🔑 Change my password</button>
+      </div>` : ''}
+
       <!-- USER MANAGEMENT (Owner only) -->
       ${_currentUser?.role==='owner' ? `
       <div style="${sectionStyle}">
@@ -4690,18 +4714,39 @@ function renderUsersSection(){
   const users=window._fbUsers||[];
   el.innerHTML=users.length
     ?`<table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#f0efff"><th style="padding:6px 8px;text-align:left">Username</th><th style="padding:6px 8px;text-align:left">Role</th><th style="padding:6px 8px;text-align:left">Created</th><th style="padding:6px 8px"></th></tr></thead>
+      <thead><tr style="background:#f0efff">
+        <th style="padding:6px 8px;text-align:left">Username</th>
+        <th style="padding:6px 8px;text-align:left">Password</th>
+        <th style="padding:6px 8px;text-align:left">Role</th>
+        <th style="padding:6px 8px;text-align:left">Created</th>
+        <th style="padding:6px 8px"></th>
+      </tr></thead>
       <tbody>${users.map((u,i)=>`<tr style="border-bottom:1px solid #eee">
-        <td style="padding:6px 8px;font-weight:600;color:#3C3489">${esc(u.username)}</td>
+        <td style="padding:6px 8px;font-weight:600;color:#3C3489">${esc(u.username)}${u.username===(_currentUser?.username)?' <span style="font-size:10px;color:#888">(you)</span>':''}</td>
+        <td style="padding:6px 8px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span id="pw-display-${i}" style="font-family:monospace;font-size:12px;letter-spacing:2px;color:#555">••••••••</span>
+            <span onclick="toggleUserPwDisplay(${i},'${esc(u.password||'').replace(/'/g,"\\'")}')" style="cursor:pointer;font-size:14px" title="Show/hide password">👁</span>
+          </div>
+        </td>
         <td style="padding:6px 8px"><span style="background:${u.role==='owner'?'#E1F5EE':'#f0efff'};color:${u.role==='owner'?'#0F6E56':'#534AB7'};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${u.role||'member'}</span></td>
         <td style="padding:6px 8px;color:#888;font-size:11px">${u.createdAt?fmtDate(u.createdAt.split('T')[0]):'—'}</td>
-        <td style="padding:6px 8px">${u.username!==(_currentUser?.username) && u.role!=='owner'
-          ?`<button class="icon-btn danger" onclick="deleteUser(${i})">Remove</button>`
-          :`<span style="font-size:11px;color:#aaa">${u.username===(_currentUser?.username)?'(you)':'(owner)'}</span>`}
+        <td style="padding:6px 8px;display:flex;gap:4px;flex-wrap:wrap">
+          <button class="icon-btn" onclick="openOwnerChangePwModal(${i})" title="Change password">🔑</button>
+          ${u.username!==(_currentUser?.username) && u.role!=='owner'
+            ?`<button class="icon-btn danger" onclick="deleteUser(${i})">Remove</button>`
+            :''}
         </td>
       </tr>`).join('')}</tbody>
     </table>`
     :'<div style="font-size:12px;color:#aaa;margin-bottom:8px">No users yet. Add users below.</div>';
+}
+
+function toggleUserPwDisplay(idx, pw){
+  const el=document.getElementById('pw-display-'+idx);
+  if(!el)return;
+  el._showing=!el._showing;
+  el.textContent=el._showing?pw:'••••••••';
 }
 
 async function addUser(){
@@ -8610,6 +8655,12 @@ async function doLogin(){
   const err = document.getElementById('login-err');
   const card= document.getElementById('login-card');
   const btn = document.querySelector('.login-btn');
+  if(!u){
+    err.textContent='Please select your username from the dropdown.';
+    err.classList.add('show');
+    card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+    return;
+  }
   if(btn){ btn.disabled=true; btn.textContent='Signing in…'; }
 
   // 1. Try to fetch user list from Firebase
@@ -8995,6 +9046,126 @@ function _updateUserChip(){
     el.textContent='👤 '+_currentUser.username+(_currentUser.role==='owner'?' ★':'');
 }
 
+// ── MY PASSWORD (accessible to all logged-in users) ───────────────────────────
+function openMyPasswordModal(errMsg){
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:400px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#E6F1FB;color:#185FA5">🔑</div>
+        <h3>Change My Password</h3>
+      </div>
+      ${errMsg?`<div style="background:#FCEBEB;border:1px solid #F09595;border-radius:8px;padding:8px 12px;font-size:12px;color:#A32D2D;margin-bottom:12px">⚠️ ${errMsg}</div>`:''}
+      <div class="field-group" style="margin-bottom:10px">
+        <label style="font-size:11px;color:#777;font-weight:500">Current password</label>
+        <div style="position:relative">
+          <input id="mypw-current" type="password" placeholder="Enter current password" style="width:100%;padding-right:36px">
+          <span onclick="togglePwVis('mypw-current',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none">👁</span>
+        </div>
+      </div>
+      <div class="field-group" style="margin-bottom:10px">
+        <label style="font-size:11px;color:#777;font-weight:500">New password</label>
+        <div style="position:relative">
+          <input id="mypw-new" type="password" placeholder="New password (min 4 chars)" style="width:100%;padding-right:36px">
+          <span onclick="togglePwVis('mypw-new',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none">👁</span>
+        </div>
+      </div>
+      <div class="field-group" style="margin-bottom:14px">
+        <label style="font-size:11px;color:#777;font-weight:500">Confirm new password</label>
+        <input id="mypw-confirm" type="password" placeholder="Confirm new password" onkeydown="if(event.key==='Enter')doMyPasswordChange()">
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="primary" onclick="doMyPasswordChange()">💾 Save password</button>
+      </div>
+    </div>
+  </div>`;
+  setTimeout(()=>{const el=document.getElementById('mypw-current');if(el)el.focus();},80);
+}
+
+async function doMyPasswordChange(){
+  const cur=(document.getElementById('mypw-current')?.value||'');
+  const nw=(document.getElementById('mypw-new')?.value||'');
+  const cf=(document.getElementById('mypw-confirm')?.value||'');
+  if(!cur){openMyPasswordModal('Please enter your current password.');return;}
+  if(!nw||nw.length<4){openMyPasswordModal('New password must be at least 4 characters.');return;}
+  if(nw!==cf){openMyPasswordModal('Passwords do not match.');return;}
+  // Verify current password against Firebase
+  const users=window._fbUsers||[];
+  const me=users.find(u=>u.username===_currentUser?.username);
+  const correctPw=me?me.password:_AUTH.p; // fallback to hardcoded if not in Firebase
+  if(cur!==correctPw){openMyPasswordModal('Current password is incorrect.');return;}
+  // Update in Firebase
+  const updated=users.map(u=>u.username===_currentUser?.username?{...u,password:nw}:u);
+  try{
+    await fetch(FB_USERS,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updated)});
+    window._fbUsers=updated;
+    // Update session reference
+    if(_currentUser)_currentUser.password=nw;
+    closeModal();
+    showToast('✅ Password changed successfully','green');
+    audit('Change password',`User ${_currentUser?.username} changed their password`);
+  }catch(e){
+    openMyPasswordModal('Failed to save — check your connection.');
+  }
+}
+
+function togglePwVis(inputId,eyeEl){
+  const inp=document.getElementById(inputId);
+  if(!inp)return;
+  inp.type=inp.type==='password'?'text':'password';
+  eyeEl.textContent=inp.type==='password'?'👁':'🙈';
+}
+
+// ── OWNER: Change any user's password ────────────────────────────────────────
+function openOwnerChangePwModal(userIdx,errMsg){
+  const users=window._fbUsers||[];
+  const u=users[userIdx];
+  if(!u)return;
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:400px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#FAEEDA;color:#633806">🔑</div>
+        <h3>Change Password — <span style="color:#534AB7">${esc(u.username)}</span></h3>
+      </div>
+      <p style="font-size:12px;color:#666;margin-bottom:14px">As owner, you can set a new password for any user.</p>
+      ${errMsg?`<div style="background:#FCEBEB;border:1px solid #F09595;border-radius:8px;padding:8px 12px;font-size:12px;color:#A32D2D;margin-bottom:12px">⚠️ ${errMsg}</div>`:''}
+      <div class="field-group" style="margin-bottom:10px">
+        <label style="font-size:11px;color:#777;font-weight:500">New password for ${esc(u.username)}</label>
+        <div style="position:relative">
+          <input id="ownpw-new" type="text" value="${esc(u.password||'')}" placeholder="Enter new password" style="width:100%;padding-right:36px;font-family:monospace">
+          <span onclick="togglePwVis('ownpw-new',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none">🙈</span>
+        </div>
+        <div style="font-size:10px;color:#888;margin-top:4px">Current password is shown. Edit to change it.</div>
+      </div>
+      <div class="modal-actions">
+        <button onclick="renderUsersSection();closeModal()">Cancel</button>
+        <button class="primary" onclick="doOwnerChangePw(${userIdx})">💾 Save</button>
+      </div>
+    </div>
+  </div>`;
+  // Swap eye so "visible" starts correctly (input is type=text so show 🙈)
+  setTimeout(()=>{const el=document.getElementById('ownpw-new');if(el)el.focus();},80);
+}
+
+async function doOwnerChangePw(userIdx){
+  const nw=(document.getElementById('ownpw-new')?.value||'').trim();
+  if(!nw||nw.length<4){openOwnerChangePwModal(userIdx,'Password must be at least 4 characters.');return;}
+  const users=window._fbUsers||[];
+  const updated=users.map((u,i)=>i===userIdx?{...u,password:nw}:u);
+  try{
+    await fetch(FB_USERS,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updated)});
+    window._fbUsers=updated;
+    closeModal();
+    showToast('✅ Password updated for '+esc(users[userIdx]?.username),'green');
+    audit('Change password',`Owner changed password for user: ${users[userIdx]?.username}`);
+    renderUsersSection();
+  }catch(e){
+    openOwnerChangePwModal(userIdx,'Failed to save — check your connection.');
+  }
+}
+
 // Allow a read-only user to request takeover of the lock
 async function requestEditAccess(){
   if(_hasLock) return; // already have it
@@ -9294,6 +9465,30 @@ function _waitForPrompt(maxMs){
     }, 150);
   });
 }
+
+// ── LOGIN USERNAME DROPDOWN ───────────────────────────────────────────────────
+// Fetches user list from Firebase and populates the select on the login screen.
+// Falls back to the hardcoded owner username if Firebase is unreachable.
+(async function initLoginDropdown(){
+  const sel = document.getElementById('login-user');
+  if(!sel) return;
+  const populate = (names) => {
+    sel.innerHTML = '<option value="" disabled selected>Select your username</option>'
+      + names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+  };
+  try{
+    const r = await fetch(FB_USERS);
+    if(r.ok){
+      const users = await r.json();
+      if(Array.isArray(users) && users.length){
+        populate(users.map(u=>u.username));
+        return;
+      }
+    }
+  }catch(e){}
+  // Fallback: hardcoded owner only
+  populate([_AUTH.u]);
+})();
 
 function _showInstallProgress(initialText){
   const mc = document.getElementById('modal-container');
