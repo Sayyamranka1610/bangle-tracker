@@ -4640,6 +4640,15 @@ function masterDelete(listKey,idx){
   save();renderMasters();
 }
 
+// buildVarietyGallery: shows variety images as small thumbnails (used by vendor designs panel)
+function buildVarietyGallery(varieties){
+  const imgs=(varieties||[]).flatMap(v=>(v.images||[]).map(img=>{const src=_resolveImgSrc(img);return src?{src,name:v.name||''}:null;}).filter(Boolean));
+  if(!imgs.length)return '';
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px">'
+    +imgs.map(({src,name})=>'<img src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\')" title="'+esc(name)+'" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1.5px solid #FFB74D;cursor:zoom-in">').join('')
+  +'</div>';
+}
+
 // ── Render ──────────────────────────────────────────────────────────────────
 function renderVendorOrders(){
   const container=document.getElementById('view-vendor');
