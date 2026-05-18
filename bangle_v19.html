@@ -2501,7 +2501,17 @@ function removeDesign(oi,di){
   audit('Remove design',`Order ${S.orders[oi].orderId}: "${d.name}" removed`);
   S.orders[oi].designs.splice(di,1);render();
 }
-function delOrder(oi){if(!confirm('Delete this order?'))return;audit('Delete order',`Order ${S.orders[oi].orderId} (${S.orders[oi].client}) deleted`);S.orders.splice(oi,1);renumberOrders();save();render();try{fbPushNow();}catch(e){}}
+function delOrder(oi){
+  if(!confirm('Delete this order?'))return;
+  const order=S.orders[oi];
+  audit('Delete order',`Order ${order.orderId} (${order.client}) deleted`);
+  // Record ID so cross-device merge never resurrects this order
+  if(!S.deletedOrderIds)S.deletedOrderIds=[];
+  if(order.id&&!S.deletedOrderIds.includes(order.id))S.deletedOrderIds.push(order.id);
+  S.orders.splice(oi,1);
+  renumberOrders();save();render();
+  try{fbPushNow();}catch(e){}
+}
 function upDesignStage(oi,di,si,val){
   // If trying to mark as 'done', enforce rules
   if(val==='done'){
@@ -8309,20 +8319,64 @@ function _flushPendingRemote(){
   _applyRemoteState(parsed, savedAt);
 }
 
-// Applies a remote Firebase state to the app
+// ── CROSS-DEVICE ORDER MERGE ──────────────────────────────────────────────────
+// Firebase is the single source of truth for shared state.  However, a device
+// can push stale local data that overwrites orders created on another device.
+// This function rescues such "orphaned" orders: it reads the local cache and
+// adds back any orders that exist locally but are absent from the remote
+// snapshot — UNLESS they appear in the combined deletedOrderIds list (meaning
+// they were intentionally deleted, not just missing due to a sync race).
+// Returns { merged: state, added: boolean, count: number }.
+function _mergeLocalIntoRemote(remoteState){
+  let localState=null;
+  try{
+    const raw=localStorage.getItem('bangle_prod_tracker');
+    localState=raw?JSON.parse(raw):null;
+  }catch(e){}
+  if(!localState||!localState.orders||!localState.orders.length)
+    return{merged:remoteState,added:false,count:0};
+
+  // Union of explicitly-deleted IDs from both remote and local
+  const deletedIds=new Set([
+    ...(remoteState.deletedOrderIds||[]),
+    ...(localState.deletedOrderIds||[])
+  ]);
+  const remoteIds=new Set((remoteState.orders||[]).map(o=>o.id));
+  const rescued=(localState.orders||[]).filter(o=>
+    o.id&&!remoteIds.has(o.id)&&!deletedIds.has(o.id)
+  );
+  if(!rescued.length)return{merged:remoteState,added:false,count:0};
+
+  const merged={
+    ...remoteState,
+    orders:[...(remoteState.orders||[]),...rescued],
+    deletedOrderIds:[...deletedIds]
+  };
+  return{merged,added:true,count:rescued.length};
+}
+
+// Applies a remote Firebase state to the app.
+// Always merges local-only orders back in before overwriting state, so that
+// a stale push from another device never silently erases orders.
 function _applyRemoteState(parsed, savedAt){
-  // Preserve LOCAL UI state — which production-stage panels are expanded is a
-  // per-device view preference, not shared data. Keeping it local stops a
-  // remote sync from collapsing panels the user just opened.
+  // Rescue any orders that exist locally but not in this remote snapshot
+  const{merged,added,count}=_mergeLocalIntoRemote(parsed);
+
+  // Preserve LOCAL UI state — panel expansion is per-device, not shared data
   const keepDesignStages = S.openDesignStages;
-  Object.assign(S, parsed);
-  S.openOrders  = new Set(parsed.openOrders  || []);
-  S.openClients = new Set(parsed.openClients || []);
+  Object.assign(S, merged);
+  S.openOrders  = new Set(merged.openOrders  || []);
+  S.openClients = new Set(merged.openClients || []);
   S.openDesignStages = keepDesignStages || new Set();
   renumberOrders();
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   render();
+  if(added){
+    // Push merged state so the rescued orders reach all other devices too
+    fbSchedulePush();
+    showToast(`✅ ${count} order(s) restored — cloud was missing them`,'green');
+  }
   fbSetStatus('connected', 'Live · synced');
 }
 
@@ -8338,53 +8392,44 @@ async function fbInit(){
     const parsed = (envelope && envelope.data) ? JSON.parse(envelope.data) : null;
 
     if(parsed && parsed.orders){
-      // ── TIMESTAMP GUARD: keep local state if it is newer than Firebase ────
-      // Root cause of the "disappearing order" bug: if the user creates an
-      // order and then the page reloads (or Firebase reconnects) before the
-      // push completes, fbInit would blindly overwrite local state with the
-      // stale Firebase snapshot — erasing the new order. We now compare
-      // timestamps: if local is strictly newer, we keep it and push it up.
-      const localSavedAt  = localStorage.getItem('bangle_saved_at');
-      const remoteSavedAt = envelope && envelope.savedAt;
-      const localIsNewer  = localSavedAt && remoteSavedAt
-                            && new Date(localSavedAt) > new Date(remoteSavedAt);
+      // ── FIREBASE IS THE SOURCE OF TRUTH — but merge any local-only orders ──
+      // The old "fresher wins" timestamp guard caused data loss: if Device B had
+      // a more-recently-updated localStorage than Firebase it would push its
+      // stale local state, overwriting orders created on Device A. Removed.
+      //
+      // New strategy: always take Firebase as the base, then rescue any orders
+      // present in localStorage but absent from Firebase (unless deleted).
+      // This ensures no order is ever silently lost due to a sync race.
+      const{merged,added,count}=_mergeLocalIntoRemote(parsed);
 
-      if(localIsNewer || _fb.pendingLocal){
-        // Local has changes that haven't reached Firebase yet — keep them and
-        // push rather than overwriting with a potentially-stale remote snapshot.
-        renumberOrders();
-        _origSave();
-        render();
-        _fb.ready = true;
-        fbStartListener();
-        await fbPush(false);
-        fbSetStatus('connected','Live · local changes preserved & synced');
-        return;
-      }
-
-      // ── REMOTE IS THE SOURCE OF TRUTH ─────────────────────────────────────
       histPush();
       const keepDStages = S.openDesignStages;
-      Object.assign(S, parsed);
-      S.openOrders  = new Set(parsed.openOrders  || []);
-      S.openClients = new Set(parsed.openClients || []);
-      S.openDesignStages = keepDStages || new Set(parsed.openDesignStages || []);
-      renumberOrders(); // normalize any imported/synced data
-      // Save to local cache WITHOUT triggering Firebase push (avoid echo)
+      Object.assign(S, merged);
+      S.openOrders  = new Set(merged.openOrders  || []);
+      S.openClients = new Set(merged.openClients || []);
+      S.openDesignStages = keepDStages || new Set(merged.openDesignStages || []);
+      renumberOrders();
       _origSave();
-      // Stamp local time with remote's savedAt so SSE comparison is correct
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
-      // Migrate any large images to compressed thumbs (one-time, persists across devices)
       await migrateImagesToThumbs();
       render();
-      fbSetStatus('connected', 'Live · loaded latest data');
+      _fb.ready = true;
+      fbStartListener();
+      if(added){
+        // Rescued orders were missing from Firebase — push merged state now
+        fbSetStatus('connected',`Live · restored ${count} order(s) missing from cloud`);
+        showToast(`✅ ${count} order(s) found in local backup & restored to cloud`,'green');
+        await fbPush(false);
+      } else {
+        fbSetStatus('connected', 'Live · loaded latest data');
+      }
     } else {
       // Remote is empty — push local up as initial state
       await fbPush(true);
       fbSetStatus('connected', 'Live · uploaded local data');
+      _fb.ready = true;
+      fbStartListener();
     }
-    _fb.ready = true;
-    fbStartListener();
   } catch(e){
     fbSetStatus('error', 'Connection error — ' + e.message);
     showToast('⚠ Could not connect to database', 'red');
