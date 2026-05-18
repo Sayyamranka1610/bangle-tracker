@@ -1920,11 +1920,14 @@ function buildDesignsPanel(order,oi){
     const tableHtml=buildDesignsGroupTable(order,oi,g);
     return `<div class="design-name-group">
       <div class="design-name-group-head">
-        <span style="font-size:13px;opacity:.75">🎨</span>
-        <input class="inline-edit" value="${esc(g.name)}"
-          style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"
-          oninput="updateDesignGroupName(${oi},'${esc(g.name)}',this.value)"
-          title="Click to edit design name">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          <span style="font-size:13px;opacity:.75;flex-shrink:0">🎨</span>
+          <input class="inline-edit" value="${esc(g.name)}"
+            data-oldname="${esc(g.name)}"
+            style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"
+            oninput="updateDesignGroupName(${oi},this.dataset.oldname,this.value);this.dataset.oldname=this.value"
+            title="Click to edit design name">
+        </div>
         <span class="dng-meta">${g.items.length} code${g.items.length!==1?'s':''} · ${formatQtyByUnit(groupQty)}</span>
       </div>
       <div class="design-name-group-body" style="padding:0 0 6px">
@@ -1946,9 +1949,14 @@ function buildDesignsPanel(order,oi){
 // code row shows aggregated images + total; variety sub-rows (indented) hold
 // the per-size quantities. CNC / no-variety designs use a single flat row.
 function buildDesignsGroupTable(order,oi,g){
-  // Union of all size keys across every design in the group
+  // Union of all size keys across every design in the group.
+  // For legacy designs that have only a single "Default" variety, sizes live
+  // inside that variety — pull them out into d.sizes so the table renders correctly.
   const szSet=new Set();
   g.items.forEach(({d})=>{
+    if(_hasOnlyDefault(d)&&(!d.sizes||!Object.keys(d.sizes).length)){
+      d.sizes=Object.assign({},d.varieties[0].sizes||{});
+    }
     if(!d.sizes||!Object.keys(d.sizes).length){d.sizes={};DEFAULT_SIZES.forEach(s=>d.sizes[s]=0);}
     Object.keys(d.sizes).forEach(s=>szSet.add(s));
   });
@@ -1961,6 +1969,9 @@ function buildDesignsGroupTable(order,oi,g){
   g.items.forEach(({d,di})=>{
     if(!d.varieties)d.varieties=[];
     const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+    // Designs that were auto-created with a single "Default" variety (legacy data)
+    // are treated as flat rows — same as CNC. Sizes are read from that variety.
+    const hasOnlyDefault=d.varieties.length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';
     const al=designAlert(order,d);
     // All images for this design code (design-level + every variety's images)
     const allImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
@@ -1973,15 +1984,17 @@ function buildDesignsGroupTable(order,oi,g){
         onchange="handleDesignLevelImg(${oi},${di},this)">`;
     const imgCell=`<div class="variety-img-cell">${imgThumbs}${addImgBtn}</div>`;
 
-    if(isCnc||d.varieties.length===0){
-      // ── FLAT ROW (CNC or Dye Gold with no varieties) ────────────────────────
-      const rowSizes=d.sizes||{};
+    if(isCnc||d.varieties.length===0||hasOnlyDefault){
+      // ── FLAT ROW (CNC, no varieties, or legacy single-Default variety) ───────
+      // For legacy Default-variety designs, read sizes from that variety's sizes
+      const rowSizes=hasOnlyDefault?(d.varieties[0].sizes||{}):(d.sizes||{});
       const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
       szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
       const sizeCells=szKeys.map((sz,szI)=>
         '<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'"'
         +' oninput="upDesignDirectSizeSilent('+oi+','+di+',\''+esc(sz)+'\',this.value);this._dirty=true"'
         +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upDesignDirectSize('+oi+','+di+',\''+esc(sz)+'\',this.value)}"'
+        +' onkeydown="handleFlatTabKey(event,'+oi+','+di+','+szI+')"'
         +' tabindex="0"></td>'
       ).join('');
       // Unit: read from d.unit first, then fall back to first variety's unit (for CNC / legacy data)
@@ -2754,16 +2767,20 @@ function addSizeToDesign(oi,di){
 }
 
 // ── DIRECT DESIGN-LEVEL SIZE UPDATES (for flat rows with no varieties) ──────────
+function _hasOnlyDefault(d){return (d.varieties||[]).length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';}
 function upDesignDirectSize(oi,di,sz,val){
   const d=S.orders[oi].designs[di];
   if(!d.sizes)d.sizes={};
   d.sizes[sz]=parseInt(val)||0;
+  // If legacy single-Default variety, keep it in sync so data persists correctly
+  if(_hasOnlyDefault(d)){if(!d.varieties[0].sizes)d.varieties[0].sizes={};d.varieties[0].sizes[sz]=d.sizes[sz];}
   render();
 }
 function upDesignDirectSizeSilent(oi,di,sz,val){
   const d=S.orders[oi].designs[di];
   if(!d.sizes)d.sizes={};
   d.sizes[sz]=parseInt(val)||0;
+  if(_hasOnlyDefault(d)){if(!d.varieties[0].sizes)d.varieties[0].sizes={};d.varieties[0].sizes[sz]=d.sizes[sz];}
   scheduleAutosave();
 }
 function upDesignUnit(oi,di,val){
@@ -2839,6 +2856,37 @@ function addCustomDesignStage(oi,di,groupId){
 // Handles Tab/Shift+Tab between qty cells without triggering a full render.
 // On Tab: saves current cell value, moves focus to next size cell.
 // On Enter: saves and moves down to same column in next variety row.
+// Tab/Enter navigation for FLAT rows (CNC / no-variety designs)
+function handleFlatTabKey(e, oi, di, szI) {
+  if (e.key !== 'Tab' && e.key !== 'Enter') return;
+  e.preventDefault();
+  const d = S.orders[oi].designs[di];
+  const szKeys = Object.keys(d.sizes || {});
+  // Save current value
+  const curVal = parseInt(e.target.value) || 0;
+  if (!d.sizes) d.sizes = {};
+  d.sizes[szKeys[szI]] = curVal;
+  if (_hasOnlyDefault(d)) { if(!d.varieties[0].sizes)d.varieties[0].sizes={}; d.varieties[0].sizes[szKeys[szI]] = curVal; }
+  e.target._dirty = false;
+  e.target._skipBlur = true;
+  scheduleAutosave();
+  // Move to next/prev size in same row
+  let nextSzI = szI;
+  if (e.key === 'Tab') {
+    nextSzI = e.shiftKey ? szI - 1 : szI + 1;
+    if (nextSzI >= szKeys.length) nextSzI = 0;
+    if (nextSzI < 0) nextSzI = szKeys.length - 1;
+  }
+  const row = e.target.closest('tr');
+  if (row) {
+    const inputs = row.querySelectorAll('input.qty-inp');
+    if (inputs[nextSzI]) {
+      inputs[nextSzI].focus();
+      inputs[nextSzI].select();
+    }
+  }
+  setTimeout(() => { e.target._skipBlur = false; }, 50);
+}
 function handleQtyTabKey(e, oi, di, vi, szI) {
   if (e.key !== 'Tab' && e.key !== 'Enter') return;
   e.preventDefault();
@@ -3737,65 +3785,11 @@ function createOrder(){
 
 // ── EXCEL TEMPLATE DOWNLOAD ───────────────────────────────────────────────────
 function downloadOrderTemplate(){
-  if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
-
-  const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
-  // Cols: CNC = Design Name|Design Code|Unit|6 sizes|Row Total = 10
-  //       DG  = Design Name|Design Code|Variety Name|Unit|6 sizes|Row Total = 11
-  const totalCols=11;
-
-  const sheetData=[
-    /* R0  */ ['🪬  BANGLE PRODUCTION TRACKER — New Order Entry Form'],
-    /* R1  */ ['Fill Column B for order details. Use the CNC section for bangles with no variety, and Dye Gold section for bangles with varieties. Leave unused sections blank.'],
-    /* R2  */ [],
-    /* R3  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────────────────────────────────'],
-    /* R4  */ ['Client Name', 'Meena Traders'],
-    /* R5  */ ['Start Date',  '15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    /* R6  */ ['Notes',       'Urgent delivery before Diwali'],
-    /* R7  */ ['','(Order ID is assigned automatically — do not fill)'],
-    /* R8  */ [],
-    /* R9  */ ['─── CNC DESIGNS & QUANTITIES ────────────────────────────────────────────────────────────────────'],
-    /* R10 */ ['Each row = one CNC design. Unit = pcs / pairs / jotta. Enter total quantities per size directly.'],
-    /* R11 */ ['Design Name','Design Code','Unit',...TMPL_SIZES,'Row Total'],
-    /* R12 */ ['Mogra Twist', 'MG-22', 'pcs', 50,  80, 100, 80, 50, 20, 380],
-    /* R13 */ ['Lotus Bangle','LT-08', 'pcs', 40,  60,  80, 70, 40, 15, 305],
-    /* R14 */ ['','','','','','','','','',''],
-    /* R15 */ ['','','','','','','','','',''],
-    /* R16 */ ['','','','','','','','','',''],
-    /* R17 */ [],
-    /* R18 */ ['─── DYE GOLD DESIGNS & VARIETIES ────────────────────────────────────────────────────────────────'],
-    /* R19 */ ['Each row = one variety. Unit = pcs / pairs / jotta. Leave Design Name & Code blank to continue same design.'],
-    /* R20 */ ['Design Name','Design Code','Variety Name','Unit',...TMPL_SIZES,'Row Total'],
-    /* R21 */ ['Mogra Twist', 'MG-22', 'Classic Gold','pcs', 50,  80, 100, 80, 50, 20, 380],
-    /* R22 */ ['',            '',      'Premium',     'pcs', 30,  60,  70, 60, 30, 10, 260],
-    /* R23 */ ['',            '',      'Antique Rose','pcs', 20,  40,  50, 40, 20,  5, 175],
-    /* R24 */ ['Lotus Bangle','LT-08', 'Gold',        'pairs',40, 60,  80, 70, 40, 15, 305],
-    /* R25 */ ['',            '',      'Silver',      'pairs',25, 45,  60, 50, 25,  8, 213],
-    /* R26 */ ['','','','','','','','','','',''],
-    /* R27 */ ['','','','','','','','','','',''],
-    /* R28 */ ['','','','','','','','','','',''],
-    /* R29 */ ['','','','','','','','','','',''],
-  ];
-
-  const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet(sheetData);
-
-  // Column widths: Design Name|Design Code|Variety Name|Unit|sizes×6|Total
-  ws['!cols']=[{wch:20},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
-
-  const lc=totalCols-1;
-  ws['!merges']=[
-    {s:{r:0,c:0},e:{r:0,c:lc}},   // Title
-    {s:{r:1,c:0},e:{r:1,c:lc}},   // Subtitle
-    {s:{r:3,c:0},e:{r:3,c:lc}},   // ORDER DETAILS divider
-    {s:{r:9,c:0},e:{r:9,c:lc}},   // CNC DESIGNS divider
-    {s:{r:10,c:0},e:{r:10,c:lc}}, // CNC instruction
-    {s:{r:18,c:0},e:{r:18,c:lc}}, // DYE GOLD DESIGNS divider
-    {s:{r:19,c:0},e:{r:19,c:lc}}, // Dye Gold instruction
-  ];
-
-  XLSX.utils.book_append_sheet(wb,ws,'Order Form');
-  XLSX.writeFile(wb,'Bangle_Order_Template.xlsx');
+  // Download the exact template file hosted on GitHub Pages
+  const a=document.createElement('a');
+  a.href='https://sayyamranka1610.github.io/bangle-tracker/Bangle_Order_Template.xlsx';
+  a.download='Bangle_Order_Template.xlsx';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
 // ── FILE IMPORT (Mock / hookable) ──────────────────────────────────────────────
@@ -4776,59 +4770,11 @@ function createVendorOrder(){
 
 // ── Vendor Order Excel Template & File Import ─────────────────────────────────
 function downloadVendorOrderTemplate(){
-  if(typeof XLSX==='undefined'){alert('SheetJS library not loaded. Check your internet connection.');return;}
-  const TMPL_SIZES=['2/4','2/6','2/8','2/10','2/12','2/14'];
-  // Cols: CNC = Design Name|Design Code|Unit|6 sizes|Row Total = 10
-  //       DG  = Design Name|Design Code|Variety Name|Unit|6 sizes|Row Total = 11
-  const totalCols=11;
-  const sheetData=[
-    /* R0  */ ['🪬  BANGLE PRODUCTION TRACKER — Vendor Order Entry Form'],
-    /* R1  */ ['Fill Column B for order details. Use the CNC section for bangles with no variety, and Dye Gold section for bangles with varieties. Leave unused sections blank.'],
-    /* R2  */ [],
-    /* R3  */ ['─── ORDER DETAILS ───────────────────────────────────────────────────────────────────────────────'],
-    /* R4  */ ['Order ID',          'VORD-01'],
-    /* R5  */ ['Vendor Name',       'Rathi Metals'],
-    /* R6  */ ['Order Date',        '15-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    /* R7  */ ['Expected Delivery', '25-May-2026','','','','','','','','','(DD-Mon-YYYY  or  YYYY-MM-DD)'],
-    /* R8  */ ['Notes',             'Urgent — deliver before festival season'],
-    /* R9  */ [],
-    /* R10 */ ['─── CNC DESIGNS & QUANTITIES ────────────────────────────────────────────────────────────────────'],
-    /* R11 */ ['Each row = one CNC design. Unit = pcs / pairs / jotta. Enter total quantities per size directly.'],
-    /* R12 */ ['Design Name','Design Code','Unit',...TMPL_SIZES,'Row Total'],
-    /* R13 */ ['Mogra Twist', 'MG-22', 'pcs', 50,  80, 100, 80, 50, 20, 380],
-    /* R14 */ ['Lotus Bangle','LT-08', 'pcs', 40,  60,  80, 70, 40, 15, 305],
-    /* R15 */ ['','','','','','','','','',''],
-    /* R16 */ ['','','','','','','','','',''],
-    /* R17 */ ['','','','','','','','','',''],
-    /* R18 */ [],
-    /* R19 */ ['─── DYE GOLD DESIGNS & VARIETIES ────────────────────────────────────────────────────────────────'],
-    /* R20 */ ['Each row = one variety. Unit = pcs / pairs / jotta. Leave Design Name & Code blank to continue same design.'],
-    /* R21 */ ['Design Name','Design Code','Variety Name','Unit',...TMPL_SIZES,'Row Total'],
-    /* R22 */ ['Mogra Twist', 'MG-22', 'Classic Gold','pcs', 50,  80, 100, 80, 50, 20, 380],
-    /* R23 */ ['',            '',      'Premium',     'pcs', 30,  60,  70, 60, 30, 10, 260],
-    /* R24 */ ['',            '',      'Antique Rose','pcs', 20,  40,  50, 40, 20,  5, 175],
-    /* R25 */ ['Lotus Bangle','LT-08', 'Gold',        'pairs',40, 60,  80, 70, 40, 15, 305],
-    /* R26 */ ['',            '',      'Silver',      'pairs',25, 45,  60, 50, 25,  8, 213],
-    /* R27 */ ['','','','','','','','','','',''],
-    /* R28 */ ['','','','','','','','','','',''],
-    /* R29 */ ['','','','','','','','','','',''],
-    /* R30 */ ['','','','','','','','','','',''],
-  ];
-  const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet(sheetData);
-  ws['!cols']=[{wch:20},{wch:14},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:11}];
-  const lc=totalCols-1;
-  ws['!merges']=[
-    {s:{r:0,c:0},e:{r:0,c:lc}},   // Title
-    {s:{r:1,c:0},e:{r:1,c:lc}},   // Subtitle
-    {s:{r:3,c:0},e:{r:3,c:lc}},   // ORDER DETAILS divider
-    {s:{r:10,c:0},e:{r:10,c:lc}}, // CNC DESIGNS divider
-    {s:{r:11,c:0},e:{r:11,c:lc}}, // CNC instruction
-    {s:{r:19,c:0},e:{r:19,c:lc}}, // DYE GOLD DESIGNS divider
-    {s:{r:20,c:0},e:{r:20,c:lc}}, // Dye Gold instruction
-  ];
-  XLSX.utils.book_append_sheet(wb,ws,'Vendor Order Form');
-  XLSX.writeFile(wb,'Bangle_Vendor_Order_Template.xlsx');
+  // Download the same exact template file — same format, "Client Name" field acts as Vendor Name
+  const a=document.createElement('a');
+  a.href='https://sayyamranka1610.github.io/bangle-tracker/Bangle_Order_Template.xlsx';
+  a.download='Bangle_Order_Template.xlsx';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
 function handleVendorOrderDrop(e){
