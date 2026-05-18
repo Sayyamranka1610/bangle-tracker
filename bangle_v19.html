@@ -734,13 +734,26 @@ img,table,pre{max-width:100%}
 #fb-status-txt{font-size:11px;color:rgba(255,255,255,.8);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fb-logout-btn{font-size:11px;padding:4px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background .15s}
 .fb-logout-btn:hover{background:rgba(255,255,255,.2)}
+/* ── READ-ONLY MODE ────────────────────────────────────────────────── */
+body.bt-readonly .primary:not(.allow-ro),
+body.bt-readonly .icon-btn.danger,
+body.bt-readonly #btn-new-order,
+body.bt-readonly .sb-danger,
+body.bt-readonly .del-img { opacity:.35; pointer-events:none }
+body.bt-readonly input:not([readonly]):not([type=checkbox]):not([type=radio]):not([type=file]),
+body.bt-readonly textarea,
+body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; color:#aaa!important }
 </style>
 
 <!-- ── FIREBASE SYNC STATUS BAR ──────────────────────────────────────── -->
 <div class="fb-bar no-print" id="fb-bar" style="display:none">
   <div class="fb-dot" id="fb-dot"></div>
   <span id="fb-status-txt">Connecting…</span>
-  <button class="fb-logout-btn" onclick="doLogout()">⏻ Sign out</button>
+  <span id="fb-current-user" style="font-size:11px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(255,255,255,.12);border-radius:20px;font-weight:600"></span><button class="fb-logout-btn" onclick="doLogout()">⏻ Sign out</button>
+</div>
+<div id="readonly-banner" style="display:none;background:#BF360C;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:1000">
+  🔒 Read-only — <span id="ro-banner-user">another user</span> is currently editing on another device. Your changes won't be saved.
+  <button onclick="requestEditAccess()" style="margin-left:14px;padding:4px 12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:6px;color:#fff;cursor:pointer;font-size:12px;font-weight:600">Request access</button>
 </div>
 <!-- ── LOGIN SCREEN ───────────────────────────────────────────────────── -->
 <div id="login-screen">
@@ -1507,7 +1520,7 @@ function showToast(msg, type='green'){
 }
 function audit(action,detail){
   histPush(); // snapshot state before this change for undo
-  S.auditLog.unshift({id:uid(),ts:new Date().toISOString(),action,detail});
+  S.auditLog.unshift({id:uid(),ts:new Date().toISOString(),action,detail,user:(_currentUser?.username||'—')});
   if(S.auditLog.length>500)S.auditLog=S.auditLog.slice(0,500);
 }
 // ── AUTO-NUMBERING ────────────────────────────────────────────────────────────
@@ -3293,6 +3306,7 @@ function openAuditTrail(){
         ${S.auditLog.length?S.auditLog.map(e=>`<div class="audit-item">
           <span class="audit-time">${fmtDate(e.ts.split('T')[0])} ${e.ts.split('T')[1]?.slice(0,5)}</span>
           <span style="font-weight:600;color:#534AB7;flex-shrink:0">${esc(e.action)}</span>
+          <span style="font-size:10px;background:#f0efff;padding:1px 6px;border-radius:10px;color:#6C64CC;flex-shrink:0">${esc(e.user||'—')}</span>
           <span class="audit-what">${esc(e.detail)}</span>
         </div>`).join(''):'<div style="text-align:center;padding:1rem;color:#aaa">No audit entries yet.</div>'}
       </div>
@@ -4601,7 +4615,25 @@ function renderMasters(){
         </div>
         ${makeAddRow('units','e.g. dozen')}
       </div>
+
+      <!-- USER MANAGEMENT (Owner only) -->
+      ${_currentUser?.role==='owner' ? `
+      <div style="${sectionStyle}">
+        <div style="${hStyle}">👥 User Accounts <span style="font-size:11px;font-weight:400;color:#888">(owner only)</span></div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px">Create user IDs for your team. Each person logs in with their own credentials. Changes are tracked per user in the Audit Log.</div>
+        <div id="users-section-body"><div style="font-size:12px;color:#aaa">Loading users…</div></div>
+        <div style="${addRowStyle};margin-top:14px;flex-wrap:wrap">
+          <input id="new-user-name" placeholder="Username" style="flex:1;min-width:120px;max-width:180px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
+          <input id="new-user-pass" type="password" placeholder="Password (min 4 chars)" style="flex:1;min-width:120px;max-width:180px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
+          <select id="new-user-role" style="padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
+            <option value="member">Member</option>
+            <option value="owner">Owner</option>
+          </select>
+          <button onclick="addUser()" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">+ Add user</button>
+        </div>
+      </div>` : ''}
     </div>`;
+  if(_currentUser?.role==='owner') loadUsersForMasters();
 }
 
 function masterAdd(listKey){
@@ -4638,6 +4670,67 @@ function masterDelete(listKey,idx){
     }
   }
   save();renderMasters();
+}
+
+// ── USER MANAGEMENT ────────────────────────────────────────────────────────────
+async function loadUsersForMasters(){
+  try{
+    const r=await fetch(FB_USERS);
+    if(r.ok){ const d=await r.json(); if(Array.isArray(d)) window._fbUsers=d; }
+  }catch(e){}
+  renderUsersSection();
+}
+
+function renderUsersSection(){
+  const el=document.getElementById('users-section-body');
+  if(!el) return;
+  const users=window._fbUsers||[];
+  el.innerHTML=users.length
+    ?`<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#f0efff"><th style="padding:6px 8px;text-align:left">Username</th><th style="padding:6px 8px;text-align:left">Role</th><th style="padding:6px 8px;text-align:left">Created</th><th style="padding:6px 8px"></th></tr></thead>
+      <tbody>${users.map((u,i)=>`<tr style="border-bottom:1px solid #eee">
+        <td style="padding:6px 8px;font-weight:600;color:#3C3489">${esc(u.username)}</td>
+        <td style="padding:6px 8px"><span style="background:${u.role==='owner'?'#E1F5EE':'#f0efff'};color:${u.role==='owner'?'#0F6E56':'#534AB7'};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${u.role||'member'}</span></td>
+        <td style="padding:6px 8px;color:#888;font-size:11px">${u.createdAt?fmtDate(u.createdAt.split('T')[0]):'—'}</td>
+        <td style="padding:6px 8px">${u.username!==(_currentUser?.username) && u.role!=='owner'
+          ?`<button class="icon-btn danger" onclick="deleteUser(${i})">Remove</button>`
+          :`<span style="font-size:11px;color:#aaa">${u.username===(_currentUser?.username)?'(you)':'(owner)'}</span>`}
+        </td>
+      </tr>`).join('')}</tbody>
+    </table>`
+    :'<div style="font-size:12px;color:#aaa;margin-bottom:8px">No users yet. Add users below.</div>';
+}
+
+async function addUser(){
+  const name=(document.getElementById('new-user-name')?.value||'').trim();
+  const pass=(document.getElementById('new-user-pass')?.value||'').trim();
+  const role=document.getElementById('new-user-role')?.value||'member';
+  if(!name){showToast('Enter a username','amber');return;}
+  if(!pass||pass.length<4){showToast('Password must be at least 4 characters','amber');return;}
+  const users=window._fbUsers||[];
+  if(users.find(u=>u.username===name)){showToast('Username already exists','amber');return;}
+  users.push({id:'u_'+Date.now(),username:name,password:pass,role,createdAt:new Date().toISOString()});
+  window._fbUsers=users;
+  try{
+    await fetch(FB_USERS,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(users)});
+    showToast(`✅ User "${name}" created`,'green');
+    if(document.getElementById('new-user-name'))document.getElementById('new-user-name').value='';
+    if(document.getElementById('new-user-pass'))document.getElementById('new-user-pass').value='';
+    renderUsersSection();
+  }catch(e){showToast('Failed to save: '+e.message,'red');}
+}
+
+async function deleteUser(idx){
+  const users=window._fbUsers||[];
+  const u=users[idx];if(!u)return;
+  if(!confirm(`Remove user "${u.username}"?`))return;
+  users.splice(idx,1);
+  window._fbUsers=users;
+  try{
+    await fetch(FB_USERS,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(users)});
+    showToast(`User "${u.username}" removed`,'green');
+    renderUsersSection();
+  }catch(e){showToast('Failed: '+e.message,'red');}
 }
 
 // buildVarietyGallery: shows variety images as small thumbnails (used by vendor designs panel)
@@ -8455,7 +8548,10 @@ loadImagesFromIDB().then(()=>{
 const _AUTH = { u: 'Siddhi09', p: 'siddhi' };
 
 // FIREBASE CONFIG
-const FB_DATA = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.json';
+const FB_DATA  = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.json';
+const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json';
+const FB_LOCK  = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
+const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
 
 // Unique device ID so we don't re-apply our own pushed updates
 const FB_DEVICE_ID = (()=>{
@@ -8466,6 +8562,12 @@ const FB_DEVICE_ID = (()=>{
 
 let _fb = { es: null, lastPush: 0, pushTimer: null, ready: false, pendingLocal: false };
 
+let _currentUser   = null;   // {username, role: 'owner'|'member'}
+let _hasLock       = false;  // this tab holds the edit lock
+let _readOnly      = false;  // this tab is in read-only mode
+let _lockHbTimer   = null;   // heartbeat interval ID
+let _lockPollTimer = null;   // read-only polling interval ID
+
 // ── STATUS BAR ───────────────────────────────────────────────────────────────
 function fbSetStatus(state, msg){
   const dot = document.getElementById('fb-dot');
@@ -8475,29 +8577,71 @@ function fbSetStatus(state, msg){
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
-function doLogin(){
-  const u    = (document.getElementById('login-user').value || '').trim();
-  const p    = document.getElementById('login-pass').value || '';
-  const err  = document.getElementById('login-err');
-  const card = document.getElementById('login-card');
-  if(u === _AUTH.u && p === _AUTH.p){
-    sessionStorage.setItem('bt_auth', '1');
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('fb-bar').style.display = '';
-    err.classList.remove('show');
-    fbInit();
-  } else {
-    err.textContent = 'Incorrect username or password';
-    err.classList.add('show');
-    card.classList.remove('shake');
-    void card.offsetWidth;
-    card.classList.add('shake');
+async function doLogin(){
+  const u   = (document.getElementById('login-user').value||'').trim();
+  const p   = document.getElementById('login-pass').value||'';
+  const err = document.getElementById('login-err');
+  const card= document.getElementById('login-card');
+  const btn = document.querySelector('.login-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Signing in…'; }
+
+  // 1. Try to fetch user list from Firebase
+  let fbUsers = null;
+  try{
+    const r = await fetch(FB_USERS);
+    if(r.ok){ const d=await r.json(); if(Array.isArray(d)&&d.length) fbUsers=d; }
+  }catch(e){ /* network error — use hardcoded fallback */ }
+
+  // 2. Validate credentials
+  let session = null;
+  if(fbUsers){
+    const found = fbUsers.find(x=>x.username===u && x.password===p);
+    if(found) session = {username:found.username, role:found.role||'member'};
   }
+  // Fallback: hardcoded owner credentials (backward compat)
+  if(!session && u===_AUTH.u && p===_AUTH.p){
+    session = {username:u, role:'owner'};
+    // First-time: seed the users list in Firebase
+    if(!fbUsers){
+      try{
+        await fetch(FB_USERS,{
+          method:'PUT',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify([{id:'u_'+Date.now(),username:u,password:p,role:'owner',createdAt:new Date().toISOString()}])
+        });
+      }catch(e){}
+    }
+  }
+
+  if(btn){ btn.disabled=false; btn.textContent='Sign in →'; }
+
+  if(!session){
+    err.textContent='Incorrect username or password';
+    err.classList.add('show');
+    card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+    return;
+  }
+
+  // 3. Store session
+  _currentUser = session;
+  sessionStorage.setItem('bt_auth','1');
+  sessionStorage.setItem('bt_session', JSON.stringify(session));
+  err.classList.remove('show');
+
+  // 4. Show dashboard
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('fb-bar').style.display='';
+  _updateUserChip();
+
+  // 5. Try to acquire edit lock, then init Firebase
+  await _tryAcquireLock();
+  fbInit();
 }
 
 function doLogout(){
+  _releaseLock();
   sessionStorage.removeItem('bt_auth');
-  if(_fb.es){ try{ _fb.es.close(); }catch(e){} }
+  sessionStorage.removeItem('bt_session');
+  if(_fb.es){ try{_fb.es.close();}catch(e){} }
   location.reload();
 }
 
@@ -8506,6 +8650,12 @@ const IS_DEMO_MODE = _isDemoMode();
 
 // On every page load — check session
 (function checkSession(){
+  // restore _currentUser from sessionStorage
+  try{
+    const raw = sessionStorage.getItem('bt_session');
+    if(raw) _currentUser = JSON.parse(raw);
+  }catch(e){}
+
   if(IS_DEMO_MODE){
     // ── DEMO MODE ─────────────────────────────────────────────────────────
     // Skip login + Firebase entirely. Show a friendly empty dashboard with
@@ -8543,7 +8693,10 @@ const IS_DEMO_MODE = _isDemoMode();
   if(sessionStorage.getItem('bt_auth')){
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('fb-bar').style.display = '';
-    fbInit();
+    _updateUserChip();
+    // Re-acquire lock on page reload (page reload = new session)
+    _tryAcquireLock().then(()=>fbInit());
+    return; // don't fall through to fbInit below
   }
   // fb-bar stays hidden until login (set display:none in HTML)
 })();
@@ -8711,6 +8864,115 @@ function _applyRemoteState(parsed, savedAt){
   fbSetStatus('connected', 'Live · synced');
 }
 
+// ── EDIT LOCK ─────────────────────────────────────────────────────────────────
+async function _tryAcquireLock(){
+  try{
+    const r = await fetch(FB_LOCK);
+    const lock = r.ok ? await r.json() : null;
+    const now  = Date.now();
+    const expired = !lock || !lock.heartbeat
+                  ||(now - new Date(lock.heartbeat).getTime()) > LOCK_EXPIRE_MS;
+    const isMine  = lock && lock.deviceId === FB_DEVICE_ID;
+
+    if(expired || isMine || !lock){
+      // Lock is free (or ours) — acquire it
+      await fetch(FB_LOCK,{
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          user:_currentUser?.username||'?', deviceId:FB_DEVICE_ID,
+          lockedAt:new Date().toISOString(), heartbeat:new Date().toISOString()
+        })
+      });
+      _hasLock=true; _readOnly=false;
+      _setReadOnlyUI(false);
+      _startHeartbeat();
+      if(_lockPollTimer){clearInterval(_lockPollTimer);_lockPollTimer=null;}
+    } else {
+      // Lock held by someone else
+      _hasLock=false; _readOnly=true;
+      _setReadOnlyUI(true, lock.user);
+      _startLockPolling();
+    }
+  }catch(e){
+    // Network error — default to edit mode (graceful degradation)
+    _hasLock=true; _readOnly=false; _setReadOnlyUI(false); _startHeartbeat();
+  }
+}
+
+function _startHeartbeat(){
+  if(_lockHbTimer) clearInterval(_lockHbTimer);
+  _lockHbTimer = setInterval(async()=>{
+    if(!_hasLock) return;
+    try{
+      await fetch(FB_LOCK,{
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          user:_currentUser?.username||'?', deviceId:FB_DEVICE_ID,
+          lockedAt:new Date().toISOString(), heartbeat:new Date().toISOString()
+        })
+      });
+    }catch(e){}
+  }, 60000);
+}
+
+function _startLockPolling(){
+  if(_lockPollTimer) clearInterval(_lockPollTimer);
+  _lockPollTimer = setInterval(async()=>{
+    try{
+      const r   = await fetch(FB_LOCK);
+      const lock= r.ok ? await r.json() : null;
+      const expired = !lock || !lock.heartbeat
+                    ||(Date.now()-new Date(lock.heartbeat).getTime()) > LOCK_EXPIRE_MS;
+      if(expired || !lock){
+        clearInterval(_lockPollTimer); _lockPollTimer=null;
+        await _tryAcquireLock();
+        showToast('✅ Edit access acquired — you can now make changes','green');
+      }
+    }catch(e){}
+  }, 20000); // check every 20 seconds
+}
+
+async function _releaseLock(){
+  if(_lockHbTimer){ clearInterval(_lockHbTimer); _lockHbTimer=null; }
+  if(!_hasLock) return;
+  try{
+    const r=await fetch(FB_LOCK);
+    if(r.ok){
+      const lock=await r.json();
+      if(lock && lock.deviceId===FB_DEVICE_ID)
+        await fetch(FB_LOCK,{method:'DELETE'});
+    }
+  }catch(e){}
+  _hasLock=false;
+}
+
+function _setReadOnlyUI(readonly, lockUser){
+  _readOnly=readonly;
+  document.body.classList.toggle('bt-readonly', readonly);
+  const banner=document.getElementById('readonly-banner');
+  if(banner){
+    banner.style.display = readonly ? '' : 'none';
+    const who=document.getElementById('ro-banner-user');
+    if(who) who.textContent = lockUser||'another user';
+  }
+  if(readonly){
+    fbSetStatus('connected',`🔒 Read-only — ${lockUser||'?'} is editing`);
+  }
+}
+
+function _updateUserChip(){
+  const el=document.getElementById('fb-current-user');
+  if(el && _currentUser)
+    el.textContent='👤 '+_currentUser.username+(_currentUser.role==='owner'?' ★':'');
+}
+
+// Allow a read-only user to request takeover of the lock
+async function requestEditAccess(){
+  if(_hasLock) return; // already have it
+  showToast('Checking if lock is still held…','amber');
+  await _tryAcquireLock();
+}
+
 // ── INIT: LOAD THEN LISTEN ────────────────────────────────────────────────────
 async function fbInit(){
   fbSetStatus('syncing', 'Connecting…');
@@ -8743,7 +9005,7 @@ async function fbInit(){
       _origSave();
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
       await migrateImagesToThumbs();
-      render();
+      try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();
       if(added){
@@ -8762,9 +9024,9 @@ async function fbInit(){
       fbStartListener();
     }
   } catch(e){
-    fbSetStatus('error', 'Connection error — ' + e.message);
-    showToast('⚠ Could not connect to database', 'red');
-    // Retry after 8s
+    const isNetwork = e instanceof TypeError && e.message.includes('fetch');
+    fbSetStatus('error', isNetwork ? 'Network error — check internet connection' : 'Startup error — ' + e.message);
+    showToast('⚠ ' + (isNetwork ? 'Could not connect to database' : 'Error: ' + e.message), 'red');
     setTimeout(fbInit, 8000);
   }
 }
@@ -8852,6 +9114,7 @@ function fbStartListener(){
 // ── HOOK INTO EXISTING save() ─────────────────────────────────────────────────
 const _origSave = save;
 window.save = function(){
+  if(_readOnly) return; // never write in read-only mode
   _origSave();
   fbSchedulePush();
 };
