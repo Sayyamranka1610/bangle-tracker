@@ -939,6 +939,9 @@ try{
     S.openVendorOrders=sv.openVendorOrders||[];
     S.vendorActiveTabs=sv.vendorActiveTabs||{};
     S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:''};
+    // Always reset order filters on page load — never restore a stale filter that
+    // would hide orders and confuse the user ("why can't I see my orders?")
+    S.filters={client:'',dname:'',dcode:'',status:''};
     window._loadedFromStorage = true; // flag: real data loaded successfully
   } else {
     window._loadedFromStorage = false; // no saved data found — will use sample
@@ -5631,15 +5634,15 @@ function openVendorPrintWindow(title,orders){
   }).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)}</title>
     <style>
-      @page{margin:8mm 10mm}
-      body{font-family:system-ui;padding:0;margin:0;color:#1a1916;font-size:13px;line-height:1.4}
+      @page{margin:0;size:A4 portrait}
+      body{font-family:system-ui;padding:10mm 12mm;margin:0;color:#1a1916;font-size:13px;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
       .design-block{break-inside:avoid-page;page-break-inside:avoid}
       .order-block{break-inside:auto;page-break-inside:auto}
-      @media print{button{display:none!important}.print-toolbar{display:none!important}body{font-size:13px}}
+      @media print{button{display:none!important}.print-toolbar{display:none!important}}
     </style>
-    </head><body style="padding:12px 14px">
+    </head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
       <h1 style="font-size:19px;color:#3C3489;margin:0;font-weight:700;display:flex;align-items:center;gap:10px">
         <img src="https://sayyamranka1610.github.io/bangle-tracker/icon-192.png" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover">
@@ -6218,23 +6221,20 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
   const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode)).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>
-      /* Tight page margins — no wasted paper */
-      @page{margin:8mm 10mm}
-      body{font-family:system-ui;padding:0;color:#1a1916;font-size:13px;margin:0;line-height:1.4}
+      /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
+         Body padding provides equivalent white-space around content. */
+      @page{margin:0;size:A4 portrait}
+      body{font-family:system-ui;padding:10mm 12mm;color:#1a1916;font-size:13px;margin:0;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
-      /* Design blocks and order blocks both flow freely across pages.
-         Individual cards have break-inside:avoid as inline style so they
-         never split mid-card. Groups and orders never force a new page. */
       .design-block{break-inside:auto;page-break-inside:auto}
       .order-block{break-inside:auto;page-break-inside:auto}
       @media print{
         button{display:none!important}
-        body{padding:0;font-size:13px}
         .print-toolbar{display:none!important}
       }
     </style>
-    </head><body style="padding:12px 14px">
+    </head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
       <h1 style="font-size:19px;color:#3C3489;margin:0;font-weight:700;display:flex;align-items:center;gap:10px">
         <img src="https://sayyamranka1610.github.io/bangle-tracker/icon-192.png" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover">
