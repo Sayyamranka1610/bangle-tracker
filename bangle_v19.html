@@ -751,10 +751,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <span id="fb-status-txt">Connecting…</span>
   <span id="fb-current-user" style="font-size:11px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(255,255,255,.12);border-radius:20px;font-weight:600"></span><button class="fb-logout-btn" onclick="openMyPasswordModal()" title="Change my password" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);margin-right:4px">🔑</button><button class="fb-logout-btn" onclick="doLogout()">⏻ Sign out</button>
 </div>
-<div id="readonly-banner" style="display:none;background:#BF360C;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:1000">
-  🔒 Read-only — <span id="ro-banner-user">another user</span> is currently editing on another device. Your changes won't be saved.
-  <button onclick="requestEditAccess()" style="margin-left:14px;padding:4px 12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:6px;color:#fff;cursor:pointer;font-size:12px;font-weight:600">Request access</button>
-</div>
+<div id="readonly-banner" style="display:none;background:#BF360C;color:#fff;text-align:center;padding:10px 16px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:1000;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px"></div>
 <!-- ── LOGIN SCREEN ───────────────────────────────────────────────────── -->
 <div id="login-screen">
   <div class="login-card" id="login-card">
@@ -8622,7 +8619,8 @@ const _AUTH = { u: 'Siddhi09', p: 'siddhi' };
 // FIREBASE CONFIG
 const FB_DATA  = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.json';
 const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json';
-const FB_LOCK  = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
+const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
+const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
 const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
 
 // Unique device ID so we don't re-apply our own pushed updates
@@ -8634,11 +8632,16 @@ const FB_DEVICE_ID = (()=>{
 
 let _fb = { es: null, lastPush: 0, pushTimer: null, ready: false, pendingLocal: false };
 
-let _currentUser   = null;   // {username, role: 'owner'|'member'}
-let _hasLock       = false;  // this tab holds the edit lock
-let _readOnly      = false;  // this tab is in read-only mode
-let _lockHbTimer   = null;   // heartbeat interval ID
-let _lockPollTimer = null;   // read-only polling interval ID
+let _currentUser      = null;   // {username, role: 'owner'|'member'}
+let _hasLock          = false;  // this tab holds the edit lock
+let _readOnly         = false;  // this tab is in read-only mode
+let _lockHbTimer      = null;   // heartbeat interval ID
+let _lockPollTimer    = null;   // read-only: auto-expiry poll
+let _lockHolder       = null;   // username currently holding the lock (for display)
+let _reqWatchTimer    = null;   // Device 1: watch for incoming access requests
+let _grantPollTimer   = null;   // Device 2: fast-poll for lock release after requesting
+let _waitingForGrant  = false;  // Device 2: request is in flight
+let _grantBannerUp    = false;  // Device 1: grant prompt is currently shown
 
 // ── STATUS BAR ───────────────────────────────────────────────────────────────
 function fbSetStatus(state, msg){
@@ -8963,13 +8966,17 @@ async function _tryAcquireLock(){
           lockedAt:new Date().toISOString(), heartbeat:new Date().toISOString()
         })
       });
-      _hasLock=true; _readOnly=false;
+      _hasLock=true; _readOnly=false; _lockHolder=_currentUser?.username||'?';
+      // Clean up any pending request we may have written
+      try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
+      _waitingForGrant=false;
+      if(_grantPollTimer){clearInterval(_grantPollTimer);_grantPollTimer=null;}
+      if(_lockPollTimer){clearInterval(_lockPollTimer);_lockPollTimer=null;}
       _setReadOnlyUI(false);
       _startHeartbeat();
-      if(_lockPollTimer){clearInterval(_lockPollTimer);_lockPollTimer=null;}
     } else {
       // Lock held by someone else
-      _hasLock=false; _readOnly=true;
+      _hasLock=false; _readOnly=true; _lockHolder=lock.user||'another user';
       _setReadOnlyUI(true, lock.user);
       _startLockPolling();
     }
@@ -8993,9 +9000,13 @@ function _startHeartbeat(){
       });
     }catch(e){}
   }, 60000);
+  // Watch for incoming access requests every 3 s while holding the lock
+  _startRequestWatcher();
 }
 
-function _startLockPolling(){
+// Device 2: poll the lock.  fast=true → 2 s (used after requesting access).
+// Normal interval is 10 s (auto-detect if the other person logs out / times out).
+function _startLockPolling(fast){
   if(_lockPollTimer) clearInterval(_lockPollTimer);
   _lockPollTimer = setInterval(async()=>{
     try{
@@ -9005,15 +9016,21 @@ function _startLockPolling(){
                     ||(Date.now()-new Date(lock.heartbeat).getTime()) > LOCK_EXPIRE_MS;
       if(expired || !lock){
         clearInterval(_lockPollTimer); _lockPollTimer=null;
+        if(_grantPollTimer){clearInterval(_grantPollTimer);_grantPollTimer=null;}
+        _waitingForGrant=false;
         await _tryAcquireLock();
-        showToast('✅ Edit access acquired — you can now make changes','green');
+        // Toast shown only if we were actively waiting for a grant
       }
     }catch(e){}
-  }, 20000); // check every 20 seconds
+  }, fast ? 2000 : 10000);
 }
 
 async function _releaseLock(){
   if(_lockHbTimer){ clearInterval(_lockHbTimer); _lockHbTimer=null; }
+  if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
+  _grantBannerUp=false;
+  const banner=document.getElementById('grant-request-banner');
+  if(banner) banner.remove();
   if(!_hasLock) return;
   try{
     const r=await fetch(FB_LOCK);
@@ -9028,16 +9045,26 @@ async function _releaseLock(){
 
 function _setReadOnlyUI(readonly, lockUser){
   _readOnly=readonly;
+  if(lockUser) _lockHolder=lockUser;
   document.body.classList.toggle('bt-readonly', readonly);
   const banner=document.getElementById('readonly-banner');
-  if(banner){
-    banner.style.display = readonly ? '' : 'none';
-    const who=document.getElementById('ro-banner-user');
-    if(who) who.textContent = lockUser||'another user';
-  }
-  if(readonly){
-    fbSetStatus('connected',`🔒 Read-only — ${lockUser||'?'} is editing`);
-  }
+  if(!banner) return;
+  if(!readonly){ banner.style.display='none'; return; }
+  const who=_lockHolder||lockUser||'another user';
+  banner.style.display='flex';
+  banner.innerHTML=`🔒 <strong>Read-only</strong> — <strong id="ro-banner-user">${esc(who)}</strong> is currently editing. Your changes won't be saved.&nbsp;
+    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">📨 Request access</button>`;
+  fbSetStatus('connected',`🔒 Read-only — ${who} is editing`);
+}
+
+// Update the readonly banner to "waiting…" state (called by requestEditAccess)
+function _setBannerWaiting(){
+  const banner=document.getElementById('readonly-banner');
+  if(!banner) return;
+  const who=_lockHolder||'the current editor';
+  banner.style.display='flex';
+  banner.innerHTML=`⏳ <strong>Access requested</strong> — waiting for <strong>${esc(who)}</strong> to approve…&nbsp;
+    <button onclick="cancelAccessRequest()" style="margin-left:10px;padding:5px 12px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);border-radius:7px;color:#fff;cursor:pointer;font-size:12px">✕ Cancel</button>`;
 }
 
 function _updateUserChip(){
@@ -9166,11 +9193,112 @@ async function doOwnerChangePw(userIdx){
   }
 }
 
-// Allow a read-only user to request takeover of the lock
+// ── EDIT ACCESS REQUEST / GRANT SYSTEM ────────────────────────────────────────
+// Device 2 (read-only) requests access → Device 1 gets a notification banner →
+// Device 1 clicks "Grant" → lock is deleted → Device 2 acquires within 2 s.
+
+// Device 2: write an access request to Firebase and switch to fast-poll mode.
 async function requestEditAccess(){
-  if(_hasLock) return; // already have it
-  showToast('Checking if lock is still held…','amber');
-  await _tryAcquireLock();
+  if(_hasLock) return;
+  if(_waitingForGrant) return;  // already waiting — don't double-submit
+  _waitingForGrant = true;
+  _setBannerWaiting();
+
+  // Write the request to /accessRequest.json so Device 1 can see it
+  try{
+    const lockR = await fetch(FB_LOCK);
+    const lock  = lockR.ok ? await lockR.json() : null;
+    await fetch(FB_ACCESS_REQUEST,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        fromDevice  : FB_DEVICE_ID,
+        fromUser    : _currentUser?.username||'?',
+        toDevice    : lock?.deviceId||'',
+        requestedAt : new Date().toISOString(),
+        status      : 'pending'
+      })
+    });
+  }catch(e){}
+
+  // Switch lock-polling to 2-second fast mode so we acquire the moment it's released
+  _startLockPolling(true);
+  showToast('📨 Access request sent — waiting for approval','amber');
+}
+
+// Device 2: cancel a pending request
+async function cancelAccessRequest(){
+  _waitingForGrant = false;
+  if(_lockPollTimer){clearInterval(_lockPollTimer);_lockPollTimer=null;}
+  try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
+  _setReadOnlyUI(true, _lockHolder);   // restore normal readonly banner
+  _startLockPolling(false);            // drop back to normal 10-s poll
+  showToast('Request cancelled','amber');
+}
+
+// Device 1: poll /accessRequest.json every 3 s while holding the lock
+function _startRequestWatcher(){
+  if(_reqWatchTimer) clearInterval(_reqWatchTimer);
+  _reqWatchTimer = setInterval(async()=>{
+    if(!_hasLock){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; return; }
+    try{
+      const r   = await fetch(FB_ACCESS_REQUEST);
+      const req = r.ok ? await r.json() : null;
+      if(req && req.status==='pending' && req.toDevice===FB_DEVICE_ID){
+        if(!_grantBannerUp){ _grantBannerUp=true; _showGrantPrompt(req); }
+      } else {
+        // Request gone (cancelled, granted, or never existed)
+        if(_grantBannerUp){
+          _grantBannerUp=false;
+          const b=document.getElementById('grant-request-banner');
+          if(b) b.remove();
+        }
+      }
+    }catch(e){}
+  }, 3000);
+}
+
+// Device 1: show a persistent top-of-page notification to approve/deny
+function _showGrantPrompt(req){
+  let b=document.getElementById('grant-request-banner');
+  if(!b){
+    b=document.createElement('div');
+    b.id='grant-request-banner';
+    b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2000;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;text-align:center;padding:12px 20px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 20px rgba(83,74,183,.45)';
+    document.body.prepend(b);
+  }
+  b.innerHTML=`🔔 <strong>${esc(req.fromUser)}</strong> is requesting edit access — do you want to hand over control?
+    <button onclick="grantEditAccess()" style="padding:6px 18px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap">✅ Grant access</button>
+    <button onclick="denyEditAccess()" style="padding:6px 14px;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap">✕ Deny</button>`;
+}
+
+// Device 1: grant access — release the lock so Device 2 can acquire it
+async function grantEditAccess(){
+  // Stop heartbeat and request watcher immediately
+  if(_lockHbTimer){ clearInterval(_lockHbTimer); _lockHbTimer=null; }
+  if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
+  _grantBannerUp=false;
+  const b=document.getElementById('grant-request-banner');
+  if(b) b.remove();
+
+  // Delete the lock so Device 2 can acquire it within 2 s
+  try{ await fetch(FB_LOCK,{method:'DELETE'}); }catch(e){}
+  // Clean up the access request record
+  try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
+
+  _hasLock=false;
+  _setReadOnlyUI(true,'the user you handed over to');
+  fbSetStatus('connected','🔓 Handed over — now read-only');
+  showToast('🔓 Edit access handed over — you are now read-only','amber');
+  _startLockPolling(false);  // watch for when we can get it back
+}
+
+// Device 1: deny the request — delete the access request record and keep lock
+async function denyEditAccess(){
+  _grantBannerUp=false;
+  const b=document.getElementById('grant-request-banner');
+  if(b) b.remove();
+  try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
+  showToast('Access request denied','amber');
 }
 
 // ── INIT: LOAD THEN LISTEN ────────────────────────────────────────────────────
