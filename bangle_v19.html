@@ -4936,38 +4936,65 @@ function buildVendorDesignsPanel(vo,vi){
     const galleryHtml=buildVarietyGallery(varieties);
 
     // ── Variety table ─────────────────────────────────────────────────────────
-    const varTableHtml=varieties.length?`<div class="variety-table-wrap">
-      <table class="variety-table">
-        <thead><tr>
-          <th style="min-width:130px">Variety name</th>
-          <th style="min-width:62px">Images</th>
-          ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
-          <th style="min-width:60px">Total</th>
-          <th style="min-width:72px">Unit</th>
-          <th style="min-width:40px" class="no-print">Del</th>
-        </tr></thead>
-        <tbody>
-          ${varieties.map((v,vri)=>{
-            const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-            const imgCells=(v.images||[]).map((img,ii)=>`<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`).join('');
-            const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
-            return`<tr>
-              <td><input class="variety-name-inp" value="${esc(v.name||'')}" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
-              <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
-                <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
-              ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
-              <td class="total-col">${rt}</td>
-              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
-              <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-        <tfoot><tr>
-          <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
-          ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
-          <td class="grand-total">${grandTotal}</td><td></td><td class="no-print"></td>
-        </tr></tfoot>
-      </table></div>`:'<p style="font-size:11px;color:#888;margin:6px 0">No varieties — add one below.</p>';
+    // CNC / single-Default: show flat size row with no variety name label (matches client order CNC UX)
+    const isFlatMode = _hasOnlyDefault(d);
+    let varTableHtml;
+    if(isFlatMode){
+      // Single-variety (CNC): flat table — no "Variety name" column, no "Default" label visible
+      const defV   = varieties[0] || {sizes:{},unit:'pcs',images:[]};
+      const defSzs = defV.sizes || {};
+      const flatSzKeys = szKeys.length ? szKeys : Object.keys(defSzs);
+      const flatTotal  = flatSzKeys.reduce((a,sz)=>a+(parseInt(defSzs[sz])||0),0);
+      const flatUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(defV.unit||'pcs')?' selected':''}>${u}</option>`).join('');
+      varTableHtml = flatSzKeys.length
+        ? `<div class="variety-table-wrap"><table class="variety-table">
+            <thead><tr>
+              ${flatSzKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
+              <th style="min-width:60px">Total</th>
+              <th style="min-width:72px">Unit</th>
+            </tr></thead>
+            <tbody><tr>
+              ${flatSzKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${defSzs[sz]||0}" onchange="upVendorVarietySize(${vi},${di},0,'${sz}',this.value)"></td>`).join('')}
+              <td class="total-col">${flatTotal}</td>
+              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},0,'unit',this.value)">${flatUnitOpts}</select></td>
+            </tr></tbody>
+          </table></div>`
+        : '<p style="font-size:11px;color:#888;margin:6px 0">No sizes added yet.</p>';
+    } else {
+      // Dye-gold / Both: full variety rows with names, images, delete buttons
+      varTableHtml = varieties.length?`<div class="variety-table-wrap">
+        <table class="variety-table">
+          <thead><tr>
+            <th style="min-width:130px">Variety name</th>
+            <th style="min-width:62px">Images</th>
+            ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
+            <th style="min-width:60px">Total</th>
+            <th style="min-width:72px">Unit</th>
+            <th style="min-width:40px" class="no-print">Del</th>
+          </tr></thead>
+          <tbody>
+            ${varieties.map((v,vri)=>{
+              const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+              const imgCells=(v.images||[]).map((img,ii)=>`<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`).join('');
+              const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
+              return`<tr>
+                <td><input class="variety-name-inp" value="${esc(v.name||'')}" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
+                <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
+                  <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
+                ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
+                <td class="total-col">${rt}</td>
+                <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
+                <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot><tr>
+            <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
+            ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
+            <td class="grand-total">${grandTotal}</td><td></td><td class="no-print"></td>
+          </tr></tfoot>
+        </table></div>`:'<p style="font-size:11px;color:#888;margin:6px 0">No varieties — add one below.</p>';
+    }
 
     return`<div class="design-card">
       <div class="design-card-head">
@@ -4998,9 +5025,9 @@ function buildVendorDesignsPanel(vo,vi){
       ${galleryHtml}
       <!-- Variety table -->
       <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span>🧮 Varieties &amp; quantities by size</span>
+        <span>${isFlatMode?'📦 Quantities by size':'🧮 Varieties &amp; quantities by size'}</span>
         <span class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="icon-btn" onclick="addVendorVariety(${vi},${di})">+ Add variety</button>
+          ${isFlatMode?'':'<button class="icon-btn" onclick="addVendorVariety('+vi+','+di+')">+ Add variety</button>'}
           <button class="icon-btn" onclick="addVendorSizeColumn(${vi},${di})">+ Add size</button>
         </span>
       </div>
@@ -8632,8 +8659,9 @@ async function doLogin(){
   document.getElementById('fb-bar').style.display='';
   _updateUserChip();
 
-  // 5. Try to acquire edit lock, then init Firebase
-  await _tryAcquireLock();
+  // 5. Acquire edit lock and init Firebase in parallel — lock only controls UI write-mode,
+  //    data loading is independent and should not be held back by the lock round-trip.
+  _tryAcquireLock();
   fbInit();
 }
 
@@ -8695,7 +8723,7 @@ const IS_DEMO_MODE = _isDemoMode();
     document.getElementById('fb-bar').style.display = '';
     _updateUserChip();
     // Re-acquire lock on page reload (page reload = new session)
-    _tryAcquireLock().then(()=>fbInit());
+    _tryAcquireLock(); fbInit(); // parallel — lock only affects UI write-mode
     return; // don't fall through to fbInit below
   }
   // fb-bar stays hidden until login (set display:none in HTML)
@@ -8749,11 +8777,11 @@ function fbSchedulePush(){
   _fb.pendingLocal = true;
   if(!_fb.ready) return;
   if(_fb.pushTimer) return;        // a push is already queued — it'll include this change
-  fbSetStatus('syncing', 'Sync queued…');
+  fbSetStatus('syncing', 'Saving…');
   _fb.pushTimer = setTimeout(()=>{
     _fb.pushTimer = null;
     fbPush(false);
-  }, 10000);
+  }, 2000);
 }
 
 // Push to Firebase RIGHT NOW — used for structural changes (create / delete
@@ -8849,6 +8877,7 @@ function _applyRemoteState(parsed, savedAt){
   // Preserve LOCAL UI state — panel expansion is per-device, not shared data
   const keepDesignStages = S.openDesignStages;
   Object.assign(S, merged);
+  S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from remote
   S.openOrders  = new Set(merged.openOrders  || []);
   S.openClients = new Set(merged.openClients || []);
   S.openDesignStages = keepDesignStages || new Set();
@@ -8998,6 +9027,7 @@ async function fbInit(){
       histPush();
       const keepDStages = S.openDesignStages;
       Object.assign(S, merged);
+      S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from Firebase
       S.openOrders  = new Set(merged.openOrders  || []);
       S.openClients = new Set(merged.openClients || []);
       S.openDesignStages = keepDStages || new Set(merged.openDesignStages || []);
