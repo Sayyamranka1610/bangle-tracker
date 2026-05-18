@@ -1923,10 +1923,18 @@ function buildDesignsPanel(order,oi){
         <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
           <span style="font-size:13px;opacity:.75;flex-shrink:0">🎨</span>
           <input class="inline-edit" value="${esc(g.name)}"
-            data-oldname="${esc(g.name)}"
+            data-origname="${esc(g.name)}"
             style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"
-            oninput="updateDesignGroupName(${oi},this.dataset.oldname,this.value);this.dataset.oldname=this.value"
-            title="Click to edit design name">
+            onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+            onblur="(function(inp,oi){
+              const nv=inp.value.trim();
+              const orig=inp.dataset.origname;
+              if(!nv){inp.value=orig;return;}
+              if(nv===orig)return;
+              updateDesignGroupName(oi,orig,nv);
+              inp.dataset.origname=nv;
+            })(this,${oi})"
+            title="Click to rename — press Enter or click away to save">
         </div>
         <span class="dng-meta">${g.items.length} code${g.items.length!==1?'s':''} · ${formatQtyByUnit(groupQty)}</span>
       </div>
@@ -2427,10 +2435,16 @@ function addDesign(oi){
 }
 // Rename every design in a group (they all share the same name key)
 function updateDesignGroupName(oi,oldName,newName){
-  if(!newName.trim())return;
-  S.orders[oi].designs.forEach(d=>{if(d.name===oldName)d.name=newName.trim();});
-  scheduleAutosave();
+  const nv=(newName||'').trim();
+  if(!nv||!oldName)return;
+  let changed=false;
+  S.orders[oi].designs.forEach(d=>{
+    if(d.name===oldName){d.name=nv;changed=true;}
+  });
+  if(!changed)return;
   rebuildVocab();
+  save();          // save immediately (not debounced) — user just finished editing
+  try{fbPushNow();}catch(e){}  // push to Firebase right away, not after 10s
 }
 function removeDesign(oi,di){
   if(!confirm('Remove this design?'))return;
