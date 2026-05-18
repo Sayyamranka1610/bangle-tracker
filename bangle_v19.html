@@ -1885,9 +1885,8 @@ function buildDetailsPanel(order,oi){
 }
 
 function buildDesignsPanel(order,oi){
-  // Group designs by Design Name. Designs that share a name (e.g. all the
-  // "8MM CNC" codes) are shown together under one name header, with each
-  // design code listed below it.
+  // Group designs by Design Name. All codes sharing a name appear in ONE
+  // combined table under that name's header — matching the Excel layout.
   const groups=[];
   const byName={};
   order.designs.forEach((d,di)=>{
@@ -1897,27 +1896,195 @@ function buildDesignsPanel(order,oi){
     g.items.push({d,di});
   });
   const groupsHtml=groups.map(g=>{
-    // Aggregate quantity for this whole name group, grouped by unit
     const groupQty={};
     g.items.forEach(it=>{
       const dq=designQtyByUnit(it.d);
       Object.keys(dq).forEach(u=>{groupQty[u]=(groupQty[u]||0)+dq[u];});
     });
-    const cards=g.items.map(it=>buildDesignCard(order,oi,it.d,it.di)).join('');
+    const tableHtml=buildDesignsGroupTable(order,oi,g);
     return `<div class="design-name-group">
       <div class="design-name-group-head">
         <span class="dng-title">🎨 ${esc(g.name)}</span>
-        <span class="dng-meta">${g.items.length} design code${g.items.length!==1?'s':''} · ${formatQtyByUnit(groupQty)}</span>
+        <span class="dng-meta">${g.items.length} code${g.items.length!==1?'s':''} · ${formatQtyByUnit(groupQty)}</span>
       </div>
-      <div class="design-name-group-body">${cards}</div>
+      <div class="design-name-group-body" style="padding:0 0 6px">${tableHtml}</div>
     </div>`;
   }).join('');
   return `<div class="section-head" style="margin-top:0">
     <span>Designs &amp; Varieties (${order.designs.length}) — Order total: <strong>${formatQtyByUnit(orderQtyByUnit(order))}</strong></span>
-    <button class="icon-btn primary" onclick="addDesign(${oi})">+ Add design</button>
+    <button class="icon-btn primary no-print" onclick="addDesign(${oi})">+ Add design</button>
   </div>
   ${groupsHtml}
   ${!order.designs.length?'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>':''}`;
+}
+
+// ── COMBINED TABLE per design-name group (matches Excel template layout) ────────
+// Each design code is ONE row. For Dye Gold designs that have varieties, the
+// code row shows aggregated images + total; variety sub-rows (indented) hold
+// the per-size quantities. CNC / no-variety designs use a single flat row.
+function buildDesignsGroupTable(order,oi,g){
+  // Union of all size keys across every design in the group
+  const szSet=new Set();
+  g.items.forEach(({d})=>{
+    if(!d.sizes||!Object.keys(d.sizes).length){d.sizes={};DEFAULT_SIZES.forEach(s=>d.sizes[s]=0);}
+    Object.keys(d.sizes).forEach(s=>szSet.add(s));
+  });
+  const szKeys=[...szSet];
+
+  let tbody='';
+  const grpTotals={};
+  szKeys.forEach(sz=>grpTotals[sz]=0);
+
+  g.items.forEach(({d,di})=>{
+    if(!d.varieties)d.varieties=[];
+    const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+    const al=designAlert(order,d);
+    const alStyle=al==='late'?'background:#FCEBEB':'al==="warn"?background:#FAEEDA':'al==="done"?background:#F1EFE8':'background:#E1F5EE';
+
+    // All images for this design code (design-level + every variety's images)
+    const allImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
+    const imgThumbs=allImgs.slice(0,6).map(img=>
+      `<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" style="cursor:zoom-in">`
+    ).join('');
+    const addImgBtn=`<label class="variety-img-add no-print" for="dlvl-${d.id}" title="Add image to this design code">
+        <span style="font-size:16px;line-height:1">+</span></label>
+      <input type="file" id="dlvl-${d.id}" accept="image/*" multiple style="display:none"
+        onchange="handleDesignLevelImg(${oi},${di},this)">`;
+    const imgCell=`<div class="variety-img-cell">${imgThumbs}${addImgBtn}</div>`;
+
+    if(isCnc||d.varieties.length===0){
+      // ── FLAT ROW (CNC or Dye Gold with no varieties) ────────────────────────
+      const rowSizes=d.sizes||{};
+      const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
+      szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
+      const sizeCells=szKeys.map((sz,szI)=>
+        '<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'"'
+        +' oninput="upDesignDirectSizeSilent('+oi+','+di+',\''+esc(sz)+'\',this.value);this._dirty=true"'
+        +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upDesignDirectSize('+oi+','+di+',\''+esc(sz)+'\',this.value)}"'
+        +' tabindex="0"></td>'
+      ).join('');
+      const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(d.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
+      tbody+='<tr style="background:#fff">'
+        +'<td>'
+          +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+            +badgeHtml(al)
+            +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code"'
+            +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
+            +' onblur="rebuildVocab()" tabindex="0" style="max-width:110px">'
+          +'</div>'
+        +'</td>'
+        +'<td>'+imgCell+'</td>'
+        +sizeCells
+        +'<td class="total-col">'+rowTotal+'</td>'
+        +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
+          +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
+        +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
+          +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
+        +'</div></td>'
+      +'</tr>';
+
+    } else {
+      // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS ───────────────────────────
+      const colTotals={};
+      szKeys.forEach(sz=>{
+        colTotals[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+        grpTotals[sz]+=colTotals[sz];
+      });
+      const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
+
+      // Header row for the design code (purple-tinted, shows images + total)
+      tbody+='<tr style="background:#EEEDFE">'
+        +'<td style="font-weight:700">'
+          +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+            +badgeHtml(al)
+            +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code"'
+            +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
+            +' onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700">'
+          +'</div>'
+        +'</td>'
+        +'<td>'+imgCell+'</td>'
+        +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'
+          +d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' — see rows below'
+        +'</td>'
+        +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
+        +'<td></td>'
+        +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>'
+          +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
+        +'</div></td>'
+      +'</tr>';
+
+      // Variety sub-rows (indented, white background)
+      d.varieties.forEach((v,vi)=>{
+        const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+        const varImgs=(v.images||[]).map((img,ii)=>
+          '<img class="variety-thumb" src="'+img.data+'" onclick="openLbDirect(\''+img.data+'\')" style="cursor:zoom-in">'
+          +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
+        ).join('');
+        const addVarImg='<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image">'
+          +'<span style="font-size:16px;line-height:1">+</span></label>'
+          +'<input type="file" id="vimg-'+d.id+'-'+vi+'" accept="image/*" multiple style="display:none"'
+          +' onchange="handleVarietyImg('+oi+','+di+','+vi+',this)">';
+        const unitOpts2=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
+        const szCells2=szKeys.map((sz,szI)=>
+          '<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'"'
+          +' oninput="upVarietySizeSilent('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value);this._dirty=true"'
+          +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}"'
+          +' onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')"'
+          +' tabindex="0"></td>'
+        ).join('');
+        tbody+='<tr style="background:#FAFAFF">'
+          +'<td style="padding-left:22px">'
+            +'<span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
+            +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'"'
+            +' oninput="upVarietyName('+oi+','+di+','+vi+',this.value)"'
+            +' placeholder="e.g. Classic" tabindex="0" style="max-width:100px">'
+          +'</td>'
+          +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
+          +szCells2
+          +'<td class="total-col">'+rowTotal+'</td>'
+          +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
+            +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
+          +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>'
+        +'</tr>';
+      });
+    }
+  });
+
+  // Group total footer
+  const grandTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
+  const footerHtml=grandTotal>0
+    ?'<tfoot><tr>'
+      +'<td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
+      +szKeys.map(sz=>'<td><strong>'+(grpTotals[sz]||0)+'</strong></td>').join('')
+      +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
+      +'<td></td><td class="no-print"></td>'
+    +'</tr></tfoot>'
+    :'';
+
+  const locked=g.items.length>0&&g.items[0].d.sizesLocked===true;
+  const sizeCtrl=locked
+    ?'<span style="font-size:10px;color:#AFA9EC">Sizes locked at creation</span>'
+    :'<button class="icon-btn sm no-print" onclick="addSizeToDesign('+g.items[0].di+')">+ Add size</button>';
+
+  return '<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
+    +'<table class="variety-table">'
+      +'<thead><tr>'
+        +'<th style="min-width:130px;text-align:left">Design code</th>'
+        +'<th style="min-width:80px">Images</th>'
+        +szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')
+        +'<th style="min-width:55px">Total</th>'
+        +'<th style="min-width:72px">Unit</th>'
+        +'<th style="min-width:70px" class="no-print">Action</th>'
+      +'</tr></thead>'
+      +'<tbody>'+tbody+'</tbody>'
+      +footerHtml
+    +'</table>'
+    +'<div style="padding:5px 10px 6px;display:flex;align-items:center;justify-content:flex-end;border-top:1px solid #F1EFE8">'
+      +sizeCtrl
+    +'</div>'
+  +'</div>';
 }
 
 // ── STAGE ROW BUILDER (standalone fn - no nested backticks) ──────────────────
@@ -2066,126 +2233,7 @@ function toggleAllDesignStages(orderId,openIt){
   save();render();
 }
 
-function buildVarietyGallery(varieties){
-  const withImgs=varieties.filter(v=>v.images&&v.images.length>0);
-  if(!withImgs.length){
-    return '<div style="font-size:11px;color:#aaa;padding:6px 0 10px">No variety images yet — add images via the variety table below.</div>';
-  }
-  const cards=withImgs.map(v=>
-    v.images.map(img=>`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center">
-      <img src="${img.data}" style="width:160px;height:160px;object-fit:cover;border-radius:10px;border:1.5px solid #AFA9EC;cursor:pointer;box-shadow:0 2px 6px rgba(83,74,183,.12)" onclick="openLbDirect('${img.data}')">
-      <span style="font-size:11px;color:#3C3489;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||'Variety')}</span>
-    </div>`).join('')
-  ).join('');
-  return `<div style="margin-bottom:12px">
-    <div style="font-size:11px;color:#534AB7;font-weight:600;margin-bottom:8px">🖼️ Variety designs</div>
-    <div style="display:flex;flex-wrap:wrap;gap:14px">${cards}</div>
-  </div>`;
-}
-
-function buildDesignCard(order,oi,d,di){
-  const imgs=d.images||[];
-  if(!d.sizes||!Object.keys(d.sizes).length){d.sizes={};DEFAULT_SIZES.forEach(s=>d.sizes[s]=0);}
-  const szKeys=Object.keys(d.sizes);
-  if(!d.varieties)d.varieties=[];
-  const varieties=d.varieties;
-  const al=designAlert(order,d);
-  const locked=d.sizesLocked===true;
-  // CNC designs have no varieties — the design CODE is the leaf item.
-  // For them, the table's first column shows the Design Code (not a
-  // variety name), and there's no "+ Add variety".
-  const isCnc=d.bangleType==='cnc';
-
-  // Compute variety table totals
-  const colTotals={};
-  szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
-  const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
-
-  return `<div class="design-card" id="dcard-${d.id}">
-    <div class="design-card-head">
-      <div class="design-num">${di+1}</div>
-      <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap">
-        <div class="field-group" style="max-width:200px">
-          <label>Design name</label>
-          <input id="dname-${oi}-${di}" value="${esc(d.name)}" autocomplete="off" style="background:#fff" tabindex="0"
-            oninput="if(S.orders[${oi}]&&S.orders[${oi}].designs[${di}]){S.orders[${oi}].designs[${di}].name=this.value;scheduleAutosave();}"
-            onblur="rebuildVocab()">
-        </div>
-        ${isCnc?'':`<div class="field-group" style="max-width:130px">
-          <label>Design code</label>
-          <input id="dcode-${oi}-${di}" value="${esc(d.code)}" autocomplete="off" style="background:#fff" tabindex="0"
-            oninput="if(S.orders[${oi}]&&S.orders[${oi}].designs[${di}]){S.orders[${oi}].designs[${di}].code=this.value;scheduleAutosave();}"
-            onblur="rebuildVocab()">
-        </div>`}
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">
-        ${badgeHtml(al)}
-        <span style="font-size:11px;color:#888">${formatQtyByUnit(designQtyByUnit(d))}</span>
-        <button class="icon-btn danger no-print" onclick="removeDesign(${oi},${di})">Remove</button>
-      </div>
-    </div>
-
-    <!-- Variety image gallery -->
-    ${buildVarietyGallery(varieties)}
-
-    <!-- VARIETY TABLE -->
-    <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-      <span>${isCnc?'📦 Design code &amp; quantities by size':'🧮 Varieties &amp; quantities by size'}</span>
-      <span class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">
-        ${isCnc?'':`<button class="icon-btn" onclick="addVariety(${oi},${di})">+ Add variety</button>`}
-        ${!locked?`<button class="icon-btn" onclick="addSizeToDesign(${oi},${di})">+ Add size</button>`:'<span style="font-size:10px;color:#AFA9EC;padding:4px 0">Sizes locked (set at order creation)</span>'}
-      </span>
-    </div>
-    <div class="variety-table-wrap">
-      <table class="variety-table">
-        <thead>
-          <tr>
-            <th style="min-width:130px">${isCnc?'Design code':'Variety name'}</th>
-            <th style="min-width:62px">Images</th>
-            ${szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')}
-            <th style="min-width:60px">Total</th>
-            <th style="min-width:72px">Unit</th>
-            <th style="min-width:40px" class="no-print">Del</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${varieties.map((v,vi)=>{
-            const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-            const imgCells=(v.images||[]).map((img,ii)=>'<img class="variety-thumb" src="'+img.data+'" alt="" onclick="openLbDirect(\''+img.data+'\')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>').join('');
-            const sizeCells=szKeys.map((sz,szI)=>'<td><input type="number" class="qty-inp" min="0" value="'+((v.sizes||{})[sz]||0)+'" oninput="upVarietySizeSilent('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value);this._dirty=true" onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}" onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')" tabindex="0"></td>').join('');
-            const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
-            const firstCell=isCnc
-              ? '<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Design code" oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}" onblur="rebuildVocab()" tabindex="0"></td>'
-              : '<td><input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'" oninput="upVarietyName('+oi+','+di+','+vi+',this.value)" placeholder="e.g. Classic" tabindex="0"></td>';
-            const delCell=isCnc
-              ? '<td class="no-print"><button class="icon-btn danger" onclick="removeDesign('+oi+','+di+')" title="Remove this design code">✕</button></td>'
-              : '<td class="no-print"><button class="icon-btn danger" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>';
-            return '<tr>'
-              +firstCell
-              +'<td><div class="variety-img-cell">'+imgCells
-                +'<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-                +'<input type="file" id="vimg-'+d.id+'-'+vi+'" accept="image/*" multiple style="display:none" onchange="handleVarietyImg('+oi+','+di+','+vi+',this)">'
-              +'</div></td>'
-              +sizeCells
-              +'<td class="total-col">'+rowTotal+'</td>'
-              +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts+'</select></td>'
-              +delCell
-            +'</tr>';
-          }).join('')}
-          ${varieties.length===0?('<tr><td colspan="'+(4+szKeys.length)+'" style="text-align:center;color:#aaa;padding:10px;font-size:11px">No varieties yet — click &quot;+ Add variety&quot;</td></tr>'):''}
-        </tbody>
-        ${varieties.length>0?('<tfoot><tr>'
-            +'<td colspan="2" style="text-align:right;color:#534AB7">Design total →</td>'
-            +szKeys.map(sz=>'<td><strong>'+(colTotals[sz]||0)+'</strong></td>').join('')
-            +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
-            +'<td></td>'
-            +'<td class="no-print"></td>'
-          +'</tr></tfoot>'):''}
-      </table>
-    </div>
-    <div class="size-total">Design total: <strong>${formatQtyByUnit(designQtyByUnit(d))}</strong></div>
-  </div>`;
-}
+// buildVarietyGallery and buildDesignCard replaced by buildDesignsGroupTable above.
 
 // ── DESIGN VIEW ────────────────────────────────────────────────────────────────
 function renderDesignView(){
@@ -2673,6 +2721,39 @@ function addSizeToDesign(oi,di){
   if(!d.sizes)d.sizes={};d.sizes['2/'+next]=0;
   (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes['2/'+next]=0;});
   audit('Add size',`Design ${di+1} order ${S.orders[oi].orderId}: added size 2/${next}`);render();
+}
+
+// ── DIRECT DESIGN-LEVEL SIZE UPDATES (for flat rows with no varieties) ──────────
+function upDesignDirectSize(oi,di,sz,val){
+  const d=S.orders[oi].designs[di];
+  if(!d.sizes)d.sizes={};
+  d.sizes[sz]=parseInt(val)||0;
+  render();
+}
+function upDesignDirectSizeSilent(oi,di,sz,val){
+  const d=S.orders[oi].designs[di];
+  if(!d.sizes)d.sizes={};
+  d.sizes[sz]=parseInt(val)||0;
+  scheduleAutosave();
+}
+function upDesignUnit(oi,di,val){
+  S.orders[oi].designs[di].unit=val;
+  scheduleAutosave();
+}
+// Upload images directly to the design (not to a specific variety)
+function handleDesignLevelImg(oi,di,input){
+  const files=Array.from(input.files);let loaded=0;
+  const d=S.orders[oi].designs[di];if(!d.images)d.images=[];
+  files.forEach(f=>{
+    const r=new FileReader();
+    r.onload=async e=>{
+      const compressed=await compressImageToThumb(e.target.result);
+      d.images.push({data:compressed,name:f.name});
+      loaded++;if(loaded===files.length){save();render();}
+    };
+    r.readAsDataURL(f);
+  });
+  input.value='';
 }
 
 // Add stage to design with specific group
@@ -7825,11 +7906,12 @@ async function fbPush(silent){
 // This keeps the dashboard light and operations smooth.
 function fbSchedulePush(){
   if(_isDemoMode()) return;        // demo mode never pushes to the real DB
-  if(!_fb.ready) return;
-  // Mark that we have local changes not yet in Firebase. While this flag is
-  // true, incoming remote updates are SKIPPED so they can't overwrite the
-  // user's in-progress / unpushed edits.
+  // Mark local changes BEFORE the ready check — this protects a just-created
+  // order even if Firebase isn't connected yet (e.g. first-load race or
+  // reconnection window). When Firebase comes online, pendingLocal=true
+  // prevents _applyRemoteState from overwriting the unpushed local state.
   _fb.pendingLocal = true;
+  if(!_fb.ready) return;
   if(_fb.pushTimer) return;        // a push is already queued — it'll include this change
   fbSetStatus('syncing', 'Sync queued…');
   _fb.pushTimer = setTimeout(()=>{
@@ -7843,8 +7925,10 @@ function fbSchedulePush(){
 // is closed, or wiped by a stale remote sync arriving in the meantime.
 function fbPushNow(){
   if(_isDemoMode()) return;
+  // Set pendingLocal BEFORE the ready check so a newly created order is
+  // protected from stale SSE overwrites even if Firebase isn't ready yet.
+  _fb.pendingLocal = true;
   if(!_fb.ready) return;
-  _fb.pendingLocal = true;          // protect until the push confirms
   clearTimeout(_fb.pushTimer);
   _fb.pushTimer = null;
   fbPush(false);
@@ -7912,10 +7996,31 @@ async function fbInit(){
     const parsed = (envelope && envelope.data) ? JSON.parse(envelope.data) : null;
 
     if(parsed && parsed.orders){
+      // ── TIMESTAMP GUARD: keep local state if it is newer than Firebase ────
+      // Root cause of the "disappearing order" bug: if the user creates an
+      // order and then the page reloads (or Firebase reconnects) before the
+      // push completes, fbInit would blindly overwrite local state with the
+      // stale Firebase snapshot — erasing the new order. We now compare
+      // timestamps: if local is strictly newer, we keep it and push it up.
+      const localSavedAt  = localStorage.getItem('bangle_saved_at');
+      const remoteSavedAt = envelope && envelope.savedAt;
+      const localIsNewer  = localSavedAt && remoteSavedAt
+                            && new Date(localSavedAt) > new Date(remoteSavedAt);
+
+      if(localIsNewer || _fb.pendingLocal){
+        // Local has changes that haven't reached Firebase yet — keep them and
+        // push rather than overwriting with a potentially-stale remote snapshot.
+        renumberOrders();
+        _origSave();
+        render();
+        _fb.ready = true;
+        fbStartListener();
+        await fbPush(false);
+        fbSetStatus('connected','Live · local changes preserved & synced');
+        return;
+      }
+
       // ── REMOTE IS THE SOURCE OF TRUTH ─────────────────────────────────────
-      // Always load Firebase state at init. Local storage is just a cache.
-      // This prevents the "data reverts to original" bug where one device's
-      // stale localStorage could overwrite fresh remote data due to clock drift.
       histPush();
       const keepDStages = S.openDesignStages;
       Object.assign(S, parsed);
