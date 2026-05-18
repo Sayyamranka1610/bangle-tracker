@@ -1939,8 +1939,6 @@ function buildDesignsGroupTable(order,oi,g){
     if(!d.varieties)d.varieties=[];
     const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
     const al=designAlert(order,d);
-    const alStyle=al==='late'?'background:#FCEBEB':'al==="warn"?background:#FAEEDA':'al==="done"?background:#F1EFE8':'background:#E1F5EE';
-
     // All images for this design code (design-level + every variety's images)
     const allImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
     const imgThumbs=allImgs.slice(0,6).map(img=>
