@@ -5444,108 +5444,244 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
     content+=groups.map(g=>{
       // Collect all size keys for this group
       const szSet=new Set();
-      g.items.forEach(d=>{Object.keys(d.sizes||{}).forEach(s=>szSet.add(s));});
+      g.items.forEach(d=>{
+        const src=(_hasOnlyDefault(d)&&d.varieties[0])?(d.varieties[0].sizes||d.sizes||{}):(d.sizes||{});
+        Object.keys(src).forEach(s=>szSet.add(s));
+      });
       const szKeys=[...szSet];
 
-      // All images for this group
-      const allImgs=g.items.flatMap(d=>[
-        ...(d.images||[]).map(img=>({src:img.data,label:d.code||d.name})),
-        ...d.varieties.flatMap(v=>(v.images||[]).map(img=>({src:img.data,label:v.name||d.code})))
-      ]);
-      const topGallery=(imgMode==='top'&&allImgs.length)
-        ?'<div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px">'
-          +allImgs.map(({src,label})=>'<div style="text-align:center">'
-            +'<img src="'+src+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #AFA9EC;display:block">'
-            +'<div style="font-size:10px;font-weight:600;color:#3C3489;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
-          +'</div>').join('')
-          +'</div>'
-        :'';
-
-      // Build table rows
-      let grpTotals={};szKeys.forEach(sz=>grpTotals[sz]=0);
-      let tbody='';
-      const inlineImgCol=imgMode==='inline';
-
+      // Accumulate group totals
+      const grpTotals={};szKeys.forEach(sz=>grpTotals[sz]=0);
       g.items.forEach(d=>{
         if(!d.varieties)d.varieties=[];
         const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
-        const hasOnlyDefault=d.varieties.length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';
-        const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
+        const hod=_hasOnlyDefault(d);
+        if(isCnc||d.varieties.length===0||hod){
+          const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
+          szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rs[sz])||0);});
+        } else {
+          d.varieties.forEach(v=>szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt((v.sizes||{})[sz])||0);}));
+        }
+      });
+      const grpTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
+      const grpUnit=esc((g.items[0]&&(g.items[0].unit||(g.items[0].varieties&&g.items[0].varieties[0]&&g.items[0].varieties[0].unit)))||'pcs');
 
-        if(isCnc||d.varieties.length===0||hasOnlyDefault){
-          const rowSizes=hasOnlyDefault?(d.varieties[0].sizes||{}):(d.sizes||{});
-          const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
-          szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
-          const dImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
-          const inlineImg=inlineImgCol&&dImgs.length
-            ?'<td style="padding:4px 6px;vertical-align:middle"><div style="display:flex;flex-wrap:wrap;gap:4px">'
-              +dImgs.slice(0,4).map(img=>'<img src="'+img.data+'" style="width:56px;height:56px;object-fit:cover;border-radius:5px;border:1px solid #AFA9EC">').join('')
-              +'</div></td>'
-            :(inlineImgCol?'<td></td>':'');
-          tbody+='<tr style="border-bottom:1px solid #E8E7E0;background:#fff">'
-            +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
-            +szKeys.map(sz=>'<td style="padding:5px 6px;text-align:center">'+(parseInt(rowSizes[sz])||0)+'</td>').join('')
-            +'<td style="padding:5px 6px;text-align:center;font-weight:700;color:#534AB7">'+rowTotal+'</td>'
-            +'<td style="padding:5px 6px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
-            +inlineImg
+      // Design name header (shared by all modes)
+      const grpHeader='<div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:9px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">'
+        +'<span style="font-size:14px;font-weight:700">🎨 '+esc(g.name)+'</span>'
+        +'<span style="font-size:11px;background:rgba(255,255,255,.2);padding:3px 11px;border-radius:20px">'+g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+grpTotal+' '+grpUnit+'</span>'
+      +'</div>';
+
+      // ── MODE: images grouped at top ─────────────────────────────────────────
+      if(imgMode==='top'){
+        const allImgs=g.items.flatMap(d=>[
+          ...(d.images||[]).map(img=>({src:img.data,label:d.code||d.name})),
+          ...((d.varieties||[])).flatMap(v=>(v.images||[]).map(img=>({src:img.data,label:v.name||d.code})))
+        ]);
+        const gallery=allImgs.length
+          ?'<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 14px 10px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
+            +allImgs.map(({src,label})=>'<div style="text-align:center;break-inside:avoid">'
+              +'<img src="'+src+'" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">'
+              +'<div style="font-size:11px;font-weight:700;color:#3C3489;margin-top:5px;max-width:65mm;text-align:center">'+esc(label)+'</div>'
+            +'</div>').join('')
+          +'</div>'
+          :'';
+        // Build table (no image column)
+        let tbody='';
+        g.items.forEach(d=>{
+          if(!d.varieties)d.varieties=[];
+          const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+          const hod=_hasOnlyDefault(d);
+          const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
+          if(isCnc||d.varieties.length===0||hod){
+            const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
+            const rt=szKeys.reduce((a,sz)=>a+(parseInt(rs[sz])||0),0);
+            tbody+='<tr style="border-bottom:1px solid #E8E7E0;background:#fff">'
+              +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
+              +szKeys.map(sz=>'<td style="padding:5px 7px;text-align:center">'+(parseInt(rs[sz])||0)+'</td>').join('')
+              +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+rt+'</td>'
+              +'<td style="padding:5px 7px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
+            +'</tr>';
+          } else {
+            const ct={};szKeys.forEach(sz=>{ct[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
+            const dt=Object.values(ct).reduce((a,v)=>a+v,0);
+            tbody+='<tr style="background:#EEEDFE;border-bottom:1px solid #D0CCF5">'
+              +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
+              +'<td colspan="'+szKeys.length+'" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">'+d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' below</td>'
+              +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+dt+'</td>'
+              +'<td></td>'
+            +'</tr>';
+            d.varieties.forEach(v=>{
+              const vt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+              tbody+='<tr style="border-bottom:1px solid #F1EFE8;background:#fff">'
+                +'<td style="padding:4px 8px;padding-left:18px;color:#555">└ '+esc(v.name||'Variety')+'</td>'
+                +szKeys.map(sz=>'<td style="padding:4px 7px;text-align:center">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
+                +'<td style="padding:4px 7px;text-align:center;font-weight:700;color:#534AB7">'+vt+'</td>'
+                +'<td style="padding:4px 7px;text-align:center;font-size:11px;color:#777">'+esc(v.unit||'pcs')+'</td>'
+              +'</tr>';
+            });
+          }
+        });
+        const footer='<tr style="background:#3C3489;color:#fff;font-weight:700">'
+          +'<td style="padding:6px 8px;text-align:right;font-size:11px">Group total →</td>'
+          +szKeys.map(sz=>'<td style="padding:6px 7px;text-align:center">'+(grpTotals[sz]||0)+'</td>').join('')
+          +'<td style="padding:6px 7px;text-align:center;background:#fff;color:#3C3489">'+grpTotal+'</td>'
+          +'<td></td>'
+        +'</tr>';
+        return '<div class="design-block" style="margin-bottom:18px">'
+          +grpHeader+gallery
+          +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5;border-top:none">'
+            +'<thead><tr style="background:#534AB7;color:#fff">'
+              +'<th style="padding:6px 8px;text-align:left">Code</th>'
+              +szKeys.map(sz=>'<th style="padding:6px 7px;text-align:center">'+esc(sz)+'</th>').join('')
+              +'<th style="padding:6px 7px;text-align:center">Total</th>'
+              +'<th style="padding:6px 7px;text-align:center">Unit</th>'
+            +'</tr></thead>'
+            +'<tbody>'+tbody+'</tbody>'
+            +'<tfoot>'+footer+'</tfoot>'
+          +'</table>'
+        +'</div>';
+      }
+
+      // ── MODE: no images ─────────────────────────────────────────────────────
+      if(imgMode==='none'){
+        let tbody='';
+        g.items.forEach(d=>{
+          if(!d.varieties)d.varieties=[];
+          const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+          const hod=_hasOnlyDefault(d);
+          const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
+          if(isCnc||d.varieties.length===0||hod){
+            const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
+            const rt=szKeys.reduce((a,sz)=>a+(parseInt(rs[sz])||0),0);
+            tbody+='<tr style="border-bottom:1px solid #E8E7E0;background:#fff">'
+              +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
+              +szKeys.map(sz=>'<td style="padding:5px 7px;text-align:center">'+(parseInt(rs[sz])||0)+'</td>').join('')
+              +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+rt+'</td>'
+              +'<td style="padding:5px 7px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
+            +'</tr>';
+          } else {
+            const ct={};szKeys.forEach(sz=>{ct[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
+            const dt=Object.values(ct).reduce((a,v)=>a+v,0);
+            tbody+='<tr style="background:#EEEDFE;border-bottom:1px solid #D0CCF5">'
+              +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
+              +'<td colspan="'+szKeys.length+'" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">'+d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' below</td>'
+              +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+dt+'</td><td></td>'
+            +'</tr>';
+            d.varieties.forEach(v=>{
+              const vt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+              tbody+='<tr style="border-bottom:1px solid #F1EFE8;background:#fff">'
+                +'<td style="padding:4px 8px;padding-left:18px;color:#555">└ '+esc(v.name||'Variety')+'</td>'
+                +szKeys.map(sz=>'<td style="padding:4px 7px;text-align:center">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
+                +'<td style="padding:4px 7px;text-align:center;font-weight:700;color:#534AB7">'+vt+'</td>'
+                +'<td style="padding:4px 7px;text-align:center;font-size:11px;color:#777">'+esc(v.unit||'pcs')+'</td>'
+              +'</tr>';
+            });
+          }
+        });
+        const footer='<tr style="background:#3C3489;color:#fff;font-weight:700">'
+          +'<td style="padding:6px 8px;text-align:right;font-size:11px">Group total →</td>'
+          +szKeys.map(sz=>'<td style="padding:6px 7px;text-align:center">'+(grpTotals[sz]||0)+'</td>').join('')
+          +'<td style="padding:6px 7px;text-align:center;background:#fff;color:#3C3489">'+grpTotal+'</td><td></td>'
+        +'</tr>';
+        return '<div class="design-block" style="margin-bottom:18px">'
+          +grpHeader
+          +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5;border-top:none">'
+            +'<thead><tr style="background:#534AB7;color:#fff">'
+              +'<th style="padding:6px 8px;text-align:left">Code</th>'
+              +szKeys.map(sz=>'<th style="padding:6px 7px;text-align:center">'+esc(sz)+'</th>').join('')
+              +'<th style="padding:6px 7px;text-align:center">Total</th>'
+              +'<th style="padding:6px 7px;text-align:center">Unit</th>'
+            +'</tr></thead>'
+            +'<tbody>'+tbody+'</tbody>'
+            +'<tfoot>'+footer+'</tfoot>'
+          +'</table>'
+        +'</div>';
+      }
+
+      // ── MODE: inline — image beside each design code (card layout) ──────────
+      // Each design code is a card: [65mm×90mm image panel] + [compact data table]
+      // This keeps images large without squishing the size columns in the table.
+      const cards=g.items.map(d=>{
+        if(!d.varieties)d.varieties=[];
+        const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+        const hod=_hasOnlyDefault(d);
+        const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
+        const dImgs=[...(d.images||[]),...(d.varieties||[]).flatMap(v=>v.images||[])];
+
+        // Image panel (always 65mm × 90mm primary image + small thumbnails below)
+        const imgPanel='<div style="flex-shrink:0;width:65mm;margin-right:8mm">'
+          +(dImgs.length
+            ?'<img src="'+dImgs[0].data+'" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">'
+             +(dImgs.length>1
+               ?'<div style="display:flex;flex-wrap:wrap;gap:3mm;margin-top:3mm">'
+                 +dImgs.slice(1,5).map(img=>'<img src="'+img.data+'" style="width:29mm;height:29mm;object-fit:cover;border-radius:5px;border:1.5px solid #AFA9EC">').join('')
+               +'</div>'
+               :'')
+            :'<div style="width:65mm;height:90mm;background:#f0efff;border:2px dashed #AFA9EC;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#AFA9EC">No image</div>')
+        +'</div>';
+
+        // Data table (no image column — full width of remaining space)
+        let tRows='';
+        if(isCnc||d.varieties.length===0||hod){
+          const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
+          const rt=szKeys.reduce((a,sz)=>a+(parseInt(rs[sz])||0),0);
+          tRows='<tr style="background:#fff">'
+            +szKeys.map(sz=>'<td style="padding:6px 8px;text-align:center;font-size:13px;font-weight:600;color:#222">'+(parseInt(rs[sz])||0)+'</td>').join('')
+            +'<td style="padding:6px 8px;text-align:center;font-size:14px;font-weight:800;color:#534AB7">'+rt+'</td>'
+            +'<td style="padding:6px 8px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
           +'</tr>';
         } else {
-          // Design code header
-          const colTotals={};
-          szKeys.forEach(sz=>{colTotals[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);grpTotals[sz]+=colTotals[sz];});
-          const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
-          const dAllImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
-          const inlineImg=inlineImgCol&&dAllImgs.length
-            ?'<td rowspan="'+(d.varieties.length+1)+'" style="padding:4px 6px;vertical-align:middle"><div style="display:flex;flex-wrap:wrap;gap:4px">'
-              +dAllImgs.slice(0,4).map(img=>'<img src="'+img.data+'" style="width:56px;height:56px;object-fit:cover;border-radius:5px;border:1px solid #AFA9EC">').join('')
-              +'</div></td>'
-            :(inlineImgCol?'<td rowspan="'+(d.varieties.length+1)+'"></td>':'');
-          tbody+='<tr style="background:#EEEDFE;border-bottom:1px solid #D0CCF5">'
-            +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
+          const ct={};szKeys.forEach(sz=>{ct[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
+          const dt=Object.values(ct).reduce((a,v)=>a+v,0);
+          // Header row
+          tRows='<tr style="background:#EEEDFE">'
             +'<td colspan="'+szKeys.length+'" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">'+d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' below</td>'
-            +'<td style="padding:5px 6px;text-align:center;font-weight:700;color:#534AB7">'+dTotal+'</td>'
+            +'<td style="padding:5px 8px;text-align:center;font-weight:800;font-size:13px;color:#3C3489">'+dt+'</td>'
             +'<td></td>'
-            +inlineImg
           +'</tr>';
           d.varieties.forEach(v=>{
-            const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-            const vUnit=v.unit||'pcs';
-            tbody+='<tr style="border-bottom:1px solid #F1EFE8;background:#fff">'
-              +'<td style="padding:4px 8px;padding-left:20px;color:#555">└ '+esc(v.name||'Variety')+'</td>'
-              +szKeys.map(sz=>'<td style="padding:4px 6px;text-align:center">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
-              +'<td style="padding:4px 6px;text-align:center;font-weight:700;color:#534AB7">'+rt+'</td>'
-              +'<td style="padding:4px 6px;text-align:center;font-size:11px;color:#777">'+esc(vUnit)+'</td>'
+            const vt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+            // Label row (full width) then data row (sizes only) — keeps column count correct
+            tRows+='<tr style="background:#F8F7FF;border-top:1px solid #E8E7FF">'
+              +'<td colspan="'+(szKeys.length+2)+'" style="padding:2px 8px;font-size:10px;color:#6C64CC;font-style:italic">└ '+esc(v.name||'Variety')+'</td>'
+            +'</tr>';
+            tRows+='<tr style="border-bottom:1px solid #F1EFE8;background:#fff">'
+              +szKeys.map(sz=>'<td style="padding:5px 8px;text-align:center;font-size:12px">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
+              +'<td style="padding:5px 8px;text-align:center;font-weight:700;color:#534AB7">'+vt+'</td>'
+              +'<td style="padding:5px 8px;text-align:center;font-size:11px;color:#777">'+esc(v.unit||'pcs')+'</td>'
             +'</tr>';
           });
         }
-      });
 
-      const grpTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
-      const footerRow='<tr style="background:#3C3489;color:#fff;font-weight:700">'
-        +'<td style="padding:6px 8px;text-align:right">Group total →</td>'
-        +szKeys.map(sz=>'<td style="padding:6px 6px;text-align:center">'+(grpTotals[sz]||0)+'</td>').join('')
-        +'<td style="padding:6px 6px;text-align:center;background:#fff;color:#3C3489">'+grpTotal+'</td>'
-        +'<td></td>'
-        +(inlineImgCol?'<td></td>':'')
-      +'</tr>';
+        const dataPanel='<div style="flex:1;min-width:0">'
+          // Code title bar
+          +'<div style="background:#EEEDFE;border-radius:6px 6px 0 0;padding:7px 10px;border:1px solid #D0CCF5;border-bottom:none">'
+            +'<span style="font-size:15px;font-weight:800;color:#3C3489">'+esc(d.code||'—')+'</span>'
+          +'</div>'
+          +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5">'
+            +'<thead><tr style="background:#534AB7;color:#fff">'
+              +szKeys.map(sz=>'<th style="padding:5px 8px;text-align:center;font-weight:700;font-size:11px">'+esc(sz)+'</th>').join('')
+              +'<th style="padding:5px 8px;text-align:center;font-weight:700">Total</th>'
+              +'<th style="padding:5px 8px;text-align:center;font-weight:700">Unit</th>'
+            +'</tr></thead>'
+            +'<tbody>'+tRows+'</tbody>'
+          +'</table>'
+        +'</div>';
 
-      return '<div class="design-block" style="margin-bottom:14px">'
-        +'<div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">'
-          +'<span style="font-size:14px;font-weight:700">🎨 '+esc(g.name)+'</span>'
-          +'<span style="font-size:11px;background:rgba(255,255,255,.2);padding:2px 10px;border-radius:20px">'+g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+grpTotal+' '+esc((g.items[0]&&(g.items[0].unit||(g.items[0].varieties[0]&&g.items[0].varieties[0].unit)))||'pcs')+'</span>'
-        +'</div>'
-        +topGallery
-        +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5;border-top:none">'
-          +'<thead><tr style="background:#534AB7;color:#fff">'
-            +'<th style="padding:6px 8px;text-align:left;font-weight:700">Code</th>'
-            +szKeys.map(sz=>'<th style="padding:6px 5px;text-align:center;font-weight:700">'+esc(sz)+'</th>').join('')
-            +'<th style="padding:6px 5px;text-align:center;font-weight:700">Total</th>'
-            +'<th style="padding:6px 5px;text-align:center;font-weight:700">Unit</th>'
-            +(inlineImgCol?'<th style="padding:6px 8px;text-align:center;font-weight:700">Images</th>':'')
-          +'</tr></thead>'
-          +'<tbody>'+tbody+'</tbody>'
-          +'<tfoot>'+footerRow+'</tfoot>'
-        +'</table>'
+        return '<div style="display:flex;align-items:flex-start;padding:12px 14px;border-bottom:1px solid #E0DEFF;break-inside:avoid">'
+          +imgPanel+dataPanel
+        +'</div>';
+      }).join('');
+
+      // Group total footer
+      const footer='<div style="background:#3C3489;color:#fff;padding:8px 14px;border-radius:0 0 6px 6px;display:flex;gap:0;align-items:center">'
+        +'<span style="font-size:11px;font-weight:600;flex:1;text-align:right;padding-right:12px">Group total →</span>'
+        +'<span style="font-size:13px;font-weight:800;background:rgba(255,255,255,.15);padding:3px 14px;border-radius:20px">'+grpTotal+' '+grpUnit+'</span>'
+      +'</div>';
+
+      return '<div class="design-block" style="margin-bottom:20px;border:1.5px solid #D0CCF5;border-radius:8px;overflow:hidden">'
+        +grpHeader+cards+footer
       +'</div>';
     }).join('');
   }
