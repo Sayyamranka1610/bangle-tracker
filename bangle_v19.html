@@ -4988,12 +4988,19 @@ function exportVendorOrderCSV(oid){
     ['Design Name','Design Code','Variety Name',...allSizes,'Total Qty']
   ];
   vo.designs.forEach(d=>{
-    const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
-    varieties.forEach(v=>{
-      const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-      rows.push([d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
-    });
-    const colTotals=allSizes.map(sz=>(d.varieties||[]).reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0));
+    const hod=_hasOnlyDefault(d);
+    const effSizes=hod?(d.varieties[0].sizes||d.sizes||{}):(d.sizes||{});
+    if(hod){
+      const sizeVals=allSizes.map(sz=>(effSizes[sz])||0);
+      rows.push([d.name,d.code,'—',...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+    } else {
+      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes}];
+      varieties.forEach(v=>{
+        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+        rows.push([d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+      });
+    }
+    const colTotals=allSizes.map(sz=>(parseInt(effSizes[sz])||0));
     rows.push(['','',`[${d.name} TOTAL]`,...colTotals,colTotals.reduce((a,v)=>a+v,0)]);
     rows.push([]);
   });
@@ -5009,11 +5016,17 @@ function exportVendorSectionCSV(vendor){
   ];
   orders.forEach(vo=>{
     vo.designs.forEach(d=>{
-      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
-      varieties.forEach(v=>{
-        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-        rows.push([vo.orderId,fmtDate(vo.startDate),fmtDate(vo.deliveryDate),vo.priority,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
-      });
+      const hod=_hasOnlyDefault(d);
+      if(hod){
+        const sizeVals=allSizes.map(sz=>((d.varieties[0].sizes||d.sizes||{})[sz])||0);
+        rows.push([vo.orderId,fmtDate(vo.startDate),fmtDate(vo.deliveryDate),vo.priority,d.name,d.code,'—',...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+      } else {
+        const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes}];
+        varieties.forEach(v=>{
+          const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+          rows.push([vo.orderId,fmtDate(vo.startDate),fmtDate(vo.deliveryDate),vo.priority,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0)]);
+        });
+      }
     });
   });
   downloadCSV(csvEncode(rows),`vendor_${vendor.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.csv`);
@@ -5419,10 +5432,11 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
       g.items.forEach(d=>{
         if(!d.varieties)d.varieties=[];
         const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+        const hasOnlyDefault=d.varieties.length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';
         const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
 
-        if(isCnc||d.varieties.length===0){
-          const rowSizes=d.sizes||{};
+        if(isCnc||d.varieties.length===0||hasOnlyDefault){
+          const rowSizes=hasOnlyDefault?(d.varieties[0].sizes||{}):(d.sizes||{});
           const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
           szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
           const dImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
@@ -5700,14 +5714,24 @@ function exportExcelFull(includeStages){
     const al=orderAlert(o);
     const stLabel={ok:'On track',warn:'Due soon',late:'Overdue',done:'Completed'}[al];
     o.designs.forEach(d=>{
-      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes,images:[]}];
+      const hod=_hasOnlyDefault(d);
+      const varieties=hod?[]:( d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes,images:[]}]);
+      const flatSizes=hod?(d.varieties[0].sizes||d.sizes||{}):null;
       const stgDone=d.stages.filter(s=>s.status==='done').length;
-      varieties.forEach(v=>{
-        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-        dvRows.push([o.orderId,o.client,o.priority,stLabel,d.name,d.code,v.name,
+      if(hod){
+        // flat design — no variety row, sizes come from the Default variety
+        const sizeVals=allSizes.map(sz=>(flatSizes)[sz]||0);
+        dvRows.push([o.orderId,o.client,o.priority,stLabel,d.name,d.code,'—',
           ...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length,
           d.stages.length?Math.round(stgDone/d.stages.length*100)+'%':'0%']);
-      });
+      } else {
+        varieties.forEach(v=>{
+          const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+          dvRows.push([o.orderId,o.client,o.priority,stLabel,d.name,d.code,v.name,
+            ...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length,
+            d.stages.length?Math.round(stgDone/d.stages.length*100)+'%':'0%']);
+        });
+      }
     });
   });
   const ws2=XLSX.utils.aoa_to_sheet(dvRows);
@@ -5762,13 +5786,18 @@ function exportCSV(includeStages){
     const al=orderAlert(order);
     const statusLabel={ok:'On track',warn:'Due soon',late:'Overdue',done:'Completed'}[al];
     order.designs.forEach(d=>{
-      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes,images:[]}];
+      const hod=_hasOnlyDefault(d);
       const stgDone=d.stages.filter(s=>s.status==='done').length;
-      varieties.forEach(v=>{
-        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-        const rowTotal=sizeVals.reduce((a,x)=>a+x,0);
-        summaryRows.push([order.orderId,order.client,order.priority,statusLabel,d.name,d.code,v.name,...sizeVals,rowTotal,stgDone,d.stages.length,d.stages.length?Math.round(stgDone/d.stages.length*100)+'%':'0%']);
-      });
+      if(hod){
+        const sizeVals=allSizes.map(sz=>((d.varieties[0].sizes||d.sizes||{})[sz])||0);
+        summaryRows.push([order.orderId,order.client,order.priority,statusLabel,d.name,d.code,'—',...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length,d.stages.length?Math.round(stgDone/d.stages.length*100)+'%':'0%']);
+      } else {
+        const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes,images:[]}];
+        varieties.forEach(v=>{
+          const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+          summaryRows.push([order.orderId,order.client,order.priority,statusLabel,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length,d.stages.length?Math.round(stgDone/d.stages.length*100)+'%':'0%']);
+        });
+      }
     });
   });
   if(includeStages){
@@ -5804,13 +5833,20 @@ function exportOrderCSV(oid,includeStages){
     ['Design Name','Design Code','Variety Name',...allSizes,'Total Qty','Stages Done','Total Stages']
   ];
   order.designs.forEach(d=>{
-    const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
+    const hod=_hasOnlyDefault(d);
     const stgDone=d.stages.filter(s=>s.status==='done').length;
-    varieties.forEach(v=>{
-      const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-      rows.push([d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length]);
-    });
-    const colTotals=allSizes.map(sz=>(d.varieties||[]).reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0));
+    const effectiveSizes=hod?(d.varieties[0].sizes||d.sizes||{}):(d.sizes||{});
+    if(hod){
+      const sizeVals=allSizes.map(sz=>(effectiveSizes[sz])||0);
+      rows.push([d.name,d.code,'—',...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length]);
+    } else {
+      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes}];
+      varieties.forEach(v=>{
+        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+        rows.push([d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),stgDone,d.stages.length]);
+      });
+    }
+    const colTotals=allSizes.map(sz=>(parseInt(effectiveSizes[sz])||0));
     rows.push(['','',`[${d.name} TOTAL]`,...colTotals,colTotals.reduce((a,v)=>a+v,0),'','']);
     rows.push([]);
   });
@@ -5842,12 +5878,18 @@ function exportClientCSV(clientName,includeStages){
     const al=orderAlert(order);
     const statusLabel={ok:'On track',warn:'Due soon',late:'Overdue',done:'Completed'}[al];
     order.designs.forEach(d=>{
-      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
+      const hod=_hasOnlyDefault(d);
       const stgDone=d.stages.filter(s=>s.status==='done').length;
-      varieties.forEach(v=>{
-        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-        rows.push([order.orderId,fmtDate(order.startDate),order.priority,statusLabel,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
-      });
+      if(hod){
+        const sizeVals=allSizes.map(sz=>((d.varieties[0].sizes||d.sizes||{})[sz])||0);
+        rows.push([order.orderId,fmtDate(order.startDate),order.priority,statusLabel,d.name,d.code,'—',...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
+      } else {
+        const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes}];
+        varieties.forEach(v=>{
+          const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+          rows.push([order.orderId,fmtDate(order.startDate),order.priority,statusLabel,d.name,d.code,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
+        });
+      }
     });
   });
   if(includeStages){
@@ -5883,12 +5925,18 @@ function exportDesignCSV(code,includeStages){
   items.forEach(({order,d})=>{
     const al=orderAlert(order);
     const statusLabel={ok:'On track',warn:'Due soon',late:'Overdue',done:'Completed'}[al];
-    const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'(default)',sizes:d.sizes}];
+    const hod=_hasOnlyDefault(d);
     const stgDone=d.stages.filter(s=>s.status==='done').length;
-    varieties.forEach(v=>{
-      const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
-      rows.push([order.orderId,order.client,fmtDate(order.startDate),order.priority,statusLabel,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
-    });
+    if(hod){
+      const sizeVals=allSizes.map(sz=>((d.varieties[0].sizes||d.sizes||{})[sz])||0);
+      rows.push([order.orderId,order.client,fmtDate(order.startDate),order.priority,statusLabel,'—',...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
+    } else {
+      const varieties=d.varieties&&d.varieties.length?d.varieties:[{name:'—',sizes:d.sizes}];
+      varieties.forEach(v=>{
+        const sizeVals=allSizes.map(sz=>(v.sizes||{})[sz]||0);
+        rows.push([order.orderId,order.client,fmtDate(order.startDate),order.priority,statusLabel,v.name,...sizeVals,sizeVals.reduce((a,x)=>a+x,0),`${stgDone}/${d.stages.length}`]);
+      });
+    }
   });
   if(includeStages){
     rows.push([]);
