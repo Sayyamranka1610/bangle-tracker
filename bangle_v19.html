@@ -1996,10 +1996,18 @@ function buildDesignsGroupTable(order,oi,g){
     const hasOnlyDefault=d.varieties.length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';
     const al=designAlert(order,d);
     // All images for this design code (design-level + every variety's images)
-    const allImgs=[...(d.images||[]),...d.varieties.flatMap(v=>v.images||[])];
-    const imgThumbs=allImgs.slice(0,6).map(img=>
-      `<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" style="cursor:zoom-in">`
+    // Design-level images — each with ✕ delete button; click opens HQ lightbox
+    const dImages=d.images||[];
+    const vImagesFlat=d.varieties.flatMap((v,vi)=>(v.images||[]).map((img,ii)=>({img,vi,ii})));
+    const designImgThumbs=dImages.map((img,ii)=>
+      `<img class="variety-thumb" src="${img.data}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
+      `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`
     ).join('');
+    const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>
+      `<img class="variety-thumb" src="${img.data}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
+      `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`
+    ).join('');
+    const imgThumbs=designImgThumbs+varImgThumbs;
     const addImgBtn=`<label class="variety-img-add no-print" for="dlvl-${d.id}" title="Add image to this design code">
         <span style="font-size:16px;line-height:1">+</span></label>
       <input type="file" id="dlvl-${d.id}" accept="image/*" multiple style="display:none"
@@ -2077,7 +2085,7 @@ function buildDesignsGroupTable(order,oi,g){
       d.varieties.forEach((v,vi)=>{
         const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
         const varImgs=(v.images||[]).map((img,ii)=>
-          '<img class="variety-thumb" src="'+img.data+'" onclick="openLbDirect(\''+img.data+'\')" style="cursor:zoom-in">'
+          '<img class="variety-thumb" src="'+img.data+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
           +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
         ).join('');
         const addVarImg='<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image">'
@@ -2813,7 +2821,7 @@ function handleVarietyImg(oi,di,vi,input){
   });
   input.value='';
 }
-function delVarietyImg(oi,di,vi,ii){S.orders[oi].designs[di].varieties[vi].images.splice(ii,1);render();}
+function delVarietyImg(oi,di,vi,ii){S.orders[oi].designs[di].varieties[vi].images.splice(ii,1);save();render();}
 function addSizeToDesign(oi,di){
   const d=S.orders[oi].designs[di];
   const denoms=Object.keys(d.sizes||{}).map(s=>parseInt(s.split('/')[1])).filter(n=>!isNaN(n));
@@ -3018,6 +3026,28 @@ function handleQtyTabKey(e, oi, di, vi, szI) {
 
 // ── IMAGE HANDLING ─────────────────────────────────────────────────────────────
 let _lbImages=[],_lbIdx=0;
+
+// Open lightbox for ALL images of a design code (d.images + all variety images combined).
+// Uses hqData when available so the lightbox shows full print quality.
+function openDesignImgsLb(oi,di,startIdx){
+  const d=S.orders[oi].designs[di];
+  const all=[...(d.images||[]),...(d.varieties||[]).flatMap(v=>v.images||[])];
+  if(!all.length)return;
+  _lbImages=all.map(i=>i.hqData||i.data);
+  _lbIdx=Math.min(startIdx||0,_lbImages.length-1);
+  showLightboxImg();
+}
+
+// Open lightbox for a specific variety's images only.
+function openVarietyImgsLb(oi,di,vi,startIdx){
+  const v=(S.orders[oi].designs[di].varieties||[])[vi];
+  if(!v)return;
+  _lbImages=(v.images||[]).map(i=>i.hqData||i.data);
+  if(!_lbImages.length)return;
+  _lbIdx=Math.min(startIdx||0,_lbImages.length-1);
+  showLightboxImg();
+}
+
 function handleImgUpload(oi,di,input){
   const files=Array.from(input.files);let loaded=0;
   files.forEach(file=>{
@@ -3033,7 +3063,7 @@ function handleImgUpload(oi,di,input){
     reader.readAsDataURL(file);
   });input.value='';
 }
-function deleteImg(oi,di,ii){if(!confirm('Remove image?'))return;S.orders[oi].designs[di].images.splice(ii,1);render();}
+function deleteImg(oi,di,ii){if(!confirm('Remove image?'))return;S.orders[oi].designs[di].images.splice(ii,1);save();render();}
 function openLightbox(designId,startIdx){
   let images=[];S.orders.forEach(o=>o.designs.forEach(d=>{if(d.id===designId)images=d.images||[];}));
   _lbImages=images.map(i=>i.hqData||i.data);_lbIdx=startIdx||0;showLightboxImg();
