@@ -3121,8 +3121,11 @@ function handleImgUpload(oi,di,input){
   files.forEach(file=>{
     const reader=new FileReader();
     reader.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
-      S.orders[oi].designs[di].images.push({data,name:file.name});
+      const original=e.target.result;
+      const data=await compressImageToThumb(original); // compressed for Firebase sync
+      // hqData = original stored in IDB only — used by print for full quality
+      const hqData=original;
+      S.orders[oi].designs[di].images.push({data,hqData,name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -4525,10 +4528,13 @@ function handleVendorImgUpload(voi, di, vi, input){
   files.forEach(file=>{
     const reader = new FileReader();
     reader.onload = async e=>{
-      const data = await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      const original = e.target.result;
+      const data = await compressImageToThumb(original); // compressed for Firebase sync
+      // hqData = original stored in IDB only — used by print for full quality
+      const hqData = original;
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,name:file.name});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,hqData,name:file.name});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
