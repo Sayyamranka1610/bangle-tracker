@@ -1208,6 +1208,28 @@ function compressImageForPrint(dataUrl,maxDim=1200){
 // Only exceptionally large/detailed photos would exceed this.
 const IMAGE_FB_THRESHOLD=2000000; // ~1.5 MB base64 — raised so multi-pass keeps images inline
 
+// Upload a photo to Firebase Storage and return a permanent public URL.
+// The URL is stored in img.url and works on every device without any compression.
+// Requires Firebase Storage rules: allow read, write: if true;
+async function uploadToFirebaseStorage(dataUrl, filename){
+  // Convert base64 data URL → binary blob
+  const fetchRes = await fetch(dataUrl);
+  const blob = await fetchRes.blob();
+  const ext = blob.type.includes('png') ? 'png' : 'jpg';
+  const storagePath = `bangle-images/${Date.now()}_${uid()}.${ext}`;
+  const encodedPath = encodeURIComponent(storagePath);
+  const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${FB_STORAGE_BUCKET}/o?uploadType=media&name=${encodedPath}`;
+  const res = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type },
+    body: blob,
+  });
+  if(!res.ok) throw new Error('Firebase Storage upload failed: ' + res.status);
+  const json = await res.json();
+  const token = json.downloadTokens;
+  return `https://firebasestorage.googleapis.com/v0/b/${FB_STORAGE_BUCKET}/o/${encodedPath}?alt=media&token=${token}`;
+}
+
 // Extract images from state.
 //
 // forFirebase=false  (default, used by save→localStorage):
@@ -3090,9 +3112,13 @@ let _lbImages=[],_lbIdx=0;
 // Falls back to data (160px thumb) and applies the same guard.
 function _resolveImgSrc(img){
   if(!img)return '';
+  // Firebase Storage URL — full quality, works on every device
+  if(img.url&&typeof img.url==='string'&&img.url.startsWith('http'))return img.url;
+  // hqData — original stored in IDB, same-device only
   if(img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:'))return img.hqData;
+  // data — compressed version synced via Firebase RTDB
   if(img.data&&typeof img.data==='string'&&img.data.startsWith('data:'))return img.data;
-  return ''; // placeholder or missing — caller should treat empty string as "no image"
+  return '';
 }
 
 // Open lightbox for ALL images of a design code (d.images + all variety images combined).
@@ -3122,10 +3148,12 @@ function handleImgUpload(oi,di,input){
     const reader=new FileReader();
     reader.onload=async e=>{
       const original=e.target.result;
-      const data=await compressImageToThumb(original); // compressed for Firebase sync
-      // hqData = original stored in IDB only — used by print for full quality
-      const hqData=original;
-      S.orders[oi].designs[di].images.push({data,hqData,name:file.name});
+      const data=await compressImageToThumb(original);
+      let url=null;
+      try{ url=await uploadToFirebaseStorage(original,file.name); }catch(e){ console.warn('Storage upload failed, using local fallback:',e.message); }
+      // If Storage upload succeeded, url gives every device full quality.
+      // If it failed, hqData (IDB-only) still gives full quality on this device.
+      S.orders[oi].designs[di].images.push({data, url:url||undefined, hqData:url?undefined:original, name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -4529,12 +4557,12 @@ function handleVendorImgUpload(voi, di, vi, input){
     const reader = new FileReader();
     reader.onload = async e=>{
       const original = e.target.result;
-      const data = await compressImageToThumb(original); // compressed for Firebase sync
-      // hqData = original stored in IDB only — used by print for full quality
-      const hqData = original;
+      const data = await compressImageToThumb(original);
+      let url = null;
+      try{ url = await uploadToFirebaseStorage(original, file.name); }catch(e){ console.warn('Storage upload failed, using local fallback:',e.message); }
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,hqData,name:file.name});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data, url:url||undefined, hqData:url?undefined:original, name:file.name});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -8906,6 +8934,8 @@ const FB_DATA  = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.jso
 const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json';
 const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
 const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
+// Firebase Storage bucket — find yours in Firebase Console → Storage (shown as gs://YOUR-BUCKET.appspot.com)
+const FB_STORAGE_BUCKET = 'bangle-tracker-default-rtdb.appspot.com';
 const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
 
 // Unique device ID so we don't re-apply our own pushed updates
@@ -9754,6 +9784,8 @@ async function migrateImagesToThumbs(){
   const compressArr = async (arr)=>{
     if(!arr) return;
     for(const img of arr){
+      // Skip images already on Firebase Storage — they don't need RTDB compression
+      if(img && img.url) continue;
       if(img && img.data && typeof img.data === 'string'
          && img.data.startsWith('data:') && img.data.length > IMAGE_FB_THRESHOLD){
         try{
