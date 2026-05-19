@@ -16,6 +16,7 @@ const CDN_HOSTS = [
   'fonts.googleapis.com',
   'fonts.gstatic.com',
   'cdn.jsdelivr.net',
+  'www.gstatic.com',  // Firebase JS SDK
 ];
 
 // ── Install ──
@@ -39,12 +40,6 @@ self.addEventListener('activate', e => {
         keys.filter(k => k !== CACHE && k !== NS_CACHE).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
-      .then(() => {
-        // Tell every open tab to reload so they pick up the new code immediately.
-        // Without this, tabs opened before the SW update keep running old JS.
-        return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-          .then(clients => clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' })));
-      })
   );
 });
 

@@ -14,6 +14,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700&family=Great+Vibes&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- Firebase JS SDK — provides real-time WebSocket sync with atomic update() writes -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 /* ══════════════════════════════════════════
    RESET & TOKENS
@@ -708,9 +711,14 @@ textarea.fc{resize:vertical;min-height:80px;line-height:1.5}
 
 <script>
 // ════════════════════════════════════
-//  CONFIG
+//  CONFIG — Firebase JS SDK (replaces REST + SSE)
 // ════════════════════════════════════
-const FB = 'https://bangle-tracker-default-rtdb.firebaseio.com';
+firebase.initializeApp({ databaseURL: 'https://bangle-tracker-default-rtdb.firebaseio.com' });
+const db = firebase.database();
+const WB  = db.ref('/wb');        // root ref used for reads
+const TDB = db.ref('/wb/tasks');  // tasks node
+const UDB = db.ref('/wb/users');  // users node
+const RDB = db.ref('/wb/customRoles'); // roles node
 
 // ════════════════════════════════════
 //  STATE
@@ -724,7 +732,7 @@ let S = {
   editTask:null, editUser:null, justTask:null,
 };
 const COLORS=['#6366f1','#10b981','#f59e0b','#ef4444','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4'];
-let _es=null, _dlTimer=null, _lastSaved=null, _deferredInstall=null;
+let _dbOff=null, _dlTimer=null, _lastSaved=null, _deferredInstall=null;
 
 // ════════════════════════════════════
 //  ROLE HELPERS
@@ -748,129 +756,72 @@ function fillLoginDropdown(){
 }
 
 // ════════════════════════════════════
-//  FIREBASE
+//  FIREBASE — SDK-based data layer
+//  Uses WebSocket (not REST+SSE) — handles reconnection automatically,
+//  update() writes are atomic and field-level (never overwrite other fields).
 // ════════════════════════════════════
-async function fbGet(p){try{const r=await fetch(`${FB}${p}.json`);return r.ok?await r.json():null;}catch{return null;}}
-async function fbPut(p,d){try{await fetch(`${FB}${p}.json`,{method:'PUT',body:JSON.stringify(d)});}catch{}}
-async function fbDel(p){try{await fetch(`${FB}${p}.json`,{method:'DELETE'});}catch{}}
-async function pushFB(){await fbPut('/wb',{users:S.users,tasks:S.tasks,customRoles:S.customRoles});}
-// Push only a single task — avoids overwriting other devices' concurrent changes
+
+// Load all data once (used on login / init)
+async function loadFB(){
+  try{
+    const snap=await WB.once('value');
+    const d=snap.val();if(!d)return;
+    if(d.users)S.users=d.users;
+    if(d.tasks)S.tasks=d.tasks;
+    if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
+    saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
+  }catch(e){console.error('loadFB',e);}
+}
+
+// Attach real-time listener — fires instantly whenever ANY change reaches Firebase.
+// The SDK maintains a persistent WebSocket and handles reconnection automatically.
+function listenFB(){
+  if(_dbOff)return; // already listening
+  const handler=snap=>{
+    const d=snap.val();if(!d)return;
+    if(d.users)S.users=d.users;
+    if(d.tasks)S.tasks=d.tasks;
+    if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
+    saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
+  };
+  WB.on('value',handler);
+  _dbOff=()=>WB.off('value',handler); // store unsubscribe function
+}
+function unlistenFB(){if(_dbOff){_dbOff();_dbOff=null;}}
+
+// ── Write helpers ──
+
+// Save the full task object (used for new / edited tasks)
 async function pushTask(id){
   try{
-    if(S.tasks[id]) await fbPut(`/wb/tasks/${id}`,S.tasks[id]);
-    else await fbDel(`/wb/tasks/${id}`);
-  }catch{}
+    if(S.tasks[id]) await TDB.child(id).set(S.tasks[id]);
+    else await TDB.child(id).remove();
+  }catch(e){console.error('pushTask',e);}
 }
-// Push only a single user record
+
+// Update ONLY specific fields on a task — the safe way to change status.
+// update() is atomic: it only touches the listed fields, never overwrites
+// title, deadline, assignee, or any other field on the same task.
+async function updateTaskStatus(id,fields){
+  try{ await TDB.child(id).update(fields); }catch(e){console.error('updateTaskStatus',e);}
+}
+
+// Save full user record
 async function pushUser(id){
   try{
-    if(S.users[id]) await fbPut(`/wb/users/${id}`,S.users[id]);
-    else await fbDel(`/wb/users/${id}`);
-  }catch{}
+    if(S.users[id]) await UDB.child(id).set(S.users[id]);
+    else await UDB.child(id).remove();
+  }catch(e){console.error('pushUser',e);}
 }
-// Push only the custom roles array
+
+// Save custom roles list
 async function pushRoles(){
-  try{ await fbPut('/wb/customRoles',S.customRoles); }catch{}
-}
-async function loadFB(){
-  const d=await fbGet('/wb');if(!d)return;
-  if(d.users)S.users=d.users;
-  if(d.tasks)S.tasks=d.tasks;
-  if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
-  saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
+  try{ await RDB.set(S.customRoles); }catch(e){console.error('pushRoles',e);}
 }
 
-// Apply a Firebase SSE event inline — no round-trip GET needed
-function applySSEUpdate(path,data,isPatch){
-  if(path==='/'){
-    if(data){
-      if(data.users)S.users=data.users;
-      if(data.tasks)S.tasks=data.tasks;
-      if(Array.isArray(data.customRoles))S.customRoles=data.customRoles;
-    }
-  } else if(path==='/tasks'){
-    if(!isPatch) S.tasks=data||{};
-    else if(data) Object.assign(S.tasks,data);
-  } else if(path.startsWith('/tasks/')){
-    const parts=path.slice('/tasks/'.length).split('/');
-    const tid=parts[0];
-    if(parts.length===1){
-      if(data){
-        const existing=S.tasks[tid];
-        // ── Revert-guard ──
-        // If our local copy is 'completed' and the incoming write would un-complete it,
-        // check lastModified. If the incoming write is older (or has no timestamp — i.e.
-        // written by old code), reject it locally AND re-push our completed version to
-        // Firebase so the correct state wins.
-        if(existing && existing.status==='completed' && data.status && data.status!=='completed'){
-          const inTs = data.lastModified || 0;
-          const exTs = existing.lastModified || 1; // treat no-timestamp existing as newer than no-timestamp incoming
-          if(inTs <= exTs){
-            // Stale/old-code write — push correct completed state back to Firebase
-            pushTask(tid);
-            return; // do not apply to local state
-          }
-          // incoming has strictly newer timestamp → it's an intentional admin reopen, allow it
-        }
-        // For PATCH events merge into existing; for PUT replace entirely
-        if(isPatch) Object.assign(S.tasks[tid]=S.tasks[tid]||{},data);
-        else S.tasks[tid]=data;
-      } else delete S.tasks[tid];
-    } else if(S.tasks[tid]){
-      let obj=S.tasks[tid];
-      for(let i=1;i<parts.length-1;i++) obj=obj[parts[i]]||(obj[parts[i]]={});
-      if(data!==null&&data!==undefined) obj[parts[parts.length-1]]=data;
-      else delete obj[parts[parts.length-1]];
-    }
-  } else if(path==='/users'){
-    if(!isPatch) S.users=data||{};
-    else if(data) Object.assign(S.users,data);
-  } else if(path.startsWith('/users/')){
-    const uid=path.slice('/users/'.length).split('/')[0];
-    const sub=path.slice(('/users/'+uid).length);
-    if(!sub||sub==='/'){
-      if(data){
-        // PATCH merges; PUT replaces
-        if(isPatch) Object.assign(S.users[uid]=S.users[uid]||{},data);
-        else S.users[uid]=data;
-      } else delete S.users[uid];
-    } else {
-      // nested property e.g. /users/{uid}/role
-      const prop=sub.replace(/^\//,'');
-      if(S.users[uid]&&prop) S.users[uid][prop]=data;
-    }
-  } else if(path==='/customRoles'){
-    if(Array.isArray(data)) S.customRoles=data;
-  } else {
-    loadFB(); return; // unknown sub-path — do full fetch as safe fallback
-  }
-  // NOTE: do NOT call checkDL() here — it would push overdue status to Firebase and
-  // race with employees marking tasks complete on other devices (last-write-wins).
-  // checkDL() runs on the 60s timer and on load only.
-  saveLS();render();fillLoginDropdown();checkNotifs();saveBgState();
-}
-
-function listenFB(){
-  if(_es)return;
-  _es=new EventSource(`${FB}/wb.json`);
-  _es.addEventListener('put',e=>{
-    try{
-      const msg=JSON.parse(e.data);
-      if(msg&&msg.path!==undefined){applySSEUpdate(msg.path,msg.data,false);return;}
-    }catch{}
-    loadFB();
-  });
-  _es.addEventListener('patch',e=>{
-    try{
-      const msg=JSON.parse(e.data);
-      if(msg&&msg.path!==undefined){applySSEUpdate(msg.path,msg.data,true);return;}
-    }catch{}
-    loadFB();
-  });
-  _es.onerror=()=>{
-    _es.close();_es=null;
-    setTimeout(()=>{if(S.me)listenFB();},4000);
-  };
+// Full save (used by Ctrl+S manual save only)
+async function pushFB(){
+  try{ await WB.set({users:S.users,tasks:S.tasks,customRoles:S.customRoles}); }catch(e){}
 }
 
 // ════════════════════════════════════
@@ -1073,7 +1024,7 @@ function doLogin(){
 async function doLogout(){
   S.me=null;clearSess();
   if(_dlTimer)clearInterval(_dlTimer);
-  if(_es){_es.close();_es=null;}
+  unlistenFB();
   // Clear SW background state so notifications stop after sign-out
   try{const c=await caches.open('wb-notif-state');await c.delete('user-state');}catch{}
   clearBadge(); // remove icon badge on sign-out
@@ -1160,22 +1111,28 @@ function delTask(id){
 function completeTask(id){
   const t=S.tasks[id];if(!t)return;
   if(t.status==='overdue'){S.justTask=id;document.getElementById('just-txt').value='';showM('m-just');return;}
-  t.status='completed';t.completedAt=Date.now();t.lastModified=Date.now();
-  autosaveTask(id);closeM('m-det');toast('Marked complete ✓');render();
+  const now=Date.now();
+  // updateTaskStatus writes ONLY these fields atomically — title/deadline/assignee untouched
+  t.status='completed';t.completedAt=now;t.lastModified=now;
+  updateTaskStatus(id,{status:'completed',completedAt:now,lastModified:now});
+  saveLS();_saveFeedbackDone();closeM('m-det');toast('Marked complete ✓');render();
 }
 function submitJust(){
   const r=document.getElementById('just-txt').value.trim();
   if(!r){toast('Please write a reason','bad');return;}
   const t=S.tasks[S.justTask];if(!t)return;
-  t.status='completed';t.completedAt=Date.now();t.delayReason=r;t.lastModified=Date.now();
-  const tid=S.justTask;
-  autosaveTask(tid);closeM('m-just');closeM('m-det');toast('Completed with justification');render();S.justTask=null;
+  const now=Date.now();const tid=S.justTask;
+  t.status='completed';t.completedAt=now;t.delayReason=r;t.lastModified=now;
+  updateTaskStatus(tid,{status:'completed',completedAt:now,delayReason:r,lastModified:now});
+  saveLS();_saveFeedbackDone();closeM('m-just');closeM('m-det');toast('Completed with justification');render();S.justTask=null;
 }
 function reopenTask(id){
   const t=S.tasks[id];if(!t)return;
-  t.status=(t.deadline&&t.deadline<Date.now())?'overdue':'in_progress';
-  t.completedAt=null;t.delayReason=null;t.lastModified=Date.now();
-  autosaveTask(id);closeM('m-det');toast('Task reopened');render();
+  const now=Date.now();
+  const newStatus=(t.deadline&&t.deadline<now)?'overdue':'in_progress';
+  t.status=newStatus;t.completedAt=null;t.delayReason=null;t.lastModified=now;
+  updateTaskStatus(id,{status:newStatus,completedAt:null,delayReason:null,lastModified:now});
+  saveLS();_saveFeedbackDone();closeM('m-det');toast('Task reopened');render();
 }
 
 // ════════════════════════════════════
@@ -1716,19 +1673,16 @@ init();
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('workboard-sw.js',{updateViaCache:'none'}).then(reg=>{
-      // Check for updates immediately and every time the page gains focus
       reg.update();
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update();});
+      reg.addEventListener('updatefound',()=>{
+        const nw=reg.installing;
+        nw.addEventListener('statechange',()=>{
+          if(nw.state==='installed'&&navigator.serviceWorker.controller)
+            toast('App updated — refresh when convenient','inf');
+        });
+      });
     }).catch(()=>{});
-
-    // When the SW sends SW_UPDATED (new SW activated), reload immediately so
-    // every open tab always runs the latest code — this kills the old 30s autosave timer.
-    navigator.serviceWorker.addEventListener('message', e => {
-      if(e.data && e.data.type === 'SW_UPDATED') window.location.reload();
-    });
-
-    // Also reload when the controlling SW changes (covers iOS and other browsers)
-    navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
   });
 }
 </script>
