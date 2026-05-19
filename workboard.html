@@ -1673,16 +1673,17 @@ init();
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('workboard-sw.js',{updateViaCache:'none'}).then(reg=>{
+      // Check for a new SW immediately on load and every time the app comes to foreground
       reg.update();
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update();});
-      reg.addEventListener('updatefound',()=>{
-        const nw=reg.installing;
-        nw.addEventListener('statechange',()=>{
-          if(nw.state==='installed'&&navigator.serviceWorker.controller)
-            toast('App updated — refresh when convenient','inf');
-        });
-      });
     }).catch(()=>{});
+
+    // When a new SW takes control, reload automatically after a 1.5s grace period.
+    // The grace period lets any in-flight Firebase SDK write finish before the page reloads.
+    // After reload, localStorage restores the session so the employee is still logged in.
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      setTimeout(()=>window.location.reload(), 1500);
+    });
   });
 }
 </script>
