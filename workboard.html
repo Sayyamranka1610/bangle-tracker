@@ -1080,7 +1080,7 @@ function delUser(id){
 //  ROLE HELPERS
 // ════════════════════════════════════
 function fillRoleSelect(sel){
-  const base=['worker','owner'];
+  const base=['employee','owner'];
   const all=[...new Set([...base,...S.customRoles])];
   document.getElementById('u-role').innerHTML=
     all.map(r=>`<option value="${xe(r)}"${r===sel?' selected':''}>${cap(r)}</option>`).join('')+
@@ -1104,7 +1104,7 @@ function addRole(){
 function cancelRole(){
   document.getElementById('new-role-inp').value='';
   document.getElementById('new-role-box').style.display='none';
-  const sel=document.getElementById('u-role');if(sel.value==='__new__')sel.value='worker';
+  const sel=document.getElementById('u-role');if(sel.value==='__new__')sel.value='employee';
 }
 
 // ════════════════════════════════════
@@ -1197,7 +1197,7 @@ function showAddUser(){
   document.getElementById('m-user-ttl').textContent='Add Member';
   ['u-name','u-uname','u-pass','u-dept'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('new-role-box').style.display='none';
-  fillRoleSelect('worker');fillUnameSugg();showM('m-user');
+  fillRoleSelect('employee');fillUnameSugg();showM('m-user');
   setTimeout(()=>document.getElementById('u-name').focus(),300);
 }
 function showEditUser(id){
@@ -1562,6 +1562,10 @@ async function init(){
     S.users['owner_default']={id:'owner_default',name:'Owner',username:'owner',password:'admin123',role:'owner',dept:'Management',color:'#6366f1'};
     saveLS();
   }
+  // Migrate any existing users still stored with role "worker" → "employee"
+  let migrated=false;
+  Object.values(S.users).forEach(u=>{if(u.role==='worker'){u.role='employee';migrated=true;}});
+  if(migrated){saveLS();pushFB();}
   fillLoginDropdown();   // populate dropdown immediately from local cache
   await loadFB();        // loadFB calls fillLoginDropdown() again after fresh data
   const sid=loadSess();
