@@ -1,7 +1,7 @@
-// WorkBoard Service Worker — v3
+// WorkBoard Service Worker — v4
 // Handles: caching, background notifications, notification taps
 
-const CACHE = 'workboard-v3';
+const CACHE = 'workboard-v4';
 const NS_CACHE = 'wb-notif-state'; // stores logged-in user + seen-task IDs
 const FB = 'https://bangle-tracker-default-rtdb.firebaseio.com';
 
@@ -31,7 +31,7 @@ self.addEventListener('install', e => {
   );
 });
 
-// ── Activate: wipe old caches (keep NS_CACHE) ──
+// ── Activate: wipe old caches (keep NS_CACHE), then tell ALL open tabs to reload ──
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
@@ -39,6 +39,12 @@ self.addEventListener('activate', e => {
         keys.filter(k => k !== CACHE && k !== NS_CACHE).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
+      .then(() => {
+        // Tell every open tab to reload so they pick up the new code immediately.
+        // Without this, tabs opened before the SW update keep running old JS.
+        return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+          .then(clients => clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' })));
+      })
   );
 });
 
@@ -52,7 +58,7 @@ self.addEventListener('fetch', e => {
   // Network-first for HTML
   if (url.pathname.endsWith('.html') && url.origin === self.location.origin) {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'no-cache' })
         .then(r => {
           if (r.ok) caches.open(CACHE).then(c => c.put(e.request, r.clone()));
           return r;
@@ -153,8 +159,7 @@ async function runBackgroundCheck() {
 
     // Update app-icon badge with overdue task count
     const overdueCount = myTasks.filter(t =>
-      t.status === 'overdue' ||
-      (t.deadline && t.deadline < now && t.status !== 'completed')
+      t.deadline && t.deadline < now && t.status !== 'completed'
     ).length;
     try {
       if ('setAppBadge' in self.navigator) {

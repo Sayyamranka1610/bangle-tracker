@@ -796,6 +796,22 @@ function applySSEUpdate(path,data,isPatch){
     const tid=parts[0];
     if(parts.length===1){
       if(data){
+        const existing=S.tasks[tid];
+        // ── Revert-guard ──
+        // If our local copy is 'completed' and the incoming write would un-complete it,
+        // check lastModified. If the incoming write is older (or has no timestamp — i.e.
+        // written by old code), reject it locally AND re-push our completed version to
+        // Firebase so the correct state wins.
+        if(existing && existing.status==='completed' && data.status && data.status!=='completed'){
+          const inTs = data.lastModified || 0;
+          const exTs = existing.lastModified || 1; // treat no-timestamp existing as newer than no-timestamp incoming
+          if(inTs <= exTs){
+            // Stale/old-code write — push correct completed state back to Firebase
+            pushTask(tid);
+            return; // do not apply to local state
+          }
+          // incoming has strictly newer timestamp → it's an intentional admin reopen, allow it
+        }
         // For PATCH events merge into existing; for PUT replace entirely
         if(isPatch) Object.assign(S.tasks[tid]=S.tasks[tid]||{},data);
         else S.tasks[tid]=data;
@@ -1130,7 +1146,8 @@ function saveTask(){
   if(!isEdit&&dl<Date.now())sta='overdue';
   S.tasks[id]={...ex,id,title,desc:document.getElementById('t-desc').value.trim(),
     assignedTo:who,section:sect,priority:document.getElementById('t-pri').value,
-    status:sta,deadline:dl,createdBy:S.me.id,createdAt:ex.createdAt||Date.now()};
+    status:sta,deadline:dl,createdBy:S.me.id,createdAt:ex.createdAt||Date.now(),
+    lastModified:Date.now()};
   autosaveTask(id);closeM('m-task');toast(isEdit?'Task updated':'Task created ✓');S.editTask=null;render();
 }
 function delTask(id){
@@ -1143,21 +1160,21 @@ function delTask(id){
 function completeTask(id){
   const t=S.tasks[id];if(!t)return;
   if(t.status==='overdue'){S.justTask=id;document.getElementById('just-txt').value='';showM('m-just');return;}
-  t.status='completed';t.completedAt=Date.now();
+  t.status='completed';t.completedAt=Date.now();t.lastModified=Date.now();
   autosaveTask(id);closeM('m-det');toast('Marked complete ✓');render();
 }
 function submitJust(){
   const r=document.getElementById('just-txt').value.trim();
   if(!r){toast('Please write a reason','bad');return;}
   const t=S.tasks[S.justTask];if(!t)return;
-  t.status='completed';t.completedAt=Date.now();t.delayReason=r;
+  t.status='completed';t.completedAt=Date.now();t.delayReason=r;t.lastModified=Date.now();
   const tid=S.justTask;
   autosaveTask(tid);closeM('m-just');closeM('m-det');toast('Completed with justification');render();S.justTask=null;
 }
 function reopenTask(id){
   const t=S.tasks[id];if(!t)return;
   t.status=(t.deadline&&t.deadline<Date.now())?'overdue':'in_progress';
-  t.completedAt=null;t.delayReason=null;
+  t.completedAt=null;t.delayReason=null;t.lastModified=Date.now();
   autosaveTask(id);closeM('m-det');toast('Task reopened');render();
 }
 
@@ -1698,12 +1715,20 @@ init();
 // ── Service Worker ──
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('workboard-sw.js').then(reg=>{
-      reg.addEventListener('updatefound',()=>{
-        const nw=reg.installing;
-        nw.addEventListener('statechange',()=>{if(nw.state==='installed'&&navigator.serviceWorker.controller)toast('App updated — refresh for latest version','inf');});
-      });
+    navigator.serviceWorker.register('workboard-sw.js',{updateViaCache:'none'}).then(reg=>{
+      // Check for updates immediately and every time the page gains focus
+      reg.update();
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update();});
     }).catch(()=>{});
+
+    // When the SW sends SW_UPDATED (new SW activated), reload immediately so
+    // every open tab always runs the latest code — this kills the old 30s autosave timer.
+    navigator.serviceWorker.addEventListener('message', e => {
+      if(e.data && e.data.type === 'SW_UPDATED') window.location.reload();
+    });
+
+    // Also reload when the controlling SW changes (covers iOS and other browsers)
+    navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
   });
 }
 </script>
