@@ -2,10 +2,8 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v8';
+const CACHE_NAME = 'bangle-tracker-v9';
 const APP_SHELL = [
-  './',
-  './index.html',
   './bangle_v19.html',
   './bangle-logo.jpg',
   './icon-192.png',
