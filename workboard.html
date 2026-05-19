@@ -861,6 +861,18 @@ function confirmDeleteTask(id){
   toast('Deleted');
 }
 
+async function confirmDeleteAllTasks(){
+  if(!confirm('DELETE ALL TASKS?\n\nThis will permanently remove every single task from the workboard for everyone. This cannot be undone.\n\nAre you absolutely sure?')) return;
+  saveBusy();
+  try{
+    await TASKS.remove();
+    S.tasks = {};
+    saveDone();
+    toast('All tasks deleted ✓','ok');
+    render();
+  } catch(e){ toast('Failed to delete tasks','bad'); console.error(e); }
+}
+
 function openCreateTask(){
   S.editTask = null;
   document.getElementById('m-task-title').textContent='New Task';
@@ -1239,6 +1251,17 @@ function renderSettingsView(){
   return `
     <div class="page-hdr"><div><div class="page-title">Settings</div></div></div>
     ${members}
+    ${isOwner() ? `
+    <div class="settings-section">
+      <h3>Danger Zone</h3>
+      <div style="padding:0 16px">
+        <div style="background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sh)">
+          <div style="font-size:14px;font-weight:600;color:var(--t1);margin-bottom:4px">Delete All Tasks</div>
+          <div style="font-size:13px;color:var(--t2);margin-bottom:14px">Permanently removes every task from the workboard. Cannot be undone.</div>
+          <button class="btn btn-bad" style="max-width:200px" onclick="confirmDeleteAllTasks()">🗑 Delete All Tasks</button>
+        </div>
+      </div>
+    </div>` : ''}
     <div class="settings-section">
       <h3>Connection</h3>
       <div style="padding:0 16px">
