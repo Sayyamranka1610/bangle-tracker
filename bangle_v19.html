@@ -2518,7 +2518,9 @@ function removeDesign(oi,di){
   if(!confirm('Remove this design?'))return;
   const d=S.orders[oi].designs[di];
   audit('Remove design',`Order ${S.orders[oi].orderId}: "${d.name}" removed`);
-  S.orders[oi].designs.splice(di,1);render();
+  S.orders[oi].designs.splice(di,1);
+  render();
+  try{fbPushNow();}catch(e){}
 }
 function delOrder(oi){
   if(!confirm('Delete this order?'))return;
@@ -4471,6 +4473,10 @@ function upVendorOrder(voi, field, val){
 
 function delVendorOrder(voi){
   if(!confirm('Delete this vendor order?')) return;
+  const vo=S.vendorOrders[voi];
+  // Record ID so cross-device merge never resurrects this vendor order
+  if(!S.deletedVendorOrderIds)S.deletedVendorOrderIds=[];
+  if(vo&&vo.id&&!S.deletedVendorOrderIds.includes(vo.id))S.deletedVendorOrderIds.push(vo.id);
   S.vendorOrders.splice(voi,1);
   save();
   renderVendorOrders();
@@ -8879,45 +8885,66 @@ function _flushPendingRemote(){
 // ── CROSS-DEVICE ORDER MERGE ──────────────────────────────────────────────────
 // Firebase is the single source of truth for shared state.  However, a device
 // can push stale local data that overwrites orders created on another device.
-// This function rescues such "orphaned" orders: it reads the local cache and
-// adds back any orders that exist locally but are absent from the remote
-// snapshot — UNLESS they appear in the combined deletedOrderIds list (meaning
-// they were intentionally deleted, not just missing due to a sync race).
-// Returns { merged: state, added: boolean, count: number }.
+// This function does two things:
+//   1. STRIPS any orders in the remote snapshot that were deleted locally/remotely
+//      (prevents a stale push from another device from resurrecting deleted orders)
+//   2. RESCUES orders that exist locally but are absent from remote due to a sync
+//      race — only if they are NOT in the combined deletedOrderIds list.
+// Returns { merged: state, added: boolean, count: number, needsPush: boolean }.
 function _mergeLocalIntoRemote(remoteState){
   let localState=null;
   try{
     const raw=localStorage.getItem('bangle_prod_tracker');
     localState=raw?JSON.parse(raw):null;
   }catch(e){}
-  if(!localState||!localState.orders||!localState.orders.length)
-    return{merged:remoteState,added:false,count:0};
 
-  // Union of explicitly-deleted IDs from both remote and local
+  // Union of explicitly-deleted IDs from both remote and local (client orders)
   const deletedIds=new Set([
     ...(remoteState.deletedOrderIds||[]),
-    ...(localState.deletedOrderIds||[])
+    ...((localState&&localState.deletedOrderIds)||[])
   ]);
-  const remoteIds=new Set((remoteState.orders||[]).map(o=>o.id));
-  const rescued=(localState.orders||[]).filter(o=>
-    o.id&&!remoteIds.has(o.id)&&!deletedIds.has(o.id)
-  );
-  if(!rescued.length)return{merged:remoteState,added:false,count:0};
+  // Same for vendor orders
+  const deletedVendorIds=new Set([
+    ...(remoteState.deletedVendorOrderIds||[]),
+    ...((localState&&localState.deletedVendorOrderIds)||[])
+  ]);
+
+  // CRITICAL: Strip remote orders that belong to the combined deleted set.
+  // A stale push from another device can include an order we already deleted —
+  // without this filter it would silently come back every time that device syncs.
+  const cleanedOrders=(remoteState.orders||[]).filter(o=>!o.id||!deletedIds.has(o.id));
+  const cleanedVendorOrders=(remoteState.vendorOrders||[]).filter(o=>!o.id||!deletedVendorIds.has(o.id));
+  const ordersFiltered=cleanedOrders.length!==(remoteState.orders||[]).length;
+  const vendorFiltered=cleanedVendorOrders.length!==(remoteState.vendorOrders||[]).length;
+
+  // IDs present in the cleaned remote — used for rescue check below
+  const cleanedIds=new Set(cleanedOrders.map(o=>o.id));
+
+  // Rescue local-only client orders (created on this device but absent from remote
+  // due to a sync race — e.g. another device pushed before our new order reached FB)
+  const rescued=localState&&localState.orders
+    ?(localState.orders).filter(o=>o.id&&!cleanedIds.has(o.id)&&!deletedIds.has(o.id))
+    :[];
+
+  const needsPush=rescued.length>0||ordersFiltered||vendorFiltered;
+  if(!needsPush)return{merged:remoteState,added:false,count:0,needsPush:false};
 
   const merged={
     ...remoteState,
-    orders:[...(remoteState.orders||[]),...rescued],
-    deletedOrderIds:[...deletedIds]
+    orders:[...cleanedOrders,...rescued],
+    vendorOrders:cleanedVendorOrders,
+    deletedOrderIds:[...deletedIds],
+    deletedVendorOrderIds:[...deletedVendorIds]
   };
-  return{merged,added:true,count:rescued.length};
+  return{merged,added:rescued.length>0,count:rescued.length,needsPush:true};
 }
 
 // Applies a remote Firebase state to the app.
 // Always merges local-only orders back in before overwriting state, so that
 // a stale push from another device never silently erases orders.
 function _applyRemoteState(parsed, savedAt){
-  // Rescue any orders that exist locally but not in this remote snapshot
-  const{merged,added,count}=_mergeLocalIntoRemote(parsed);
+  // Merge: strips deleted orders from remote snapshot + rescues local-only orders
+  const{merged,added,count,needsPush}=_mergeLocalIntoRemote(parsed);
 
   // Preserve LOCAL UI state — panel expansion is per-device, not shared data
   const keepDesignStages = S.openDesignStages;
@@ -8930,10 +8957,10 @@ function _applyRemoteState(parsed, savedAt){
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   render();
-  if(added){
-    // Push merged state so the rescued orders reach all other devices too
+  if(needsPush){
+    // Push cleaned/merged state back so all other devices also get the correction
     fbSchedulePush();
-    showToast(`✅ ${count} order(s) restored — cloud was missing them`,'green');
+    if(added) showToast(`✅ ${count} order(s) restored — cloud was missing them`,'green');
   }
   fbSetStatus('connected', 'Live · synced');
 }
