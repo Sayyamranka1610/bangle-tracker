@@ -761,6 +761,17 @@ async function pushTask(id){
     else await fbDel(`/wb/tasks/${id}`);
   }catch{}
 }
+// Push only a single user record
+async function pushUser(id){
+  try{
+    if(S.users[id]) await fbPut(`/wb/users/${id}`,S.users[id]);
+    else await fbDel(`/wb/users/${id}`);
+  }catch{}
+}
+// Push only the custom roles array
+async function pushRoles(){
+  try{ await fbPut('/wb/customRoles',S.customRoles); }catch{}
+}
 async function loadFB(){
   const d=await fbGet('/wb');if(!d)return;
   if(d.users)S.users=d.users;
@@ -1001,6 +1012,14 @@ async function autosaveTask(id){
   _saveFeedbackDone();
 }
 
+// Per-user save — only writes the single user record to Firebase
+async function autosaveUser(id){
+  _saveFeedbackStart();
+  saveLS();
+  await pushUser(id);
+  _saveFeedbackDone();
+}
+
 // Ctrl+S still works
 async function manualSave(){autosave();}
 
@@ -1143,12 +1162,15 @@ function saveUser(){
   S.users[id]={...ex,id,name,username:uname,role,dept,
     password:pass||ex.password,color:ex.color||COLORS[Object.keys(S.users).length%COLORS.length]};
   if(S.me?.id===id)S.me=S.users[id];
-  autosave();closeM('m-user');toast(isEdit?'Member updated':'Member added ✓');S.editUser=null;render();renderNav();
+  autosaveUser(id);closeM('m-user');toast(isEdit?'Member updated':'Member added ✓');S.editUser=null;render();renderNav();
 }
 function delUser(id){
   if(id===S.me.id){toast('Cannot remove yourself','bad');return;}
   if(!confirm('Remove this member?'))return;
-  delete S.users[id];autosave();toast('Removed');render();
+  delete S.users[id];
+  saveLS();pushUser(id); // pushUser with no S.users[id] → sends DELETE to Firebase
+  _saveFeedbackDone();
+  toast('Removed');render();
 }
 
 // ════════════════════════════════════
@@ -1171,7 +1193,7 @@ function addRole(){
   const v=document.getElementById('new-role-inp').value.trim().toLowerCase();
   if(!v){toast('Enter a role name','bad');return;}
   if(!S.customRoles.includes(v))S.customRoles.push(v);
-  autosave();fillRoleSelect(v);
+  saveLS();pushRoles();fillRoleSelect(v);
   document.getElementById('new-role-box').style.display='none';
   document.getElementById('new-role-inp').value='';
   toast(`Role "${cap(v)}" added`);
@@ -1637,12 +1659,18 @@ async function init(){
     S.users['owner_default']={id:'owner_default',name:'Owner',username:'owner',password:'admin123',role:'owner',dept:'Management',color:'#6366f1'};
     saveLS();
   }
-  // Migrate any existing users still stored with role "worker" → "employee"
-  let migrated=false;
-  Object.values(S.users).forEach(u=>{if(u.role==='worker'){u.role='employee';migrated=true;}});
-  if(migrated){saveLS();pushFB();}
   fillLoginDropdown();   // populate dropdown immediately from local cache
-  await loadFB();        // loadFB calls fillLoginDropdown() again after fresh data
+  await loadFB();        // load fresh Firebase data FIRST before any migration
+
+  // Migrate any users still stored with role "worker" → "employee"
+  // Now done AFTER loadFB so we have the latest data, and uses per-user PUT (not full pushFB)
+  const migratedIds=[];
+  Object.values(S.users).forEach(u=>{if(u.role==='worker'){u.role='employee';migratedIds.push(u.id);}});
+  if(migratedIds.length){
+    saveLS();
+    migratedIds.forEach(id=>pushUser(id)); // only touch the affected user nodes
+  }
+
   const sid=loadSess();
   if(sid&&S.users[sid]){S.me=S.users[sid];startApp();}
 }
