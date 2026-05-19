@@ -4980,106 +4980,134 @@ function buildVendorDetailsPanel(vo,vi){
 }
 
 function buildVendorDesignsPanel(vo,vi){
+  // ── Group designs by design name (mirrors client order grouping) ─────────
+  const groups=[];const byName={};
+  vo.designs.forEach((d,di)=>{
+    const key=d.name||'(unnamed)';
+    let g=byName[key];
+    if(!g){g={name:key,items:[]};byName[key]=g;groups.push(g);}
+    g.items.push({d,di});
+  });
+
   let html='<div class="section-head">Designs &amp; Varieties ('+vo.designs.length+') — Order total: <strong>'+formatQtyByUnit(vendorOrderQtyByUnit(vo))+'</strong>'
     +'<button class="icon-btn primary no-print" onclick="addVendorDesign('+vi+')">+ Add design</button></div>';
 
   if(!vo.designs.length) return html+'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>';
 
-  html+=vo.designs.map((d,di)=>{
-    const szKeys=Object.keys(d.sizes||{});
-    const varieties=d.varieties||[];
+  html+=groups.map(g=>{
+    // Aggregate group quantity for badge
+    const groupQty={};
+    g.items.forEach(({d})=>{
+      const dq=designQtyByUnit(d);
+      Object.keys(dq).forEach(u=>{groupQty[u]=(groupQty[u]||0)+dq[u];});
+    });
 
-    // Flat (CNC-style): no varieties, OR exactly one variety that has no meaningful name
-    const hasOnlyDefault=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
-    const isFlat=varieties.length===0||hasOnlyDefault;
-
-    // ── Image gallery (same style as client orders: 100×100 thumbnails) ──────
+    // Aggregate all images across every design in the group
     const allGroupImgs=[];
-    if(isFlat){(hasOnlyDefault?varieties[0].images:d.images||[]).forEach(img=>allGroupImgs.push({img,label:d.code||d.name}));}
-    else{(d.images||[]).forEach(img=>allGroupImgs.push({img,label:d.code||d.name}));varieties.forEach(v=>(v.images||[]).forEach(img=>allGroupImgs.push({img,label:v.name||d.code})));}
+    g.items.forEach(({d})=>{
+      const varieties=d.varieties||[];
+      const hod=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
+      const flat=varieties.length===0||hod;
+      if(flat){(hod?varieties[0].images||[]:d.images||[]).forEach(img=>allGroupImgs.push({img,label:d.code||d.name}));}
+      else{(d.images||[]).forEach(img=>allGroupImgs.push({img,label:d.code||d.name}));varieties.forEach(v=>(v.images||[]).forEach(img=>allGroupImgs.push({img,label:v.name||d.code})));}
+    });
     const imgGallery=allGroupImgs.length
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'+allGroupImgs.map(({img,label})=>{
           const src=_resolveImgSrc(img)||'';return src
             ?'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
               +'<img src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
               +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
-            +'</div>':'';}).filter(Boolean).join('')+'</div>'
+            +'</div>':'';
+        }).filter(Boolean).join('')+'</div>'
       :'';
 
-    // ── Table body ───────────────────────────────────────────────────────────
+    // Union of size keys across all designs in this group
+    const szSet=new Set();
+    g.items.forEach(({d})=>{
+      Object.keys(d.sizes||{}).forEach(s=>szSet.add(s));
+      (d.varieties||[]).forEach(v=>Object.keys(v.sizes||{}).forEach(s=>szSet.add(s)));
+    });
+    const szKeys=[...szSet];
+
+    // Build combined tbody for all design codes in this group
     const grpTotals={};szKeys.forEach(sz=>grpTotals[sz]=0);
     let tbody='';
 
-    if(isFlat){
-      // ── FLAT ROW (CNC-style, matches client flat row) ────────────────────
-      const rowSizes=hasOnlyDefault?(varieties[0].sizes||{}):(d.sizes||{});
-      const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
-      szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
-      const flatUnit=hasOnlyDefault?(varieties[0].unit||d.unit||'pcs'):(d.unit||'pcs');
-      const flatRate=hasOnlyDefault?(varieties[0].rate!=null?varieties[0].rate:d.rate||''):(d.rate||'');
-      const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
-      const flatImgs=hasOnlyDefault?(varieties[0].images||[]):(d.images||[]);
-      const imgCells=flatImgs.map((img,ii)=>{const src=_resolveImgSrc(img);return src
-        ?'<img class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
-          +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
-      const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-        +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
-      const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'" oninput="upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')" tabindex="0"></td>').join('');
-      tbody='<tr style="background:#fff">'
-        +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px"></td>'
-        +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
-        +sizeCells
-        +'<td class="total-col">'+rowTotal+'</td>'
-        +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorFlatUnit('+vi+','+di+',this.value,'+hasOnlyDefault+')">'+unitOpts+'</select></td>'
-        +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
-        +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
-          +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
-          +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
-        +'</div></td>'
-      +'</tr>';
+    g.items.forEach(({d,di})=>{
+      const varieties=d.varieties||[];
+      const hasOnlyDefault=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
+      const isFlat=varieties.length===0||hasOnlyDefault;
 
-    } else {
-      // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS (Dye Gold style) ───────
-      const colTotals={};
-      szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);grpTotals[sz]+=colTotals[sz];});
-      const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
-      const dImages=d.images||[];
-      const dImgCells=dImages.map((img,ii)=>{const src=_resolveImgSrc(img);return src
-        ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
-      const addDImgBtn='<label class="variety-img-add no-print" for="vdimg-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-        +'<input type="file" id="vdimg-'+d.id+'" accept="image/*" style="display:none" onchange="addVDImg('+vi+','+di+',this)">';
-      tbody='<tr style="background:#EEEDFE">'
-        +'<td style="font-weight:700"><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700"></td>'
-        +'<td><div class="variety-img-cell">'+dImgCells+addDImgBtn+'</div></td>'
-        +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'+varieties.length+' variet'+(varieties.length===1?'y':'ies')+' — see rows below</td>'
-        +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
-        +'<td></td><td></td>'
-        +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
-          +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
-          +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
-        +'</div></td></tr>';
-      varieties.forEach((v,vri)=>{
-        const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const varImgs=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src
-          ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
-        const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-          +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
-        const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
-        const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'" oninput="upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)" tabindex="0"></td>').join('');
-        tbody+='<tr style="background:#FAFAFF">'
-          +'<td style="padding-left:22px"><span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
-            +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px"></td>'
-          +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
-          +szCells
+      if(isFlat){
+        // ── Flat row (CNC-style) ──────────────────────────────────────────
+        const rowSizes=hasOnlyDefault?(varieties[0].sizes||{}):(d.sizes||{});
+        const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
+        szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
+        const flatUnit=hasOnlyDefault?(varieties[0].unit||d.unit||'pcs'):(d.unit||'pcs');
+        const flatRate=hasOnlyDefault?(varieties[0].rate!=null?varieties[0].rate:d.rate||''):(d.rate||'');
+        const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
+        const flatImgs=hasOnlyDefault?(varieties[0].images||[]):(d.images||[]);
+        const imgCells=flatImgs.map((img,ii)=>{const src=_resolveImgSrc(img);return src
+          ?'<img class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
+            +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
+        const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
+          +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
+        const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'" oninput="upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')" tabindex="0"></td>').join('');
+        tbody+='<tr style="background:#fff">'
+          +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px"></td>'
+          +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
+          +sizeCells
           +'<td class="total-col">'+rowTotal+'</td>'
-          +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety('+vi+','+di+','+vri+',\'unit\',this.value)">'+unitOpts+'</select></td>'
-          +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVendorVarietyRate('+vi+','+di+','+vri+',this.value)"></td>'
-          +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVendorVariety('+vi+','+di+','+vri+')">✕</button></td>'
+          +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorFlatUnit('+vi+','+di+',this.value,'+hasOnlyDefault+')">'+unitOpts+'</select></td>'
+          +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
+          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+            +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
+            +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
+          +'</div></td>'
         +'</tr>';
-      });
-    }
 
-    // ── Footer + controls ────────────────────────────────────────────────────
+      } else {
+        // ── Design-code header row + variety sub-rows (Dye Gold style) ───
+        const colTotals={};
+        szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);grpTotals[sz]+=colTotals[sz];});
+        const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
+        const dImages=d.images||[];
+        const dImgCells=dImages.map((img,ii)=>{const src=_resolveImgSrc(img);return src
+          ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+        const addDImgBtn='<label class="variety-img-add no-print" for="vdimg-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
+          +'<input type="file" id="vdimg-'+d.id+'" accept="image/*" style="display:none" onchange="addVDImg('+vi+','+di+',this)">';
+        tbody+='<tr style="background:#EEEDFE">'
+          +'<td style="font-weight:700"><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700"></td>'
+          +'<td><div class="variety-img-cell">'+dImgCells+addDImgBtn+'</div></td>'
+          +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'+varieties.length+' variet'+(varieties.length===1?'y':'ies')+' — see rows below</td>'
+          +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
+          +'<td></td><td></td>'
+          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+            +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
+            +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
+          +'</div></td></tr>';
+        varieties.forEach((v,vri)=>{
+          const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+          const varImgs=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src
+            ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+          const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
+            +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
+          const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
+          const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'" oninput="upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)" tabindex="0"></td>').join('');
+          tbody+='<tr style="background:#FAFAFF">'
+            +'<td style="padding-left:22px"><span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
+              +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px"></td>'
+            +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
+            +szCells
+            +'<td class="total-col">'+rowTotal+'</td>'
+            +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety('+vi+','+di+','+vri+',\'unit\',this.value)">'+unitOpts+'</select></td>'
+            +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVendorVarietyRate('+vi+','+di+','+vri+',this.value)"></td>'
+            +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVendorVariety('+vi+','+di+','+vri+')">✕</button></td>'
+          +'</tr>';
+        });
+      }
+    }); // end g.items.forEach
+
     const footerTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
     const footerHtml=footerTotal>0
       ?'<tfoot><tr><td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
@@ -5087,11 +5115,10 @@ function buildVendorDesignsPanel(vo,vi){
         +'<td class="grand-total"><strong>'+footerTotal+'</strong></td>'
         +'<td></td><td></td><td class="no-print"></td></tr></tfoot>'
       :'';
-    const sizeCtrl=d.sizesLocked===true
-      ?'<span style="font-size:10px;color:#AFA9EC">Sizes locked at creation</span>'
-      :'<button class="icon-btn sm no-print" onclick="addVendorSizeColumn('+vi+','+di+')">+ Add size</button>';
-    const codeCount=isFlat?1:varieties.length;
-    const badgeText=codeCount+' code'+(codeCount!==1?'s':'')+' · '+formatQtyByUnit(designQtyByUnit(d));
+
+    const refDi=g.items[0].di; // used by addVendorDesignToGroup to inherit name+sizes
+    const dids=g.items.map(({d})=>d.id).join(',');
+    const badgeText=g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+formatQtyByUnit(groupQty);
 
     const tableHtml='<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
       +'<table class="variety-table">'
@@ -5108,19 +5135,20 @@ function buildVendorDesignsPanel(vo,vi){
         +footerHtml
       +'</table>'
       +'<div style="padding:5px 10px 6px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #F1EFE8" class="no-print">'
-        +'<button class="icon-btn" onclick="addVendorVariety('+vi+','+di+')">+ Add design code</button>'
-        +sizeCtrl
+        +'<button class="icon-btn" onclick="addVendorDesignToGroup('+vi+','+refDi+')">+ Add design code</button>'
+        +'<button class="icon-btn sm" onclick="addVendorGroupSize('+vi+',\''+dids+'\')">+ Add size</button>'
       +'</div></div>';
 
     return '<div class="design-name-group">'
       +'<div class="design-name-group-head">'
         +'<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">'
           +'<span style="font-size:13px;opacity:.75;flex-shrink:0">🎨</span>'
-          +'<input class="inline-edit" value="'+esc(d.name||'')+'"'
+          +'<input class="inline-edit" value="'+esc(g.name)+'"'
+          +' data-vi="'+vi+'" data-dids="'+dids+'" data-origname="'+esc(g.name)+'"'
           +' style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"'
-          +' oninput="S.vendorOrders['+vi+'].designs['+di+'].name=this.value;scheduleAutosave()"'
+          +' onfocus="try{_fb.pendingLocal=true;}catch(e){}"'
           +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"'
-          +' onblur="rebuildVocab();save();renderVendorOrders()"'
+          +' onblur="renameVendorDesignGroup(this)"'
           +' title="Click to rename">'
         +'</div>'
         +'<span class="dng-meta">'+badgeText+'</span>'
@@ -5129,6 +5157,49 @@ function buildVendorDesignsPanel(vo,vi){
     +'</div>';
   }).join('');
   return html;
+}
+
+// ── Vendor design group helpers ───────────────────────────────────────────────
+function renameVendorDesignGroup(inp){
+  const nv=(inp.value||'').trim();
+  const orig=inp.dataset.origname||'';
+  if(!nv){inp.value=orig||'(unnamed)';try{_fb.pendingLocal=false;}catch(e){}return;}
+  if(nv===orig){try{_fb.pendingLocal=false;}catch(e){}return;}
+  const vi=parseInt(inp.dataset.vi,10);
+  const dids=(inp.dataset.dids||'').split(',').filter(Boolean);
+  const vo=S.vendorOrders[vi];if(!vo){inp.value=orig;return;}
+  let changed=false;
+  vo.designs.forEach(d=>{if(dids.includes(d.id)){d.name=nv;changed=true;}});
+  if(!changed){inp.value=orig;try{_fb.pendingLocal=false;}catch(e){}return;}
+  inp.dataset.origname=nv;
+  rebuildVocab();
+  _origSave();localStorage.setItem('bangle_saved_at',new Date().toISOString());
+  try{_fb.pendingLocal=true;if(_fb.ready){clearTimeout(_fb.pushTimer);_fb.pushTimer=null;fbPush(false);}}catch(e){}
+  showToast('✅ Design name saved: '+nv,'green');
+}
+function addVendorDesignToGroup(vi,refDi){
+  // Add a new design code to an existing name-group; inherit name + size keys from refDi
+  const vo=S.vendorOrders[vi];if(!vo)return;
+  const ref=vo.designs[refDi];
+  const groupName=ref?ref.name:'';
+  const szKeys=ref?Object.keys(ref.sizes||{}):DEFAULT_SIZES;
+  histPush();
+  vo.designs.push({id:uid(),name:groupName,code:'',sizesLocked:true,sizes:Object.fromEntries(szKeys.map(s=>[s,0])),images:[],varieties:[]});
+  save();renderVendorOrders();
+}
+function addVendorGroupSize(vi,dids){
+  const sz=prompt('Enter size label (e.g. 2/16):');if(!sz||!sz.trim())return;
+  const s=sz.trim();
+  const vo=S.vendorOrders[vi];if(!vo)return;
+  const ids=dids.split(',').filter(Boolean);
+  histPush();
+  vo.designs.forEach(d=>{
+    if(!ids.includes(d.id))return;
+    if((d.sizes||{})[s]!==undefined)return;
+    d.sizes=d.sizes||{};d.sizes[s]=0;
+    (d.varieties||[]).forEach(v=>{v.sizes=v.sizes||{};v.sizes[s]=0;});
+  });
+  save();renderVendorOrders();
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
