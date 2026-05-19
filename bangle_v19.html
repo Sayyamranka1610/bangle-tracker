@@ -1146,9 +1146,10 @@ async function idbGetAll(){
   });
 }
 
-// Compress an image dataUrl to a small thumbnail for Firebase sync
-// Output is typically 10–25KB base64 (160px JPEG @ 0.75) — safe to store in Firebase
-function compressImageToThumb(dataUrl,maxDim=600){
+// Compress image to print-ready quality: 1200px max @ 0.92 JPEG.
+// This single version is used for BOTH display AND print — stored in img.data
+// and synced to Firebase inline so every device receives full quality.
+function compressImageToThumb(dataUrl,maxDim=1200){
   return new Promise(resolve=>{
     const img=new Image();
     img.onload=()=>{
@@ -1160,7 +1161,7 @@ function compressImageToThumb(dataUrl,maxDim=600){
       const c=document.createElement('canvas');
       c.width=w;c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
-      resolve(c.toDataURL('image/jpeg',0.82));
+      resolve(c.toDataURL('image/jpeg',0.92));
     };
     img.onerror=()=>resolve(dataUrl); // fallback: use original
     img.src=dataUrl;
@@ -1189,29 +1190,39 @@ function compressImageForPrint(dataUrl,maxDim=1200){
   });
 }
 
-// Images smaller than this (chars) pass through to Firebase as-is.
-// Compressed thumbs (~20KB base64) are well under this. Threshold raised to
-// 500KB to be tolerant of slightly larger compressed images on different
-// devices — this ensures images reliably reach all devices via Firebase.
-const IMAGE_FB_THRESHOLD=1500000; // ~1.1MB base64 — allows 600px quality images to sync
+// Images above this size are always stripped to IDB regardless of mode.
+// At 1200px/0.92 JPEG most images are 200–500 KB base64 — well under 1.5 MB.
+// Only exceptionally large/detailed photos would exceed this.
+const IMAGE_FB_THRESHOLD=1500000; // ~1.1 MB base64
 
-// Extract images from state — only strip images too large for Firebase.
-// Small/compressed images pass through so they sync across devices via Firebase.
-function extractImages(state){
+// Extract images from state.
+//
+// forFirebase=false  (default, used by save→localStorage):
+//   ALL img.data are stripped to IDB regardless of size. localStorage only
+//   holds __IDB__ placeholders, staying well under the 5 MB quota.
+//
+// forFirebase=true  (used by fbPush→Firebase):
+//   Images under IMAGE_FB_THRESHOLD stay INLINE in the state payload —
+//   this is what lets every other device receive full-quality images without
+//   needing access to the uploading device's IndexedDB.
+//   Images over the threshold still go to IDB-only (placeholder in Firebase).
+//
+// hqData (legacy print copies) is always stripped to IDB in both modes.
+function extractImages(state,forFirebase=false){
   const imageMap={};
   const cloned=JSON.parse(JSON.stringify(state));
 
-  // Helper: strip img.data only when too large for Firebase.
-  // Always strips img.hqData (print-quality image — never sent to Firebase).
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
-      if(img.data.length>IMAGE_FB_THRESHOLD){
+      const tooBig=img.data.length>IMAGE_FB_THRESHOLD;
+      if(!forFirebase||tooBig){
+        // localStorage mode: always strip. Firebase mode: only strip if too big.
         imageMap[key]=img.data;
         img.data='__IDB__'+key;
       }
-      // else: small image, leave in state — Firebase can handle it
+      // forFirebase + small image: leave inline so all devices receive it
     }
-    // hqData: always store in IDB only (too large for Firebase)
+    // hqData (legacy): always IDB-only — never sent to Firebase or localStorage
     if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
       imageMap[key+'_hq']=img.hqData;
       img.hqData='__IDB__'+key+'_hq';
@@ -1223,16 +1234,13 @@ function extractImages(state){
     (it.images||[]).forEach((img,ii)=>{maybeStrip(img,`stkimg_${it.id}_${ii}`);});
   });
 
-  // Attached files: only stripped to IDB when too large for Firebase.
-  // Small files (most order Excel templates ~10-30KB) pass through to
-  // Firebase so they download on every device, not just the uploader's.
+  // Attached files — threshold-only strip in both modes (files are large)
   const maybeStripFile=(o,fKey)=>{
     if(o.attachedFile&&o.attachedFile.data&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('data:')){
       if(o.attachedFile.data.length>IMAGE_FB_THRESHOLD){
         imageMap[fKey]=o.attachedFile.data;
         o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
       }
-      // else: small file — leave inline so it syncs via Firebase
     }
   };
 
@@ -1240,8 +1248,9 @@ function extractImages(state){
   (cloned.vendorOrders||[]).forEach(o=>{
     maybeStripFile(o,`file_vo_${o.id}`);
     (o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_d_${d.id}_${ii}`);});
       (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_${d.id}_${ii}`);});
+        (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_${d.id}_${v.name||ii}_${ii}`);});
       });
     });
   });
@@ -1281,16 +1290,19 @@ function reinjectImages(state,imageMap){
       (d.varieties||[]).forEach(v=>{(v.images||[]).forEach(img=>reImg(img));});
     });
   });
-  // Reinject vendor order attached files + variety images
+  // Reinject vendor order attached files + design-level + variety images
   (state.vendorOrders||[]).forEach(o=>{
     if(o.attachedFile&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('__IDB__')){
       const key=o.attachedFile.data.slice(7);
       if(imageMap[key])o.attachedFile.data=imageMap[key];
     }
     (o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach(img=>reImg(img));
       (d.varieties||[]).forEach(v=>{(v.images||[]).forEach(img=>reImg(img));});
     });
   });
+  // Stock item images
+  (state.stockItems||[]).forEach(it=>{(it.images||[]).forEach(img=>reImg(img));});
 }
 
 // Download an order's attached file — works whether data is inline (base64
@@ -2847,10 +2859,8 @@ function handleVarietyImg(oi,di,vi,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const raw=e.target.result;
-      const compressed=await compressImageToThumb(raw);
-      const hq=await compressImageForPrint(raw);
-      d.varieties[vi].images.push({data:compressed,hqData:hq,name:f.name});
+      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      d.varieties[vi].images.push({data,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -2898,10 +2908,8 @@ function handleDesignLevelImg(oi,di,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const raw=e.target.result;
-      const compressed=await compressImageToThumb(raw);
-      const hq=await compressImageForPrint(raw);
-      d.images.push({data:compressed,hqData:hq,name:f.name});
+      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      d.images.push({data,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -3100,10 +3108,8 @@ function handleImgUpload(oi,di,input){
   files.forEach(file=>{
     const reader=new FileReader();
     reader.onload=async e=>{
-      const raw=e.target.result;
-      const compressed=await compressImageToThumb(raw);
-      const hq=await compressImageForPrint(raw);
-      S.orders[oi].designs[di].images.push({data:compressed,hqData:hq,name:file.name});
+      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      S.orders[oi].designs[di].images.push({data,name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -4492,12 +4498,10 @@ function handleVendorImgUpload(voi, di, vi, input){
   files.forEach(file=>{
     const reader = new FileReader();
     reader.onload = async e=>{
-      const raw = e.target.result;
-      const compressed = await compressImageToThumb(raw);
-      const hq = await compressImageForPrint(raw);
+      const data = await compressImageToThumb(e.target.result); // 1200px @ 0.92
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data:compressed,hqData:hq,name:file.name});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,name:file.name});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -5268,9 +5272,8 @@ function addVVImg(vi,di,vri,inp){
   inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const compressed=await compressImageToThumb(ev.target.result);
-    const hash=await imgHash(compressed);
-    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data:compressed,hash});
+    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,name:file.name});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5312,11 +5315,10 @@ function addVendorFlatImg(vi,di,isVar,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const compressed=await compressImageToThumb(ev.target.result);
-    const hash=await imgHash(compressed);
+    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
     const d=S.vendorOrders[vi].designs[di];
-    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push({data:compressed,hash});}
-    else{d.images=d.images||[];d.images.push({data:compressed,hash});}
+    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push({data,name:file.name});}
+    else{d.images=d.images||[];d.images.push({data,name:file.name});}
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5327,10 +5329,9 @@ function addVDImg(vi,di,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const compressed=await compressImageToThumb(ev.target.result);
-    const hash=await imgHash(compressed);
+    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
     const d=S.vendorOrders[vi].designs[di];
-    d.images=d.images||[];d.images.push({data:compressed,hash});
+    d.images=d.images||[];d.images.push({data,name:file.name});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -7764,9 +7765,8 @@ async function handleStockImgUpload(inp){
     await new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=async ev=>{
-        const compressed=await compressImageToThumb(ev.target.result);
-        const hash=await imgHash(compressed);
-        window._stockModalImages.push({data:compressed,hash});
+        const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+        window._stockModalImages.push({data,name:file.name});
         resolve();
       };reader.readAsDataURL(file);
     });
@@ -9060,9 +9060,11 @@ const IS_DEMO_MODE = _isDemoMode();
 async function fbPush(silent){
   _fb.lastPush = Date.now();
   try{
+    // forFirebase=true: small images stay inline in payload so every device
+    // receives full-quality images via Firebase without needing local IDB.
     const { stateNoImages } = extractImages({
       ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
-    });
+    }, true);
     // Wrap state as a plain string so Firebase never sees the "/" keys
     const payload = JSON.stringify({
       data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
