@@ -1148,7 +1148,7 @@ async function idbGetAll(){
 
 // Compress an image dataUrl to a small thumbnail for Firebase sync
 // Output is typically 10–25KB base64 (160px JPEG @ 0.75) — safe to store in Firebase
-function compressImageToThumb(dataUrl,maxDim=160){
+function compressImageToThumb(dataUrl,maxDim=600){
   return new Promise(resolve=>{
     const img=new Image();
     img.onload=()=>{
@@ -1160,7 +1160,7 @@ function compressImageToThumb(dataUrl,maxDim=160){
       const c=document.createElement('canvas');
       c.width=w;c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
-      resolve(c.toDataURL('image/jpeg',0.75));
+      resolve(c.toDataURL('image/jpeg',0.82));
     };
     img.onerror=()=>resolve(dataUrl); // fallback: use original
     img.src=dataUrl;
@@ -1193,7 +1193,7 @@ function compressImageForPrint(dataUrl,maxDim=1200){
 // Compressed thumbs (~20KB base64) are well under this. Threshold raised to
 // 500KB to be tolerant of slightly larger compressed images on different
 // devices — this ensures images reliably reach all devices via Firebase.
-const IMAGE_FB_THRESHOLD=500000; // ~375KB base64
+const IMAGE_FB_THRESHOLD=1500000; // ~1.1MB base64 — allows 600px quality images to sync
 
 // Extract images from state — only strip images too large for Firebase.
 // Small/compressed images pass through so they sync across devices via Firebase.
@@ -2059,6 +2059,7 @@ function buildDesignsGroupTable(order,oi,g){
         +'<td class="total-col">'+rowTotal+'</td>'
         +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
+        +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
@@ -2089,6 +2090,7 @@ function buildDesignsGroupTable(order,oi,g){
           +d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' — see rows below'
         +'</td>'
         +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
+        +'<td></td>'
         +'<td></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>'
@@ -2127,6 +2129,7 @@ function buildDesignsGroupTable(order,oi,g){
           +'<td class="total-col">'+rowTotal+'</td>'
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
             +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
+          +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVarietyRate('+oi+','+di+','+vi+',this.value)"></td>'
           +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>'
         +'</tr>';
       });
@@ -2140,7 +2143,7 @@ function buildDesignsGroupTable(order,oi,g){
       +'<td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
       +szKeys.map(sz=>'<td><strong>'+(grpTotals[sz]||0)+'</strong></td>').join('')
       +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
-      +'<td></td><td class="no-print"></td>'
+      +'<td></td><td></td><td class="no-print"></td>'
     +'</tr></tfoot>'
     :'';
 
@@ -2157,6 +2160,7 @@ function buildDesignsGroupTable(order,oi,g){
         +szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')
         +'<th style="min-width:55px">Total</th>'
         +'<th style="min-width:72px">Unit</th>'
+        +'<th style="min-width:72px">Rate (₹)</th>'
         +'<th style="min-width:70px" class="no-print">Action</th>'
       +'</tr></thead>'
       +'<tbody>'+tbody+'</tbody>'
@@ -2805,6 +2809,8 @@ function addVariety(oi,di){
   audit('Add variety',`Order ${S.orders[oi].orderId} design ${di+1}: variety added`);render();
 }
 function upVarietyUnit(oi,di,vi,val){S.orders[oi].designs[di].varieties[vi].unit=val;scheduleAutosave();}
+function upVarietyRate(oi,di,vi,val){S.orders[oi].designs[di].varieties[vi].rate=parseFloat(val)||0;scheduleAutosave();}
+function upDesignRate(oi,di,val){S.orders[oi].designs[di].rate=parseFloat(val)||0;scheduleAutosave();}
 function removeVariety(oi,di,vi){
   if(!confirm('Remove this variety?'))return;
   S.orders[oi].designs[di].varieties.splice(vi,1);
@@ -4977,66 +4983,42 @@ function buildVendorDesignsPanel(vo,vi){
     // ── Image gallery at top (same as client order) ───────────────────────────
     const galleryHtml=buildVarietyGallery(varieties);
 
-    // ── Variety table ─────────────────────────────────────────────────────────
-    // CNC / single-Default: show flat size row with no variety name label (matches client order CNC UX)
-    const isFlatMode = _hasOnlyDefault(d);
-    let varTableHtml;
-    if(isFlatMode){
-      // Single-variety (CNC): flat table — no "Variety name" column, no "Default" label visible
-      const defV   = varieties[0] || {sizes:{},unit:'pcs',images:[]};
-      const defSzs = defV.sizes || {};
-      const flatSzKeys = szKeys.length ? szKeys : Object.keys(defSzs);
-      const flatTotal  = flatSzKeys.reduce((a,sz)=>a+(parseInt(defSzs[sz])||0),0);
-      const flatUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(defV.unit||'pcs')?' selected':''}>${u}</option>`).join('');
-      varTableHtml = flatSzKeys.length
-        ? `<div class="variety-table-wrap"><table class="variety-table">
-            <thead><tr>
-              ${flatSzKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
-              <th style="min-width:60px">Total</th>
-              <th style="min-width:72px">Unit</th>
-            </tr></thead>
-            <tbody><tr>
-              ${flatSzKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${defSzs[sz]||0}" onchange="upVendorVarietySize(${vi},${di},0,'${sz}',this.value)"></td>`).join('')}
-              <td class="total-col">${flatTotal}</td>
-              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},0,'unit',this.value)">${flatUnitOpts}</select></td>
-            </tr></tbody>
-          </table></div>`
-        : '<p style="font-size:11px;color:#888;margin:6px 0">No sizes added yet.</p>';
-    } else {
-      // Dye-gold / Both: full variety rows with names, images, delete buttons
-      varTableHtml = varieties.length?`<div class="variety-table-wrap">
-        <table class="variety-table">
-          <thead><tr>
-            <th style="min-width:130px">Variety name</th>
-            <th style="min-width:62px">Images</th>
-            ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
-            <th style="min-width:60px">Total</th>
-            <th style="min-width:72px">Unit</th>
-            <th style="min-width:40px" class="no-print">Del</th>
-          </tr></thead>
-          <tbody>
-            ${varieties.map((v,vri)=>{
-              const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-              const imgCells=(v.images||[]).map((img,ii)=>`<img class="variety-thumb" src="${img.data}" onclick="openLbDirect('${img.data}')" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`).join('');
-              const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
-              return`<tr>
-                <td><input class="variety-name-inp" value="${esc(v.name||'')}" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
-                <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
-                  <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
-                ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
-                <td class="total-col">${rt}</td>
-                <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
-                <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-          <tfoot><tr>
-            <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
-            ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
-            <td class="grand-total">${grandTotal}</td><td></td><td class="no-print"></td>
-          </tr></tfoot>
-        </table></div>`:'<p style="font-size:11px;color:#888;margin:6px 0">No varieties — add one below.</p>';
-    }
+    // Always show the full variety table (identical layout to client orders)
+    // Column order: Design code | Images | sizes... | Total | Unit | Rate (₹) | Del
+    const varTableHtml = varieties.length ? `<div class="variety-table-wrap">
+      <table class="variety-table">
+        <thead><tr>
+          <th style="min-width:130px">Design code</th>
+          <th style="min-width:62px">Images</th>
+          ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
+          <th style="min-width:60px">Total</th>
+          <th style="min-width:72px">Unit</th>
+          <th style="min-width:72px">Rate (₹)</th>
+          <th style="min-width:40px" class="no-print">Del</th>
+        </tr></thead>
+        <tbody>
+          ${varieties.map((v,vri)=>{
+            const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+            const imgCells=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src?`<img class="variety-thumb" src="${src}" onclick="openLbDirect('${src.replace(/'/g,"\\'")}'))" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`:''}).filter(Boolean).join('');
+            const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
+            return`<tr>
+              <td><input class="variety-name-inp" value="${esc(v.name||'')}" placeholder="Design code" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
+              <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
+                <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
+              ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
+              <td class="total-col">${rt}</td>
+              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
+              <td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="${v.rate||''}" onchange="upVendorVarietyRate(${vi},${di},${vri},this.value)"></td>
+              <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot><tr>
+          <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
+          ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
+          <td class="grand-total">${grandTotal}</td><td></td><td></td><td class="no-print"></td>
+        </tr></tfoot>
+      </table></div>` : '<p style="font-size:11px;color:#888;margin:6px 0">No design codes added yet — click "+ Add design code".</p>';
 
     return`<div class="design-card">
       <div class="design-card-head">
@@ -5067,9 +5049,9 @@ function buildVendorDesignsPanel(vo,vi){
       ${galleryHtml}
       <!-- Variety table -->
       <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span>${isFlatMode?'📦 Quantities by size':'🧮 Varieties &amp; quantities by size'}</span>
+        <span>🎨 Design codes &amp; quantities by size</span>
         <span class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">
-          ${isFlatMode?'':'<button class="icon-btn" onclick="addVendorVariety('+vi+','+di+')">+ Add variety</button>'}
+          <button class="icon-btn" onclick="addVendorVariety(${vi},${di})">+ Add design code</button>
           <button class="icon-btn" onclick="addVendorSizeColumn(${vi},${di})">+ Add size</button>
         </span>
       </div>
@@ -5115,6 +5097,12 @@ function addVendorVariety(vi,di){
   save();renderVendorOrders();
 }
 function removeVendorVariety(vi,di,vri){histPush();S.vendorOrders[vi].designs[di].varieties.splice(vri,1);save();renderVendorOrders();}
+function upVendorVarietyRate(vi,di,vri,val){
+  const v=S.vendorOrders[vi].designs[di].varieties[vri];
+  if(!v)return;
+  v.rate=parseFloat(val)||0;
+  scheduleAutosave();
+}
 function upVendorVariety(vi,di,vri,key,val){S.vendorOrders[vi].designs[di].varieties[vri][key]=val;save();renderVendorOrders();}
 function upVendorVarietySize(vi,di,vri,sz,val){
   S.vendorOrders[vi].designs[di].varieties[vri].sizes[sz]=parseInt(val)||0;
@@ -5703,8 +5691,9 @@ function openVendorPrintWindow(title,orders){
   }).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)}</title>
     <style>
-      @page{margin:0;size:A4 portrait}
-      body{font-family:system-ui;padding:10mm 12mm;margin:0;color:#1a1916;font-size:13px;line-height:1.4}
+      @page{margin:5mm;size:A4 portrait}
+      html{zoom:0.85}
+      body{font-family:system-ui;padding:4mm 6mm;margin:0;color:#1a1916;font-size:12px;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
       .design-block{break-inside:avoid-page;page-break-inside:avoid}
@@ -6292,8 +6281,9 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
     <style>
       /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
          Body padding provides equivalent white-space around content. */
-      @page{margin:0;size:A4 portrait}
-      body{font-family:system-ui;padding:10mm 12mm;color:#1a1916;font-size:13px;margin:0;line-height:1.4}
+      @page{margin:5mm;size:A4 portrait}
+      html{zoom:0.85}
+      body{font-family:system-ui;padding:4mm 6mm;color:#1a1916;font-size:12px;margin:0;line-height:1.4}
       table{border-collapse:collapse}
       img{max-width:100%}
       .design-block{break-inside:auto;page-break-inside:auto}
@@ -8642,6 +8632,7 @@ let _reqWatchTimer    = null;   // Device 1: watch for incoming access requests
 let _grantPollTimer   = null;   // Device 2: fast-poll for lock release after requesting
 let _waitingForGrant  = false;  // Device 2: request is in flight
 let _grantBannerUp    = false;  // Device 1: grant prompt is currently shown
+let _lockOwnerCheckTimer = null; // Device 1: verify lock still belongs to us every 5 s
 
 // ── STATUS BAR ───────────────────────────────────────────────────────────────
 function fbSetStatus(state, msg){
@@ -8966,14 +8957,17 @@ async function _tryAcquireLock(){
           lockedAt:new Date().toISOString(), heartbeat:new Date().toISOString()
         })
       });
+      const wasReadOnly = _readOnly;
       _hasLock=true; _readOnly=false; _lockHolder=_currentUser?.username||'?';
-      // Clean up any pending request we may have written
       try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
       _waitingForGrant=false;
       if(_grantPollTimer){clearInterval(_grantPollTimer);_grantPollTimer=null;}
       if(_lockPollTimer){clearInterval(_lockPollTimer);_lockPollTimer=null;}
+      if(_lockOwnerCheckTimer){clearInterval(_lockOwnerCheckTimer);_lockOwnerCheckTimer=null;}
       _setReadOnlyUI(false);
       _startHeartbeat();
+      _startLockOwnershipCheck();
+      if(wasReadOnly) showToast('✅ Edit access acquired — you can now make changes','green');
     } else {
       // Lock held by someone else
       _hasLock=false; _readOnly=true; _lockHolder=lock.user||'another user';
@@ -9019,7 +9013,7 @@ function _startLockPolling(fast){
         if(_grantPollTimer){clearInterval(_grantPollTimer);_grantPollTimer=null;}
         _waitingForGrant=false;
         await _tryAcquireLock();
-        // Toast shown only if we were actively waiting for a grant
+        // (toast is shown inside _tryAcquireLock when wasReadOnly)
       }
     }catch(e){}
   }, fast ? 2000 : 10000);
@@ -9028,6 +9022,7 @@ function _startLockPolling(fast){
 async function _releaseLock(){
   if(_lockHbTimer){ clearInterval(_lockHbTimer); _lockHbTimer=null; }
   if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
+  if(_lockOwnerCheckTimer){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; }
   _grantBannerUp=false;
   const banner=document.getElementById('grant-request-banner');
   if(banner) banner.remove();
@@ -9052,8 +9047,10 @@ function _setReadOnlyUI(readonly, lockUser){
   if(!readonly){ banner.style.display='none'; return; }
   const who=_lockHolder||lockUser||'another user';
   banner.style.display='flex';
+  const isOwner = _currentUser?.role==='owner';
   banner.innerHTML=`🔒 <strong>Read-only</strong> — <strong id="ro-banner-user">${esc(who)}</strong> is currently editing. Your changes won't be saved.&nbsp;
-    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">📨 Request access</button>`;
+    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">📨 Request access</button>
+    ${isOwner?`<button onclick="takeEditAccess()" style="margin-left:6px;padding:5px 14px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">🔓 Take access</button>`:''}` ;
   fbSetStatus('connected',`🔒 Read-only — ${who} is editing`);
 }
 
@@ -9235,6 +9232,33 @@ async function cancelAccessRequest(){
   showToast('Request cancelled','amber');
 }
 
+// Device 1: verify every 5 s that the lock still belongs to us (detects forced takeover)
+function _startLockOwnershipCheck(){
+  if(_lockOwnerCheckTimer) clearInterval(_lockOwnerCheckTimer);
+  _lockOwnerCheckTimer = setInterval(async()=>{
+    if(!_hasLock){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; return; }
+    try{
+      const r = await fetch(FB_LOCK);
+      const lock = r.ok ? await r.json() : null;
+      // Lock was deleted or overwritten by another device
+      if(!lock || lock.deviceId !== FB_DEVICE_ID){
+        _hasLock=false;
+        clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null;
+        if(_lockHbTimer){ clearInterval(_lockHbTimer); _lockHbTimer=null; }
+        if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
+        _grantBannerUp=false;
+        const b=document.getElementById('grant-request-banner');
+        if(b) b.remove();
+        const takenBy = lock?.user || 'another user';
+        _lockHolder = takenBy;
+        _setReadOnlyUI(true, takenBy);
+        showToast('🔒 Edit access was taken by '+takenBy+' — you are now read-only','amber');
+        _startLockPolling(false);
+      }
+    }catch(e){}
+  }, 5000);
+}
+
 // Device 1: poll /accessRequest.json every 3 s while holding the lock
 function _startRequestWatcher(){
   if(_reqWatchTimer) clearInterval(_reqWatchTimer);
@@ -9299,6 +9323,32 @@ async function denyEditAccess(){
   if(b) b.remove();
   try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
   showToast('Access request denied','amber');
+}
+
+// Owner only: forcibly acquire the lock (overwrite whoever has it)
+async function takeEditAccess(){
+  if(_hasLock) return;
+  try{
+    // Overwrite the existing lock with ours
+    await fetch(FB_LOCK,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        user:_currentUser?.username||'?', deviceId:FB_DEVICE_ID,
+        lockedAt:new Date().toISOString(), heartbeat:new Date().toISOString()
+      })
+    });
+  }catch(e){}
+  try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
+  const wasReadOnly=_readOnly;
+  _hasLock=true; _readOnly=false; _lockHolder=_currentUser?.username||'?';
+  _waitingForGrant=false;
+  if(_grantPollTimer){clearInterval(_grantPollTimer);_grantPollTimer=null;}
+  if(_lockPollTimer){clearInterval(_lockPollTimer);_lockPollTimer=null;}
+  if(_lockOwnerCheckTimer){clearInterval(_lockOwnerCheckTimer);_lockOwnerCheckTimer=null;}
+  _setReadOnlyUI(false);
+  _startHeartbeat();
+  _startLockOwnershipCheck();
+  showToast('✅ Edit access taken — you are now the editor','green');
 }
 
 // ── INIT: LOAD THEN LISTEN ────────────────────────────────────────────────────
