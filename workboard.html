@@ -546,10 +546,12 @@ img{display:block}
 // ══════════════════════════════════════════════════════════
 firebase.initializeApp({ databaseURL:'https://bangle-tracker-default-rtdb.firebaseio.com' });
 const db    = firebase.database();
-const WB    = db.ref('wb');
-const TASKS = db.ref('wb/tasks');
-const USERS = db.ref('wb/users');
-const ROLES = db.ref('wb/customRoles');
+// PATH: /wb3 — old code wrote to /wb; changing path permanently isolates
+// new data from any old cached clients that had the 30s autosave bug.
+const WB    = db.ref('wb3');
+const TASKS = db.ref('wb3/tasks');
+const USERS = db.ref('wb3/users');
+const ROLES = db.ref('wb3/customRoles');
 
 // ══════════════════════════════════════════════════════════
 //  STATE

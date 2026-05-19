@@ -1,7 +1,7 @@
-// WorkBoard Service Worker — v5
+// WorkBoard Service Worker — v6
 // Handles: caching, background notifications, notification taps
 
-const CACHE = 'workboard-v5';
+const CACHE = 'workboard-v6';
 const NS_CACHE = 'wb-notif-state'; // stores logged-in user + seen-task IDs
 const FB = 'https://bangle-tracker-default-rtdb.firebaseio.com';
 
@@ -111,7 +111,7 @@ async function runBackgroundCheck() {
     if (!state || !state.userId) return;
 
     // Fetch fresh data from Firebase
-    const fbResp = await fetch(`${FB}/wb.json`, { cache: 'no-store' });
+    const fbResp = await fetch(`${FB}/wb3.json`, { cache: 'no-store' });
     if (!fbResp.ok) return;
     const data = await fbResp.json();
     if (!data || !data.tasks) return;
