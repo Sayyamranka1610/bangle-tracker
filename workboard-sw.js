@@ -1,7 +1,7 @@
-// WorkBoard Service Worker — v4
+// WorkBoard Service Worker — v5
 // Handles: caching, background notifications, notification taps
 
-const CACHE = 'workboard-v4';
+const CACHE = 'workboard-v5';
 const NS_CACHE = 'wb-notif-state'; // stores logged-in user + seen-task IDs
 const FB = 'https://bangle-tracker-default-rtdb.firebaseio.com';
 
