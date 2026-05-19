@@ -5481,11 +5481,53 @@ function createVendorOrder(){
 
 // ── Vendor Order Excel Template & File Import ─────────────────────────────────
 function downloadVendorOrderTemplate(){
-  // Download the same exact template file — same format, "Client Name" field acts as Vendor Name
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please check your internet connection.');return;}
+  // Build AOA matching Vendor_Order_Template.xlsx structure exactly
+  const B=(n)=>Array(n).fill(''); // blank cells
+  const data=[
+    // Row 1 — Q1 holds unit dropdown source values
+    [...B(16),'pcs'],
+    // Row 2 — Q2
+    [...B(16),'pairs'],
+    // Row 3 — Vendor Name label (Q3)
+    ['Vendor Name','',...B(14),'jotta'],
+    // Row 4 — Start Date label
+    ['Start Date','',...B(15)],
+    // Row 5 — Notes label
+    ['Notes (Optional)','',...B(15)],
+    // Row 6 — blank separator
+    B(17),
+    // Row 7 — CNC section header
+    ['CNC DESIGNS & QUANTITIES',...B(16)],
+    // Row 8 — CNC column headers
+    ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit',...B(8)],
+    // Rows 9-21 — 13 blank CNC data rows
+    ...Array(13).fill(null).map(()=>B(17)),
+    // Row 22 — Dye Gold section header
+    ['DYE GOLD DESIGNS & VARIETIES',...B(16)],
+    // Row 23 — Dye Gold column headers
+    ['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit',...B(6)],
+    // Rows 24-53 — 30 blank Dye Gold data rows
+    ...Array(30).fill(null).map(()=>B(17)),
+  ];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  // Column widths
+  ws['!cols']=[
+    {wch:22},{wch:16},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},
+    {wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8}
+  ];
+  XLSX.utils.book_append_sheet(wb,ws,'Vendor Order');
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'binary'});
+  const buf=new ArrayBuffer(wbout.length);
+  const view=new Uint8Array(buf);
+  for(let i=0;i<wbout.length;i++)view[i]=wbout.charCodeAt(i)&0xFF;
+  const blob=new Blob([buf],{type:'application/octet-stream'});
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href='https://sayyamranka1610.github.io/bangle-tracker/Bangle_Order_Template.xlsx';
-  a.download='Bangle_Order_Template.xlsx';
+  a.href=url;a.download='Vendor_Order_Template.xlsx';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 function handleVendorOrderDrop(e){
@@ -5560,16 +5602,19 @@ function processVendorOrderFile(file){
           const d=new Date(String(raw));return isNaN(d)?'':d.toISOString().split('T')[0];
         };
         const colA=rows.map(r=>String(r[0]||'').toLowerCase().trim());
-        const isLabelFormat=colA.some(l=>l.includes('order id')||l.includes('vendor name'));
+        // isLabelFormat: column-A label+value format (vendor template or client template)
+        const isLabelFormat=colA.some(l=>l.includes('order id')||l.includes('vendor name')||l.includes('client name'));
+        // safe string from potentially object-typed cell (e.g. rich-text XML cell)
+        const cellStr=v=>{ if(v===null||v===undefined)return ''; if(typeof v==='object'&&v.t!==undefined)return String(v.v||v.w||''); return String(v); };
         // vIdx=-1 = no variety column; rows with quantities get 'Default' variety name
         // uIdx=-1 = no unit column; default = 'pcs'
         const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx)=>{
           const dm=[];const byKey={};let ldn='',ldc='';
           dataRows.forEach(row=>{
-            const dn=String(row[dnIdx]||'').trim(),dc=String(row[dcIdx]||'').trim();
+            const dn=cellStr(row[dnIdx]).trim(),dc=cellStr(row[dcIdx]).trim();
             if(dn)ldn=dn;if(dc)ldc=dc;
             if(!ldn)return;
-            const rawVn=vIdx>=0?String(row[vIdx]||'').trim():'';
+            const rawVn=vIdx>=0?cellStr(row[vIdx]).trim():'';
             const hasQty=allSizes.some(sz=>(parseInt(row[szIdxMap[sz]])||0)>0);
             if(!rawVn&&!hasQty)return;
             const vn=rawVn||(hasQty?'Default':'');if(!vn)return;
@@ -5579,36 +5624,46 @@ function processVendorOrderFile(file){
             const existNames=cur.varieties.map(v=>v.name);
             let fvn=vn;if(existNames.includes(fvn)){let n=2;while(existNames.includes(fvn+' '+n))n++;fvn=fvn+' '+n;}
             const sizes={};allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
-            const unit=uIdx>=0?String(row[uIdx]||'').trim()||'pcs':'pcs';
+            const unit=uIdx>=0?cellStr(row[uIdx]).trim()||'pcs':'pcs';
             cur.varieties.push({name:fvn,sizes,images:[],unit});
           });
           return dm.filter(d=>d.name&&d.varieties.length>0);
         };
         let orderId='',client='',startDate='',deliveryDate='',notes='';
         if(isLabelFormat){
-          const labelVal=label=>{const idx=rows.findIndex(r=>String(r[0]||'').toLowerCase().includes(label));return idx>=0?String(rows[idx][1]||'').trim():'';};
+          const labelVal=label=>{const idx=rows.findIndex(r=>cellStr(r[0]).toLowerCase().includes(label));return idx>=0?cellStr(rows[idx][1]).trim():'';};
           orderId=labelVal('order id');
-          client=labelVal('vendor name')||labelVal('vendor')||labelVal('supplier');
+          // accept both 'vendor name' and 'client name' (in case client template used)
+          client=labelVal('vendor name')||labelVal('client name')||labelVal('vendor')||labelVal('supplier');
           startDate=parseDate(labelVal('order date')||labelVal('start date')||labelVal('date'));
           deliveryDate=parseDate(labelVal('expected delivery')||labelVal('delivery'));
           notes=labelVal('notes');
 
           // ── Helper: parse a section between startRow and endRow ─────────────
           const parseVSection=(startRowIdx,endRowIdx,forceNoVariety)=>{
-            const hdrIdx=rows.findIndex((r,i)=>i>startRowIdx&&i<endRowIdx&&String(r[0]||'').toLowerCase().trim()==='design name');
+            const hdrIdx=rows.findIndex((r,i)=>i>startRowIdx&&i<endRowIdx&&cellStr(r[0]).toLowerCase().trim()==='design name');
             if(hdrIdx<0)return[];
-            const hdr=rows[hdrIdx].map(h=>String(h).trim());
+            const hdr=rows[hdrIdx].map(h=>cellStr(h).trim());
             const szIdxMap={},allSizes=[];
             hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
             const szColSet=new Set(Object.values(szIdxMap));
-            const vIdx=forceNoVariety?-1:hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+            // Variety column: look for 'variety' in header; fallback to col-index 2 if it's not a size or total column
+            let vIdx=-1;
+            if(!forceNoVariety){
+              vIdx=hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+              if(vIdx<0){
+                // Fallback: column 2 (C) if it's not a size column and not empty in the header
+                if(hdr[2]&&!/^\d+\/\d+$/.test(hdr[2])&&!/total/i.test(hdr[2])&&!/unit/i.test(hdr[2]))vIdx=2;
+              }
+            }
             const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
-            return groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx);
+            const sectionDesigns=groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx);
+            return sectionDesigns;
           };
 
           // ── Detect two-section template (CNC + Dye Gold) ───────────────────
-          const vcncSecIdx=colA.findIndex(l=>l.includes('cnc design'));
-          const vdyeSecIdx=colA.findIndex(l=>l.includes('dye gold design')||l.includes('dye_gold design'));
+          const vcncSecIdx=colA.findIndex(l=>l.includes('cnc design')||l==='cnc');
+          const vdyeSecIdx=colA.findIndex(l=>l.includes('dye gold design')||l.includes('dye_gold design')||l.includes('dye gold'));
 
           if(vcncSecIdx>=0||vdyeSecIdx>=0){
             let allDesigns=[],detectedBT='';
@@ -5624,25 +5679,32 @@ function processVendorOrderFile(file){
               if(dyeDesigns.length){allDesigns.push(...dyeDesigns);detectedBT=detectedBT==='cnc'?'both':'dye_gold';}
             }
             const dCount=allDesigns.length,vCount=allDesigns.reduce((a,d)=>a+d.varieties.length,0);
+            if(dCount===0){
+              status.textContent='⚠️ Sections found but no filled rows detected. Please fill in design names and quantities in the template, then re-upload.';
+              status.style.color='#B45309';status.style.display='block';
+              openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,bangleType:'dye_gold'});
+              return;
+            }
             const btLabel=detectedBT==='both'?'CNC + Dye Gold':detectedBT==='cnc'?'CNC':'Dye Gold';
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded (${btLabel}).`;
-            status.style.display='block';
-            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:allDesigns.length?allDesigns:undefined,bangleType:detectedBT||'dye_gold'});
+            status.style.color='#0F6E56';status.style.display='block';
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:allDesigns,bangleType:detectedBT||'dye_gold'});
             return;
           }
 
           // ── Single-section format (old template / generic) ─────────────────
-          const tblHdrIdx=rows.findIndex(r=>String(r[0]||'').toLowerCase().trim()==='design name');
+          const tblHdrIdx=rows.findIndex(r=>cellStr(r[0]).toLowerCase().trim()==='design name');
           if(tblHdrIdx>=0){
-            const hdr=rows[tblHdrIdx].map(h=>String(h).trim());
+            const hdr=rows[tblHdrIdx].map(h=>cellStr(h).trim());
             const szIdxMap={},allSizes=[];
             hdr.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
             const szColSet=new Set(Object.values(szIdxMap));
-            const vIdx=hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+            let vIdx=hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
+            if(vIdx<0&&hdr[2]&&!/^\d+\/\d+$/.test(hdr[2])&&!/total/i.test(hdr[2])&&!/unit/i.test(hdr[2]))vIdx=2;
             const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
             const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,vIdx,szIdxMap,allSizes,uIdx);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
-            status.style.display='block';
+            status.style.color='#0F6E56';status.style.display='block';
             openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
             return;
           }
@@ -5670,10 +5732,10 @@ function processVendorOrderFile(file){
             return;
           }
         }
-        status.textContent='✅ Excel read — fill designs manually below.';
-        status.style.display='block';
+        status.textContent='⚠️ Template format not recognised — please use the "Download Excel Template" button to get the correct vendor template, fill it in and re-upload.';
+        status.style.color='#B45309';status.style.display='block';
         openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes});
-      }catch(err){status.textContent='⚠️ Could not read Excel file: '+err.message;status.style.display='block';}
+      }catch(err){status.textContent='⚠️ Could not read Excel file: '+err.message;status.style.color='#A32D2D';status.style.display='block';}
     };reader.readAsBinaryString(file);
 
   } else if(file.type.startsWith('image/')){
