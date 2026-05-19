@@ -795,7 +795,11 @@ function applySSEUpdate(path,data,isPatch){
     const parts=path.slice('/tasks/'.length).split('/');
     const tid=parts[0];
     if(parts.length===1){
-      if(data) S.tasks[tid]=data; else delete S.tasks[tid];
+      if(data){
+        // For PATCH events merge into existing; for PUT replace entirely
+        if(isPatch) Object.assign(S.tasks[tid]=S.tasks[tid]||{},data);
+        else S.tasks[tid]=data;
+      } else delete S.tasks[tid];
     } else if(S.tasks[tid]){
       let obj=S.tasks[tid];
       for(let i=1;i<parts.length-1;i++) obj=obj[parts[i]]||(obj[parts[i]]={});
@@ -807,13 +811,27 @@ function applySSEUpdate(path,data,isPatch){
     else if(data) Object.assign(S.users,data);
   } else if(path.startsWith('/users/')){
     const uid=path.slice('/users/'.length).split('/')[0];
-    if(data) S.users[uid]=data; else delete S.users[uid];
+    const sub=path.slice(('/users/'+uid).length);
+    if(!sub||sub==='/'){
+      if(data){
+        // PATCH merges; PUT replaces
+        if(isPatch) Object.assign(S.users[uid]=S.users[uid]||{},data);
+        else S.users[uid]=data;
+      } else delete S.users[uid];
+    } else {
+      // nested property e.g. /users/{uid}/role
+      const prop=sub.replace(/^\//,'');
+      if(S.users[uid]&&prop) S.users[uid][prop]=data;
+    }
   } else if(path==='/customRoles'){
     if(Array.isArray(data)) S.customRoles=data;
   } else {
     loadFB(); return; // unknown sub-path — do full fetch as safe fallback
   }
-  saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
+  // NOTE: do NOT call checkDL() here — it would push overdue status to Firebase and
+  // race with employees marking tasks complete on other devices (last-write-wins).
+  // checkDL() runs on the 60s timer and on load only.
+  saveLS();render();fillLoginDropdown();checkNotifs();saveBgState();
 }
 
 function listenFB(){
@@ -1072,17 +1090,18 @@ async function startApp(){
 //  DEADLINES
 // ════════════════════════════════════
 function checkDL(){
-  const now=Date.now();const changedIds=[];
+  // Update overdue status LOCALLY only — never push to Firebase.
+  // Pushing overdue from one device races with an employee marking complete on another
+  // device (last write wins), causing completed tasks to revert to overdue.
+  // The overdue state is derived from the deadline timestamp so it stays consistent
+  // across all devices even without being stored in Firebase.
+  const now=Date.now();let changed=false;
   Object.values(S.tasks).forEach(t=>{
     if((t.status==='pending'||t.status==='in_progress')&&t.deadline&&t.deadline<now){
-      t.status='overdue';changedIds.push(t.id);
+      t.status='overdue';changed=true;
     }
   });
-  if(changedIds.length){
-    saveLS();
-    changedIds.forEach(id=>pushTask(id)); // push only the tasks that changed, not the whole dataset
-    render();
-  }
+  if(changed){saveLS();render();}
   checkNotifs();
 }
 
