@@ -271,18 +271,32 @@ img{display:block}
 /* ══════════════════════════════════════════
    TASK CARDS
 ══════════════════════════════════════════ */
+/* ── Date group headers ── */
+.date-group{margin-bottom:18px}
+.dg-hdr{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--t3);padding:0 2px;margin-bottom:8px;
+}
+.dg-hdr.dg-overdue{color:var(--bad)}
+.dg-hdr.dg-today  {color:var(--p)}
+.dg-hdr.dg-tomorrow{color:var(--info)}
+.dg-count{background:var(--line2);color:var(--t3);font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px}
+.dg-line{flex:1;height:1px;background:var(--line)}
+
 .tlist{display:flex;flex-direction:column;gap:8px}
 .tcard{
   background:var(--card);border-radius:var(--r);border:1px solid var(--line);
   padding:14px 14px 14px 18px;cursor:pointer;position:relative;
-  border-left:4px solid transparent;transition:box-shadow .12s,transform .1s;
+  border-left:5px solid transparent;transition:box-shadow .12s,transform .1s;
   min-height:66px;
 }
 .tcard:active{transform:scale(.99);box-shadow:var(--sh)}
-.tcard.p-urgent{border-left-color:#ef4444}
-.tcard.p-high  {border-left-color:#f97316}
-.tcard.p-medium{border-left-color:#f59e0b}
-.tcard.p-low   {border-left-color:#10b981}
+/* Status-based left border — thick & clear */
+.tcard.s-completed  {border-left-color:#10b981}
+.tcard.s-pending    {border-left-color:#ef4444}
+.tcard.s-overdue    {border-left-color:#ef4444}
+.tcard.s-in_progress{border-left-color:#3b82f6}
 .tc-title{font-size:15px;font-weight:600;line-height:1.35;margin-bottom:8px;color:var(--t1)}
 .tc-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;gap:3px}
@@ -748,9 +762,27 @@ async function loadFB(){
 }
 function listenFB(){
   if(_es)return;
-  _es=new EventSource(`${FB}/wb.json?limitToLast=1`);
-  _es.addEventListener('put',()=>loadFB());
+  _es=new EventSource(`${FB}/wb.json`);  // full path — no limitToLast, catches all changes
+  _es.addEventListener('put',e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      // Firebase SSE sends {path, data} — if path is root '/' the data IS the full wb object
+      if(msg&&msg.data&&msg.path==='/'){
+        const d=msg.data;
+        if(d.users)S.users=d.users;
+        if(d.tasks)S.tasks=d.tasks;
+        if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
+        saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
+        return;
+      }
+    }catch{}
+    loadFB(); // fallback full fetch for partial-path events
+  });
   _es.addEventListener('patch',()=>loadFB());
+  _es.onerror=()=>{
+    _es.close();_es=null;
+    setTimeout(()=>{if(S.me)listenFB();},4000); // auto-reconnect
+  };
 }
 
 // ════════════════════════════════════
@@ -1256,7 +1288,7 @@ function rMyTasks(){
     <div class="chips">
       ${['all','pending','in_progress','overdue','completed'].map(s=>`<div class="chip ${S.filter===s?'on':''}" onclick="setF('${s}')">${fl(s)}${cnt[s]?` <span style="opacity:.7;font-size:11px">(${cnt[s]})</span>`:''}</div>`).join('')}
     </div>
-    ${list.length===0?empt('No tasks here','Change the filter or tap + to add a task'):`<div class="tlist">${list.map(t=>tCard(t,true)).join('')}</div>`}`;
+    ${renderGrouped(list,true,'No tasks here')}`;
 }
 
 // ── Overview (owner) ──
@@ -1291,7 +1323,7 @@ function rOverview(){
       <button class="btn btn-p btn-sm" onclick="showAddTask('${sel}')">
         <svg width="12" height="12" fill="none" viewBox="0 0 24 24"><path stroke="#fff" stroke-width="2.5" d="M12 5v14M5 12h14"/></svg> Add Task
       </button></div>`:''}
-    ${flist.length===0?empt('No tasks','Select a team member or change the filter'):`<div class="tlist">${flist.map(t=>tCard(t,sel==='all')).join('')}</div>`}`;
+    ${renderGrouped(flist,sel==='all','No tasks')}`;
 }
 
 // ── Analytics ──
@@ -1392,13 +1424,52 @@ function fmtDl(dl,sta){
   if(d<86400000)return`${Math.floor(d/3600000)}h left`;
   return dl.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
 }
+// ── Group tasks by deadline date ──
+function groupTasksByDate(tasks){
+  const now=new Date();
+  const todayMs=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  const tomMs=todayMs+86400000;
+  const groups={};
+  tasks.forEach(t=>{
+    let key,label,cls='';
+    if(!t.deadline){key='z_none';label='No Deadline';}
+    else{
+      const d=new Date(t.deadline);
+      const dMs=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+      if(dMs<todayMs){key='a_ov';label='Overdue';cls='dg-overdue';}
+      else if(dMs===todayMs){key='b_tod';label='Today';cls='dg-today';}
+      else if(dMs===tomMs){key='c_tom';label='Tomorrow';cls='dg-tomorrow';}
+      else{
+        const lbl=d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+        key='d_'+dMs;label=lbl;
+      }
+    }
+    if(!groups[key])groups[key]={label,cls,tasks:[]};
+    groups[key].tasks.push(t);
+  });
+  return Object.entries(groups).sort(([a],[b])=>a.localeCompare(b)).map(([,g])=>g);
+}
+
+function renderGrouped(tasks,showWho,emptyMsg){
+  if(!tasks.length)return empt(emptyMsg,'Change the filter or tap + to add a task');
+  return groupTasksByDate(tasks).map(g=>`
+    <div class="date-group">
+      <div class="dg-hdr ${g.cls}">
+        <span>${xe(g.label)}</span>
+        <span class="dg-count">${g.tasks.length}</span>
+        <span class="dg-line"></span>
+      </div>
+      <div class="tlist">${g.tasks.map(t=>tCard(t,showWho)).join('')}</div>
+    </div>`).join('');
+}
+
 function tCard(t,showWho){
   const dl=t.deadline?new Date(t.deadline):null;
   const diff=dl?dl-new Date():null;
   const dlcls=t.status==='overdue'?'late':(diff&&diff<86400000&&diff>0?'soon':'');
   const dlTxt=dl?fmtDl(dl,t.status):'';
   const au=S.users[t.assignedTo];
-  return`<div class="tcard p-${t.priority}" onclick="showTaskDet('${t.id}')">
+  return`<div class="tcard s-${t.status}" onclick="showTaskDet('${t.id}')">
     <div class="tc-title">${xe(t.title)}</div>
     <div class="tc-meta">
       <span class="badge b-${t.status}">${slabel(t.status)}</span>
