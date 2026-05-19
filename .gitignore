@@ -1,0 +1,11 @@
+# Claude Code worktrees (temp branches, not for sharing)
+.claude/worktrees/
+.claude/settings.local.json
+
+# Order files (private business data)
+*.xlsx
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
