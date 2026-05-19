@@ -4977,92 +4977,153 @@ function buildVendorDetailsPanel(vo,vi){
 }
 
 function buildVendorDesignsPanel(vo,vi){
-  let html=`<div class="section-head">Designs &amp; Varieties (${vo.designs.length}) — Order total: ${formatQtyByUnit(vendorOrderQtyByUnit(vo))}
-    <button class="sm" onclick="addVendorDesign(${vi})">+ Add design</button>
-  </div>`;
+  let html='<div class="section-head">Designs &amp; Varieties ('+vo.designs.length+') — Order total: <strong>'+formatQtyByUnit(vendorOrderQtyByUnit(vo))+'</strong>'
+    +'<button class="icon-btn primary no-print" onclick="addVendorDesign('+vi+')">+ Add design</button></div>';
+
+  if(!vo.designs.length) return html+'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>';
+
   html+=vo.designs.map((d,di)=>{
     const szKeys=Object.keys(d.sizes||{});
     const varieties=d.varieties||[];
-    const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
-    const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
 
-    // ── Image gallery at top (same as client order) ───────────────────────────
-    const galleryHtml=buildVarietyGallery(varieties);
+    // Flat (CNC-style): no varieties, OR exactly one variety that has no meaningful name
+    const hasOnlyDefault=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
+    const isFlat=varieties.length===0||hasOnlyDefault;
 
-    // Always show the full variety table (identical layout to client orders)
-    // Column order: Design code | Images | sizes... | Total | Unit | Rate (₹) | Del
-    const varTableHtml = varieties.length ? `<div class="variety-table-wrap">
-      <table class="variety-table">
-        <thead><tr>
-          <th style="min-width:130px">Design code</th>
-          <th style="min-width:62px">Images</th>
-          ${szKeys.map(sz=>`<th class="sz-head">${sz}</th>`).join('')}
-          <th style="min-width:60px">Total</th>
-          <th style="min-width:72px">Unit</th>
-          <th style="min-width:72px">Rate (₹)</th>
-          <th style="min-width:40px" class="no-print">Del</th>
-        </tr></thead>
-        <tbody>
-          ${varieties.map((v,vri)=>{
-            const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-            const imgCells=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src?`<img class="variety-thumb" src="${src}" onclick="openLbDirect('${src.replace(/'/g,"\\'")}'))" title="Click to zoom"><button class="del-img no-print" style="width:auto" onclick="delVVImg(${vi},${di},${vri},${ii})">✕</button>`:''}).filter(Boolean).join('');
-            const vUnitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>`<option value="${u}"${u===(v.unit||'pcs')?' selected':''}>${u}</option>`).join('');
-            return`<tr>
-              <td><input class="variety-name-inp" value="${esc(v.name||'')}" placeholder="Design code" oninput="S.vendorOrders[${vi}].designs[${di}].varieties[${vri}].name=this.value;scheduleAutosave()"></td>
-              <td><div class="variety-img-cell">${imgCells}<label class="variety-img-add no-print" for="vvimg-${d.id}-${vri}" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>
-                <input type="file" id="vvimg-${d.id}-${vri}" accept="image/*" style="display:none" onchange="addVVImg(${vi},${di},${vri},this)"></div></td>
-              ${szKeys.map(sz=>`<td><input class="variety-table input qty-inp" type="number" min="0" value="${(v.sizes||{})[sz]||0}" onchange="upVendorVarietySize(${vi},${di},${vri},'${sz}',this.value)"></td>`).join('')}
-              <td class="total-col">${rt}</td>
-              <td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety(${vi},${di},${vri},'unit',this.value)">${vUnitOpts}</select></td>
-              <td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="${v.rate||''}" onchange="upVendorVarietyRate(${vi},${di},${vri},this.value)"></td>
-              <td class="no-print"><button class="icon-btn danger" onclick="removeVendorVariety(${vi},${di},${vri})">✕</button></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-        <tfoot><tr>
-          <td colspan="2" style="text-align:right;padding:6px 8px;font-weight:600">Design total</td>
-          ${szKeys.map(sz=>`<td style="text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
-          <td class="grand-total">${grandTotal}</td><td></td><td></td><td class="no-print"></td>
-        </tr></tfoot>
-      </table></div>` : '<p style="font-size:11px;color:#888;margin:6px 0">No design codes added yet — click "+ Add design code".</p>';
+    // ── Image gallery (same style as client orders: 100×100 thumbnails) ──────
+    const allGroupImgs=[];
+    if(isFlat){(hasOnlyDefault?varieties[0].images:d.images||[]).forEach(img=>allGroupImgs.push({img,label:d.code||d.name}));}
+    else{(d.images||[]).forEach(img=>allGroupImgs.push({img,label:d.code||d.name}));varieties.forEach(v=>(v.images||[]).forEach(img=>allGroupImgs.push({img,label:v.name||d.code})));}
+    const imgGallery=allGroupImgs.length
+      ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'+allGroupImgs.map(({img,label})=>{
+          const src=_resolveImgSrc(img)||'';return src
+            ?'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+              +'<img src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
+              +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
+            +'</div>':'';}).filter(Boolean).join('')+'</div>'
+      :'';
 
-    return`<div class="design-card">
-      <div class="design-card-head">
-        <div class="design-num">${di+1}</div>
-        <div style="flex:1">
-          <div class="field-row" style="margin-bottom:6px">
-            <div class="field-group ac-wrap">
-              <label>Design name</label>
-              <input id="vd-inp-dname-${vi}-${di}" value="${esc(d.name)}" autocomplete="off"
-                oninput="voAC(this,'vd-ac-dname-${vi}-${di}',S.vocabulary.dnames||[])" onblur="hideACModal('vd-ac-dname-${vi}-${di}');if(this.value!==S.vendorOrders[${vi}].designs[${di}].name)upVendorDesign(${vi},${di},'name',this.value)">
-              <div class="ac-list" id="vd-ac-dname-${vi}-${di}" style="display:none"></div>
-            </div>
-            <div class="field-group ac-wrap">
-              <label>Design code</label>
-              <input id="vd-inp-dcode-${vi}-${di}" value="${esc(d.code||'')}" autocomplete="off"
-                oninput="voAC(this,'vd-ac-dcode-${vi}-${di}',S.vocabulary.dcodes||[])" onblur="hideACModal('vd-ac-dcode-${vi}-${di}');if(this.value!==S.vendorOrders[${vi}].designs[${di}].code)upVendorDesign(${vi},${di},'code',this.value)">
-              <div class="ac-list" id="vd-ac-dcode-${vi}-${di}" style="display:none"></div>
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            ${szKeys.map(sz=>`<span class="stock-size-chip">${sz}: ${colTotals[sz]||0}</span>`).join('')}
-            <span style="font-size:11px;font-weight:700;color:#0F6E56">Total: ${formatQtyByUnit(designQtyByUnit(d))}</span>
-          </div>
-        </div>
-        <button class="icon-btn danger no-print" onclick="removeVendorDesign(${vi},${di})">Remove</button>
-      </div>
-      <!-- Variety image gallery at top -->
-      ${galleryHtml}
-      <!-- Variety table -->
-      <div style="font-size:11px;color:#3C3489;margin:10px 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span>🎨 Design codes &amp; quantities by size</span>
-        <span class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="icon-btn" onclick="addVendorVariety(${vi},${di})">+ Add design code</button>
-          <button class="icon-btn" onclick="addVendorSizeColumn(${vi},${di})">+ Add size</button>
-        </span>
-      </div>
-      ${varTableHtml}
-    </div>`;
+    // ── Table body ───────────────────────────────────────────────────────────
+    const grpTotals={};szKeys.forEach(sz=>grpTotals[sz]=0);
+    let tbody='';
+
+    if(isFlat){
+      // ── FLAT ROW (CNC-style, matches client flat row) ────────────────────
+      const rowSizes=hasOnlyDefault?(varieties[0].sizes||{}):(d.sizes||{});
+      const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt(rowSizes[sz])||0),0);
+      szKeys.forEach(sz=>{grpTotals[sz]+=(parseInt(rowSizes[sz])||0);});
+      const flatUnit=hasOnlyDefault?(varieties[0].unit||d.unit||'pcs'):(d.unit||'pcs');
+      const flatRate=hasOnlyDefault?(varieties[0].rate!=null?varieties[0].rate:d.rate||''):(d.rate||'');
+      const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
+      const flatImgs=hasOnlyDefault?(varieties[0].images||[]):(d.images||[]);
+      const imgCells=flatImgs.map((img,ii)=>{const src=_resolveImgSrc(img);return src
+        ?'<img class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
+          +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
+      const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
+        +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
+      const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'" oninput="upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')" tabindex="0"></td>').join('');
+      tbody='<tr style="background:#fff">'
+        +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px"></td>'
+        +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
+        +sizeCells
+        +'<td class="total-col">'+rowTotal+'</td>'
+        +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorFlatUnit('+vi+','+di+',this.value,'+hasOnlyDefault+')">'+unitOpts+'</select></td>'
+        +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
+        +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
+          +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
+        +'</div></td>'
+      +'</tr>';
+
+    } else {
+      // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS (Dye Gold style) ───────
+      const colTotals={};
+      szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);grpTotals[sz]+=colTotals[sz];});
+      const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
+      const dImages=d.images||[];
+      const dImgCells=dImages.map((img,ii)=>{const src=_resolveImgSrc(img);return src
+        ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+      const addDImgBtn='<label class="variety-img-add no-print" for="vdimg-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
+        +'<input type="file" id="vdimg-'+d.id+'" accept="image/*" style="display:none" onchange="addVDImg('+vi+','+di+',this)">';
+      tbody='<tr style="background:#EEEDFE">'
+        +'<td style="font-weight:700"><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700"></td>'
+        +'<td><div class="variety-img-cell">'+dImgCells+addDImgBtn+'</div></td>'
+        +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'+varieties.length+' variet'+(varieties.length===1?'y':'ies')+' — see rows below</td>'
+        +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
+        +'<td></td><td></td>'
+        +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
+          +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
+        +'</div></td></tr>';
+      varieties.forEach((v,vri)=>{
+        const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
+        const varImgs=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src
+          ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+        const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
+          +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
+        const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
+        const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'" oninput="upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)" tabindex="0"></td>').join('');
+        tbody+='<tr style="background:#FAFAFF">'
+          +'<td style="padding-left:22px"><span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
+            +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px"></td>'
+          +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
+          +szCells
+          +'<td class="total-col">'+rowTotal+'</td>'
+          +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety('+vi+','+di+','+vri+',\'unit\',this.value)">'+unitOpts+'</select></td>'
+          +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVendorVarietyRate('+vi+','+di+','+vri+',this.value)"></td>'
+          +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVendorVariety('+vi+','+di+','+vri+')">✕</button></td>'
+        +'</tr>';
+      });
+    }
+
+    // ── Footer + controls ────────────────────────────────────────────────────
+    const footerTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
+    const footerHtml=footerTotal>0
+      ?'<tfoot><tr><td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
+        +szKeys.map(sz=>'<td><strong>'+(grpTotals[sz]||0)+'</strong></td>').join('')
+        +'<td class="grand-total"><strong>'+footerTotal+'</strong></td>'
+        +'<td></td><td></td><td class="no-print"></td></tr></tfoot>'
+      :'';
+    const sizeCtrl=d.sizesLocked===true
+      ?'<span style="font-size:10px;color:#AFA9EC">Sizes locked at creation</span>'
+      :'<button class="icon-btn sm no-print" onclick="addVendorSizeColumn('+vi+','+di+')">+ Add size</button>';
+    const codeCount=isFlat?1:varieties.length;
+    const badgeText=codeCount+' code'+(codeCount!==1?'s':'')+' · '+formatQtyByUnit(designQtyByUnit(d));
+
+    const tableHtml='<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
+      +'<table class="variety-table">'
+        +'<thead><tr>'
+          +'<th style="min-width:130px;text-align:left">Design code</th>'
+          +'<th style="min-width:80px">Images</th>'
+          +szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')
+          +'<th style="min-width:55px">Total</th>'
+          +'<th style="min-width:72px">Unit</th>'
+          +'<th style="min-width:72px">Rate (₹)</th>'
+          +'<th style="min-width:70px" class="no-print">Action</th>'
+        +'</tr></thead>'
+        +'<tbody>'+tbody+'</tbody>'
+        +footerHtml
+      +'</table>'
+      +'<div style="padding:5px 10px 6px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #F1EFE8" class="no-print">'
+        +'<button class="icon-btn" onclick="addVendorVariety('+vi+','+di+')">+ Add design code</button>'
+        +sizeCtrl
+      +'</div></div>';
+
+    return '<div class="design-name-group">'
+      +'<div class="design-name-group-head">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">'
+          +'<span style="font-size:13px;opacity:.75;flex-shrink:0">🎨</span>'
+          +'<input class="inline-edit" value="'+esc(d.name||'')+'"'
+          +' style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"'
+          +' oninput="S.vendorOrders['+vi+'].designs['+di+'].name=this.value;scheduleAutosave()"'
+          +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"'
+          +' onblur="rebuildVocab();save();renderVendorOrders()"'
+          +' title="Click to rename">'
+        +'</div>'
+        +'<span class="dng-meta">'+badgeText+'</span>'
+      +'</div>'
+      +'<div class="design-name-group-body" style="padding:0 0 6px">'+imgGallery+tableHtml+'</div>'
+    +'</div>';
   }).join('');
   return html;
 }
@@ -5141,6 +5202,65 @@ function addVVImg(vi,di,vri,inp){
   reader.readAsDataURL(file);
 }
 function delVVImg(vi,di,vri,ii){S.vendorOrders[vi].designs[di].varieties[vri].images.splice(ii,1);save();renderVendorOrders();}
+
+// ── Flat-row image / unit / rate / size helpers ───────────────────────────────
+// Used when vendor design has 0 varieties (isVar=false) or 1 unnamed/Default variety (isVar=true)
+function upVendorFlatSize(vi,di,sz,val,isVar){
+  const d=S.vendorOrders[vi].designs[di];
+  if(isVar&&d.varieties&&d.varieties[0]){
+    d.varieties[0].sizes[sz]=parseInt(val)||0;
+    // Keep design-level aggregate in sync
+    Object.keys(d.sizes||{}).forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
+  } else {
+    d.sizes[sz]=parseInt(val)||0;
+  }
+  save();renderVendorOrders();
+}
+function upVendorFlatUnit(vi,di,val,isVar){
+  const d=S.vendorOrders[vi].designs[di];
+  if(isVar&&d.varieties&&d.varieties[0])d.varieties[0].unit=val;
+  else d.unit=val;
+  save();renderVendorOrders();
+}
+function upVendorFlatRate(vi,di,val,isVar){
+  const d=S.vendorOrders[vi].designs[di];
+  if(isVar&&d.varieties&&d.varieties[0])d.varieties[0].rate=parseFloat(val)||0;
+  else d.rate=parseFloat(val)||0;
+  scheduleAutosave();
+}
+function delVendorFlatImg(vi,di,ii,isVar){
+  const d=S.vendorOrders[vi].designs[di];
+  if(isVar&&d.varieties&&d.varieties[0])(d.varieties[0].images=d.varieties[0].images||[]).splice(ii,1);
+  else(d.images=d.images||[]).splice(ii,1);
+  save();renderVendorOrders();
+}
+function addVendorFlatImg(vi,di,isVar,inp){
+  const file=inp.files[0];if(!file)return;inp.value='';
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    const compressed=await compressImageToThumb(ev.target.result);
+    const hash=await imgHash(compressed);
+    const d=S.vendorOrders[vi].designs[di];
+    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push({data:compressed,hash});}
+    else{d.images=d.images||[];d.images.push({data:compressed,hash});}
+    save();renderVendorOrders();
+  };
+  reader.readAsDataURL(file);
+}
+// Design-level image helpers for multi-variety (Dye Gold) header row
+function delVDImg(vi,di,ii){const d=S.vendorOrders[vi].designs[di];(d.images=d.images||[]).splice(ii,1);save();renderVendorOrders();}
+function addVDImg(vi,di,inp){
+  const file=inp.files[0];if(!file)return;inp.value='';
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    const compressed=await compressImageToThumb(ev.target.result);
+    const hash=await imgHash(compressed);
+    const d=S.vendorOrders[vi].designs[di];
+    d.images=d.images||[];d.images.push({data:compressed,hash});
+    save();renderVendorOrders();
+  };
+  reader.readAsDataURL(file);
+}
 
 // ── New Vendor Order Modal ────────────────────────────────────────────────────
 function openNewVendorOrderModal(prefill){
