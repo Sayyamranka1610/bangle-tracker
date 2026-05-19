@@ -71,6 +71,21 @@ img{display:block}
   box-shadow:0 4px 16px rgba(99,102,241,.4);
 }
 
+/* ── LOGIN CARDS ── */
+.l-cards{display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;margin-top:4px}
+.l-name-btn{
+  width:100%;display:flex;align-items:center;gap:12px;
+  padding:12px 14px;border-radius:12px;
+  background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.1);
+  color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-align:left;
+  transition:background .15s,border-color .15s;
+}
+.l-name-btn:active,.l-name-btn:hover{background:rgba(99,102,241,.3);border-color:rgba(99,102,241,.6)}
+.l-name-av{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#fff;flex-shrink:0}
+.l-back{background:none;border:none;color:rgba(255,255,255,.5);font-size:13px;font-weight:600;padding:0 0 14px;display:flex;align-items:center;gap:5px;cursor:pointer}
+.l-sel-card{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(99,102,241,.2);border:1.5px solid rgba(99,102,241,.5);border-radius:12px;margin-bottom:16px}
+.l-sel-name{color:#fff;font-size:15px;font-weight:700}
+
 /* ══════════════════════════════════════
    APP SHELL — topbar + (sidebar | content)
 ══════════════════════════════════════ */
@@ -170,7 +185,7 @@ img{display:block}
 .page-hdr{padding:18px 16px 4px;display:flex;align-items:center;justify-content:space-between}
 .page-title{font-size:22px;font-weight:800;color:var(--t1)}
 .page-sub{font-size:13px;color:var(--t2);margin-top:2px}
-.btn-add{width:38px;height:38px;border-radius:12px;background:var(--p);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(99,102,241,.35)}
+.btn-add{width:46px;height:46px;border-radius:14px;background:var(--p);color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(99,102,241,.45);line-height:1}
 
 /* ── FILTER CHIPS ── */
 .chips{display:flex;gap:8px;padding:10px 16px;overflow-x:auto;flex-shrink:0}
@@ -331,16 +346,29 @@ img{display:block}
       <div class="ll-creation">Creation</div>
       <div class="ll-sub">Workboard</div>
     </div>
-    <div class="lf">
-      <label>Select Name</label>
-      <select id="l-user"><option value="">— Select your name —</option></select>
+
+    <!-- Step 1: Pick your name -->
+    <div id="l-step1">
+      <div class="lf">
+        <label>Who are you?</label>
+        <div class="l-cards" id="l-names">
+          <div style="color:rgba(255,255,255,.3);font-size:13px;text-align:center;padding:16px 0">Loading team…</div>
+        </div>
+      </div>
     </div>
-    <div class="lf">
-      <label>Password</label>
-      <input type="password" id="l-pass" placeholder="Enter password" autocomplete="current-password">
+
+    <!-- Step 2: Enter password (shown after tapping a name) -->
+    <div id="l-step2" style="display:none">
+      <button class="l-back" onclick="backToNames()">‹ Back</button>
+      <div class="l-sel-card" id="l-sel-user"></div>
+      <div class="lf">
+        <label>Password</label>
+        <input type="password" id="l-pass" placeholder="Enter your password" autocomplete="current-password">
+      </div>
     </div>
+
     <div class="lerr" id="l-err"></div>
-    <button class="lbtn" onclick="doLogin()">Sign In</button>
+    <button class="lbtn" id="l-signin" style="display:none" onclick="doLogin()">Sign In →</button>
   </div>
 </div>
 
@@ -657,26 +685,56 @@ async function deleteUser(id){
 // ══════════════════════════════════════════════════════════
 //  AUTH
 // ══════════════════════════════════════════════════════════
-function fillLoginDropdown(){
-  const sel = document.getElementById('l-user');
-  if(!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">— Select your name —</option>' +
-    Object.values(S.users)
-      .sort((a,b)=>a.name.localeCompare(b.name))
-      .map(u=>`<option value="${xe(u.username)}">${xe(u.name)}</option>`)
-      .join('');
+let _loginUsername = null; // tracks which name was tapped on login screen
+
+// Populate the name-card list (called after Firebase loads)
+function fillLoginDropdown(){ // kept same name so init() call doesn't break
+  const container = document.getElementById('l-names');
+  if(!container) return;
+  const users = Object.values(S.users).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!users.length){
+    container.innerHTML='<div style="color:rgba(255,255,255,.3);font-size:13px;text-align:center;padding:16px 0">No team members found</div>';
+    return;
+  }
+  container.innerHTML = users.map(u=>`
+    <button class="l-name-btn" onclick="selectLoginUser('${xe(u.username)}','${xe(u.name)}','${u.color||'#6366f1'}')">
+      <div class="l-name-av" style="background:${u.color||'#6366f1'}">${(u.name||'?')[0].toUpperCase()}</div>
+      <span>${xe(u.name)}</span>
+    </button>`).join('');
+}
+
+function selectLoginUser(username, name, color){
+  _loginUsername = username;
+  // Show step 2
+  document.getElementById('l-step1').style.display='none';
+  document.getElementById('l-sel-user').innerHTML=`
+    <div class="l-name-av" style="background:${color}">${name[0].toUpperCase()}</div>
+    <span class="l-sel-name">${xe(name)}</span>`;
+  document.getElementById('l-step2').style.display='block';
+  document.getElementById('l-signin').style.display='block';
+  document.getElementById('l-err').style.display='none';
+  // Pre-fill password if remembered for this user
   const rem = getRem();
-  if(rem && rem.u){ sel.value=rem.u; if(rem.p) document.getElementById('l-pass').value=rem.p; }
-  else if(cur) sel.value=cur;
+  const passEl = document.getElementById('l-pass');
+  passEl.value = (rem && rem.u===username && rem.p) ? rem.p : '';
+  setTimeout(()=>passEl.focus(), 120);
+}
+
+function backToNames(){
+  _loginUsername = null;
+  document.getElementById('l-step2').style.display='none';
+  document.getElementById('l-signin').style.display='none';
+  document.getElementById('l-step1').style.display='block';
+  document.getElementById('l-err').style.display='none';
+  document.getElementById('l-pass').value='';
 }
 
 function doLogin(){
-  const u   = document.getElementById('l-user').value.trim().toLowerCase();
+  const u   = (_loginUsername||'').trim().toLowerCase();
   const p   = document.getElementById('l-pass').value;
   const err = document.getElementById('l-err');
   err.style.display='none';
-  if(!u){ err.textContent='Please select your name.'; err.style.display='block'; return; }
+  if(!u){ err.textContent='Please select your name first.'; err.style.display='block'; backToNames(); return; }
   if(!p){ err.textContent='Please enter your password.'; err.style.display='block'; return; }
   const user = Object.values(S.users).find(x=>x.username.toLowerCase()===u && x.password===p);
   if(!user){ err.textContent='Wrong password. Please try again.'; err.style.display='block'; return; }
@@ -689,11 +747,18 @@ function doLogin(){
 async function doLogout(){
   stopSync();
   S.me = null;
+  _loginUsername = null;
   clrSess();
   if(_dlTimer){ clearInterval(_dlTimer); _dlTimer=null; }
   try{ const c=await caches.open('wb-notif-state'); await c.delete('user-state'); }catch{}
   try{ if('clearAppBadge' in navigator) navigator.clearAppBadge(); }catch{}
   document.getElementById('app').classList.remove('on');
+  // Reset login to step 1
+  document.getElementById('l-step2').style.display='none';
+  document.getElementById('l-signin').style.display='none';
+  document.getElementById('l-step1').style.display='block';
+  document.getElementById('l-err').style.display='none';
+  document.getElementById('l-pass').value='';
   document.getElementById('login').style.display='flex';
   fillLoginDropdown();
 }
