@@ -752,7 +752,15 @@ function fillLoginDropdown(){
 // ════════════════════════════════════
 async function fbGet(p){try{const r=await fetch(`${FB}${p}.json`);return r.ok?await r.json():null;}catch{return null;}}
 async function fbPut(p,d){try{await fetch(`${FB}${p}.json`,{method:'PUT',body:JSON.stringify(d)});}catch{}}
+async function fbDel(p){try{await fetch(`${FB}${p}.json`,{method:'DELETE'});}catch{}}
 async function pushFB(){await fbPut('/wb',{users:S.users,tasks:S.tasks,customRoles:S.customRoles});}
+// Push only a single task — avoids overwriting other devices' concurrent changes
+async function pushTask(id){
+  try{
+    if(S.tasks[id]) await fbPut(`/wb/tasks/${id}`,S.tasks[id]);
+    else await fbDel(`/wb/tasks/${id}`);
+  }catch{}
+}
 async function loadFB(){
   const d=await fbGet('/wb');if(!d)return;
   if(d.users)S.users=d.users;
@@ -760,28 +768,63 @@ async function loadFB(){
   if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
   saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
 }
+
+// Apply a Firebase SSE event inline — no round-trip GET needed
+function applySSEUpdate(path,data,isPatch){
+  if(path==='/'){
+    if(data){
+      if(data.users)S.users=data.users;
+      if(data.tasks)S.tasks=data.tasks;
+      if(Array.isArray(data.customRoles))S.customRoles=data.customRoles;
+    }
+  } else if(path==='/tasks'){
+    if(!isPatch) S.tasks=data||{};
+    else if(data) Object.assign(S.tasks,data);
+  } else if(path.startsWith('/tasks/')){
+    const parts=path.slice('/tasks/'.length).split('/');
+    const tid=parts[0];
+    if(parts.length===1){
+      if(data) S.tasks[tid]=data; else delete S.tasks[tid];
+    } else if(S.tasks[tid]){
+      let obj=S.tasks[tid];
+      for(let i=1;i<parts.length-1;i++) obj=obj[parts[i]]||(obj[parts[i]]={});
+      if(data!==null&&data!==undefined) obj[parts[parts.length-1]]=data;
+      else delete obj[parts[parts.length-1]];
+    }
+  } else if(path==='/users'){
+    if(!isPatch) S.users=data||{};
+    else if(data) Object.assign(S.users,data);
+  } else if(path.startsWith('/users/')){
+    const uid=path.slice('/users/'.length).split('/')[0];
+    if(data) S.users[uid]=data; else delete S.users[uid];
+  } else if(path==='/customRoles'){
+    if(Array.isArray(data)) S.customRoles=data;
+  } else {
+    loadFB(); return; // unknown sub-path — do full fetch as safe fallback
+  }
+  saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
+}
+
 function listenFB(){
   if(_es)return;
-  _es=new EventSource(`${FB}/wb.json`);  // full path — no limitToLast, catches all changes
+  _es=new EventSource(`${FB}/wb.json`);
   _es.addEventListener('put',e=>{
     try{
       const msg=JSON.parse(e.data);
-      // Firebase SSE sends {path, data} — if path is root '/' the data IS the full wb object
-      if(msg&&msg.data&&msg.path==='/'){
-        const d=msg.data;
-        if(d.users)S.users=d.users;
-        if(d.tasks)S.tasks=d.tasks;
-        if(Array.isArray(d.customRoles))S.customRoles=d.customRoles;
-        saveLS();checkDL();render();fillLoginDropdown();checkNotifs();saveBgState();
-        return;
-      }
+      if(msg&&msg.path!==undefined){applySSEUpdate(msg.path,msg.data,false);return;}
     }catch{}
-    loadFB(); // fallback full fetch for partial-path events
+    loadFB();
   });
-  _es.addEventListener('patch',()=>loadFB());
+  _es.addEventListener('patch',e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg&&msg.path!==undefined){applySSEUpdate(msg.path,msg.data,true);return;}
+    }catch{}
+    loadFB();
+  });
   _es.onerror=()=>{
     _es.close();_es=null;
-    setTimeout(()=>{if(S.me)listenFB();},4000); // auto-reconnect
+    setTimeout(()=>{if(S.me)listenFB();},4000);
   };
 }
 
@@ -928,19 +971,37 @@ async function setupBgNotifs(){
 // ════════════════════════════════════
 //  SAVE
 // ════════════════════════════════════
-// Auto-save on every data change — shows a brief dot animation
-async function autosave(){
+// Save visual feedback helper (dot + label animation)
+function _saveFeedbackStart(){
   const dot=document.getElementById('sdot'),lbl=document.getElementById('savelbl');
   if(dot){dot.classList.remove('ok');dot.classList.add('saving');}
   if(lbl)lbl.textContent='Saving…';
-  saveLS();
-  await pushFB();
+}
+function _saveFeedbackDone(){
   _lastSaved=new Date();
+  const dot=document.getElementById('sdot'),lbl=document.getElementById('savelbl');
   if(dot){dot.classList.remove('saving');dot.classList.add('ok');setTimeout(()=>dot.classList.remove('ok'),2500);}
   if(lbl){lbl.textContent='Saved ✓';setTimeout(()=>lbl.textContent='',2500);}
-  saveBgState(); // keep SW background state in sync after every save
+  saveBgState();
 }
-// Ctrl+S still works — just triggers the same auto-save
+
+// Full save (used for user/settings changes where a full PUT is appropriate)
+async function autosave(){
+  _saveFeedbackStart();
+  saveLS();
+  await pushFB();
+  _saveFeedbackDone();
+}
+
+// Per-task save — only writes the single task to Firebase, preventing overwrite races
+async function autosaveTask(id){
+  _saveFeedbackStart();
+  saveLS();
+  await pushTask(id);
+  _saveFeedbackDone();
+}
+
+// Ctrl+S still works
 async function manualSave(){autosave();}
 
 // ════════════════════════════════════
@@ -975,7 +1036,7 @@ async function startApp(){
   S.filter='all';S.selMember='all';
   renderNav();checkDL();render();listenFB();
   _dlTimer=setInterval(checkDL,60000);
-  setInterval(()=>autosave(),30000); // background safety-net every 30 s
+  setInterval(()=>saveLS(),30000); // background safety-net — localStorage only, never overwrites Firebase
   // Notifications
   initNotifBaseline(); // mark existing tasks as seen so no spam on login
   if(Notification.permission==='granted'){
@@ -992,12 +1053,18 @@ async function startApp(){
 //  DEADLINES
 // ════════════════════════════════════
 function checkDL(){
-  const now=Date.now();let changed=false;
+  const now=Date.now();const changedIds=[];
   Object.values(S.tasks).forEach(t=>{
-    if((t.status==='pending'||t.status==='in_progress')&&t.deadline&&t.deadline<now){t.status='overdue';changed=true;}
+    if((t.status==='pending'||t.status==='in_progress')&&t.deadline&&t.deadline<now){
+      t.status='overdue';changedIds.push(t.id);
+    }
   });
-  if(changed){saveLS();pushFB();render();}
-  checkNotifs(); // fire any pending deadline notifications
+  if(changedIds.length){
+    saveLS();
+    changedIds.forEach(id=>pushTask(id)); // push only the tasks that changed, not the whole dataset
+    render();
+  }
+  checkNotifs();
 }
 
 // ════════════════════════════════════
@@ -1026,26 +1093,34 @@ function saveTask(){
   S.tasks[id]={...ex,id,title,desc:document.getElementById('t-desc').value.trim(),
     assignedTo:who,section:sect,priority:document.getElementById('t-pri').value,
     status:sta,deadline:dl,createdBy:S.me.id,createdAt:ex.createdAt||Date.now()};
-  autosave();closeM('m-task');toast(isEdit?'Task updated':'Task created ✓');S.editTask=null;render();
+  autosaveTask(id);closeM('m-task');toast(isEdit?'Task updated':'Task created ✓');S.editTask=null;render();
 }
-function delTask(id){if(!confirm('Delete this task?'))return;delete S.tasks[id];autosave();closeM('m-det');toast('Deleted');render();}
+function delTask(id){
+  if(!confirm('Delete this task?'))return;
+  delete S.tasks[id];
+  saveLS();pushTask(id); // pushTask with no S.tasks[id] → sends DELETE to Firebase
+  _saveFeedbackDone();
+  closeM('m-det');toast('Deleted');render();
+}
 function completeTask(id){
   const t=S.tasks[id];if(!t)return;
   if(t.status==='overdue'){S.justTask=id;document.getElementById('just-txt').value='';showM('m-just');return;}
-  t.status='completed';t.completedAt=Date.now();autosave();closeM('m-det');toast('Marked complete ✓');render();
+  t.status='completed';t.completedAt=Date.now();
+  autosaveTask(id);closeM('m-det');toast('Marked complete ✓');render();
 }
 function submitJust(){
   const r=document.getElementById('just-txt').value.trim();
   if(!r){toast('Please write a reason','bad');return;}
   const t=S.tasks[S.justTask];if(!t)return;
   t.status='completed';t.completedAt=Date.now();t.delayReason=r;
-  autosave();closeM('m-just');closeM('m-det');toast('Completed with justification');render();S.justTask=null;
+  const tid=S.justTask;
+  autosaveTask(tid);closeM('m-just');closeM('m-det');toast('Completed with justification');render();S.justTask=null;
 }
 function reopenTask(id){
   const t=S.tasks[id];if(!t)return;
   t.status=(t.deadline&&t.deadline<Date.now())?'overdue':'in_progress';
   t.completedAt=null;t.delayReason=null;
-  autosave();closeM('m-det');toast('Task reopened');render();
+  autosaveTask(id);closeM('m-det');toast('Task reopened');render();
 }
 
 // ════════════════════════════════════
