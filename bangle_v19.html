@@ -1684,10 +1684,10 @@ function pillCls(order,design,i){
   if(st==='done')return'sp-done';if(a==='late'||st==='delayed')return'sp-late';
   if(a==='warn')return'sp-warn';if(st==='in progress')return'sp-active';return'sp-idle';
 }
-function badgeHtml(al){const m={done:['b-done','Done'],late:['b-late','Overdue'],warn:['b-warn','Due soon'],ok:['b-ok','On track']};const[c,l]=m[al]||['b-ok','On track'];return`<span class="badge ${c}">${l}</span>`}
+function badgeHtml(al){return'';} // Status badges removed — no overdue/on-track/due-soon labels
 function prioBadge(p){const m={normal:['b-normal','Normal'],urgent:['b-urgent','Urgent'],critical:['b-critical','Critical']};const[c,l]=m[p]||['b-normal','Normal'];return`<span class="badge ${c}">${l}</span>`}
-function ohIconCls(al){return{late:'oh-icon-late',warn:'oh-icon-warn',ok:'oh-icon-ok',done:'oh-icon-done'}[al]}
-function ohIconChar(al){if(al==='late')return'!';if(al==='warn')return'~';if(al==='done')return'✓';return'●'}
+function ohIconCls(al){return'oh-icon-ok';} // always neutral — status removed
+function ohIconChar(al){return'●';} // always neutral dot — no overdue/warn indicators
 
 // ── FILTERS ────────────────────────────────────────────────────────────────────
 function updateFilterOptions(){
@@ -1753,6 +1753,10 @@ function switchMain(view){
   scheduleAutosave();
 }
 function render(){
+  // Ensure order IDs are always in date-ascending order before any rendering.
+  // This runs on every render so adding/editing an order's start date always
+  // immediately reflects the correct ORD-XXX number everywhere in the UI.
+  renumberOrders();
   // ── PRESERVE FOCUSED INPUT (critical for mobile typing) ────────────────────
   // render() rebuilds large chunks of DOM. If the user is mid-type in an
   // input, the rebuilt DOM gets the OLD value from state and the user's
@@ -1818,10 +1822,9 @@ function renderOrdersView(){
   container.innerHTML=clients.map(client=>{
     const orders=clientMap[client];
     const isOpen=S.openClients.has(client);
-    const lateOrds=orders.filter(o=>orderAlert(o)==='late').length;
     return `<div class="client-section" id="cs-${esc(client.replace(/\s+/g,'_'))}">
       <div class="client-header" onclick="toggleClient('${esc(client)}')">
-        <div><h2>👤 ${esc(client)}</h2><div class="client-meta">${orders.length} order${orders.length!==1?'s':''} · ${lateOrds} overdue</div></div>
+        <div><h2>👤 ${esc(client)}</h2><div class="client-meta">${orders.length} order${orders.length!==1?'s':''}</div></div>
         <div style="display:flex;gap:6px;align-items:center">
           <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();askClientExport('${esc(client)}')">📥 Export</button>
           <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();askClientPrint('${esc(client)}')">🖨️ Print</button>
@@ -1836,19 +1839,19 @@ function renderOrdersView(){
 }
 
 function buildOrderCard(order,oi){
-  const al=orderAlert(order),p=orderPct(order);
+  const p=orderPct(order);
   const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   const isOpen=S.openOrders.has(order.id);
   const at=S.activeTabs[order.id]||'designs';
-  return `<div class="order-card al-${al}" id="oc-${order.id}" data-active-tab="${at}">
+  return `<div class="order-card al-ok" id="oc-${order.id}" data-active-tab="${at}">
     <div class="order-header" onclick="toggleOrder('${order.id}')">
-      <div class="oh-icon ${ohIconCls(al)}">${ohIconChar(al)}</div>
+      <div class="oh-icon oh-icon-ok">●</div>
       <div class="oh-left">
         <div class="oh-title">${esc(order.orderId)} · ${esc(order.client)}</div>
         <div class="oh-sub">${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}</div>
       </div>
       <div class="oh-right">
-        ${prioBadge(order.priority)}${badgeHtml(al)}
+        ${prioBadge(order.priority)}
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderExport('${order.id}')" title="Export this order">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderPrint('${order.id}')" title="Print this order">🖨️</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delOrder(${oi})">Delete</button>
@@ -8836,8 +8839,25 @@ async function doLogin(){
   fbInit();
 }
 
-function doLogout(){
-  _releaseLock();
+async function doLogout(){
+  // Stop all timers first so nothing fires during async cleanup
+  if(_lockHbTimer){ clearInterval(_lockHbTimer); _lockHbTimer=null; }
+  if(_lockPollTimer){ clearInterval(_lockPollTimer); _lockPollTimer=null; }
+  if(_lockOwnerCheckTimer){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; }
+  if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
+  _grantBannerUp=false;
+  const gb=document.getElementById('grant-request-banner');if(gb)gb.remove();
+
+  // CRITICAL: delete the Firebase lock BEFORE reloading so the next user can
+  // acquire it immediately.  _releaseLock() is async — we must await it here,
+  // otherwise location.reload() fires before the DELETE request completes.
+  if(_hasLock){
+    try{ await fetch(FB_LOCK,{method:'DELETE'}); }catch(e){}
+    _hasLock=false;
+  }
+  // Also clear any pending access request so the next sign-in starts clean
+  try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e){}
+
   sessionStorage.removeItem('bt_auth');
   sessionStorage.removeItem('bt_session');
   if(_fb.es){ try{_fb.es.close();}catch(e){} }
@@ -9958,6 +9978,72 @@ function openMobileMenu(){
   </div>`;
   _modalDisableBackground();
 }
+
+// ── EMOJI FALLBACK FOR OLD DEVICES ───────────────────────────────────────────
+// Some older Windows machines / outdated browsers show color emoji as empty
+// rectangles.  This script detects that situation via canvas and, ONLY on
+// affected devices, replaces known emoji used as button labels with short
+// English text equivalents so every function remains identifiable.
+(function installEmojiFallback(){
+  // Canvas test: draw a color emoji and check if any colored pixels appear.
+  // On systems that can't render emoji, all pixels stay transparent → detected.
+  function hasColorEmoji(){
+    try{
+      const c=document.createElement('canvas');
+      c.width=c.height=20;
+      const ctx=c.getContext('2d');
+      ctx.font='16px serif';
+      ctx.fillText('🎨',0,16);
+      const d=ctx.getImageData(0,0,20,20).data;
+      const colors=new Set();
+      for(let i=0;i<d.length;i+=4){
+        if(d[i+3]>64) colors.add(d[i]+','+d[i+1]+','+d[i+2]);
+      }
+      return colors.size>3; // colored emoji produces many distinct pixel colors
+    }catch(e){ return true; } // assume fine on canvas error
+  }
+  if(hasColorEmoji()) return; // modern device — nothing to do
+
+  // Old device detected: replace known emoji with short text labels.
+  // Map covers every emoji used in button text / labels across this app.
+  const map={
+    '🎨':'Design','🧲':'CNC','🌀':'CNC','🛟':'DyeGold',
+    '⏻':'Sign out','🔑':'Pw','🔒':'Locked','🔓':'Unlock',
+    '📨':'Request','✅':'Done','❌':'Error','⚠️':'Warning',
+    '📊':'Stats','🏭':'Vendor','🔔':'Alert','📋':'Details',
+    '📦':'Stock','👤':'User','⚙️':'Settings','💾':'Save',
+    '🖨️':'Print','📥':'Export','📤':'Upload','🔄':'Refresh',
+    '🏠':'Home','➕':'+','✕':'X','✓':'OK','×':'X',
+    '▶':'›','◀':'‹','▲':'↑','▼':'↓',
+  };
+
+  function replaceInNode(node){
+    if(node.nodeType===3){
+      let t=node.textContent,changed=false;
+      for(const[em,tx] of Object.entries(map)){
+        if(t.includes(em)){
+          t=t.split(em).join(tx);
+          changed=true;
+        }
+      }
+      if(changed) node.textContent=t;
+    } else if(node.nodeType===1
+              && !['SCRIPT','STYLE','INPUT','TEXTAREA','SELECT'].includes(node.tagName)){
+      for(const child of [...node.childNodes]) replaceInNode(child);
+    }
+  }
+
+  // Run once on current DOM, then watch for dynamic content
+  function runOnBody(){ replaceInNode(document.body); }
+  if(document.readyState==='loading')
+    document.addEventListener('DOMContentLoaded', runOnBody);
+  else runOnBody();
+
+  // Cover dynamically rendered HTML (modal dialogs, rendered order cards, etc.)
+  new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>replaceInNode(n)));
+  }).observe(document.body||document.documentElement,{childList:true,subtree:true});
+})();
 
 </script>
 </html>
