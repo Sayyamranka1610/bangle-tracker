@@ -1181,6 +1181,28 @@ function compressImageToThumb(dataUrl,maxDim=1200){
   });
 }
 
+// Prepare a high-quality version of an image for uploading to Firebase /bangImages/.
+// Uses the original file bytes if small enough, otherwise compresses at very high
+// quality (max 4096px, 0.97 JPEG) — far better than the display thumbnail.
+// The 7 MB cap is a safe limit for Firebase RTDB individual node writes.
+const FIREBASE_HQ_MAX = 7000000; // ~5.25 MB binary
+function compressForFirebase(original){
+  if(original.length < FIREBASE_HQ_MAX) return Promise.resolve(original);
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const passes=[[4096,0.97],[3000,0.95],[2400,0.93],[1800,0.91]];
+      for(const [dim,q] of passes){
+        const r=_compressPass(img,dim,q);
+        if(r.length<FIREBASE_HQ_MAX){resolve(r);return;}
+      }
+      resolve(_compressPass(img,1800,0.91));
+    };
+    img.onerror=()=>resolve(original);
+    img.src=original;
+  });
+}
+
 // High-quality version stored locally (IndexedDB) for print output.
 // 1200px max dimension @ 0.92 quality — sharp at 65mm×90mm on A4 @ 300dpi.
 // Never sent to Firebase (always stripped by extractImages).
@@ -1240,13 +1262,14 @@ async function loadImagesFromFB(imgList){
   }));
 }
 
-// Fetch images from Firebase /bangImages/ for all images in state that have
-// a fbKey but no local data (e.g. uploaded on a different device).
-// Called after state loads from Firebase so every device sees all images.
+// Fetch full-quality images from Firebase /bangImages/ for all images that have
+// a fbKey but no local hqData (e.g. uploaded on a different device).
+// Stores fetched data as hqData so the existing lightbox/print logic automatically
+// shows the full-quality version. Thumbnails (img.data) remain fast for list views.
 async function loadAllImagesFromFB(){
   const needsFetch=[];
   const walk=(imgList)=>(imgList||[]).forEach(img=>{
-    if(img&&img.fbKey&&(!img.data||!img.data.startsWith('data:')))needsFetch.push(img);
+    if(img&&img.fbKey&&!(img.hqData&&img.hqData.startsWith('data:')))needsFetch.push(img);
   });
   (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
     walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
@@ -1258,15 +1281,15 @@ async function loadAllImagesFromFB(){
   if(!needsFetch.length)return;
   let fetched=0;
   await Promise.all(needsFetch.map(async img=>{
-    const cacheKey='fbimg_'+img.fbKey;
-    try{const cached=await idbGet(cacheKey);if(cached&&cached.startsWith('data:')){img.data=cached;fetched++;return;}}catch(e){}
+    const cacheKey='fbimg_hq_'+img.fbKey;
+    try{const cached=await idbGet(cacheKey);if(cached&&cached.startsWith('data:')){img.hqData=cached;fetched++;return;}}catch(e){}
     try{
       const res=await fetch(`https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,{cache:'no-store'});
       if(!res.ok)return;
-      const data=await res.json();
-      if(typeof data==='string'&&data.startsWith('data:')){
-        img.data=data;
-        idbPut(cacheKey,data).catch(()=>{});
+      const hqData=await res.json();
+      if(typeof hqData==='string'&&hqData.startsWith('data:')){
+        img.hqData=hqData;
+        idbPut(cacheKey,hqData).catch(()=>{});
         fetched++;
       }
     }catch(e){}
@@ -2967,10 +2990,15 @@ function handleVarietyImg(oi,di,vi,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result);
+      const original=e.target.result;
+      const data=await compressImageToThumb(original); // small thumbnail for fast list display
       let fbKey=null;
-      if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
-      d.varieties[vi].images.push({data,name:f.name,...(fbKey?{fbKey}:{})});
+      if(!_isDemoMode()){
+        try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+        catch(err){console.warn('Cloud image upload failed:',err.message);}
+      }
+      // hqData = original stored locally so this device's lightbox shows full quality
+      d.varieties[vi].images.push({data,hqData:original,name:f.name,...(fbKey?{fbKey}:{})});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -3018,10 +3046,14 @@ function handleDesignLevelImg(oi,di,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result);
+      const original=e.target.result;
+      const data=await compressImageToThumb(original);
       let fbKey=null;
-      if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
-      d.images.push({data,name:f.name,...(fbKey?{fbKey}:{})});
+      if(!_isDemoMode()){
+        try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+        catch(err){console.warn('Cloud image upload failed:',err.message);}
+      }
+      d.images.push({data,hqData:original,name:f.name,...(fbKey?{fbKey}:{})});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -4632,12 +4664,16 @@ function handleVendorImgUpload(voi, di, vi, input){
   files.forEach(file=>{
     const reader = new FileReader();
     reader.onload = async e=>{
-      const data = await compressImageToThumb(e.target.result);
+      const original=e.target.result;
+      const data = await compressImageToThumb(original);
       let fbKey = null;
-      if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+      if(!_isDemoMode()){
+        try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+        catch(err){console.warn('Cloud image upload failed:',err.message);}
+      }
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,name:file.name,...(fbKey?{fbKey}:{})});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -5408,10 +5444,14 @@ function addVVImg(vi,di,vri,inp){
   inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result);
+    const original=ev.target.result;
+    const data=await compressImageToThumb(original);
     let fbKey=null;
-    if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
-    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,name:file.name,...(fbKey?{fbKey}:{})});
+    if(!_isDemoMode()){
+      try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+      catch(err){console.warn('Cloud image upload failed:',err.message);}
+    }
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5453,11 +5493,15 @@ function addVendorFlatImg(vi,di,isVar,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result);
+    const original=ev.target.result;
+    const data=await compressImageToThumb(original);
     let fbKey=null;
-    if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+    if(!_isDemoMode()){
+      try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+      catch(err){console.warn('Cloud image upload failed:',err.message);}
+    }
     const d=S.vendorOrders[vi].designs[di];
-    const imgObj={data,name:file.name,...(fbKey?{fbKey}:{})};
+    const imgObj={data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})};
     if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push(imgObj);}
     else{d.images=d.images||[];d.images.push(imgObj);}
     save();renderVendorOrders();
@@ -5470,11 +5514,15 @@ function addVDImg(vi,di,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result);
+    const original=ev.target.result;
+    const data=await compressImageToThumb(original);
     let fbKey=null;
-    if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+    if(!_isDemoMode()){
+      try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+      catch(err){console.warn('Cloud image upload failed:',err.message);}
+    }
     const d=S.vendorOrders[vi].designs[di];
-    d.images=d.images||[];d.images.push({data,name:file.name,...(fbKey?{fbKey}:{})});
+    d.images=d.images||[];d.images.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -7918,10 +7966,14 @@ async function handleStockImgUpload(inp){
     await new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=async ev=>{
-        const data=await compressImageToThumb(ev.target.result);
+        const original=ev.target.result;
+        const data=await compressImageToThumb(original);
         let fbKey=null;
-        if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
-        window._stockModalImages.push({data,name:file.name,...(fbKey?{fbKey}:{})});
+        if(!_isDemoMode()){
+          try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
+          catch(err){console.warn('Cloud image upload failed:',err.message);}
+        }
+        window._stockModalImages.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
         resolve();
       };reader.readAsDataURL(file);
     });
