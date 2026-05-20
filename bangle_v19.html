@@ -9139,26 +9139,40 @@ const IS_DEMO_MODE = _isDemoMode();
 // NOTE: We wrap state as a JSON string inside {data:"..."} because the app uses
 // bangle size keys like "2/2", "2/4" — Firebase treats "/" as a path separator
 // and rejects such keys. Storing as a string value sidesteps this entirely.
-async function fbPush(silent){
+async function fbPush(silent, _stripImages=false){
   _fb.lastPush = Date.now();
   try{
-    // forFirebase=true: small images stay inline in payload so every device
-    // receives full-quality images via Firebase without needing local IDB.
+    // forFirebase=true keeps small images inline so every device receives them.
+    // If a previous attempt got HTTP 400 (payload too large for Firebase's 1 MB
+    // per-value limit), we strip all images and retry so text data is never lost.
     const { stateNoImages } = extractImages({
       ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
-    }, true);
+    }, !_stripImages);
     // Wrap state as a plain string so Firebase never sees the "/" keys
+    const innerJson = JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]});
+    if(!innerJson) throw new Error('State could not be serialised');
     const payload = JSON.stringify({
-      data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
+      data    : innerJson,
       savedAt : new Date().toISOString(),
       device  : FB_DEVICE_ID
     });
+    if(!payload) throw new Error('Payload could not be serialised');
     const r = await fetch(FB_DATA, {
       method : 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body   : payload
     });
-    if(!r.ok){ const msg = await r.text(); throw new Error('HTTP ' + r.status + ' — ' + msg); }
+    if(!r.ok){
+      const msg = await r.text();
+      // Firebase returns HTTP 400 when the payload exceeds its per-value string
+      // size limit (images pushed the "data" field over the limit). Strip all
+      // images and retry once — this guarantees orders/designs always reach the cloud.
+      if(r.status === 400 && !_stripImages){
+        console.warn('fbPush: HTTP 400 — retrying without images (payload was too large)');
+        return fbPush(silent, true);
+      }
+      throw new Error('HTTP ' + r.status + ' — ' + msg);
+    }
     // Our local changes are now safely in Firebase — clear the "dirty" flag
     // so incoming remote updates are allowed to apply again.
     _fb.pendingLocal = false;
