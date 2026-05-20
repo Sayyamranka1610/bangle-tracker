@@ -1240,6 +1240,67 @@ async function loadImagesFromFB(imgList){
   }));
 }
 
+// Fetch images from Firebase /bangImages/ for all images in state that have
+// a fbKey but no local data (e.g. uploaded on a different device).
+// Called after state loads from Firebase so every device sees all images.
+async function loadAllImagesFromFB(){
+  const needsFetch=[];
+  const walk=(imgList)=>(imgList||[]).forEach(img=>{
+    if(img&&img.fbKey&&(!img.data||!img.data.startsWith('data:')))needsFetch.push(img);
+  });
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
+  }));
+  (S.vendorOrders||[]).forEach(vo=>(vo.designs||[]).forEach(d=>{
+    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
+  }));
+  (S.stockItems||[]).forEach(si=>walk(si.images));
+  if(!needsFetch.length)return;
+  let fetched=0;
+  await Promise.all(needsFetch.map(async img=>{
+    const cacheKey='fbimg_'+img.fbKey;
+    try{const cached=await idbGet(cacheKey);if(cached&&cached.startsWith('data:')){img.data=cached;fetched++;return;}}catch(e){}
+    try{
+      const res=await fetch(`https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,{cache:'no-store'});
+      if(!res.ok)return;
+      const data=await res.json();
+      if(typeof data==='string'&&data.startsWith('data:')){
+        img.data=data;
+        idbPut(cacheKey,data).catch(()=>{});
+        fetched++;
+      }
+    }catch(e){}
+  }));
+  if(fetched>0)render();
+}
+
+// Upload images that have no fbKey to Firebase /bangImages/ so they sync to all devices.
+// Runs at startup on the editor device to migrate images uploaded before this fix.
+async function migrateImagesToFirebase(){
+  if(_isDemoMode()||_readOnly)return;
+  const toMigrate=[];
+  const walk=(imgList)=>(imgList||[]).forEach(img=>{
+    if(img&&img.data&&img.data.startsWith('data:')&&!img.fbKey)toMigrate.push(img);
+  });
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
+  }));
+  (S.vendorOrders||[]).forEach(vo=>(vo.designs||[]).forEach(d=>{
+    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
+  }));
+  (S.stockItems||[]).forEach(si=>walk(si.images));
+  if(!toMigrate.length)return;
+  let migrated=0;
+  for(const img of toMigrate){
+    try{const key=await uploadImageToRTDB(img.data);img.fbKey=key;migrated++;}
+    catch(e){console.warn('Image migration failed:',e.message);}
+  }
+  if(migrated>0){
+    showToast(`☁️ ${migrated} image${migrated>1?'s':''} uploaded to cloud — now visible on all devices`,'green');
+    save();fbPushNow();
+  }
+}
+
 // Extract images from state.
 //
 // forFirebase=false  (default, used by save→localStorage):
@@ -1260,12 +1321,14 @@ function extractImages(state,forFirebase=false){
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
       const tooBig=img.data.length>IMAGE_FB_THRESHOLD;
-      if(!forFirebase||tooBig){
-        // localStorage mode: always strip. Firebase mode: only strip if too big.
+      // If image is already uploaded to Firebase (/bangImages/{fbKey}), strip it from
+      // the main payload — all devices load it via fbKey instead of inline base64.
+      const inFirebase=!!img.fbKey;
+      if(!forFirebase||tooBig||inFirebase){
         imageMap[key]=img.data;
         img.data='__IDB__'+key;
       }
-      // forFirebase + small image: leave inline so all devices receive it
+      // forFirebase + small + no fbKey: leave inline (backwards compat for old images)
     }
     // hqData (legacy): always IDB-only — never sent to Firebase or localStorage
     if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
@@ -2904,8 +2967,10 @@ function handleVarietyImg(oi,di,vi,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
-      d.varieties[vi].images.push({data,name:f.name});
+      const data=await compressImageToThumb(e.target.result);
+      let fbKey=null;
+      if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+      d.varieties[vi].images.push({data,name:f.name,...(fbKey?{fbKey}:{})});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -2953,8 +3018,10 @@ function handleDesignLevelImg(oi,di,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
-      d.images.push({data,name:f.name});
+      const data=await compressImageToThumb(e.target.result);
+      let fbKey=null;
+      if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+      d.images.push({data,name:f.name,...(fbKey?{fbKey}:{})});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -4565,13 +4632,12 @@ function handleVendorImgUpload(voi, di, vi, input){
   files.forEach(file=>{
     const reader = new FileReader();
     reader.onload = async e=>{
-      const original = e.target.result;
-      const data = await compressImageToThumb(original);
+      const data = await compressImageToThumb(e.target.result);
       let fbKey = null;
-      try{ fbKey = await uploadImageToRTDB(original); }catch(err){ console.warn('RTDB image upload failed, using local fallback:',err.message); }
+      if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data, fbKey:fbKey||undefined, hqData:fbKey?undefined:original, name:file.name});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,name:file.name,...(fbKey?{fbKey}:{})});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -5342,8 +5408,10 @@ function addVVImg(vi,di,vri,inp){
   inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
-    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,name:file.name});
+    const data=await compressImageToThumb(ev.target.result);
+    let fbKey=null;
+    if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,name:file.name,...(fbKey?{fbKey}:{})});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5385,10 +5453,13 @@ function addVendorFlatImg(vi,di,isVar,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+    const data=await compressImageToThumb(ev.target.result);
+    let fbKey=null;
+    if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
     const d=S.vendorOrders[vi].designs[di];
-    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push({data,name:file.name});}
-    else{d.images=d.images||[];d.images.push({data,name:file.name});}
+    const imgObj={data,name:file.name,...(fbKey?{fbKey}:{})};
+    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push(imgObj);}
+    else{d.images=d.images||[];d.images.push(imgObj);}
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5399,9 +5470,11 @@ function addVDImg(vi,di,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+    const data=await compressImageToThumb(ev.target.result);
+    let fbKey=null;
+    if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
     const d=S.vendorOrders[vi].designs[di];
-    d.images=d.images||[];d.images.push({data,name:file.name});
+    d.images=d.images||[];d.images.push({data,name:file.name,...(fbKey?{fbKey}:{})});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -7845,8 +7918,10 @@ async function handleStockImgUpload(inp){
     await new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=async ev=>{
-        const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
-        window._stockModalImages.push({data,name:file.name});
+        const data=await compressImageToThumb(ev.target.result);
+        let fbKey=null;
+        if(!_isDemoMode()){try{fbKey=await uploadImageToRTDB(data);}catch(err){console.warn('Cloud image upload failed:',err.message);}}
+        window._stockModalImages.push({data,name:file.name,...(fbKey?{fbKey}:{})});
         resolve();
       };reader.readAsDataURL(file);
     });
@@ -9328,6 +9403,8 @@ function _applyRemoteState(parsed, savedAt){
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   render();
+  // Fetch any images uploaded by other devices that we don't have locally yet
+  loadAllImagesFromFB();
   if(needsPush){
     // Push cleaned/merged state back so all other devices also get the correction
     fbSchedulePush();
@@ -9785,6 +9862,12 @@ async function fbInit(){
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();
+      // Fetch images from /bangImages/ for any image with fbKey but no local data.
+      // Non-blocking — images appear as they load without delaying the rest of startup.
+      loadAllImagesFromFB();
+      // After the edit lock is acquired (short delay), upload any images that don't
+      // have a cloud key yet so they become visible on all devices.
+      setTimeout(()=>{ if(!_isDemoMode()&&!_readOnly) migrateImagesToFirebase(); }, 3000);
       if(added){
         // Rescued orders were missing from Firebase — push merged state now
         fbSetStatus('connected',`Live · restored ${count} order(s) missing from cloud`);
