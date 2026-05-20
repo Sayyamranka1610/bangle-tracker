@@ -1208,26 +1208,36 @@ function compressImageForPrint(dataUrl,maxDim=1200){
 // Only exceptionally large/detailed photos would exceed this.
 const IMAGE_FB_THRESHOLD=2000000; // ~1.5 MB base64 — raised so multi-pass keeps images inline
 
-// Upload a photo to Firebase Storage and return a permanent public URL.
-// The URL is stored in img.url and works on every device without any compression.
-// Requires Firebase Storage rules: allow read, write: if true;
-async function uploadToFirebaseStorage(dataUrl, filename){
-  // Convert base64 data URL → binary blob
-  const fetchRes = await fetch(dataUrl);
-  const blob = await fetchRes.blob();
-  const ext = blob.type.includes('png') ? 'png' : 'jpg';
-  const storagePath = `bangle-images/${Date.now()}_${uid()}.${ext}`;
-  const encodedPath = encodeURIComponent(storagePath);
-  const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${FB_STORAGE_BUCKET}/o?uploadType=media&name=${encodedPath}`;
-  const res = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': blob.type },
-    body: blob,
-  });
-  if(!res.ok) throw new Error('Firebase Storage upload failed: ' + res.status);
-  const json = await res.json();
-  const token = json.downloadTokens;
-  return `https://firebasestorage.googleapis.com/v0/b/${FB_STORAGE_BUCKET}/o/${encodedPath}?alt=media&token=${token}`;
+// Store a full-quality image in Firebase RTDB at /bangImages/{key}.
+// Uses the same free Firebase plan already in use — no paid services needed.
+// Returns the key so other devices can fetch the original from Firebase.
+async function uploadImageToRTDB(dataUrl){
+  if(_isDemoMode()) return null;
+  const key = uid();
+  const res = await fetch(
+    `https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${key}.json`,
+    { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dataUrl) }
+  );
+  if(!res.ok) throw new Error('RTDB image upload failed: '+res.status);
+  return key;
+}
+
+// Pre-fetch full-quality originals from Firebase RTDB for images that have
+// a fbKey but whose hqData isn't loaded locally. Called before printing so
+// any device can print at original quality, not just the uploading device.
+async function loadImagesFromFB(imgList){
+  const toFetch = (imgList||[]).filter(img => img && img.fbKey && !(img.hqData&&img.hqData.startsWith('data:')));
+  await Promise.all(toFetch.map(async img => {
+    try{
+      const res = await fetch(
+        `https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,
+        {cache:'no-store'}
+      );
+      if(!res.ok) return;
+      const data = await res.json();
+      if(typeof data==='string'&&data.startsWith('data:')) img.hqData = data;
+    }catch(e){ /* fail silently — print will fall back to compressed version */ }
+  }));
 }
 
 // Extract images from state.
@@ -3112,11 +3122,10 @@ let _lbImages=[],_lbIdx=0;
 // Falls back to data (160px thumb) and applies the same guard.
 function _resolveImgSrc(img){
   if(!img)return '';
-  // Firebase Storage URL — full quality, works on every device
-  if(img.url&&typeof img.url==='string'&&img.url.startsWith('http'))return img.url;
-  // hqData — original stored in IDB, same-device only
+  // hqData — full-quality original: either fetched from Firebase RTDB (cross-device)
+  // or stored in IDB from upload (same-device). Populated by loadImagesFromFB() before print.
   if(img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:'))return img.hqData;
-  // data — compressed version synced via Firebase RTDB
+  // data — compressed version, always synced inline via Firebase RTDB (fast display)
   if(img.data&&typeof img.data==='string'&&img.data.startsWith('data:'))return img.data;
   return '';
 }
@@ -3148,12 +3157,12 @@ function handleImgUpload(oi,di,input){
     const reader=new FileReader();
     reader.onload=async e=>{
       const original=e.target.result;
-      const data=await compressImageToThumb(original);
-      let url=null;
-      try{ url=await uploadToFirebaseStorage(original,file.name); }catch(e){ console.warn('Storage upload failed, using local fallback:',e.message); }
-      // If Storage upload succeeded, url gives every device full quality.
-      // If it failed, hqData (IDB-only) still gives full quality on this device.
-      S.orders[oi].designs[di].images.push({data, url:url||undefined, hqData:url?undefined:original, name:file.name});
+      const data=await compressImageToThumb(original); // compressed for inline Firebase sync
+      let fbKey=null;
+      try{ fbKey=await uploadImageToRTDB(original); }catch(err){ console.warn('RTDB image upload failed, using local fallback:',err.message); }
+      // fbKey → any device can fetch full-quality original from Firebase
+      // hqData → same-device fallback if RTDB upload failed
+      S.orders[oi].designs[di].images.push({data, fbKey:fbKey||undefined, hqData:fbKey?undefined:original, name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -4558,11 +4567,11 @@ function handleVendorImgUpload(voi, di, vi, input){
     reader.onload = async e=>{
       const original = e.target.result;
       const data = await compressImageToThumb(original);
-      let url = null;
-      try{ url = await uploadToFirebaseStorage(original, file.name); }catch(e){ console.warn('Storage upload failed, using local fallback:',e.message); }
+      let fbKey = null;
+      try{ fbKey = await uploadImageToRTDB(original); }catch(err){ console.warn('RTDB image upload failed, using local fallback:',err.message); }
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data, url:url||undefined, hqData:url?undefined:original, name:file.name});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data, fbKey:fbKey||undefined, hqData:fbKey?undefined:original, name:file.name});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -6599,6 +6608,16 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
   if(!imgMode)imgMode='inline';
   // Ensure IDB images are loaded into S before building print HTML
   try{ await loadImagesFromIDB(); }catch(e){}
+  // Fetch full-quality originals from Firebase RTDB for any images with fbKey
+  // so every device prints at original quality, not just the uploading device
+  try{
+    const allImgs=[];
+    orders.forEach(o=>(o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach(img=>allImgs.push(img));
+      (d.varieties||[]).forEach(v=>(v.images||[]).forEach(img=>allImgs.push(img)));
+    }));
+    await loadImagesFromFB(allImgs);
+  }catch(e){}
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
   const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode)).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
@@ -8934,8 +8953,8 @@ const FB_DATA  = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.jso
 const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json';
 const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
 const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
-// Firebase Storage bucket — find yours in Firebase Console → Storage (shown as gs://YOUR-BUCKET.appspot.com)
-const FB_STORAGE_BUCKET = 'bangle-tracker-default-rtdb.appspot.com';
+// Full-quality images are stored at /bangImages/{key} in Firebase RTDB (free plan).
+// No external services or paid plans needed.
 const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
 
 // Unique device ID so we don't re-apply our own pushed updates
