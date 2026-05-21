@@ -1320,7 +1320,7 @@ async function migrateImagesToFirebase(){
   }
   if(migrated>0){
     showToast(`☁️ ${migrated} image${migrated>1?'s':''} uploaded to cloud — now visible on all devices`,'green');
-    save();fbPushNow();
+    save(); // persists new fbKey values to localStorage & schedules a Firebase push via hook
   }
 }
 
@@ -9419,9 +9419,18 @@ function _mergeLocalIntoRemote(remoteState){
   const cleanedIds=new Set(cleanedOrders.map(o=>o.id));
 
   // Rescue local-only client orders (created on this device but absent from remote
-  // due to a sync race — e.g. another device pushed before our new order reached FB)
+  // due to a sync race — e.g. another device pushed before our new order reached FB).
+  // IMPORTANT: Only rescue orders created in the last 2 hours. Orders older than that
+  // should already be in Firebase; if they're missing, they were deleted on another
+  // device and resurrecting them would be wrong (e.g. old test entries like MENA traders).
+  const RESCUE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+  const now = Date.now();
   const rescued=localState&&localState.orders
-    ?(localState.orders).filter(o=>o.id&&!cleanedIds.has(o.id)&&!deletedIds.has(o.id))
+    ?(localState.orders).filter(o=>{
+        if(!o.id||cleanedIds.has(o.id)||deletedIds.has(o.id))return false;
+        const age=now-new Date(o.createdAt||0).getTime();
+        return age < RESCUE_WINDOW_MS;
+      })
     :[];
 
   const needsPush=rescued.length>0||ordersFiltered||vendorFiltered;
@@ -9457,8 +9466,9 @@ function _applyRemoteState(parsed, savedAt){
   render();
   // Fetch any images uploaded by other devices that we don't have locally yet
   loadAllImagesFromFB();
-  if(needsPush){
-    // Push cleaned/merged state back so all other devices also get the correction
+  if(needsPush && !_readOnly){
+    // Push cleaned/merged state back so all other devices also get the correction.
+    // Never push from read-only mode — only the device holding the edit lock should write.
     fbSchedulePush();
     if(added) showToast(`✅ ${count} order(s) restored — cloud was missing them`,'green');
   }
