@@ -6120,13 +6120,16 @@ function openVendorPrintWindow(title,orders){
       let imageStripHtml = '';
       if (varietiesWithImages.length > 0) {
         const cards = varietiesWithImages.map(v => {
-          const imgs = v.images.map(img => `<img src="${img.data}" style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #AFA9EC;display:block">`).join('');
-          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:3px;vertical-align:top;margin:0 8px 8px 0">
+          const imgs = v.images.map(img => {
+            const src = _resolveImgSrc(img);
+            return src ? `<img src="${src}" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">` : '';
+          }).filter(Boolean).join('');
+          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:5px;vertical-align:top;margin:0 12px 12px 0;break-inside:avoid">
             ${imgs}
-            <div style="font-size:10px;font-weight:600;color:#3C3489;text-align:center;max-width:120px">${esc(v.name||'Variety')}</div>
+            <div style="font-size:11px;font-weight:700;color:#3C3489;text-align:center;max-width:65mm">${esc(v.name||'Variety')}</div>
           </div>`;
         }).join('');
-        imageStripHtml = `<div style="margin:4px 0 8px">${cards}</div>`;
+        imageStripHtml = `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 14px 10px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">${cards}</div>`;
       }
 
       const tableHtml = varieties.length ? `<table style="border-collapse:collapse;font-size:12px;margin-top:4px;table-layout:fixed">
@@ -6247,12 +6250,12 @@ function askOrderPrint(oid){
       <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
         <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
-          <input type="radio" name="img-pos" value="inline" checked style="width:auto;accent-color:#534AB7">
-          <span style="font-size:12px"><strong>Beside quantities</strong> — image shown at right end of each design code row</span>
+          <input type="radio" name="img-pos" value="top" checked style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Grouped at top</strong> — all design images shown together below the design name</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
-          <input type="radio" name="img-pos" value="top" style="width:auto;accent-color:#534AB7">
-          <span style="font-size:12px"><strong>Grouped at top</strong> — all design images shown together below the design name</span>
+          <input type="radio" name="img-pos" value="inline" style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Beside quantities</strong> — image shown at right end of each design code row</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
           <input type="radio" name="img-pos" value="none" style="width:auto;accent-color:#534AB7">
