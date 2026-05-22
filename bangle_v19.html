@@ -23,8 +23,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Siddhi Bangle Tracker">
 <link rel="apple-touch-icon" href="bangle-logo.jpg">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase RTDB — preconnect so TCP/TLS is ready before fbInit() fires -->
+<link rel="preconnect" href="https://bangle-tracker-default-rtdb.firebaseio.com">
+<link rel="dns-prefetch" href="https://bangle-tracker-default-rtdb.firebaseio.com">
+<!-- XLSX: defer so it downloads in parallel without blocking HTML parse/render.
+     Export buttons are only clicked after the page is fully interactive, by
+     which time this 1 MB library is guaranteed to have loaded. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<!-- gstatic hosts the actual font files referenced by the googleapis CSS -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
