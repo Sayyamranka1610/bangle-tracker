@@ -1269,6 +1269,7 @@ async function loadImagesFromFB(imgList){
 async function loadAllImagesFromFB(){
   const needsFetch=[];
   const walk=(imgList)=>(imgList||[]).forEach(img=>{
+    // Fetch if we have an fbKey but no HQ data yet
     if(img&&img.fbKey&&!(img.hqData&&img.hqData.startsWith('data:')))needsFetch.push(img);
   });
   (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
@@ -1282,13 +1283,24 @@ async function loadAllImagesFromFB(){
   let fetched=0;
   await Promise.all(needsFetch.map(async img=>{
     const cacheKey='fbimg_hq_'+img.fbKey;
-    try{const cached=await idbGet(cacheKey);if(cached&&cached.startsWith('data:')){img.hqData=cached;fetched++;return;}}catch(e){}
+    // Try IDB cache first (avoids re-downloading on every load)
+    try{
+      const cached=await idbGet(cacheKey);
+      if(cached&&cached.startsWith('data:')){
+        img.hqData=cached;
+        // If thumbnail is also broken (legacy uploads before extractImages fix), repair it
+        if(!(img.data&&img.data.startsWith('data:')))img.data=cached;
+        fetched++;return;
+      }
+    }catch(e){}
     try{
       const res=await fetch(`https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,{cache:'no-store'});
       if(!res.ok)return;
       const hqData=await res.json();
       if(typeof hqData==='string'&&hqData.startsWith('data:')){
         img.hqData=hqData;
+        // If thumbnail is broken (old uploads), use the HQ as the display image too
+        if(!(img.data&&img.data.startsWith('data:')))img.data=hqData;
         idbPut(cacheKey,hqData).catch(()=>{});
         fetched++;
       }
@@ -1344,14 +1356,16 @@ function extractImages(state,forFirebase=false){
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
       const tooBig=img.data.length>IMAGE_FB_THRESHOLD;
-      // If image is already uploaded to Firebase (/bangImages/{fbKey}), strip it from
-      // the main payload — all devices load it via fbKey instead of inline base64.
-      const inFirebase=!!img.fbKey;
-      if(!forFirebase||tooBig||inFirebase){
+      // For Firebase: only strip the thumbnail (img.data) if it's too big.
+      // img.fbKey means the HQ version is at /bangImages/ — but the THUMBNAIL must
+      // still travel inline so other devices can display it without fetching HQ first.
+      // Previously this stripped thumbnails when fbKey was set, causing broken images
+      // on every device except the one that uploaded them.
+      if(!forFirebase||tooBig){
         imageMap[key]=img.data;
         img.data='__IDB__'+key;
       }
-      // forFirebase + small + no fbKey: leave inline (backwards compat for old images)
+      // forFirebase + small: leave inline regardless of fbKey
     }
     // hqData (legacy): always IDB-only — never sent to Firebase or localStorage
     if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
@@ -1499,8 +1513,15 @@ function save(){
     localStorage.setItem('bangle_prod_tracker',data);
     localStorage.setItem('bangle_v10',data); // legacy key
     localStorage.setItem('bangle_saved_at', new Date().toISOString());
-    // Save images to IndexedDB (no size limit)
-    Object.entries(imageMap).forEach(([key,val])=>{idbPut(key,val).catch(e=>console.warn('IDB write fail:',e));});
+    // Save images to IndexedDB — track failures and warn user if storage is full
+    let idbFailCount=0;
+    const idbWrites=Object.entries(imageMap).map(([key,val])=>
+      idbPut(key,val).catch(e=>{idbFailCount++;console.warn('IDB write fail:',e);})
+    );
+    Promise.all(idbWrites).then(()=>{
+      if(idbFailCount>0)
+        showToast(`⚠ ${idbFailCount} image(s) couldn't be saved locally — storage may be full. Images will still sync via the cloud.`,'red');
+    });
     setSaveStatus('saved');
   }catch(e){
     // If localStorage still fails (e.g. private mode), try sessionStorage as fallback
@@ -1922,7 +1943,10 @@ function render(){
   else if(S.mainView==='inventory')renderInventory();
   else if(S.mainView==='masters')renderMasters();
   else renderAnalytics();
-  scheduleAutosave();
+  // NOTE: scheduleAutosave() intentionally NOT called here. Each user action
+  // (oninput, button click, create/delete) already calls save() or scheduleAutosave()
+  // directly. Calling it here would cause every remote SSE sync to trigger an
+  // unnecessary Firebase push-back, creating a ping-pong loop between devices.
 
   // ── RESTORE FOCUS + VALUE + SELECTION ──────────────────────────────────────
   if(focusInfo){
@@ -5392,7 +5416,11 @@ function upVendorOrder(vi,key,val){histPush();S.vendorOrders[vi][key]=val;save()
 function delVendorOrder(vi){
   if(!confirm(`Delete ${S.vendorOrders[vi].orderId}? This cannot be undone.`))return;
   histPush();
-  const id=S.vendorOrders[vi].id;
+  const vo=S.vendorOrders[vi];
+  const id=vo&&vo.id;
+  // Track deletion so cross-device merge never resurrects this vendor order
+  if(!S.deletedVendorOrderIds)S.deletedVendorOrderIds=[];
+  if(id&&!S.deletedVendorOrderIds.includes(id))S.deletedVendorOrderIds.push(id);
   S.vendorOrders.splice(vi,1);
   S.openVendorOrders=(S.openVendorOrders||[]).filter(k=>!k.includes(id));
   delete S.vendorActiveTabs[id];
@@ -9105,6 +9133,17 @@ let _waitingForGrant  = false;  // Device 2: request is in flight
 let _grantBannerUp    = false;  // Device 1: grant prompt is currently shown
 let _lockOwnerCheckTimer = null; // Device 1: verify lock still belongs to us every 5 s
 
+// ── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
+// Catch any unhandled promise rejection so errors are never silently lost.
+window.addEventListener('unhandledrejection', ev=>{
+  const reason = ev.reason;
+  const msg = reason instanceof Error ? reason.message : String(reason||'unknown');
+  // Ignore benign errors (cross-origin scripts, cancelled fetches)
+  if(msg.includes('AbortError')||msg.includes('cross-origin')) return;
+  console.error('Unhandled rejection:', reason);
+  fbSetStatus('error','App error — '+msg.slice(0,80));
+});
+
 // ── STATUS BAR ───────────────────────────────────────────────────────────────
 function fbSetStatus(state, msg){
   const dot = document.getElementById('fb-dot');
@@ -9187,6 +9226,7 @@ async function doLogout(){
   if(_lockPollTimer){ clearInterval(_lockPollTimer); _lockPollTimer=null; }
   if(_lockOwnerCheckTimer){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; }
   if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
+  if(_fb && _fb.pushTimer){ clearTimeout(_fb.pushTimer); _fb.pushTimer=null; }
   _grantBannerUp=false;
   const gb=document.getElementById('grant-request-banner');if(gb)gb.remove();
 
@@ -9308,7 +9348,14 @@ async function fbPush(silent, _stripImages=false){
   } catch(e){
     // Keep pendingLocal = true so we retry and keep protecting local edits
     fbSetStatus('error', 'Save failed — ' + e.message);
-    if(!silent) showToast('⚠ Database save failed', 'red');
+    if(!silent) showToast('⚠ Database save failed — will retry automatically', 'red');
+    // Auto-retry after 8 seconds for transient network errors
+    if(!_fb.pushTimer){
+      _fb.pushTimer = setTimeout(()=>{
+        _fb.pushTimer = null;
+        if(_fb.pendingLocal) fbPush(true); // silent retry
+      }, 8000);
+    }
   }
 }
 
@@ -9522,6 +9569,20 @@ function _startHeartbeat(){
   _lockHbTimer = setInterval(async()=>{
     if(!_hasLock) return;
     try{
+      // Verify we still own the lock before writing — prevent overwriting a takeover
+      const check = await fetch(FB_LOCK);
+      if(check.ok){
+        const lock = await check.json();
+        if(lock && lock.deviceId && lock.deviceId !== FB_DEVICE_ID){
+          // Another device took the lock — stop heartbeat and enter read-only
+          clearInterval(_lockHbTimer); _lockHbTimer=null;
+          _hasLock=false; _readOnly=true;
+          _setReadOnlyUI(true, lock.user||'another user');
+          _startLockPolling();
+          showToast('🔒 Edit access was taken by another device — now read-only','red');
+          return;
+        }
+      }
       await fetch(FB_LOCK,{
         method:'PUT', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
@@ -10024,15 +10085,21 @@ function fbStartListener(){
         return;
       }
       _applyRemoteState(parsed, envelope.savedAt);
-    } catch(e){ /* ignore malformed events */ }
+    } catch(e){ console.warn('SSE parse error:', e); }
   });
 
+  // Reconnect with exponential backoff (5s → 10s → 20s → max 60s)
+  if(!_fb._sseRetryDelay) _fb._sseRetryDelay = 5000;
   _fb.es.onerror = ()=>{
     fbSetStatus('error', 'Connection lost — reconnecting…');
     try{ _fb.es.close(); }catch(e){}
     _fb.es = null;
-    setTimeout(fbStartListener, 5000);
+    const delay = _fb._sseRetryDelay;
+    _fb._sseRetryDelay = Math.min(_fb._sseRetryDelay * 2, 60000);
+    setTimeout(fbStartListener, delay);
   };
+  // Reset backoff on successful connection (first 'put' event received)
+  _fb.es.addEventListener('put', ()=>{ _fb._sseRetryDelay = 5000; }, {once:true});
 }
 
 // ── HOOK INTO EXISTING save() ─────────────────────────────────────────────────
