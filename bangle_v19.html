@@ -3275,7 +3275,7 @@ function openDesignImgsLb(oi,di,startIdx){
   const d=S.orders[oi].designs[di];
   const all=[...(d.images||[]),...(d.varieties||[]).flatMap(v=>v.images||[])];
   if(!all.length)return;
-  _lbImages=all.map(i=>i.hqData||i.data);
+  _lbImages=all.map(i=>_resolveImgSrc(i));
   _lbIdx=Math.min(startIdx||0,_lbImages.length-1);
   showLightboxImg();
 }
@@ -3284,7 +3284,7 @@ function openDesignImgsLb(oi,di,startIdx){
 function openVarietyImgsLb(oi,di,vi,startIdx){
   const v=(S.orders[oi].designs[di].varieties||[])[vi];
   if(!v)return;
-  _lbImages=(v.images||[]).map(i=>i.hqData||i.data);
+  _lbImages=(v.images||[]).map(i=>_resolveImgSrc(i));
   if(!_lbImages.length)return;
   _lbIdx=Math.min(startIdx||0,_lbImages.length-1);
   showLightboxImg();
@@ -3311,7 +3311,7 @@ function handleImgUpload(oi,di,input){
 function deleteImg(oi,di,ii){if(!confirm('Remove image?'))return;S.orders[oi].designs[di].images.splice(ii,1);save();render();}
 function openLightbox(designId,startIdx){
   let images=[];S.orders.forEach(o=>o.designs.forEach(d=>{if(d.id===designId)images=d.images||[];}));
-  _lbImages=images.map(i=>i.hqData||i.data);_lbIdx=startIdx||0;showLightboxImg();
+  _lbImages=images.map(i=>_resolveImgSrc(i));_lbIdx=startIdx||0;showLightboxImg();
 }
 function openLbDirect(src){_lbImages=[src];_lbIdx=0;showLightboxImg();}
 function showLightboxImg(){
@@ -9326,6 +9326,7 @@ const IS_DEMO_MODE = _isDemoMode();
 // bangle size keys like "2/2", "2/4" — Firebase treats "/" as a path separator
 // and rejects such keys. Storing as a string value sidesteps this entirely.
 async function fbPush(silent, _stripImages=false){
+  if(_readOnly) return;            // defense-in-depth: read-only session never writes
   _fb.lastPush = Date.now();
   try{
     // forFirebase=true keeps small images inline so every device receives them.
@@ -9385,6 +9386,7 @@ async function fbPush(silent, _stripImages=false){
 // This keeps the dashboard light and operations smooth.
 function fbSchedulePush(){
   if(_isDemoMode()) return;        // demo mode never pushes to the real DB
+  if(_readOnly) return;            // read-only session must never write to Firebase
   // Mark local changes BEFORE the ready check — this protects a just-created
   // order even if Firebase isn't connected yet (e.g. first-load race or
   // reconnection window). When Firebase comes online, pendingLocal=true
@@ -10062,6 +10064,7 @@ async function migrateImagesToThumbs(){
   }
   for(const vo of (S.vendorOrders||[])){
     for(const d of (vo.designs||[])){
+      await compressArr(d.images);
       for(const v of (d.varieties||[])) await compressArr(v.images);
     }
   }
