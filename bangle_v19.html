@@ -1267,10 +1267,14 @@ async function loadImagesFromFB(imgList){
 // Stores fetched data as hqData so the existing lightbox/print logic automatically
 // shows the full-quality version. Thumbnails (img.data) remain fast for list views.
 async function loadAllImagesFromFB(){
-  const needsFetch=[];
+  // Find images that have a cloud key (fbKey) but whose THUMBNAIL is broken —
+  // this happens for images uploaded before the extractImages bug was fixed.
+  // We repair the thumbnail by fetching from Firebase, compressing to thumb size,
+  // then discarding the full-quality data so it never bloats memory.
+  // HQ data is NOT loaded eagerly here — it is fetched on-demand when printing.
+  const toRepair=[];
   const walk=(imgList)=>(imgList||[]).forEach(img=>{
-    // Fetch if we have an fbKey but no HQ data yet
-    if(img&&img.fbKey&&!(img.hqData&&img.hqData.startsWith('data:')))needsFetch.push(img);
+    if(img&&img.fbKey&&!(img.data&&img.data.startsWith('data:')))toRepair.push(img);
   });
   (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
     walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
@@ -1279,34 +1283,31 @@ async function loadAllImagesFromFB(){
     walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
   }));
   (S.stockItems||[]).forEach(si=>walk(si.images));
-  if(!needsFetch.length)return;
-  let fetched=0;
-  await Promise.all(needsFetch.map(async img=>{
-    const cacheKey='fbimg_hq_'+img.fbKey;
-    // Try IDB cache first (avoids re-downloading on every load)
+  if(!toRepair.length)return;
+  let repaired=0;
+  // Process ONE AT A TIME — never hold multiple HQ images in memory simultaneously
+  for(const img of toRepair){
+    const thumbKey='fbimg_thumb_'+img.fbKey;
+    // Use cached repaired thumbnail from IDB if available (avoids re-download)
     try{
-      const cached=await idbGet(cacheKey);
-      if(cached&&cached.startsWith('data:')){
-        img.hqData=cached;
-        // If thumbnail is also broken (legacy uploads before extractImages fix), repair it
-        if(!(img.data&&img.data.startsWith('data:')))img.data=cached;
-        fetched++;return;
-      }
+      const cached=await idbGet(thumbKey);
+      if(cached&&cached.startsWith('data:')){img.data=cached;repaired++;continue;}
     }catch(e){}
     try{
       const res=await fetch(`https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,{cache:'no-store'});
-      if(!res.ok)return;
+      if(!res.ok)continue;
       const hqData=await res.json();
       if(typeof hqData==='string'&&hqData.startsWith('data:')){
-        img.hqData=hqData;
-        // If thumbnail is broken (old uploads), use the HQ as the display image too
-        if(!(img.data&&img.data.startsWith('data:')))img.data=hqData;
-        idbPut(cacheKey,hqData).catch(()=>{});
-        fetched++;
+        // Compress to thumbnail — then immediately discard the HQ data from memory
+        const thumb=await compressImageToThumb(hqData);
+        img.data=thumb;
+        idbPut(thumbKey,thumb).catch(()=>{}); // cache so next load skips the download
+        repaired++;
+        // hqData intentionally NOT stored in S — it's fetched on-demand for print/lightbox
       }
     }catch(e){}
-  }));
-  if(fetched>0)render();
+  }
+  if(repaired>0)render();
 }
 
 // Upload images that have no fbKey to Firebase /bangImages/ so they sync to all devices.
@@ -1480,12 +1481,21 @@ async function downloadOrderAttachment(orderId){
   setTimeout(()=>document.body.removeChild(a),100);
 }
 
-// Load images from IDB and inject into state (called on startup)
+// Load images from IDB and inject into state (called on startup).
+// Only loads thumbnail/data keys — NOT the large on-demand HQ caches
+// (fbimg_hq_* and fbimg_thumb_*) which are fetched lazily when needed.
 async function loadImagesFromIDB(){
   try{
     const all=await idbGetAll();
     const imageMap={};
-    all.forEach(entry=>{imageMap[entry.key]=entry.value;});
+    all.forEach(entry=>{
+      // Skip large image caches — they're fetched on-demand (lightbox/print), not at startup.
+      // fbimg_hq_* / fbimg_thumb_*: Firebase-fetched caches (5-7 MB each)
+      // *_hq: original-quality photos stored on the uploading device (can be 5-10 MB each)
+      // Loading all of these at startup causes "Out of Memory" crashes on low-RAM devices.
+      if(entry.key.startsWith('fbimg_')||entry.key.endsWith('_hq'))return;
+      imageMap[entry.key]=entry.value;
+    });
     if(Object.keys(imageMap).length>0){
       reinjectImages(S,imageMap);
     }
@@ -9514,7 +9524,8 @@ function _applyRemoteState(parsed, savedAt){
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   render();
-  // Fetch any images uploaded by other devices that we don't have locally yet
+  // Repair any broken thumbnails from other devices (runs only for images that
+  // have fbKey but broken img.data — sequential, low memory, safe to call often)
   loadAllImagesFromFB();
   if(needsPush && !_readOnly){
     // Push cleaned/merged state back so all other devices also get the correction.
