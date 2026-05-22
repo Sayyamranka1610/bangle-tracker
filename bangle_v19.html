@@ -1156,18 +1156,21 @@ function _compressPass(img,maxDim,quality){
   const c=document.createElement('canvas');
   c.width=w;c.height=h;
   c.getContext('2d').drawImage(img,0,0,w,h);
-  return c.toDataURL('image/jpeg',quality);
+  const result=c.toDataURL('image/jpeg',quality);
+  c.width=0;c.height=0; // release canvas bitmap memory immediately (iOS Safari holds it otherwise)
+  return result;
 }
 
-// Multi-pass adaptive compression: tries progressively smaller dims/quality
-// until the result fits under IMAGE_FB_THRESHOLD so it always travels inline
-// in Firebase and every device receives full-quality images.
-function compressImageToThumb(dataUrl,maxDim=1200){
+// Multi-pass adaptive compression: produces a real thumbnail (≤600px, target ≤150 KB).
+// Small thumbnails are critical — they travel inline in Firebase, so 20 thumbnails × 150 KB
+// = 3 MB payload, safe for iOS Safari to parse. Old 1200px thumbnails at 1-2 MB each
+// would produce a 20-40 MB Firebase payload that crashes iOS on JSON parse.
+function compressImageToThumb(dataUrl,maxDim=600){
   return new Promise(resolve=>{
     const img=new Image();
     img.onload=()=>{
       const passes=[
-        [1200,0.92],[1200,0.82],[900,0.80],[700,0.78],[600,0.75]
+        [600,0.82],[500,0.78],[400,0.75],[300,0.70],[200,0.65]
       ];
       let result=null;
       for(const [dim,q] of passes){
@@ -1228,7 +1231,10 @@ function compressImageForPrint(dataUrl,maxDim=1200){
 // Images above this size are always stripped to IDB regardless of mode.
 // At 1200px/0.92 JPEG most images are 200–500 KB base64 — well under 1.5 MB.
 // Only exceptionally large/detailed photos would exceed this.
-const IMAGE_FB_THRESHOLD=2000000; // ~1.5 MB base64 — raised so multi-pass keeps images inline
+// 150 KB per thumbnail — with 20+ images this keeps the Firebase payload under 3 MB,
+// safe for iOS Safari to fetch and JSON-parse without OOM. Images over this threshold
+// are stripped to an __IDB__ placeholder; migrateImagesToThumbs() re-compresses them.
+const IMAGE_FB_THRESHOLD=150000;
 
 // Store a full-quality image in Firebase RTDB at /bangImages/{key}.
 // Uses the same free Firebase plan already in use — no paid services needed.
