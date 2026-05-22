@@ -4,7 +4,23 @@ This file is automatically read by Claude Code on any device. Keep it up to date
 
 ---
 
-## ⚠️ CRITICAL DEPLOYMENT RULE — READ THIS FIRST
+## ⚠️ RULE 0: FULL-IMPACT ANALYSIS BEFORE EVERY FIX — READ THIS FIRST
+
+**Before writing any fix, you MUST answer all five questions below. If you cannot answer them, read more code until you can. Do not write code first and think second.**
+
+1. **Where does every value I write end up?** — Trace it: local variable → state field → Firebase → other devices → localStorage → IDB. Map the full path.
+2. **How long does it live in memory?** — Does it get garbage collected, or does it sit in `S` (global state) forever? If it's in `S`, it lives until page reload.
+3. **What if there are 50 of these?** — Scale the worst case. One 6 MB image is fine. Fifty is a crash.
+4. **What else runs at the same time?** — List every other startup function that touches the same data. Do they compound the problem?
+5. **What breaks if this path fails silently?** — If a `catch` swallows the error, what does the user see? What state is left corrupted?
+
+**If a fix introduces a new crash, it is not a fix.** The job is to make the system more stable than before, not trade one bug for another.
+
+**Lesson learned (OOM crash, May 2026):** A thumbnail repair function fetched full 6 MB HQ images from Firebase and stored them directly in `img.data` (the thumbnail field in global state `S`). With 20 images × 6 MB = 120 MB held permanently in `S`, Chrome crashed with "Out of Memory." The fix was locally correct (image loaded) but globally harmful (stayed in memory forever). This was caught only after it shipped. It would have been caught before shipping by asking Question 2 and Question 3 above.
+
+---
+
+## ⚠️ CRITICAL DEPLOYMENT RULE
 
 **Every fix, every change, every improvement MUST be pushed directly to `main` before the session ends.**
 
