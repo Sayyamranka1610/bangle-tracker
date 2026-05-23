@@ -9555,7 +9555,7 @@ function _applyRemoteState(parsed, savedAt){
 // ── EDIT LOCK ─────────────────────────────────────────────────────────────────
 async function _tryAcquireLock(){
   try{
-    const r = await fetch(FB_LOCK);
+    const r = await fetch(FB_LOCK, {cache:'no-store'});
     const lock = r.ok ? await r.json() : null;
     const now  = Date.now();
     const expired = !lock || !lock.heartbeat
@@ -9600,7 +9600,7 @@ function _startHeartbeat(){
     if(!_hasLock) return;
     try{
       // Verify we still own the lock before writing — prevent overwriting a takeover
-      const check = await fetch(FB_LOCK);
+      const check = await fetch(FB_LOCK, {cache:'no-store'});
       if(check.ok){
         const lock = await check.json();
         if(lock && lock.deviceId && lock.deviceId !== FB_DEVICE_ID){
@@ -9632,7 +9632,7 @@ function _startLockPolling(fast){
   if(_lockPollTimer) clearInterval(_lockPollTimer);
   _lockPollTimer = setInterval(async()=>{
     try{
-      const r   = await fetch(FB_LOCK);
+      const r   = await fetch(FB_LOCK, {cache:'no-store'});
       const lock= r.ok ? await r.json() : null;
       const expired = !lock || !lock.heartbeat
                     ||(Date.now()-new Date(lock.heartbeat).getTime()) > LOCK_EXPIRE_MS;
@@ -9642,6 +9642,16 @@ function _startLockPolling(fast){
         _waitingForGrant=false;
         await _tryAcquireLock();
         // (toast is shown inside _tryAcquireLock when wasReadOnly)
+      } else if(lock.user && lock.user !== _lockHolder){
+        // Lock changed hands while we were waiting — cancel stale request, reset to
+        // normal read-only so the user can request from the new lock holder.
+        const newHolder = lock.user;
+        _lockHolder = newHolder;
+        _waitingForGrant = false;
+        try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e2){}
+        _setReadOnlyUI(true, newHolder);
+        _startLockPolling(false); // drop back to 10-s background poll
+        showToast('ℹ️ '+newHolder+' is now the editor — tap "Request access" to ask them','amber');
       }
     }catch(e){}
   }, fast ? 2000 : 10000);
@@ -9688,7 +9698,8 @@ function _setBannerWaiting(){
   if(!banner) return;
   const who=_lockHolder||'the current editor';
   banner.style.display='flex';
-  banner.innerHTML=`⏳ <strong>Access requested</strong> — waiting for <strong>${esc(who)}</strong> to approve…&nbsp;
+  banner.innerHTML=`⏳ <strong>Access requested</strong> — waiting for <strong>${esc(who)}</strong> to approve…
+    <span style="font-size:11px;opacity:.75;margin-left:4px">(auto-granted if they log out)</span>&nbsp;
     <button onclick="cancelAccessRequest()" style="margin-left:10px;padding:5px 12px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);border-radius:7px;color:#fff;cursor:pointer;font-size:12px">✕ Cancel</button>`;
 }
 
@@ -9831,7 +9842,7 @@ async function requestEditAccess(){
 
   // Write the request to /accessRequest.json so Device 1 can see it
   try{
-    const lockR = await fetch(FB_LOCK);
+    const lockR = await fetch(FB_LOCK, {cache:'no-store'});
     const lock  = lockR.ok ? await lockR.json() : null;
     await fetch(FB_ACCESS_REQUEST,{
       method:'PUT', headers:{'Content-Type':'application/json'},
@@ -9866,7 +9877,7 @@ function _startLockOwnershipCheck(){
   _lockOwnerCheckTimer = setInterval(async()=>{
     if(!_hasLock){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; return; }
     try{
-      const r = await fetch(FB_LOCK);
+      const r = await fetch(FB_LOCK, {cache:'no-store'});
       const lock = r.ok ? await r.json() : null;
       // Lock was deleted or overwritten by another device
       if(!lock || lock.deviceId !== FB_DEVICE_ID){
@@ -9893,7 +9904,7 @@ function _startRequestWatcher(){
   _reqWatchTimer = setInterval(async()=>{
     if(!_hasLock){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; return; }
     try{
-      const r   = await fetch(FB_ACCESS_REQUEST);
+      const r   = await fetch(FB_ACCESS_REQUEST, {cache:'no-store'});
       const req = r.ok ? await r.json() : null;
       if(req && req.status==='pending' && req.toDevice===FB_DEVICE_ID){
         if(!_grantBannerUp){ _grantBannerUp=true; _showGrantPrompt(req); }
