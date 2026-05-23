@@ -6146,14 +6146,14 @@ function openVendorPrintWindow(title,orders){
         const cards = varietiesWithImages.map(v => {
           const imgs = v.images.map(img => {
             const src = _resolveImgSrc(img);
-            return src ? `<img src="${src}" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">` : '';
+            return src ? `<img src="${src}" style="width:52mm;height:68mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">` : '';
           }).filter(Boolean).join('');
-          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:5px;vertical-align:top;margin:0 12px 12px 0;break-inside:avoid">
+          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:5px;vertical-align:top;margin:0 8px 10px 0;break-inside:avoid">
             ${imgs}
-            <div style="font-size:11px;font-weight:700;color:#3C3489;text-align:center;max-width:65mm">${esc(v.name||'Variety')}</div>
+            <div style="font-size:11px;font-weight:700;color:#3C3489;text-align:center;max-width:52mm">${esc(v.name||'Variety')}</div>
           </div>`;
         }).join('');
-        imageStripHtml = `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 14px 10px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">${cards}</div>`;
+        imageStripHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 10px 8px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">${cards}</div>`;
       }
 
       const tableHtml = varieties.length ? `<table style="border-collapse:collapse;font-size:12px;margin-top:4px;table-layout:fixed">
