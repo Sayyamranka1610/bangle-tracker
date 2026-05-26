@@ -6139,18 +6139,20 @@ function openVendorPrintWindow(title,orders){
       const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
       const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
 
-      // Image strip — only render when at least one variety has images
-      const varietiesWithImages = varieties.filter(v => v.images && v.images.length > 0);
+      // Image strip — design-level images first, then variety-level images
+      const imageGroups = [];
+      if (d.images && d.images.length > 0) imageGroups.push({name: d.name||d.code||'', images: d.images});
+      varieties.forEach(v => { if (v.images && v.images.length > 0) imageGroups.push({name: v.name||'', images: v.images}); });
       let imageStripHtml = '';
-      if (varietiesWithImages.length > 0) {
-        const cards = varietiesWithImages.map(v => {
-          const imgs = v.images.map(img => {
+      if (imageGroups.length > 0) {
+        const cards = imageGroups.map(grp => {
+          const imgs = grp.images.map(img => {
             const src = _resolveImgSrc(img);
             return src ? `<img src="${src}" style="width:52mm;height:68mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">` : '';
           }).filter(Boolean).join('');
           return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:5px;vertical-align:top;margin:0 8px 10px 0;break-inside:avoid">
             ${imgs}
-            <div style="font-size:11px;font-weight:700;color:#3C3489;text-align:center;max-width:52mm">${esc(v.name||'Variety')}</div>
+            <div style="font-size:11px;font-weight:700;color:#3C3489;text-align:center;max-width:52mm">${esc(grp.name)}</div>
           </div>`;
         }).join('');
         imageStripHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 10px 8px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">${cards}</div>`;
