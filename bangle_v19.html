@@ -9139,7 +9139,7 @@ const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/ed
 const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
 // Full-quality images are stored at /bangImages/{key} in Firebase RTDB (free plan).
 // No external services or paid plans needed.
-const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
+const LOCK_EXPIRE_MS = 90 * 1000; // 90 seconds without heartbeat = lock expired (was 5 min)
 
 // Unique device ID so we don't re-apply our own pushed updates
 const FB_DEVICE_ID = (()=>{
@@ -9161,6 +9161,17 @@ let _grantPollTimer   = null;   // Device 2: fast-poll for lock release after re
 let _waitingForGrant  = false;  // Device 2: request is in flight
 let _grantBannerUp    = false;  // Device 1: grant prompt is currently shown
 let _lockOwnerCheckTimer = null; // Device 1: verify lock still belongs to us every 5 s
+
+// ── INSTANT LOCK RELEASE ON TAB CLOSE ────────────────────────────────────────
+// beforeunload fires on desktop when tab/window is closed.
+// pagehide fires on iOS Safari when the user navigates away or closes the tab.
+// keepalive:true tells the browser to complete the DELETE even as the page unloads.
+function _releaseOnUnload(){
+  if(!_hasLock) return;
+  try{ fetch(FB_LOCK, {method:'DELETE', keepalive:true}); }catch(e){}
+}
+window.addEventListener('beforeunload', _releaseOnUnload);
+window.addEventListener('pagehide',     _releaseOnUnload);
 
 // ── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
 // Catch any unhandled promise rejection so errors are never silently lost.
@@ -9623,7 +9634,7 @@ function _startHeartbeat(){
         })
       });
     }catch(e){}
-  }, 60000);
+  }, 25000); // 25s heartbeat — lock expires 90s after last ping, so 3+ missed beats before expiry
   // Watch for incoming access requests every 3 s while holding the lock
   _startRequestWatcher();
 }
@@ -9688,9 +9699,9 @@ function _setReadOnlyUI(readonly, lockUser){
   const who=_lockHolder||lockUser||'another user';
   banner.style.display='flex';
   const isOwner = _currentUser?.role==='owner';
-  banner.innerHTML=`🔒 <strong>Read-only</strong> — <strong id="ro-banner-user">${esc(who)}</strong> is currently editing. Your changes won't be saved.&nbsp;
-    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">📨 Request access</button>
-    ${isOwner?`<button onclick="takeEditAccess()" style="margin-left:6px;padding:5px 14px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">🔓 Take access</button>`:''}` ;
+  banner.innerHTML=`&#128274; <strong>Read-only</strong> — <strong id="ro-banner-user">${esc(who)}</strong> is currently editing. Your changes won't be saved.&nbsp;
+    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Request access</button>
+    ${isOwner?`<button onclick="takeEditAccess()" style="margin-left:6px;padding:5px 14px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Take access</button>`:''}` ;
   fbSetStatus('connected',`🔒 Read-only — ${who} is editing`);
 }
 
@@ -9931,9 +9942,9 @@ function _showGrantPrompt(req){
     b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2000;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;text-align:center;padding:12px 20px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 20px rgba(83,74,183,.45)';
     document.body.prepend(b);
   }
-  b.innerHTML=`🔔 <strong>${esc(req.fromUser)}</strong> is requesting edit access — do you want to hand over control?
-    <button onclick="grantEditAccess()" style="padding:6px 18px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap">✅ Grant access</button>
-    <button onclick="denyEditAccess()" style="padding:6px 14px;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap">✕ Deny</button>`;
+  b.innerHTML=`&#128276; <strong>${esc(req.fromUser)}</strong> is requesting edit access — do you want to hand over control?
+    <button onclick="grantEditAccess()" style="padding:6px 18px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap">Grant access</button>
+    <button onclick="denyEditAccess()" style="padding:6px 14px;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap">Deny</button>`;
 }
 
 // Device 1: grant access — release the lock so Device 2 can acquire it
