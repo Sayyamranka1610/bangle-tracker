@@ -1370,19 +1370,14 @@ function extractImages(state,forFirebase=false){
 
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
-      const tooBig=img.data.length>IMAGE_FB_THRESHOLD;
-      // For Firebase: only strip the thumbnail (img.data) if it's too big.
-      // img.fbKey means the HQ version is at /bangImages/ — but the THUMBNAIL must
-      // still travel inline so other devices can display it without fetching HQ first.
-      // Previously this stripped thumbnails when fbKey was set, causing broken images
-      // on every device except the one that uploaded them.
-      if(!forFirebase||tooBig){
-        imageMap[key]=img.data;
-        img.data='__IDB__'+key;
-      }
-      // forFirebase + small: leave inline regardless of fbKey
+      // Always strip — even small thumbnails. Every image upload sets fbKey so
+      // loadAllImagesFromFB() repairs images on other devices via /bangImages/.
+      // Leaving thumbnails inline caused cumulative 7-10 MB payloads that crash
+      // iOS Safari's JSON parser and Chrome with 'Aw Snap Out of Memory'.
+      imageMap[key]=img.data;
+      img.data='__IDB__'+key;
     }
-    // hqData (legacy): always IDB-only — never sent to Firebase or localStorage
+    // hqData: always IDB-only — never sent to Firebase or localStorage
     if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
       imageMap[key+'_hq']=img.hqData;
       img.hqData='__IDB__'+key+'_hq';
@@ -6786,18 +6781,19 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
   if(!imgMode)imgMode='inline';
   // Ensure IDB images are loaded into S before building print HTML
   try{ await loadImagesFromIDB(); }catch(e){}
-  // Fetch full-quality originals from Firebase RTDB for any images with fbKey
-  // so every device prints at original quality, not just the uploading device
-  try{
-    const allImgs=[];
-    orders.forEach(o=>(o.designs||[]).forEach(d=>{
-      (d.images||[]).forEach(img=>allImgs.push(img));
-      (d.varieties||[]).forEach(v=>(v.images||[]).forEach(img=>allImgs.push(img)));
-    }));
-    await loadImagesFromFB(allImgs);
-  }catch(e){}
+  // Fetch HQ originals from Firebase for any images with fbKey — gives best print quality.
+  // allImgs kept outside try so we can clear hqData from memory after building HTML.
+  const allImgs=[];
+  orders.forEach(o=>(o.designs||[]).forEach(d=>{
+    (d.images||[]).forEach(img=>allImgs.push(img));
+    (d.varieties||[]).forEach(v=>(v.images||[]).forEach(img=>allImgs.push(img)));
+  }));
+  try{ await loadImagesFromFB(allImgs); }catch(e){}
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
   const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode)).join('');
+  // Free HQ image data from global state immediately — it was only needed to build the HTML string.
+  // Without this, each HQ image (5-7 MB) stays in S permanently and causes Chrome OOM on print-all.
+  allImgs.forEach(img=>{ img.hqData=undefined; });
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>
       /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
