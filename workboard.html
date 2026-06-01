@@ -1265,6 +1265,36 @@ function renderSettingsView(){
       </div>
     </div>` : ''}
     <div class="settings-section">
+      <h3>Install App</h3>
+      <div style="padding:0 16px">
+        <div style="background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sh)">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <img src="workboard-icon-192.png" style="width:48px;height:48px;border-radius:14px" onerror="this.style.display='none'">
+            <div>
+              <div style="font-size:15px;font-weight:700;color:var(--t1)">Siddhi Workboard</div>
+              <div style="font-size:12px;color:var(--t2)">Install on your phone for quick access</div>
+            </div>
+          </div>
+          <button class="btn btn-p" style="margin-bottom:12px" onclick="triggerInstall()">📲 Install on this Device</button>
+          <div style="background:var(--bg);border-radius:10px;padding:12px 14px">
+            <div style="font-size:12px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Share this link with your team</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div id="app-link" style="font-size:12px;color:var(--p);font-weight:600;word-break:break-all;flex:1">https://sayyamranka1610.github.io/bangle-tracker/workboard.html</div>
+              <button onclick="copyAppLink()" style="flex-shrink:0;background:var(--p);color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer" id="copy-btn">Copy</button>
+            </div>
+          </div>
+          <div style="margin-top:12px;background:#fef3c7;border-radius:10px;padding:12px 14px">
+            <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📱 How to install on iPhone (Safari)</div>
+            <div style="font-size:12px;color:#78350f;line-height:1.7">1. Open the link in <b>Safari</b><br>2. Tap the <b>Share</b> button (box with arrow)<br>3. Scroll down → tap <b>"Add to Home Screen"</b><br>4. Tap <b>Add</b></div>
+          </div>
+          <div style="margin-top:10px;background:#dbeafe;border-radius:10px;padding:12px 14px">
+            <div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px">🤖 How to install on Android (Chrome)</div>
+            <div style="font-size:12px;color:#1e3a8a;line-height:1.7">1. Open the link in <b>Chrome</b><br>2. Tap the <b>⋮ menu</b> (top right)<br>3. Tap <b>"Add to Home Screen"</b> or <b>"Install App"</b><br>4. Tap <b>Add</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
       <h3>Connection</h3>
       <div style="padding:0 16px">
         <div style="background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);font-size:14px;color:var(--t1)">
@@ -1371,8 +1401,52 @@ window.addEventListener('appinstalled',()=>{
   const nudge=document.getElementById('inst-nudge'); if(nudge) nudge.style.display='none';
 });
 function triggerInstall(){
-  if(_installPrompt){ _installPrompt.prompt(); _installPrompt.userChoice.then(()=>{_installPrompt=null;}); }
-  else openModal('m-install');
+  if(_installPrompt){
+    _installPrompt.prompt();
+    _installPrompt.userChoice.then(()=>{ _installPrompt=null; });
+  } else {
+    // Show manual install instructions
+    document.getElementById('install-body').innerHTML = `
+      <div style="margin-bottom:16px;background:#fef3c7;border-radius:12px;padding:14px">
+        <div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:8px">📱 iPhone / iPad (Safari)</div>
+        <div style="font-size:14px;color:#78350f;line-height:1.9">
+          1. Open this link in <b>Safari</b><br>
+          2. Tap the <b>Share</b> button <b>⎙</b> at the bottom<br>
+          3. Scroll and tap <b>"Add to Home Screen"</b><br>
+          4. Tap <b>Add</b> — done!
+        </div>
+      </div>
+      <div style="background:#dbeafe;border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:700;color:#1e40af;margin-bottom:8px">🤖 Android (Chrome)</div>
+        <div style="font-size:14px;color:#1e3a8a;line-height:1.9">
+          1. Open this link in <b>Chrome</b><br>
+          2. Tap the <b>⋮ menu</b> (top-right)<br>
+          3. Tap <b>"Add to Home Screen"</b><br>
+          4. Tap <b>Add</b> — done!
+        </div>
+      </div>
+      <div style="background:var(--bg);border-radius:12px;padding:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--t2);margin-bottom:6px">APP LINK</div>
+        <div style="font-size:13px;color:var(--p);font-weight:600;word-break:break-all;margin-bottom:10px">https://sayyamranka1610.github.io/bangle-tracker/workboard.html</div>
+        <button class="btn btn-p" onclick="copyAppLink()">📋 Copy Link</button>
+      </div>`;
+    openModal('m-install');
+  }
+}
+
+function copyAppLink(){
+  const link = 'https://sayyamranka1610.github.io/bangle-tracker/workboard.html';
+  navigator.clipboard.writeText(link).then(()=>{
+    const btn = document.getElementById('copy-btn');
+    if(btn){ btn.textContent='Copied ✓'; btn.style.background='var(--ok)'; setTimeout(()=>{ btn.textContent='Copy'; btn.style.background=''; },2000); }
+    toast('Link copied ✓','ok');
+  }).catch(()=>{
+    // Fallback
+    const el=document.createElement('textarea');
+    el.value=link; document.body.appendChild(el); el.select();
+    document.execCommand('copy'); document.body.removeChild(el);
+    toast('Link copied ✓','ok');
+  });
 }
 
 // ══════════════════════════════════════════════════════════
