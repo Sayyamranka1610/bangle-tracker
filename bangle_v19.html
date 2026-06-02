@@ -5,48 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Siddhi Bangle Tracker</title>
 <!-- ═══════════════════════════════════════════════════════════════════
-     SENTRY ERROR MONITORING
-     Automatically reports any crash or error so you know about
-     problems before your team has to call you.
-
-     HOW TO ACTIVATE:
-       1. Create a FREE account at https://sentry.io/signup/
-       2. After signing up, create a new project → pick "Browser JavaScript"
-       3. Sentry will show you a DSN string (looks like a web address)
-       4. Paste that string between the quotes below where it says
-          "PASTE YOUR SENTRY DSN HERE"
-       5. Save and push — error monitoring is now active
+     SENTRY ERROR MONITORING  ✅ ACTIVE
+     Catches any crash or unexpected error in the app and sends a
+     report to your Sentry dashboard at sentry.io — silently,
+     without affecting users.
      ═══════════════════════════════════════════════════════════════════ -->
+<script
+  src="https://js.sentry-cdn.com/2eff06b58f70c74c61f1f836e45381a2.min.js"
+  crossorigin="anonymous"
+></script>
 <script>
-  // ─── PASTE YOUR SENTRY DSN HERE ──────────────────────────────────────────────
-  // Example:  'https://abc123def456@o1234567.ingest.sentry.io/9876543'
-  // Leave empty ('') and Sentry will NOT load — app works normally either way.
-  var SENTRY_DSN = '';
-  // ─────────────────────────────────────────────────────────────────────────────
-</script>
-<script>
-  (function(){
-    if(typeof SENTRY_DSN!=='string'||!SENTRY_DSN.startsWith('https://'))return;
-    var s=document.createElement('script');
-    s.src='https://browser.sentry-cdn.com/7.119.2/bundle.min.js';
-    s.crossOrigin='anonymous';
-    s.onload=function(){
-      Sentry.init({
-        dsn:SENTRY_DSN,
-        release:'bangle-tracker@1.0',
-        environment:'production',
-        tracesSampleRate:0,       // no performance tracing (keeps it free)
-        replaysSessionSampleRate:0,
-        replaysOnErrorSampleRate:0,
-        beforeSend:function(event){
-          // Never send errors from demo/shared mode — only real usage
-          try{if(new URLSearchParams(location.search).get('demo')==='1')return null;}catch(e){}
-          return event;
-        }
-      });
-    };
-    document.head.appendChild(s);
-  })();
+  // Extra config applied once Sentry finishes loading
+  Sentry.onLoad(function(){
+    Sentry.init({
+      release:'bangle-tracker@1.0',
+      environment:'production',
+      tracesSampleRate:0,         // no performance tracing (stays on free tier)
+      replaysSessionSampleRate:0, // no session replay (stays on free tier)
+      replaysOnErrorSampleRate:0,
+      beforeSend:function(event){
+        // Don't report errors from the shared demo link — only real usage
+        try{if(new URLSearchParams(location.search).get('demo')==='1')return null;}catch(e){}
+        return event;
+      }
+    });
+  });
 </script>
 <!-- Open Graph / Link Preview -->
 <meta property="og:type"        content="website">
