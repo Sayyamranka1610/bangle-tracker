@@ -34,15 +34,16 @@ This file is automatically read by Claude Code on any device. Keep it up to date
 
 ## Project Overview
 
-One repo, two independent web apps — both deployed via GitHub Pages:
+One repo, two independent web apps — deployed via **both** GitHub Pages AND Cloudflare Pages:
 
-| App | Source File | Entry Point | Live URL |
-|-----|-------------|-------------|----------|
-| Bangle Tracker | `bangle_v19.html` | `index.html` (redirect) | `https://sayyamranka1610.github.io/bangle-tracker/` |
-| WorkBoard | `workboard.html` | `workboard.html` | `https://sayyamranka1610.github.io/bangle-tracker/workboard.html` |
+| App | Source File | GitHub Pages URL | Cloudflare Pages URL |
+|-----|-------------|-----------------|---------------------|
+| Bangle Tracker | `bangle_v19.html` | `https://sayyamranka1610.github.io/bangle-tracker/` | `https://bangle-tracker.pages.dev` ✅ PRIMARY |
+| WorkBoard | `workboard.html` | `https://sayyamranka1610.github.io/bangle-tracker/workboard.html` | `https://bangle-tracker.pages.dev/workboard.html` |
 
 **Repo:** `https://github.com/Sayyamranka1610/bangle-tracker`  
-Push to `main` → GitHub Pages auto-deploys (≈1 min).
+Push to `main` → GitHub Pages AND Cloudflare Pages both auto-deploy (≈1 min).  
+**Cloudflare Pages is now the primary URL** — faster globally, security headers added.
 
 ---
 
@@ -51,8 +52,47 @@ Push to `main` → GitHub Pages auto-deploys (≈1 min).
 - **Frontend:** Single `.html` files — all HTML, CSS, and JS inline. No build step, no bundler, no framework.
 - **Database:** Firebase Realtime Database — `https://bangle-tracker-default-rtdb.firebaseio.com`
 - **Auth:** Custom username/password stored in Firebase (no Firebase Auth SDK)
-- **Deployment:** GitHub Pages (static hosting)
+- **Deployment:** GitHub Pages (backup) + **Cloudflare Pages** (primary — `bangle-tracker.pages.dev`)
+- **Image Storage:** Cloudflare R2 — bucket `bangle-tracker-images` (Asia Pacific)
+  - Public URL: `https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev`
+  - Upload Worker: `bt-image-upload` (⏳ pending deployment — see Phase 1 status below)
+  - App constants `R2_WORKER_URL` and `R2_UPLOAD_KEY` in `bangle_v19.html` to be filled after Worker deployed
+- **Error Monitoring:** Sentry — loader key `2eff06b58f70c74c61f1f836e45381a2` (active)
 - **PWA:** Both apps have service workers and manifests — installable on mobile
+
+---
+
+## ═══ COMMERCIAL BUILD STATUS — READ EVERY SESSION ═══
+
+**Owner:** Sayyamranka09@gmail.com (Cloudflare, Sentry, GitHub all use this email)  
+**Business:** Siddhi Bangles — app is in active daily production use. Data loss = unacceptable.  
+**Owner is non-developer** — explain everything in plain language before executing.
+
+### Phase 1 Progress (Infrastructure upgrades — NO code rewrites)
+
+| Step | Status | Details |
+|------|--------|---------|
+| Sentry error monitoring | ✅ DONE | Loader key: `2eff06b58f70c74c61f1f836e45381a2` |
+| Cloudflare Pages hosting | ✅ DONE | `bangle-tracker.pages.dev`, GitHub connected, auto-deploy on |
+| Cloudflare R2 image storage | ⏳ 80% | Bucket + public URL done. **Need:** deploy `bt-image-upload` Worker, fill in `R2_WORKER_URL` + `R2_UPLOAD_KEY` in app |
+| Firebase Auth | ❌ DEFERRED | Too risky while app is in production — do after Phase 1 stable |
+
+### Phase 2 (After Phase 1 fully confirmed stable)
+Split `bangle_v19.html` into React + Vite components. Do NOT start until Phase 1 is verified working over 1 week of real usage.
+
+### Critical rules for every session
+1. **Explain consequences before executing any change** — especially anything touching data/auth
+2. **Push back if dangerous** — even if owner says "do it", refuse if it risks data loss or lockout
+3. **Staged migrations only** — new system works first, old system stays as fallback
+4. **Phase 1 before Phase 2** — never run both simultaneously
+
+### Next action needed from owner
+Go to `dash.cloudflare.com` → Workers & Pages → Create a Worker:
+- Name: `bt-image-upload`
+- Code: copy from `r2-worker.js` in this repo
+- Environment variables: `UPLOAD_KEY = BT2026_sB9mK3xQpR7wN2vL5jH8cF4dA`, `PUBLIC_URL = https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev`
+- R2 binding: variable `BUCKET` → bucket `bangle-tracker-images`
+- Share the Worker URL (like `https://bt-image-upload.sayyamranka09.workers.dev`) and Claude fills in the app constants.
 
 ---
 
