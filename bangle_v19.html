@@ -890,6 +890,38 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
 </div>
 
 <script>
+// ── CLOUDFLARE R2 IMAGE STORAGE ────────────────────────────────────────────────
+// Images are stored in R2 (a professional photo warehouse) instead of being
+// crammed into Firebase as giant text blobs. Old photos already in Firebase
+// continue working exactly as before — nothing is deleted or moved.
+//
+// These two values are filled in after the bt-image-upload Worker is deployed.
+// While they are empty the app works exactly as before (uploads stay as base64).
+const R2_WORKER_URL = ''; // e.g. 'https://bt-image-upload.yourname.workers.dev'
+const R2_UPLOAD_KEY = ''; // secret key — same value set in Worker env variable
+// ────────────────────────────────────────────────────────────────────────────────
+
+// Try to upload a compressed base64 image to R2.
+// Returns the public https:// URL on success, or null on failure/not-configured.
+// Callers fall back to storing base64 when null is returned.
+async function uploadToR2(base64DataUrl){
+  if(!R2_WORKER_URL||!R2_UPLOAD_KEY)return null;
+  try{
+    const type=(base64DataUrl.split(';')[0]||'').replace('data:','')||'image/jpeg';
+    const resp=await fetch(R2_WORKER_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Upload-Key':R2_UPLOAD_KEY},
+      body:JSON.stringify({data:base64DataUrl,type})
+    });
+    if(!resp.ok)return null;
+    const j=await resp.json();
+    return j.url||null;
+  }catch(e){
+    console.warn('R2 upload failed, keeping base64:',e.message);
+    return null;
+  }
+}
+
 // ── CONSTANTS ──────────────────────────────────────────────────────────────────
 const DEFAULT_SIZES = ['2/2','2/4','2/6','2/8','2/10','2/12'];
 const STATUS_OPTS = ['pending','in progress','done','delayed'];
@@ -2900,8 +2932,9 @@ function handleVarietyImg(oi,di,vi,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
-      d.varieties[vi].images.push({data,name:f.name});
+      const compressed=await compressImageToThumb(e.target.result);
+      const r2url=await uploadToR2(compressed);
+      d.varieties[vi].images.push({data:r2url||compressed,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -2971,8 +3004,9 @@ function handleDesignLevelImg(oi,di,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
-      d.images.push({data,name:f.name});
+      const compressed=await compressImageToThumb(e.target.result);
+      const r2url=await uploadToR2(compressed);
+      d.images.push({data:r2url||compressed,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -3173,9 +3207,11 @@ let _lbImages=[],_lbIdx=0;
 // Falls back to data (160px thumb) and applies the same guard.
 function _resolveImgSrc(img){
   if(!img)return '';
-  if(img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:'))return img.hqData;
-  if(img.data&&typeof img.data==='string'&&img.data.startsWith('data:'))return img.data;
-  return ''; // placeholder or missing — caller should treat empty string as "no image"
+  // Accepts both base64 data URLs (legacy) and https:// R2 CDN URLs (new)
+  const valid=s=>typeof s==='string'&&(s.startsWith('data:')||s.startsWith('https://'));
+  if(valid(img.hqData))return img.hqData; // legacy high-quality local copy
+  if(valid(img.data))return img.data;     // base64 (old) or R2 URL (new)
+  return ''; // placeholder or missing
 }
 
 // Open lightbox for ALL images of a design code (d.images + all variety images combined).
@@ -3204,8 +3240,9 @@ function handleImgUpload(oi,di,input){
   files.forEach(file=>{
     const reader=new FileReader();
     reader.onload=async e=>{
-      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
-      S.orders[oi].designs[di].images.push({data,name:file.name});
+      const compressed=await compressImageToThumb(e.target.result);
+      const r2url=await uploadToR2(compressed);
+      S.orders[oi].designs[di].images.push({data:r2url||compressed,name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -4624,10 +4661,11 @@ function handleVendorImgUpload(voi, di, vi, input){
   files.forEach(file=>{
     const reader = new FileReader();
     reader.onload = async e=>{
-      const data = await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      const compressed=await compressImageToThumb(e.target.result);
+      const r2url=await uploadToR2(compressed);
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,name:file.name});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data:r2url||compressed,name:file.name});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -5474,8 +5512,9 @@ function addVVImg(vi,di,vri,inp){
   inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
-    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,name:file.name});
+    const compressed=await compressImageToThumb(ev.target.result);
+    const r2url=await uploadToR2(compressed);
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data:r2url||compressed,name:file.name});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5517,10 +5556,12 @@ function addVendorFlatImg(vi,di,isVar,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+    const compressed=await compressImageToThumb(ev.target.result);
+    const r2url=await uploadToR2(compressed);
+    const imgObj={data:r2url||compressed,name:file.name};
     const d=S.vendorOrders[vi].designs[di];
-    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push({data,name:file.name});}
-    else{d.images=d.images||[];d.images.push({data,name:file.name});}
+    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push(imgObj);}
+    else{d.images=d.images||[];d.images.push(imgObj);}
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5531,9 +5572,10 @@ function addVDImg(vi,di,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+    const compressed=await compressImageToThumb(ev.target.result);
+    const r2url=await uploadToR2(compressed);
     const d=S.vendorOrders[vi].designs[di];
-    d.images=d.images||[];d.images.push({data,name:file.name});
+    d.images=d.images||[];d.images.push({data:r2url||compressed,name:file.name});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -8056,8 +8098,9 @@ async function handleStockImgUpload(inp){
     await new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=async ev=>{
-        const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
-        window._stockModalImages.push({data,name:file.name});
+        const compressed=await compressImageToThumb(ev.target.result);
+        const r2url=await uploadToR2(compressed);
+        window._stockModalImages.push({data:r2url||compressed,name:file.name});
         resolve();
       };reader.readAsDataURL(file);
     });
