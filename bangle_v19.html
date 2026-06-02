@@ -1966,19 +1966,24 @@ function buildDesignsPanel(order,oi){
         +'</div>'
       :'';
     const tableHtml=buildDesignsGroupTable(order,oi,g);
+    const gId='dng-'+g.items[0].d.id;
     return `<div class="design-name-group">
       <div class="design-name-group-head">
         <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
           <span style="font-size:13px;opacity:.75;flex-shrink:0">🎨</span>
-          <input class="inline-edit" value="${esc(g.name)}"
-            data-origname="${esc(g.name)}"
-            data-oi="${oi}"
-            data-dids="${g.items.map(({d})=>d.id).join(',')}"
-            style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"
-            onfocus="try{_fb.pendingLocal=true;}catch(e){}"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
-            onblur="renameDesignGroup(this)"
-            title="Click to rename — Enter or click away to save">
+          <div style="position:relative;flex:1;min-width:0">
+            <input class="inline-edit" id="${gId}-inp" value="${esc(g.name)}"
+              data-origname="${esc(g.name)}"
+              data-oi="${oi}"
+              data-dids="${g.items.map(({d})=>d.id).join(',')}"
+              style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px;width:100%"
+              onfocus="try{_fb.pendingLocal=true;}catch(e){};showDNameAC('${gId}')"
+              oninput="showDNameAC('${gId}')"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}if(event.key==='Escape'){hideDNameAC('${gId}');}"
+              onblur="hideDNameAC('${gId}');renameDesignGroup(this)"
+              title="Click to rename — Enter or click away to save">
+            <div id="${gId}-ac" class="ac-list" style="display:none;background:#fff;color:#333;min-width:220px"></div>
+          </div>
         </div>
         <span class="dng-meta">${g.items.length} code${g.items.length!==1?'s':''} · ${formatQtyByUnit(groupQty)}</span>
       </div>
@@ -2168,13 +2173,20 @@ function buildDesignsGroupTable(order,oi,g){
   const sizeCtrl=locked
     ?'<span style="font-size:10px;color:#AFA9EC">Sizes locked at creation</span>'
     :'<button class="icon-btn sm no-print" onclick="addSizeToDesign('+g.items[0].di+')">+ Add size</button>';
+  const grpDids=g.items.map(({d})=>d.id).join(',');
 
   return '<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
     +'<table class="variety-table">'
       +'<thead><tr>'
         +'<th style="min-width:130px;text-align:left">Design code</th>'
         +'<th style="min-width:80px">Images</th>'
-        +szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')
+        +szKeys.map(sz=>'<th class="sz-head">'
+          +esc(sz)
+          +'<button class="no-print" onclick="event.stopPropagation();deleteOrderSizeCol('+oi+',this.dataset.sz,this.dataset.dids)" data-sz="'+esc(sz)+'" data-dids="'+grpDids+'"'
+            +' style="display:block;margin:2px auto 0;background:none;border:none;cursor:pointer;color:rgba(255,255,255,.35);font-size:9px;line-height:1;padding:1px" '
+            +'onmouseover="this.style.color=\'rgba(255,150,150,1)\'" onmouseout="this.style.color=\'rgba(255,255,255,.35)\'"'
+            +' title="Delete this size column">✕</button>'
+        +'</th>').join('')
         +'<th style="min-width:55px">Total</th>'
         +'<th style="min-width:72px">Unit</th>'
         +'<th style="min-width:72px">Rate (₹)</th>'
@@ -2877,6 +2889,28 @@ function addSizeToDesign(oi,di){
   if(!d.sizes)d.sizes={};d.sizes['2/'+next]=0;
   (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes['2/'+next]=0;});
   audit('Add size',`Design ${di+1} order ${S.orders[oi].orderId}: added size 2/${next}`);render();
+}
+// Delete a size column from all designs in a group (client orders)
+function deleteOrderSizeCol(oi,sz,dids){
+  const order=S.orders[oi];if(!order)return;
+  const ids=(dids||'').split(',').filter(Boolean);
+  const grp=order.designs.filter(d=>ids.includes(d.id));
+  const hasQty=grp.some(d=>(parseInt((d.sizes||{})[sz])||0)>0||(d.varieties||[]).some(v=>(parseInt((v.sizes||{})[sz])||0)>0));
+  if(hasQty&&!confirm(`Size "${sz}" has quantities — delete it anyway?`))return;
+  histPush();
+  grp.forEach(d=>{delete(d.sizes||{})[sz];(d.varieties||[]).forEach(v=>{delete(v.sizes||{})[sz];});});
+  render();try{fbPushNow();}catch(e){}
+}
+// Delete a size column from all designs in a group (vendor orders)
+function deleteVendorSizeCol(vi,sz,dids){
+  const vo=S.vendorOrders[vi];if(!vo)return;
+  const ids=(dids||'').split(',').filter(Boolean);
+  const grp=vo.designs.filter(d=>ids.includes(d.id));
+  const hasQty=grp.some(d=>(parseInt((d.sizes||{})[sz])||0)>0||(d.varieties||[]).some(v=>(parseInt((v.sizes||{})[sz])||0)>0));
+  if(hasQty&&!confirm(`Size "${sz}" has quantities — delete it anyway?`))return;
+  histPush();
+  grp.forEach(d=>{delete(d.sizes||{})[sz];(d.varieties||[]).forEach(v=>{delete(v.sizes||{})[sz];});});
+  save();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 
 // ── DIRECT DESIGN-LEVEL SIZE UPDATES (for flat rows with no varieties) ──────────
@@ -3888,6 +3922,36 @@ function showACModal(input,vocab){
   el.style.display='block';
 }
 function hideACModal(id){setTimeout(()=>{const el=document.getElementById(id);if(el)el.style.display='none';},200);}
+
+// ── Design-name group header autocomplete (shared: client + vendor orders) ────
+// gId = 'dng-' + firstDesignId in group — used for both input & dropdown IDs.
+function showDNameAC(gId){
+  const inp=document.getElementById(gId+'-inp');
+  const ac=document.getElementById(gId+'-ac');
+  if(!inp||!ac)return;
+  const val=(inp.value||'').toLowerCase();
+  const list=S.vocabulary.dnames||[];
+  const filtered=list.filter(v=>v&&v!==inp.value&&(val===''||v.toLowerCase().includes(val)));
+  if(!filtered.length){ac.style.display='none';return;}
+  ac.innerHTML=filtered.slice(0,10).map(v=>
+    `<div class="ac-item" style="color:#333;font-weight:500"
+      onpointerdown="event.preventDefault();selectDNameAC('${gId}','${esc(v).replace(/'/g,"\\'")}');">${esc(v)}</div>`
+  ).join('');
+  ac.style.display='block';
+}
+function hideDNameAC(gId){
+  setTimeout(()=>{const ac=document.getElementById(gId+'-ac');if(ac)ac.style.display='none';},200);
+}
+function selectDNameAC(gId,name){
+  const inp=document.getElementById(gId+'-inp');
+  if(!inp)return;
+  inp.value=name;
+  // Store the original so renameDesignGroup can detect a change
+  if(inp.dataset.origname===undefined)inp.dataset.origname=name;
+  const ac=document.getElementById(gId+'-ac');
+  if(ac)ac.style.display='none';
+  inp.blur(); // triggers renameDesignGroup / renameVendorDesignGroup
+}
 
 // ── STRICT VALIDATION & ORDER CREATION ────────────────────────────────────────
 function showFieldError(id,msg){
@@ -5223,13 +5287,20 @@ function buildVendorDesignsPanel(vo,vi){
     const refDi=g.items[0].di; // used by addVendorDesignToGroup to inherit name+sizes
     const dids=g.items.map(({d})=>d.id).join(',');
     const badgeText=g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+formatQtyByUnit(groupQty);
+    const vgId='vdng-'+g.items[0].d.id;
 
     const tableHtml='<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
       +'<table class="variety-table">'
         +'<thead><tr>'
           +'<th style="min-width:130px;text-align:left">Design code</th>'
           +'<th style="min-width:80px">Images</th>'
-          +szKeys.map(sz=>'<th class="sz-head">'+esc(sz)+'</th>').join('')
+          +szKeys.map(sz=>'<th class="sz-head">'
+            +esc(sz)
+            +'<button class="no-print" onclick="event.stopPropagation();deleteVendorSizeCol('+vi+',this.dataset.sz,this.dataset.dids)" data-sz="'+esc(sz)+'" data-dids="'+dids+'"'
+              +' style="display:block;margin:2px auto 0;background:none;border:none;cursor:pointer;color:rgba(255,255,255,.35);font-size:9px;line-height:1;padding:1px" '
+              +'onmouseover="this.style.color=\'rgba(255,150,150,1)\'" onmouseout="this.style.color=\'rgba(255,255,255,.35)\'"'
+              +' title="Delete this size column">✕</button>'
+          +'</th>').join('')
           +'<th style="min-width:55px">Total</th>'
           +'<th style="min-width:72px">Unit</th>'
           +'<th style="min-width:72px">Rate (₹)</th>'
@@ -5247,13 +5318,17 @@ function buildVendorDesignsPanel(vo,vi){
       +'<div class="design-name-group-head">'
         +'<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">'
           +'<span style="font-size:13px;opacity:.75;flex-shrink:0">🎨</span>'
-          +'<input class="inline-edit" value="'+esc(g.name)+'"'
-          +' data-vi="'+vi+'" data-dids="'+dids+'" data-origname="'+esc(g.name)+'"'
-          +' style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px"'
-          +' onfocus="try{_fb.pendingLocal=true;}catch(e){}"'
-          +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"'
-          +' onblur="renameVendorDesignGroup(this)"'
-          +' title="Click to rename">'
+          +'<div style="position:relative;flex:1;min-width:0">'
+            +'<input class="inline-edit" id="'+vgId+'-inp" value="'+esc(g.name)+'"'
+            +' data-vi="'+vi+'" data-dids="'+dids+'" data-origname="'+esc(g.name)+'"'
+            +' style="font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.15);border-bottom-color:rgba(255,255,255,.5);min-width:120px;padding:2px 6px;border-radius:4px;width:100%"'
+            +' onfocus="try{_fb.pendingLocal=true;}catch(e){};showDNameAC(\''+vgId+'\')"'
+            +' oninput="showDNameAC(\''+vgId+'\')"'
+            +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}if(event.key===\'Escape\'){hideDNameAC(\''+vgId+'\');}"'
+            +' onblur="hideDNameAC(\''+vgId+'\');renameVendorDesignGroup(this)"'
+            +' title="Click to rename">'
+            +'<div id="'+vgId+'-ac" class="ac-list" style="display:none;background:#fff;color:#333;min-width:220px"></div>'
+          +'</div>'
         +'</div>'
         +'<span class="dng-meta">'+badgeText+'</span>'
       +'</div>'
