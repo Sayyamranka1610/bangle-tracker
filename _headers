@@ -1,0 +1,19 @@
+/*
+  # Security headers — applied to every file served by Cloudflare Pages.
+  # These protect your users from common web attacks without changing
+  # how the app looks or works.
+
+  # Prevents other websites from loading your app inside their page
+  # (protects against "clickjacking" — where a bad site tricks users
+  #  into clicking things they can't see)
+  X-Frame-Options: SAMEORIGIN
+
+  # Tells browsers to never guess the file type — only use what we declare
+  X-Content-Type-Options: nosniff
+
+  # Controls what information is sent when your users click external links
+  Referrer-Policy: strict-origin-when-cross-origin
+
+  # Disables browser features your app doesn't need
+  # (location access, microphone, camera — this app never needs these)
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
