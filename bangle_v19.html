@@ -23,16 +23,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Siddhi Bangle Tracker">
 <link rel="apple-touch-icon" href="bangle-logo.jpg">
-<!-- Firebase RTDB — preconnect so TCP/TLS is ready before fbInit() fires -->
-<link rel="preconnect" href="https://bangle-tracker-default-rtdb.firebaseio.com">
-<link rel="dns-prefetch" href="https://bangle-tracker-default-rtdb.firebaseio.com">
-<!-- XLSX: defer so it downloads in parallel without blocking HTML parse/render.
-     Export buttons are only clicked after the page is fully interactive, by
-     which time this 1 MB library is guaranteed to have loaded. -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<!-- gstatic hosts the actual font files referenced by the googleapis CSS -->
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -829,7 +821,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   </div>
   <div class="stats" id="stats-bar"></div>
   <div class="main-tabs no-print">
-    <div class="main-tab active" onclick="switchMain('orders')">📦 Orders (Client view)</div>
+    <div class="main-tab active" onclick="switchMain('orders')">📦 Customer Orders</div>
     <div class="main-tab" onclick="switchMain('design')">🎨 Design view</div>
     <div class="main-tab" onclick="switchMain('analytics')">📊 Analytics</div>
     <div class="main-tab" onclick="switchMain('inventory')">🗄️ Inventory</div>
@@ -1154,63 +1146,25 @@ async function idbGetAll(){
   });
 }
 
-// Draw image to canvas at given dimensions and return base64 JPEG at given quality.
-function _compressPass(img,maxDim,quality){
-  let w=img.width,h=img.height;
-  if(w>maxDim||h>maxDim){
-    if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}
-    else{w=Math.round(w*maxDim/h);h=maxDim;}
-  }
-  const c=document.createElement('canvas');
-  c.width=w;c.height=h;
-  c.getContext('2d').drawImage(img,0,0,w,h);
-  const result=c.toDataURL('image/jpeg',quality);
-  c.width=0;c.height=0; // release canvas bitmap memory immediately (iOS Safari holds it otherwise)
-  return result;
-}
-
-// Multi-pass adaptive compression: produces a real thumbnail (≤600px, target ≤150 KB).
-// Small thumbnails are critical — they travel inline in Firebase, so 20 thumbnails × 150 KB
-// = 3 MB payload, safe for iOS Safari to parse. Old 1200px thumbnails at 1-2 MB each
-// would produce a 20-40 MB Firebase payload that crashes iOS on JSON parse.
-function compressImageToThumb(dataUrl,maxDim=600){
+// Compress image to print-ready quality: 1200px max @ 0.92 JPEG.
+// This single version is used for BOTH display AND print — stored in img.data
+// and synced to Firebase inline so every device receives full quality.
+function compressImageToThumb(dataUrl,maxDim=1200){
   return new Promise(resolve=>{
     const img=new Image();
     img.onload=()=>{
-      const passes=[
-        [600,0.82],[500,0.78],[400,0.75],[300,0.70],[200,0.65]
-      ];
-      let result=null;
-      for(const [dim,q] of passes){
-        result=_compressPass(img,dim,q);
-        if(result.length<IMAGE_FB_THRESHOLD) break;
+      let w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){
+        if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}
+        else{w=Math.round(w*maxDim/h);h=maxDim;}
       }
-      resolve(result);
+      const c=document.createElement('canvas');
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',0.92));
     };
-    img.onerror=()=>resolve(dataUrl);
+    img.onerror=()=>resolve(dataUrl); // fallback: use original
     img.src=dataUrl;
-  });
-}
-
-// Prepare a high-quality version of an image for uploading to Firebase /bangImages/.
-// Uses the original file bytes if small enough, otherwise compresses at very high
-// quality (max 4096px, 0.97 JPEG) — far better than the display thumbnail.
-// The 7 MB cap is a safe limit for Firebase RTDB individual node writes.
-const FIREBASE_HQ_MAX = 7000000; // ~5.25 MB binary
-function compressForFirebase(original){
-  if(original.length < FIREBASE_HQ_MAX) return Promise.resolve(original);
-  return new Promise(resolve=>{
-    const img=new Image();
-    img.onload=()=>{
-      const passes=[[4096,0.97],[3000,0.95],[2400,0.93],[1800,0.91]];
-      for(const [dim,q] of passes){
-        const r=_compressPass(img,dim,q);
-        if(r.length<FIREBASE_HQ_MAX){resolve(r);return;}
-      }
-      resolve(_compressPass(img,1800,0.91));
-    };
-    img.onerror=()=>resolve(original);
-    img.src=original;
   });
 }
 
@@ -1239,117 +1193,7 @@ function compressImageForPrint(dataUrl,maxDim=1200){
 // Images above this size are always stripped to IDB regardless of mode.
 // At 1200px/0.92 JPEG most images are 200–500 KB base64 — well under 1.5 MB.
 // Only exceptionally large/detailed photos would exceed this.
-// 150 KB per thumbnail — with 20+ images this keeps the Firebase payload under 3 MB,
-// safe for iOS Safari to fetch and JSON-parse without OOM. Images over this threshold
-// are stripped to an __IDB__ placeholder; migrateImagesToThumbs() re-compresses them.
-const IMAGE_FB_THRESHOLD=150000;
-
-// Store a full-quality image in Firebase RTDB at /bangImages/{key}.
-// Uses the same free Firebase plan already in use — no paid services needed.
-// Returns the key so other devices can fetch the original from Firebase.
-async function uploadImageToRTDB(dataUrl){
-  if(_isDemoMode()) return null;
-  const key = uid();
-  const res = await fetch(
-    `https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${key}.json`,
-    { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dataUrl) }
-  );
-  if(!res.ok) throw new Error('RTDB image upload failed: '+res.status);
-  return key;
-}
-
-// Pre-fetch full-quality originals from Firebase RTDB for images that have
-// a fbKey but whose hqData isn't loaded locally. Called before printing so
-// any device can print at original quality, not just the uploading device.
-async function loadImagesFromFB(imgList){
-  const toFetch = (imgList||[]).filter(img => img && img.fbKey && !(img.hqData&&img.hqData.startsWith('data:')));
-  await Promise.all(toFetch.map(async img => {
-    try{
-      const res = await fetch(
-        `https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,
-        {cache:'no-store'}
-      );
-      if(!res.ok) return;
-      const data = await res.json();
-      if(typeof data==='string'&&data.startsWith('data:')) img.hqData = data;
-    }catch(e){ /* fail silently — print will fall back to compressed version */ }
-  }));
-}
-
-// Fetch full-quality images from Firebase /bangImages/ for all images that have
-// a fbKey but no local hqData (e.g. uploaded on a different device).
-// Stores fetched data as hqData so the existing lightbox/print logic automatically
-// shows the full-quality version. Thumbnails (img.data) remain fast for list views.
-async function loadAllImagesFromFB(){
-  // Find images that have a cloud key (fbKey) but whose THUMBNAIL is broken —
-  // this happens for images uploaded before the extractImages bug was fixed.
-  // We repair the thumbnail by fetching from Firebase, compressing to thumb size,
-  // then discarding the full-quality data so it never bloats memory.
-  // HQ data is NOT loaded eagerly here — it is fetched on-demand when printing.
-  const toRepair=[];
-  const walk=(imgList)=>(imgList||[]).forEach(img=>{
-    if(img&&img.fbKey&&!(img.data&&img.data.startsWith('data:')))toRepair.push(img);
-  });
-  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
-    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
-  }));
-  (S.vendorOrders||[]).forEach(vo=>(vo.designs||[]).forEach(d=>{
-    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
-  }));
-  (S.stockItems||[]).forEach(si=>walk(si.images));
-  if(!toRepair.length)return;
-  let repaired=0;
-  // Process ONE AT A TIME — never hold multiple HQ images in memory simultaneously
-  for(const img of toRepair){
-    const thumbKey='fbimg_thumb_'+img.fbKey;
-    // Use cached repaired thumbnail from IDB if available (avoids re-download)
-    try{
-      const cached=await idbGet(thumbKey);
-      if(cached&&cached.startsWith('data:')){img.data=cached;repaired++;continue;}
-    }catch(e){}
-    try{
-      const res=await fetch(`https://bangle-tracker-default-rtdb.firebaseio.com/bangImages/${img.fbKey}.json`,{cache:'no-store'});
-      if(!res.ok)continue;
-      const hqData=await res.json();
-      if(typeof hqData==='string'&&hqData.startsWith('data:')){
-        // Compress to thumbnail — then immediately discard the HQ data from memory
-        const thumb=await compressImageToThumb(hqData);
-        img.data=thumb;
-        idbPut(thumbKey,thumb).catch(()=>{}); // cache so next load skips the download
-        repaired++;
-        // hqData intentionally NOT stored in S — it's fetched on-demand for print/lightbox
-      }
-    }catch(e){}
-  }
-  if(repaired>0)render();
-}
-
-// Upload images that have no fbKey to Firebase /bangImages/ so they sync to all devices.
-// Runs at startup on the editor device to migrate images uploaded before this fix.
-async function migrateImagesToFirebase(){
-  if(_isDemoMode()||_readOnly)return;
-  const toMigrate=[];
-  const walk=(imgList)=>(imgList||[]).forEach(img=>{
-    if(img&&img.data&&img.data.startsWith('data:')&&!img.fbKey)toMigrate.push(img);
-  });
-  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
-    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
-  }));
-  (S.vendorOrders||[]).forEach(vo=>(vo.designs||[]).forEach(d=>{
-    walk(d.images);(d.varieties||[]).forEach(v=>walk(v.images));
-  }));
-  (S.stockItems||[]).forEach(si=>walk(si.images));
-  if(!toMigrate.length)return;
-  let migrated=0;
-  for(const img of toMigrate){
-    try{const key=await uploadImageToRTDB(img.data);img.fbKey=key;migrated++;}
-    catch(e){console.warn('Image migration failed:',e.message);}
-  }
-  if(migrated>0){
-    showToast(`☁️ ${migrated} image${migrated>1?'s':''} uploaded to cloud — now visible on all devices`,'green');
-    save(); // persists new fbKey values to localStorage & schedules a Firebase push via hook
-  }
-}
+const IMAGE_FB_THRESHOLD=1500000; // ~1.1 MB base64
 
 // Extract images from state.
 //
@@ -1370,14 +1214,15 @@ function extractImages(state,forFirebase=false){
 
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
-      // Always strip — even small thumbnails. Every image upload sets fbKey so
-      // loadAllImagesFromFB() repairs images on other devices via /bangImages/.
-      // Leaving thumbnails inline caused cumulative 7-10 MB payloads that crash
-      // iOS Safari's JSON parser and Chrome with 'Aw Snap Out of Memory'.
-      imageMap[key]=img.data;
-      img.data='__IDB__'+key;
+      const tooBig=img.data.length>IMAGE_FB_THRESHOLD;
+      if(!forFirebase||tooBig){
+        // localStorage mode: always strip. Firebase mode: only strip if too big.
+        imageMap[key]=img.data;
+        img.data='__IDB__'+key;
+      }
+      // forFirebase + small image: leave inline so all devices receive it
     }
-    // hqData: always IDB-only — never sent to Firebase or localStorage
+    // hqData (legacy): always IDB-only — never sent to Firebase or localStorage
     if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
       imageMap[key+'_hq']=img.hqData;
       img.hqData='__IDB__'+key+'_hq';
@@ -1490,21 +1335,12 @@ async function downloadOrderAttachment(orderId){
   setTimeout(()=>document.body.removeChild(a),100);
 }
 
-// Load images from IDB and inject into state (called on startup).
-// Only loads thumbnail/data keys — NOT the large on-demand HQ caches
-// (fbimg_hq_* and fbimg_thumb_*) which are fetched lazily when needed.
+// Load images from IDB and inject into state (called on startup)
 async function loadImagesFromIDB(){
   try{
     const all=await idbGetAll();
     const imageMap={};
-    all.forEach(entry=>{
-      // Skip large image caches — they're fetched on-demand (lightbox/print), not at startup.
-      // fbimg_hq_* / fbimg_thumb_*: Firebase-fetched caches (5-7 MB each)
-      // *_hq: original-quality photos stored on the uploading device (can be 5-10 MB each)
-      // Loading all of these at startup causes "Out of Memory" crashes on low-RAM devices.
-      if(entry.key.startsWith('fbimg_')||entry.key.endsWith('_hq'))return;
-      imageMap[entry.key]=entry.value;
-    });
+    all.forEach(entry=>{imageMap[entry.key]=entry.value;});
     if(Object.keys(imageMap).length>0){
       reinjectImages(S,imageMap);
     }
@@ -1532,15 +1368,8 @@ function save(){
     localStorage.setItem('bangle_prod_tracker',data);
     localStorage.setItem('bangle_v10',data); // legacy key
     localStorage.setItem('bangle_saved_at', new Date().toISOString());
-    // Save images to IndexedDB — track failures and warn user if storage is full
-    let idbFailCount=0;
-    const idbWrites=Object.entries(imageMap).map(([key,val])=>
-      idbPut(key,val).catch(e=>{idbFailCount++;console.warn('IDB write fail:',e);})
-    );
-    Promise.all(idbWrites).then(()=>{
-      if(idbFailCount>0)
-        showToast(`⚠ ${idbFailCount} image(s) couldn't be saved locally — storage may be full. Images will still sync via the cloud.`,'red');
-    });
+    // Save images to IndexedDB (no size limit)
+    Object.entries(imageMap).forEach(([key,val])=>{idbPut(key,val).catch(e=>console.warn('IDB write fail:',e));});
     setSaveStatus('saved');
   }catch(e){
     // If localStorage still fails (e.g. private mode), try sessionStorage as fallback
@@ -1962,10 +1791,7 @@ function render(){
   else if(S.mainView==='inventory')renderInventory();
   else if(S.mainView==='masters')renderMasters();
   else renderAnalytics();
-  // NOTE: scheduleAutosave() intentionally NOT called here. Each user action
-  // (oninput, button click, create/delete) already calls save() or scheduleAutosave()
-  // directly. Calling it here would cause every remote SSE sync to trigger an
-  // unnecessary Firebase push-back, creating a ping-pong loop between devices.
+  scheduleAutosave();
 
   // ── RESTORE FOCUS + VALUE + SELECTION ──────────────────────────────────────
   if(focusInfo){
@@ -2228,6 +2054,7 @@ function buildDesignsGroupTable(order,oi,g){
         '<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'"'
         +' oninput="upDesignDirectSizeSilent('+oi+','+di+',\''+esc(sz)+'\',this.value);this._dirty=true"'
         +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upDesignDirectSize('+oi+','+di+',\''+esc(sz)+'\',this.value)}"'
+        +' onfocus="this.select()"'
         +' onkeydown="handleFlatTabKey(event,'+oi+','+di+','+szI+')"'
         +' tabindex="0"></td>'
       ).join('');
@@ -2303,6 +2130,7 @@ function buildDesignsGroupTable(order,oi,g){
           '<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'"'
           +' oninput="upVarietySizeSilent('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value);this._dirty=true"'
           +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVarietySize('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value)}"'
+          +' onfocus="this.select()"'
           +' onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')"'
           +' tabindex="0"></td>'
         ).join('');
@@ -3033,15 +2861,8 @@ function handleVarietyImg(oi,di,vi,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const original=e.target.result;
-      const data=await compressImageToThumb(original); // small thumbnail for fast list display
-      let fbKey=null;
-      if(!_isDemoMode()){
-        try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-        catch(err){console.warn('Cloud image upload failed:',err.message);}
-      }
-      // hqData = original stored locally so this device's lightbox shows full quality
-      d.varieties[vi].images.push({data,hqData:original,name:f.name,...(fbKey?{fbKey}:{})});
+      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      d.varieties[vi].images.push({data,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -3089,14 +2910,8 @@ function handleDesignLevelImg(oi,di,input){
   files.forEach(f=>{
     const r=new FileReader();
     r.onload=async e=>{
-      const original=e.target.result;
-      const data=await compressImageToThumb(original);
-      let fbKey=null;
-      if(!_isDemoMode()){
-        try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-        catch(err){console.warn('Cloud image upload failed:',err.message);}
-      }
-      d.images.push({data,hqData:original,name:f.name,...(fbKey?{fbKey}:{})});
+      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      d.images.push({data,name:f.name});
       loaded++;if(loaded===files.length){save();render();}
     };
     r.readAsDataURL(f);
@@ -3255,6 +3070,39 @@ function handleQtyTabKey(e, oi, di, vi, szI) {
   }
 }
 
+// ── Vendor qty-input Tab / Enter handler ─────────────────────────────────────
+// Tab → move to next qty-inp in row; at end of row, jump to first cell of next row.
+// Enter → same as Tab forward.
+// Backspace / Delete → native browser handling (no preventDefault = works normally).
+function handleVendorQtyTab(e,el){
+  if(e.key!=='Tab'&&e.key!=='Enter')return;
+  e.preventDefault();
+  const tr=el.closest('tr');if(!tr)return;
+  const allInRow=Array.from(tr.querySelectorAll('input.qty-inp'));
+  const idx=allInRow.indexOf(el);
+  if(!e.shiftKey){
+    const next=allInRow[idx+1];
+    if(next){next.focus();next.select();return;}
+    // Move to first qty-inp of next sibling row
+    let nextTr=tr.nextElementSibling;
+    while(nextTr){
+      const inp=nextTr.querySelector('input.qty-inp');
+      if(inp){inp.focus();inp.select();return;}
+      nextTr=nextTr.nextElementSibling;
+    }
+    // Fall through to browser default if no next row
+  } else {
+    const prev=allInRow[idx-1];
+    if(prev){prev.focus();prev.select();return;}
+    let prevTr=tr.previousElementSibling;
+    while(prevTr){
+      const qInps=prevTr.querySelectorAll('input.qty-inp');
+      if(qInps.length){qInps[qInps.length-1].focus();qInps[qInps.length-1].select();return;}
+      prevTr=prevTr.previousElementSibling;
+    }
+  }
+}
+
 // ── IMAGE HANDLING ─────────────────────────────────────────────────────────────
 let _lbImages=[],_lbIdx=0;
 
@@ -3264,12 +3112,9 @@ let _lbImages=[],_lbIdx=0;
 // Falls back to data (160px thumb) and applies the same guard.
 function _resolveImgSrc(img){
   if(!img)return '';
-  // hqData — full-quality original: either fetched from Firebase RTDB (cross-device)
-  // or stored in IDB from upload (same-device). Populated by loadImagesFromFB() before print.
   if(img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:'))return img.hqData;
-  // data — compressed version, always synced inline via Firebase RTDB (fast display)
   if(img.data&&typeof img.data==='string'&&img.data.startsWith('data:'))return img.data;
-  return '';
+  return ''; // placeholder or missing — caller should treat empty string as "no image"
 }
 
 // Open lightbox for ALL images of a design code (d.images + all variety images combined).
@@ -3278,7 +3123,7 @@ function openDesignImgsLb(oi,di,startIdx){
   const d=S.orders[oi].designs[di];
   const all=[...(d.images||[]),...(d.varieties||[]).flatMap(v=>v.images||[])];
   if(!all.length)return;
-  _lbImages=all.map(i=>_resolveImgSrc(i));
+  _lbImages=all.map(i=>i.hqData||i.data);
   _lbIdx=Math.min(startIdx||0,_lbImages.length-1);
   showLightboxImg();
 }
@@ -3287,7 +3132,7 @@ function openDesignImgsLb(oi,di,startIdx){
 function openVarietyImgsLb(oi,di,vi,startIdx){
   const v=(S.orders[oi].designs[di].varieties||[])[vi];
   if(!v)return;
-  _lbImages=(v.images||[]).map(i=>_resolveImgSrc(i));
+  _lbImages=(v.images||[]).map(i=>i.hqData||i.data);
   if(!_lbImages.length)return;
   _lbIdx=Math.min(startIdx||0,_lbImages.length-1);
   showLightboxImg();
@@ -3298,13 +3143,8 @@ function handleImgUpload(oi,di,input){
   files.forEach(file=>{
     const reader=new FileReader();
     reader.onload=async e=>{
-      const original=e.target.result;
-      const data=await compressImageToThumb(original); // compressed for inline Firebase sync
-      let fbKey=null;
-      try{ fbKey=await uploadImageToRTDB(original); }catch(err){ console.warn('RTDB image upload failed, using local fallback:',err.message); }
-      // fbKey → any device can fetch full-quality original from Firebase
-      // hqData → same-device fallback if RTDB upload failed
-      S.orders[oi].designs[di].images.push({data, fbKey:fbKey||undefined, hqData:fbKey?undefined:original, name:file.name});
+      const data=await compressImageToThumb(e.target.result); // 1200px @ 0.92
+      S.orders[oi].designs[di].images.push({data,name:file.name});
       audit('Upload image',`Image "${file.name}" uploaded`);
       loaded++;if(loaded===files.length){save();render();}
     };
@@ -3314,7 +3154,7 @@ function handleImgUpload(oi,di,input){
 function deleteImg(oi,di,ii){if(!confirm('Remove image?'))return;S.orders[oi].designs[di].images.splice(ii,1);save();render();}
 function openLightbox(designId,startIdx){
   let images=[];S.orders.forEach(o=>o.designs.forEach(d=>{if(d.id===designId)images=d.images||[];}));
-  _lbImages=images.map(i=>_resolveImgSrc(i));_lbIdx=startIdx||0;showLightboxImg();
+  _lbImages=images.map(i=>i.hqData||i.data);_lbIdx=startIdx||0;showLightboxImg();
 }
 function openLbDirect(src){_lbImages=[src];_lbIdx=0;showLightboxImg();}
 function showLightboxImg(){
@@ -4543,19 +4383,12 @@ function buildVendorOrderCard(vo, voi){
       </div>
       <div class="oh-right">
         ${prioBadge(vo.priority)}${badgeHtml(al)}
-        <button class="icon-btn no-print" onclick="event.stopPropagation();exportVendorOrderCSV('${vo.id}')">📥 Export</button>
-        <button class="icon-btn no-print" onclick="event.stopPropagation();printVendorOrderById('${vo.id}')">🖨️ Print</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delVendorOrder(${voi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" style="width:${statusPct}%"></div></div>
     <div class="order-body${isOpen?' open':''}">
-      <div class="mobile-action-bar no-print" style="display:none">
-        <button onclick="exportVendorOrderCSV('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
-        <button onclick="printVendorOrderById('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
-        <button onclick="delVendorOrder(${voi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
-      </div>
       <div class="tabs no-print">
         <div class="tab${at==='details'?' active':''}" onclick="setVendorTab('${vo.id}','details')">📋 Order details</div>
         <div class="tab${at==='designs'?' active':''}" onclick="setVendorTab('${vo.id}','designs')">🎨 Designs &amp; Varieties</div>
@@ -4593,14 +4426,7 @@ function buildVendorDesignsPanel(vo, voi){
   const designs = vo.designs || [];
   if(!designs.length) return '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px">No designs in this vendor order.</div>';
 
-  const totalQty = vendorTotalQty(vo);
-  const qByUnit = vendorOrderQtyByUnit(vo);
-  const qByUnitStr = formatQtyByUnit(qByUnit);
-  const qtyHeader = `<div style="text-align:center;padding:10px 0 6px;font-size:14px;font-weight:600;color:#534AB7;background:#f0efff;border-radius:8px;margin-bottom:12px">
-    Total: ${totalQty} pcs${qByUnitStr?' · '+qByUnitStr:''}
-  </div>`;
-
-  return qtyHeader + designs.map((d, di) => {
+  return designs.map((d, di) => {
     const varieties = d.varieties || [];
     const szSet = new Set();
     if(varieties.length){
@@ -4707,16 +4533,10 @@ function handleVendorImgUpload(voi, di, vi, input){
   files.forEach(file=>{
     const reader = new FileReader();
     reader.onload = async e=>{
-      const original=e.target.result;
-      const data = await compressImageToThumb(original);
-      let fbKey = null;
-      if(!_isDemoMode()){
-        try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-        catch(err){console.warn('Cloud image upload failed:',err.message);}
-      }
+      const data = await compressImageToThumb(e.target.result); // 1200px @ 0.92
       if(!S.vendorOrders[voi].designs[di].varieties[vi].images)
         S.vendorOrders[voi].designs[di].varieties[vi].images=[];
-      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
+      S.vendorOrders[voi].designs[di].varieties[vi].images.push({data,name:file.name});
       loaded++;
       if(loaded===files.length){save();renderVendorOrders();}
     };
@@ -4787,109 +4607,150 @@ function saveNewVendorOrder(){
 }
 
 // ── MASTERS PANEL ─────────────────────────────────────────────────────────────
+// ── Masters: per-section open state ──────────────────────────────────────────
+const _mastOpen={clients:true,vendors:true,dnames:true,units:true,users:false};
+function toggleMastSection(k){_mastOpen[k]=!_mastOpen[k];renderMasters();}
+function filterMastList(k,q){
+  const list=document.getElementById('mast-list-'+k);if(!list)return;
+  const rows=list.querySelectorAll('.mast-row');
+  rows.forEach(r=>{r.style.display=r.dataset.val&&r.dataset.val.toLowerCase().includes(q.toLowerCase())?'':'none';});
+  const empty=document.getElementById('mast-empty-'+k);
+  if(empty)empty.style.display=[...rows].every(r=>r.style.display==='none')?'':'none';
+}
+
 function renderMasters(){
   const container=document.getElementById('view-masters');
   if(!container)return;
   const v=S.vocabulary;
-  const sectionStyle='background:#fff;border-radius:12px;border:1px solid #E0DFFF;padding:18px 20px;margin-bottom:18px;box-shadow:0 2px 8px rgba(83,74,183,.06)';
-  const hStyle='font-size:14px;font-weight:700;color:#3C3489;margin-bottom:12px;display:flex;align-items:center;gap:8px';
-  const chipStyle='display:inline-flex;align-items:center;gap:5px;background:#f0efff;border:1px solid #AFA9EC;border-radius:20px;padding:4px 10px 4px 12px;font-size:12px;color:#3C3489;font-weight:500';
-  const addRowStyle='display:flex;gap:8px;align-items:center;margin-top:10px';
 
-  const makeChips=(items,listKey)=>items.map((item,i)=>
-    `<span style="${chipStyle}">${esc(item)}
-      <button onclick="masterDelete('${listKey}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0 0 0 2px;line-height:1" title="Remove">✕</button>
+  // Build one accordion section
+  const makeSection=(key,icon,label,items,addPlaceholder,extra)=>{
+    const open=_mastOpen[key]!==false;
+    const rows=items.map((item,i)=>
+      `<div class="mast-row" data-val="${esc(item)}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid #F3F2FF;font-size:12px;color:#222">
+        <span style="flex:1">${esc(item)}</span>
+        <button onclick="masterDelete('${key}',${i})" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:16px;padding:0 4px;line-height:1;transition:color .15s" onmouseover="this.style.color='#A32D2D'" onmouseout="this.style.color='#ccc'" title="Remove">✕</button>
+      </div>`
+    ).join('');
+    const emptyMsg=`<div id="mast-empty-${key}" style="display:none;padding:10px 16px;font-size:11px;color:#aaa">No match found.</div>`;
+    return`<div style="background:#fff;border-radius:12px;border:1px solid #E0DFFF;margin-bottom:10px;box-shadow:0 2px 8px rgba(83,74,183,.05);overflow:hidden">
+      <div onclick="toggleMastSection('${key}')" style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;cursor:pointer;user-select:none;background:${open?'#faf9ff':'#fff'};transition:background .15s">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:16px">${icon}</span>
+          <span style="font-size:13px;font-weight:700;color:#3C3489">${label}</span>
+          <span style="font-size:11px;font-weight:600;background:#EEEDFE;color:#534AB7;border-radius:20px;padding:2px 10px">${items.length}</span>
+        </div>
+        <span style="color:#AFA9EC;font-size:13px;transition:transform .2s;transform:rotate(${open?90:0}deg)">▶</span>
+      </div>
+      ${open?`<div style="border-top:1px solid #E0DFFF">
+        ${items.length>5?`<input placeholder="Search ${label}…" oninput="filterMastList('${key}',this.value)" style="width:100%;box-sizing:border-box;padding:9px 16px;border:none;border-bottom:1px solid #E0DFFF;font-size:12px;outline:none;background:#fafaff" autocomplete="off">`:''}
+        <div id="mast-list-${key}" style="max-height:240px;overflow-y:auto">${rows||`<div style="padding:10px 16px;font-size:11px;color:#aaa">No entries yet — auto-populated from orders.</div>`}${emptyMsg}</div>
+        ${extra||''}
+        <div style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid #E0DFFF;background:#fafaff">
+          <input id="master-inp-${key}" placeholder="${addPlaceholder}" autocomplete="off"
+            style="flex:1;padding:7px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px"
+            onkeydown="if(event.key==='Enter')masterAdd('${key}')">
+          <button onclick="masterAdd('${key}')" style="padding:7px 16px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap">+ Add</button>
+        </div>
+      </div>`:''}
+    </div>`;
+  };
+
+  // Design names + codes combined in two columns
+  const dnOpen=_mastOpen['dnames']!==false;
+  const dnames=v.dnames||[],dcodes=v.dcodes||[];
+  const makeColList=(items,key,placeholder)=>{
+    const rows=items.map((item,i)=>
+      `<div class="mast-row" data-val="${esc(item)}" style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid #F3F2FF;font-size:12px;color:#222">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item)}</span>
+        <button onclick="masterDelete('${key}',${i})" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:14px;padding:0 2px;line-height:1;flex-shrink:0" onmouseover="this.style.color='#A32D2D'" onmouseout="this.style.color='#ccc'" title="Remove">✕</button>
+      </div>`
+    ).join('');
+    return`<div style="border:1px solid #E0DFFF;border-radius:8px;overflow:hidden">
+      <div style="background:#EEEDFE;padding:7px 12px;font-size:11px;font-weight:700;color:#534AB7;display:flex;align-items:center;justify-content:space-between">
+        <span>${key==='dnames'?'Design Names':'Design Codes'}</span>
+        <span style="font-size:11px;font-weight:600;background:#fff;color:#534AB7;border-radius:20px;padding:1px 8px">${items.length}</span>
+      </div>
+      ${items.length>5?`<input placeholder="Search…" oninput="filterMastList('${key}',this.value)" style="width:100%;box-sizing:border-box;padding:7px 12px;border:none;border-bottom:1px solid #E0DFFF;font-size:12px;outline:none" autocomplete="off">`:''}
+      <div id="mast-list-${key}" style="max-height:220px;overflow-y:auto">${rows||`<div style="padding:8px 12px;font-size:11px;color:#aaa">None yet.</div>`}
+        <div id="mast-empty-${key}" style="display:none;padding:8px 12px;font-size:11px;color:#aaa">No match.</div>
+      </div>
+      <div style="display:flex;gap:6px;padding:8px 12px;border-top:1px solid #E0DFFF;background:#fafaff">
+        <input id="master-inp-${key}" placeholder="${placeholder}" autocomplete="off"
+          style="flex:1;padding:6px 8px;border:1px solid #AFA9EC;border-radius:7px;font-size:12px"
+          onkeydown="if(event.key==='Enter')masterAdd('${key}')">
+        <button onclick="masterAdd('${key}')" style="padding:6px 12px;background:#534AB7;color:#fff;border:none;border-radius:7px;font-size:11px;cursor:pointer;font-weight:600">+ Add</button>
+      </div>
+    </div>`;
+  };
+  const designSection=`<div style="background:#fff;border-radius:12px;border:1px solid #E0DFFF;margin-bottom:10px;box-shadow:0 2px 8px rgba(83,74,183,.05);overflow:hidden">
+    <div onclick="toggleMastSection('dnames')" style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;cursor:pointer;user-select:none;background:${dnOpen?'#faf9ff':'#fff'}">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:16px">🎨</span>
+        <span style="font-size:13px;font-weight:700;color:#3C3489">Design Name / Code Master</span>
+        <span style="font-size:11px;font-weight:600;background:#EEEDFE;color:#534AB7;border-radius:20px;padding:2px 10px">${dnames.length} names · ${dcodes.length} codes</span>
+      </div>
+      <span style="color:#AFA9EC;font-size:13px;transition:transform .2s;transform:rotate(${dnOpen?90:0}deg)">▶</span>
+    </div>
+    ${dnOpen?`<div style="border-top:1px solid #E0DFFF;padding:14px 18px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        ${makeColList(dnames,'dnames','e.g. Mogra Twist')}
+        ${makeColList(dcodes,'dcodes','e.g. MG-22')}
+      </div>
+    </div>`:''}
+  </div>`;
+
+  const unitChips=(v.units||[]).map((u,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:#f0efff;border:1px solid #AFA9EC;border-radius:20px;padding:4px 10px 4px 12px;font-size:12px;color:#3C3489;font-weight:500">
+      ${esc(u)}<button onclick="masterDelete('units',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0;line-height:1" title="Remove">✕</button>
     </span>`
   ).join('');
-
-  const makeAddRow=(listKey,placeholder)=>`
-    <div style="${addRowStyle}">
-      <input id="master-inp-${listKey}" placeholder="${placeholder}" style="flex:1;max-width:240px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px" autocomplete="off">
-      <button onclick="masterAdd('${listKey}')" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">+ Add</button>
-    </div>`;
+  const unitSection=makeSection('units','📏','Unit Master',v.units||[],'e.g. dozen',
+    (v.units||[]).length?`<div style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px">${unitChips}</div>`
+    :'<div style="padding:10px 16px;font-size:11px;color:#aaa">Default: pcs, pairs, jotta. Add custom units here.</div>'
+  ).replace(`<div id="mast-list-units" style="max-height:240px;overflow-y:auto">`,`<div id="mast-list-units" style="display:none">`);
 
   container.innerHTML=`
-    <div style="padding:20px;max-width:860px;margin:0 auto">
-      <div style="font-size:18px;font-weight:700;color:#3C3489;margin-bottom:6px">📋 Masters</div>
-      <div style="font-size:12px;color:#888;margin-bottom:20px">All masters are auto-populated from orders you create. You can also add entries manually here. These names appear as autocomplete suggestions during order creation.</div>
+    <div style="max-width:900px;margin:0 auto;padding:16px 0">
+      <div style="font-size:16px;font-weight:700;color:#3C3489;margin-bottom:4px">📋 Masters</div>
+      <div style="font-size:12px;color:#888;margin-bottom:16px">Auto-populated from orders. Add entries manually for autocomplete suggestions during order creation.</div>
+      ${makeSection('clients','👤','Client Master',v.clients||[],'e.g. Meena Traders')}
+      ${makeSection('vendors','🏭','Vendor Master',v.vendors||[],'e.g. Rathi Metals')}
+      ${designSection}
+      ${unitSection}
 
-      <!-- CLIENT MASTER -->
-      <div style="${sectionStyle}">
-        <div style="${hStyle}">👤 Client Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.clients||[]).length} entries)</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
-          ${(v.clients||[]).length?makeChips(v.clients,'clients'):'<span style="font-size:11px;color:#aaa">No clients yet — will auto-populate from orders.</span>'}
-        </div>
-        ${makeAddRow('clients','e.g. Meena Traders')}
-      </div>
-
-      <!-- VENDOR MASTER -->
-      <div style="${sectionStyle}">
-        <div style="${hStyle}">🏭 Vendor Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.vendors||[]).length} entries)</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
-          ${(v.vendors||[]).length?makeChips(v.vendors,'vendors'):'<span style="font-size:11px;color:#aaa">No vendors yet — will auto-populate from vendor orders.</span>'}
-        </div>
-        ${makeAddRow('vendors','e.g. Rathi Metals')}
-      </div>
-
-      <!-- DESIGN NAME/CODE MASTER -->
-      <div style="${sectionStyle}">
-        <div style="${hStyle}">🎨 Design Name / Code Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.dnames||[]).length} design names, ${(v.dcodes||[]).length} codes)</span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          <div>
-            <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:8px">Design Names</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px">
-              ${(v.dnames||[]).length?makeChips(v.dnames,'dnames'):'<span style="font-size:11px;color:#aaa">None yet.</span>'}
-            </div>
-            ${makeAddRow('dnames','e.g. Mogra Twist')}
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:8px">Design Codes</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px">
-              ${(v.dcodes||[]).length?makeChips(v.dcodes,'dcodes'):'<span style="font-size:11px;color:#aaa">None yet.</span>'}
-            </div>
-            ${makeAddRow('dcodes','e.g. MG-22')}
-          </div>
-        </div>
-      </div>
-
-      <!-- UNIT MASTER -->
-      <div style="${sectionStyle}">
-        <div style="${hStyle}">📏 Unit Master <span style="font-size:11px;font-weight:400;color:#888">(${(v.units||[]).length} units)</span></div>
-        <div style="font-size:11px;color:#888;margin-bottom:10px">Units available when entering variety quantities. Default: pcs, pairs, jotta.</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
-          ${(v.units||[]).map((u,i)=>
-            `<span style="${chipStyle}">${esc(u)}
-              <button onclick="masterDelete('units',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0 0 0 2px;line-height:1" title="Remove">✕</button>
-            </span>`
-          ).join('')}
-        </div>
-        ${makeAddRow('units','e.g. dozen')}
-      </div>
-
-      <!-- MY ACCOUNT — visible to members only (owners use the full User Accounts panel below) -->
-      ${_currentUser && _currentUser.role!=='owner' ? `
-      <div style="${sectionStyle}">
-        <div style="${hStyle}">🔑 My Account</div>
-        <div style="font-size:11px;color:#888;margin-bottom:12px">Manage your own login credentials. Contact the owner to change your username or role.</div>
-        <button onclick="openMyPasswordModal()" style="padding:8px 18px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600">🔑 Change my password</button>
-      </div>` : ''}
+      <!-- MY ACCOUNT -->
+      ${_currentUser&&_currentUser.role!=='owner'?`
+      <div style="background:#fff;border-radius:12px;border:1px solid #E0DFFF;margin-bottom:10px;padding:16px 18px;box-shadow:0 2px 8px rgba(83,74,183,.05)">
+        <div style="font-size:13px;font-weight:700;color:#3C3489;margin-bottom:8px">🔑 My Account</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Manage your login credentials. Contact the owner to change your username or role.</div>
+        <button onclick="openMyPasswordModal()" style="padding:8px 18px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">🔑 Change my password</button>
+      </div>`:''}
 
       <!-- USER MANAGEMENT (Owner only) -->
-      ${_currentUser?.role==='owner' ? `
-      <div style="${sectionStyle}">
-        <div style="${hStyle}">👥 User Accounts <span style="font-size:11px;font-weight:400;color:#888">(owner only)</span></div>
-        <div style="font-size:11px;color:#888;margin-bottom:10px">Create user IDs for your team. Each person logs in with their own credentials. Changes are tracked per user in the Audit Log.</div>
-        <div id="users-section-body"><div style="font-size:12px;color:#aaa">Loading users…</div></div>
-        <div style="${addRowStyle};margin-top:14px;flex-wrap:wrap">
-          <input id="new-user-name" placeholder="Username" style="flex:1;min-width:120px;max-width:180px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
-          <input id="new-user-pass" type="password" placeholder="Password (min 4 chars)" style="flex:1;min-width:120px;max-width:180px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
-          <select id="new-user-role" style="padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
-            <option value="member">Member</option>
-            <option value="owner">Owner</option>
-          </select>
-          <button onclick="addUser()" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">+ Add user</button>
+      ${_currentUser?.role==='owner'?`
+      <div style="background:#fff;border-radius:12px;border:1px solid #E0DFFF;margin-bottom:10px;box-shadow:0 2px 8px rgba(83,74,183,.05);overflow:hidden">
+        <div onclick="toggleMastSection('users')" style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;cursor:pointer;user-select:none;background:${_mastOpen['users']?'#faf9ff':'#fff'}">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:16px">👥</span>
+            <span style="font-size:13px;font-weight:700;color:#3C3489">User Accounts</span>
+            <span style="font-size:11px;background:#EEEDFE;color:#534AB7;border-radius:20px;padding:2px 10px">Owner only</span>
+          </div>
+          <span style="color:#AFA9EC;font-size:13px;transform:rotate(${_mastOpen['users']?90:0}deg)">▶</span>
         </div>
-      </div>` : ''}
+        ${_mastOpen['users']?`<div style="border-top:1px solid #E0DFFF;padding:16px 18px">
+          <div style="font-size:11px;color:#888;margin-bottom:12px">Create user IDs for your team. Each person logs in with their own credentials.</div>
+          <div id="users-section-body"><div style="font-size:12px;color:#aaa">Loading users…</div></div>
+          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+            <input id="new-user-name" placeholder="Username" style="flex:1;min-width:120px;max-width:180px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
+            <input id="new-user-pass" type="password" placeholder="Password (min 4 chars)" style="flex:1;min-width:120px;max-width:180px;padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
+            <select id="new-user-role" style="padding:6px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px">
+              <option value="member">Member</option><option value="owner">Owner</option>
+            </select>
+            <button onclick="addUser()" style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">+ Add user</button>
+          </div>
+        </div>`:''}
+      </div>`:''}
     </div>`;
   if(_currentUser?.role==='owner') loadUsersForMasters();
 }
@@ -5021,6 +4882,24 @@ function buildVarietyGallery(varieties){
   +'</div>';
 }
 
+// ── Vendor stats bar ─────────────────────────────────────────────────────────
+function buildVendorStatsBar(){
+  const orders=S.vendorOrders;
+  const total=orders.length;
+  const active=orders.filter(o=>['pending','processing','in_progress','qa'].includes(o.status||'pending')).length;
+  const dispatched=orders.filter(o=>o.status==='dispatched').length;
+  const delivered=orders.filter(o=>o.status==='delivered').length;
+  const totalDesigns=orders.reduce((a,o)=>a+(o.designs||[]).length,0);
+  const statBg=['background:linear-gradient(135deg,#EDE9FF,#D8D3F7)','background:linear-gradient(135deg,#E8F4FD,#C8E6FA)','background:linear-gradient(135deg,#FFF9E6,#FFE9A0)','background:linear-gradient(135deg,#E6F9F1,#B8EDD8)','background:linear-gradient(135deg,#FFF0E8,#FFD4B8)'];
+  return`<div class="stats" style="margin-bottom:14px">
+    <div class="stat-card" style="${statBg[0]}"><div class="stat-val" style="color:#3C3489">${total}</div><div class="stat-lbl" style="color:#534AB7">Total Orders</div></div>
+    <div class="stat-card" style="${statBg[1]}"><div class="stat-val" style="color:#1565C0">${active}</div><div class="stat-lbl" style="color:#1976D2">Active</div></div>
+    <div class="stat-card" style="${statBg[2]}"><div class="stat-val" style="color:#7B5E00">${dispatched}</div><div class="stat-lbl" style="color:#9B7100">Dispatched</div></div>
+    <div class="stat-card" style="${statBg[3]}"><div class="stat-val" style="color:#1B5E20">${delivered}</div><div class="stat-lbl" style="color:#2E7D32">Delivered</div></div>
+    <div class="stat-card" style="${statBg[4]}"><div class="stat-val" style="color:#8B3A00">${totalDesigns}</div><div class="stat-lbl" style="color:#BF360C">Total Designs</div></div>
+  </div>`;
+}
+
 // ── Render ──────────────────────────────────────────────────────────────────
 function renderVendorOrders(){
   const container=document.getElementById('view-vendor');
@@ -5060,12 +4939,14 @@ function renderVendorOrders(){
   }).join('');
 
   container.innerHTML=`
+    <!-- Stats bar -->
+    ${buildVendorStatsBar()}
+
     <!-- Toolbar -->
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:700;color:#534AB7">🏭 Vendor Orders</div>
       <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
     </div>
-
 
     <!-- Filter bar -->
     <div class="filter-bar" style="margin-bottom:14px">
@@ -5109,25 +4990,29 @@ function toggleVendorSection(vendor){
 }
 
 function buildVendorOrderCard(vo,vi){
-  const al=vendorOrderAlert(vo);
   const qtyStr=formatQtyByUnit(vendorOrderQtyByUnit(vo));
   const isOpen=(S.openVendorOrders||[]).includes('open_'+vo.id);
   const at=S.vendorActiveTabs[vo.id]||'designs';
-  const ohIconMap={ok:'oh-icon-ok',warn:'oh-icon-warn',late:'oh-icon-late'};
-  const ohChar={ok:'✓',warn:'!',late:'!'};
+  // Status chip colours
+  const statusMap={pending:'#888',processing:'#1976D2',in_progress:'#7B3F00',qa:'#6A0DAD',dispatched:'#E65100',delivered:'#2E7D32'};
+  const statusLabel={pending:'Pending',processing:'Processing',in_progress:'In Progress',qa:'QA',dispatched:'Dispatched',delivered:'Delivered'};
+  const st=vo.status||'pending';
+  const stColor=statusMap[st]||'#888';
+  const stLabel=statusLabel[st]||st;
+  const designTotal=vo.designs.reduce((a,d)=>a+Object.values(d.sizes||{}).reduce((b,v)=>b+(parseInt(v)||0),0),0);
 
-  return`<div class="order-card al-${al}" id="voc-${vo.id}">
+  return`<div class="order-card al-ok" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
-      <div class="oh-icon ${ohIconMap[al]||'oh-icon-ok'}">${ohChar[al]||'✓'}</div>
+      <div class="oh-icon oh-icon-ok">●</div>
       <div class="oh-left">
         <div class="oh-title">${esc(vo.orderId)} · ${esc(vo.vendor)}</div>
         <div class="oh-sub">${qtyStr} · ${vo.designs.length} design${vo.designs.length!==1?'s':''} · Started ${fmtDate(vo.startDate)}${vo.deliveryDate?' · Delivery: '+fmtDate(vo.deliveryDate):''}</div>
       </div>
       <div class="oh-right">
         ${prioBadge(vo.priority)}
-        <span class="badge ${al==='late'?'b-late':al==='warn'?'b-warn':'b-ok'}">${al==='late'?'Overdue':al==='warn'?'Due soon':'On track'}</span>
+        <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${stColor}18;color:${stColor};border:1px solid ${stColor}44">${stLabel}</span>
         <button class="icon-btn no-print" onclick="event.stopPropagation();exportVendorOrderCSV('${vo.id}')" title="Export this vendor order">📥</button>
-        <button class="icon-btn no-print" onclick="event.stopPropagation();printVendorOrderById('${vo.id}')" title="Print this vendor order">🖨️</button>
+        <button class="icon-btn no-print" onclick="event.stopPropagation();askVendorPrint('${vo.id}')" title="Print this vendor order">🖨️</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delVendorOrder(${vi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
@@ -5146,7 +5031,7 @@ function buildVendorOrderCard(vo,vi){
       <!-- Mobile-only action bar -->
       <div class="mobile-action-bar no-print" style="display:none">
         <button onclick="exportVendorOrderCSV('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
-        <button onclick="printVendorOrderById('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
+        <button onclick="askVendorPrint('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
         <button onclick="delVendorOrder(${vi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
       </div>
     </div>
@@ -5208,7 +5093,7 @@ function buildVendorDesignsPanel(vo,vi){
     g.items.push({d,di});
   });
 
-  let html='<div class="section-head">Designs &amp; Varieties ('+vo.designs.length+') — Order total: <strong>'+formatQtyByUnit(vendorOrderQtyByUnit(vo))+'</strong>'
+  let html='<div class="section-head"><span>Designs &amp; Varieties ('+vo.designs.length+') — Order total: <strong>'+formatQtyByUnit(vendorOrderQtyByUnit(vo))+'</strong></span>'
     +'<button class="icon-btn primary no-print" onclick="addVendorDesign('+vi+')">+ Add design</button></div>';
 
   if(!vo.designs.length) return html+'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>';
@@ -5271,7 +5156,7 @@ function buildVendorDesignsPanel(vo,vi){
             +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
         const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
           +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
-        const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'" oninput="upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')" tabindex="0"></td>').join('');
+        const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'" oninput="upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')" onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
         tbody+='<tr style="background:#fff">'
           +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px"></td>'
           +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
@@ -5312,7 +5197,7 @@ function buildVendorDesignsPanel(vo,vi){
           const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
             +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
           const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
-          const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'" oninput="upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)" tabindex="0"></td>').join('');
+          const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'" oninput="upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)" onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
           tbody+='<tr style="background:#FAFAFF">'
             +'<td style="padding-left:22px"><span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
               +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px"></td>'
@@ -5435,11 +5320,7 @@ function upVendorOrder(vi,key,val){histPush();S.vendorOrders[vi][key]=val;save()
 function delVendorOrder(vi){
   if(!confirm(`Delete ${S.vendorOrders[vi].orderId}? This cannot be undone.`))return;
   histPush();
-  const vo=S.vendorOrders[vi];
-  const id=vo&&vo.id;
-  // Track deletion so cross-device merge never resurrects this vendor order
-  if(!S.deletedVendorOrderIds)S.deletedVendorOrderIds=[];
-  if(id&&!S.deletedVendorOrderIds.includes(id))S.deletedVendorOrderIds.push(id);
+  const id=S.vendorOrders[vi].id;
   S.vendorOrders.splice(vi,1);
   S.openVendorOrders=(S.openVendorOrders||[]).filter(k=>!k.includes(id));
   delete S.vendorActiveTabs[id];
@@ -5491,14 +5372,8 @@ function addVVImg(vi,di,vri,inp){
   inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const original=ev.target.result;
-    const data=await compressImageToThumb(original);
-    let fbKey=null;
-    if(!_isDemoMode()){
-      try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-      catch(err){console.warn('Cloud image upload failed:',err.message);}
-    }
-    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
+    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+    S.vendorOrders[vi].designs[di].varieties[vri].images.push({data,name:file.name});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5540,17 +5415,10 @@ function addVendorFlatImg(vi,di,isVar,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const original=ev.target.result;
-    const data=await compressImageToThumb(original);
-    let fbKey=null;
-    if(!_isDemoMode()){
-      try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-      catch(err){console.warn('Cloud image upload failed:',err.message);}
-    }
+    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
     const d=S.vendorOrders[vi].designs[di];
-    const imgObj={data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})};
-    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push(imgObj);}
-    else{d.images=d.images||[];d.images.push(imgObj);}
+    if(isVar&&d.varieties&&d.varieties[0]){d.varieties[0].images=d.varieties[0].images||[];d.varieties[0].images.push({data,name:file.name});}
+    else{d.images=d.images||[];d.images.push({data,name:file.name});}
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -5561,15 +5429,9 @@ function addVDImg(vi,di,inp){
   const file=inp.files[0];if(!file)return;inp.value='';
   const reader=new FileReader();
   reader.onload=async ev=>{
-    const original=ev.target.result;
-    const data=await compressImageToThumb(original);
-    let fbKey=null;
-    if(!_isDemoMode()){
-      try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-      catch(err){console.warn('Cloud image upload failed:',err.message);}
-    }
+    const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
     const d=S.vendorOrders[vi].designs[di];
-    d.images=d.images||[];d.images.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
+    d.images=d.images||[];d.images.push({data,name:file.name});
     save();renderVendorOrders();
   };
   reader.readAsDataURL(file);
@@ -6115,104 +5977,188 @@ function exportVendorSectionCSV(vendor){
   downloadCSV(csvEncode(rows),`vendor_${vendor.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
+// ── Print option modal for a single vendor order ─────────────────────────────
+function askVendorPrint(oid){
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:400px">
+      <div class="modal-header"><div class="modal-icon">🖨️</div><h3>Print options</h3></div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+        <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #534AB7;background:#EEEDFE">
+          <input type="radio" name="vimg-pos" value="top" checked style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Grouped at top</strong> — all design images shown together below the design name</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
+          <input type="radio" name="vimg-pos" value="inline" style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Beside quantities</strong> — image shown at right end of each design code row</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
+          <input type="radio" name="vimg-pos" value="none" style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>No images</strong> — quantities only, smallest printout</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="primary" onclick="
+          const pos=document.querySelector('input[name=vimg-pos]:checked').value;
+          closeModal();
+          const vo=S.vendorOrders.find(o=>o.id==='${oid}');
+          if(vo)openVendorPrintWindow('Vendor Order: '+vo.orderId,[vo],pos);">🖨️ Print</button>
+      </div>
+    </div>
+  </div>`;
+}
 function printVendorOrderById(oid){
-  const vo=S.vendorOrders.find(o=>o.id===oid);if(!vo)return;
-  openVendorPrintWindow(`Vendor Order: ${vo.orderId}`,[vo]);
+  askVendorPrint(oid);
 }
 function printVendorSection(vendor){
   const orders=S.vendorOrders.filter(o=>o.vendor===vendor);
-  openVendorPrintWindow('Vendor: '+vendor,orders);
+  openVendorPrintWindow('Vendor: '+vendor,orders,'top');
 }
 
-function openVendorPrintWindow(title,orders){
+// imgMode: 'top' = grouped images below design name (default)
+//          'inline' = image column in table beside quantities
+//          'none' = no images
+function openVendorPrintWindow(title,orders,imgMode){
+  imgMode=imgMode||'top';
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
+
   const body=orders.map(vo=>{
     const qtyStr=formatQtyByUnit(vendorOrderQtyByUnit(vo));
-    const designsHtml=vo.designs.map(d=>{
-      const szKeys=Object.keys(d.sizes||{});
-      const varieties=d.varieties||[];
-      const colTotals={};szKeys.forEach(sz=>{colTotals[sz]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
-      const grandTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
 
-      // Image strip — design-level images first, then variety-level images
-      const imageGroups = [];
-      if (d.images && d.images.length > 0) imageGroups.push({name: d.name||d.code||'', images: d.images});
-      varieties.forEach(v => { if (v.images && v.images.length > 0) imageGroups.push({name: v.name||'', images: v.images}); });
-      let imageStripHtml = '';
-      if (imageGroups.length > 0) {
-        const cards = imageGroups.map(grp => {
-          const imgs = grp.images.map(img => {
-            const src = _resolveImgSrc(img);
-            return src ? `<img src="${src}" style="width:52mm;height:68mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">` : '';
-          }).filter(Boolean).join('');
-          return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:5px;vertical-align:top;margin:0 8px 10px 0;break-inside:avoid">
-            ${imgs}
-            <div style="font-size:11px;font-weight:700;color:#3C3489;text-align:center;max-width:52mm">${esc(grp.name)}</div>
-          </div>`;
-        }).join('');
-        imageStripHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 10px 8px;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">${cards}</div>`;
-      }
+    // Group designs by name (same as screen display)
+    const groups=[];const byName={};
+    vo.designs.forEach(d=>{
+      const key=d.name||'(unnamed)';
+      let g=byName[key];if(!g){g={name:key,items:[]};byName[key]=g;groups.push(g);}
+      g.items.push(d);
+    });
 
-      const tableHtml = varieties.length ? `<table style="border-collapse:collapse;font-size:12px;margin-top:4px;table-layout:fixed">
-        <colgroup>
-          <col style="width:200px">
-          <col style="width:48px">
-          ${szKeys.map(()=>`<col style="width:46px">`).join('')}
-          <col style="width:58px">
-        </colgroup>
-        <thead><tr style="background:#534AB7;color:#fff">
-          <th style="padding:6px 8px;text-align:left;font-weight:700;font-size:12px">Variety</th>
-          <th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">Unit</th>
-          ${szKeys.map(sz=>`<th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">${sz}</th>`).join('')}
-          <th style="padding:6px 4px;text-align:center;font-weight:700;font-size:12px">Total</th>
-        </tr></thead>
-        <tbody>${varieties.map(v=>{const rt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);return`<tr style="border-bottom:1px solid #ddd">
-          <td style="padding:5px 8px;font-weight:600">${esc(v.name||'')}</td>
-          <td style="padding:5px 4px;text-align:center;color:#444">${esc(v.unit||'pcs')}</td>
-          ${szKeys.map(sz=>`<td style="padding:5px 4px;text-align:center">${(v.sizes||{})[sz]||0}</td>`).join('')}
-          <td style="padding:5px 4px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>
-        </tr>`;}).join('')}</tbody>
-        <tfoot><tr style="background:#eeeffe;font-weight:700">
-          <td colspan="2" style="padding:6px 8px;text-align:right">Design total →</td>
-          ${szKeys.map(sz=>`<td style="padding:6px 4px;text-align:center;font-weight:700">${colTotals[sz]||0}</td>`).join('')}
-          <td style="padding:6px 4px;text-align:center;background:#534AB7;color:#fff;font-weight:700">${grandTotal}</td>
-        </tr></tfoot>
-      </table>` : '<p style="font-size:12px;color:#888;margin:4px 0">No varieties</p>';
+    const groupsHtml=groups.map(g=>{
+      // Union size keys
+      const szSet=new Set();
+      g.items.forEach(d=>{Object.keys(d.sizes||{}).forEach(s=>szSet.add(s));(d.varieties||[]).forEach(v=>Object.keys(v.sizes||{}).forEach(s=>szSet.add(s)));});
+      const szKeys=[...szSet];
+      const grpTotals={};szKeys.forEach(s=>grpTotals[s]=0);
 
-      return `<div class="design-block" style="margin-bottom:14px;padding:10px 12px;background:#f7f6f2;border-radius:6px;border-left:3px solid #534AB7">
-        <h3 style="font-size:15px;margin-bottom:6px;color:#3C3489;font-weight:700">${esc(d.name)} <span style="font-weight:500;color:#555">[${esc(d.code||'—')}]</span> <span style="font-weight:700;color:#534AB7"> — ${formatQtyByUnit(designQtyByUnit(d))}</span></h3>
-        ${imageStripHtml}
-        ${tableHtml}
+      // Gather all images for the group (for 'top' mode)
+      const groupImgs=[];
+      g.items.forEach(d=>{
+        const varieties=d.varieties||[];
+        const hod=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
+        const flat=varieties.length===0||hod;
+        if(flat){const imgs=hod?varieties[0].images||[]:d.images||[];imgs.forEach(img=>{const src=_resolveImgSrc(img);if(src)groupImgs.push({src,label:d.code||d.name});});}
+        else{(d.images||[]).forEach(img=>{const src=_resolveImgSrc(img);if(src)groupImgs.push({src,label:d.code||d.name});});varieties.forEach(v=>(v.images||[]).forEach(img=>{const src=_resolveImgSrc(img);if(src)groupImgs.push({src,label:v.name||d.code});}));}
+      });
+
+      const imgTopHtml=(imgMode==='top'&&groupImgs.length)
+        ?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 10px">`
+          +groupImgs.map(({src,label})=>`<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+            <img src="${src}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1.5px solid #AFA9EC">
+            <span style="font-size:9px;font-weight:600;color:#3C3489;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${esc(label)}</span>
+          </div>`).join('')
+          +`</div>`
+        :'';
+
+      // Build table rows for all design codes in the group
+      let trows='';
+      g.items.forEach(d=>{
+        const varieties=d.varieties||[];
+        const hod=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
+        const flat=varieties.length===0||hod;
+        if(flat){
+          const rs=hod?(varieties[0].sizes||{}):(d.sizes||{});
+          const rt=szKeys.reduce((a,s)=>a+(parseInt(rs[s])||0),0);
+          szKeys.forEach(s=>{grpTotals[s]+=(parseInt(rs[s])||0);});
+          const unit=hod?(varieties[0].unit||d.unit||'pcs'):(d.unit||'pcs');
+          let inlineImg='';
+          if(imgMode==='inline'){const imgs=hod?varieties[0].images||[]:d.images||[];const src=imgs.length?_resolveImgSrc(imgs[0]):'';inlineImg=src?`<td style="padding:4px;text-align:center"><img src="${src}" style="width:36px;height:36px;object-fit:cover;border-radius:4px"></td>`:`<td></td>`;}
+          trows+=`<tr style="background:#fff;border-bottom:1px solid #E8E7E0">
+            <td style="padding:5px 8px;font-weight:600;color:#333;border-right:2px solid #AFA9EC">${esc(d.code||'—')}</td>
+            ${imgMode==='inline'?inlineImg:''}
+            ${szKeys.map(s=>`<td style="padding:5px 6px;text-align:center">${parseInt(rs[s])||0}</td>`).join('')}
+            <td style="padding:5px 6px;text-align:center;font-weight:700;color:#534AB7;background:#EEEDFE">${rt}</td>
+            <td style="padding:5px 6px;text-align:center;color:#555;font-size:10px">${esc(unit)}</td>
+          </tr>`;
+        } else {
+          const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
+          const dTotal=Object.values(colT).reduce((a,v)=>a+v,0);
+          let inlineImg='';
+          if(imgMode==='inline'){const src=d.images&&d.images.length?_resolveImgSrc(d.images[0]):'';inlineImg=src?`<td rowspan="${varieties.length+1}" style="padding:4px;text-align:center;vertical-align:top"><img src="${src}" style="width:36px;height:36px;object-fit:cover;border-radius:4px"></td>`:`<td rowspan="${varieties.length+1}"></td>`;}
+          trows+=`<tr style="background:#EEEDFE;border-bottom:1px solid #D0CCF5">
+            <td style="padding:5px 8px;font-weight:700;color:#3C3489;border-right:2px solid #AFA9EC">${esc(d.code||'—')}</td>
+            ${imgMode==='inline'?inlineImg:''}
+            <td colspan="${szKeys.length}" style="padding:5px 8px;font-size:10px;color:#6C64CC;font-style:italic">${varieties.length} variet${varieties.length===1?'y':'ies'}</td>
+            <td style="padding:5px 6px;text-align:center;font-weight:800;color:#3C3489;background:#D8D3F7">${dTotal}</td>
+            <td></td>
+          </tr>`;
+          varieties.forEach(v=>{
+            const rt=szKeys.reduce((a,s)=>a+(parseInt((v.sizes||{})[s])||0),0);
+            trows+=`<tr style="background:#FAFAFF;border-bottom:1px solid #E8E7FF">
+              <td style="padding:4px 8px 4px 20px;color:#6C64CC;font-size:11px;border-right:2px solid #AFA9EC">└ ${esc(v.name||'Variety')}</td>
+              ${szKeys.map(s=>`<td style="padding:4px 6px;text-align:center;font-size:11px">${parseInt((v.sizes||{})[s])||0}</td>`).join('')}
+              <td style="padding:4px 6px;text-align:center;font-weight:600;color:#534AB7">${rt}</td>
+              <td style="padding:4px 6px;text-align:center;font-size:10px;color:#555">${esc(v.unit||'pcs')}</td>
+            </tr>`;
+          });
+        }
+      });
+      const footTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
+      const footer=footTotal>0?`<tfoot><tr style="background:#534AB7;color:#fff;font-weight:700">
+        <td style="padding:5px 8px;text-align:right">Group total →</td>
+        ${imgMode==='inline'?'<td></td>':''}
+        ${szKeys.map(s=>`<td style="padding:5px 6px;text-align:center">${grpTotals[s]||0}</td>`).join('')}
+        <td style="padding:5px 6px;text-align:center">${footTotal}</td><td></td>
+      </tr></tfoot>`:'';
+
+      return`<div class="design-block" style="margin-bottom:16px;border:1.5px solid #AFA9EC;border-radius:8px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:8px 14px;font-size:14px;font-weight:700">🎨 ${esc(g.name)} <span style="font-weight:400;font-size:11px;opacity:.8">(${g.items.length} code${g.items.length!==1?'s':''})</span></div>
+        ${imgTopHtml}
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:#EEEDFE;color:#3C3489">
+            <th style="padding:5px 8px;text-align:left;border-right:2px solid #AFA9EC">Design code</th>
+            ${imgMode==='inline'?'<th style="padding:5px 6px;text-align:center">Image</th>':''}
+            ${szKeys.map(s=>`<th style="padding:5px 6px;text-align:center;white-space:nowrap">${esc(s)}</th>`).join('')}
+            <th style="padding:5px 6px;text-align:center;background:#EEEDFE">Total</th>
+            <th style="padding:5px 6px;text-align:center">Unit</th>
+          </tr></thead>
+          <tbody>${trows}</tbody>
+          ${footer}
+        </table>
       </div>`;
     }).join('');
-    const notesLine = vo.notes ? `<div style="font-size:12px;color:#444;margin-bottom:8px"><strong>Notes:</strong> ${esc(vo.notes)}</div>` : '';
-    return `<div class="order-block" style="border:1.5px solid #534AB7;border-radius:8px;padding:12px 14px;margin-bottom:14px">
-      <h2 style="font-size:18px;margin-bottom:4px;color:#3C3489;font-weight:700">${esc(vo.orderId)} · <span style="color:#534AB7">${esc(vo.vendor)}</span></h2>
-      <p style="font-size:13px;color:#333;margin-bottom:8px">
-        <strong>Order Date:</strong> ${fmtDate(vo.startDate)} &nbsp;·&nbsp; <strong>Delivery:</strong> ${fmtDate(vo.deliveryDate)||'—'} &nbsp;·&nbsp; <strong>Priority:</strong> ${esc(vo.priority)} &nbsp;·&nbsp; <strong>Total:</strong> <span style="font-weight:700;color:#534AB7">${qtyStr}</span>
+
+    const notesLine=vo.notes?`<div style="font-size:12px;color:#444;margin-bottom:8px"><strong>Notes:</strong> ${esc(vo.notes)}</div>`:'';
+    return`<div class="order-block" style="border:1.5px solid #534AB7;border-radius:8px;padding:12px 14px;margin-bottom:18px">
+      <h2 style="font-size:17px;margin-bottom:4px;color:#3C3489;font-weight:700">${esc(vo.orderId)} · <span style="color:#534AB7">${esc(vo.vendor)}</span></h2>
+      <p style="font-size:12px;color:#333;margin-bottom:8px">
+        <strong>Order Date:</strong> ${fmtDate(vo.startDate)} &nbsp;·&nbsp;
+        <strong>Delivery:</strong> ${fmtDate(vo.deliveryDate)||'—'} &nbsp;·&nbsp;
+        <strong>Priority:</strong> ${esc(vo.priority)} &nbsp;·&nbsp;
+        <strong>Total:</strong> <span style="font-weight:700;color:#534AB7">${qtyStr}</span>
       </p>
       ${notesLine}
-      ${designsHtml}
+      ${groupsHtml}
     </div>`;
   }).join('');
+
   w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)}</title>
     <style>
       @page{margin:5mm;size:A4 portrait}
       html{zoom:0.85}
       body{font-family:system-ui;padding:4mm 6mm;margin:0;color:#1a1916;font-size:12px;line-height:1.4}
-      table{border-collapse:collapse}
-      img{max-width:100%}
+      table{border-collapse:collapse}img{max-width:100%}
       .design-block{break-inside:avoid-page;page-break-inside:avoid}
       .order-block{break-inside:auto;page-break-inside:auto}
       @media print{button{display:none!important}.print-toolbar{display:none!important}}
-    </style>
-    </head><body>
+    </style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
-      <h1 style="font-size:19px;color:#3C3489;margin:0;font-weight:700;display:flex;align-items:center;gap:10px">
-        <img src="https://sayyamranka1610.github.io/bangle-tracker/icon-192.png" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover">
-        Siddhi Bangles Order Details — Vendor Orders
+      <h1 style="font-size:18px;color:#3C3489;margin:0;font-weight:700;display:flex;align-items:center;gap:10px">
+        <img src="https://sayyamranka1610.github.io/bangle-tracker/icon-192.png" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
+        Siddhi Bangles — Vendor Orders
       </h1>
-      <div style="text-align:right;font-size:12px"><strong>${esc(title)}</strong><br><span style="color:#888;font-size:11px">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+      <div style="text-align:right;font-size:11px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
     <div class="print-toolbar" style="margin-bottom:10px"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
     ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
@@ -6271,12 +6217,12 @@ function askOrderPrint(oid){
       <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
         <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
-          <input type="radio" name="img-pos" value="top" checked style="width:auto;accent-color:#534AB7">
-          <span style="font-size:12px"><strong>Grouped at top</strong> — all design images shown together below the design name</span>
+          <input type="radio" name="img-pos" value="inline" checked style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Beside quantities</strong> — image shown at right end of each design code row</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
-          <input type="radio" name="img-pos" value="inline" style="width:auto;accent-color:#534AB7">
-          <span style="font-size:12px"><strong>Beside quantities</strong> — image shown at right end of each design code row</span>
+          <input type="radio" name="img-pos" value="top" style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Grouped at top</strong> — all design images shown together below the design name</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
           <input type="radio" name="img-pos" value="none" style="width:auto;accent-color:#534AB7">
@@ -6781,19 +6727,8 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
   if(!imgMode)imgMode='inline';
   // Ensure IDB images are loaded into S before building print HTML
   try{ await loadImagesFromIDB(); }catch(e){}
-  // Fetch HQ originals from Firebase for any images with fbKey — gives best print quality.
-  // allImgs kept outside try so we can clear hqData from memory after building HTML.
-  const allImgs=[];
-  orders.forEach(o=>(o.designs||[]).forEach(d=>{
-    (d.images||[]).forEach(img=>allImgs.push(img));
-    (d.varieties||[]).forEach(v=>(v.images||[]).forEach(img=>allImgs.push(img)));
-  }));
-  try{ await loadImagesFromFB(allImgs); }catch(e){}
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
   const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode)).join('');
-  // Free HQ image data from global state immediately — it was only needed to build the HTML string.
-  // Without this, each HQ image (5-7 MB) stays in S permanently and causes Chrome OOM on print-all.
-  allImgs.forEach(img=>{ img.hqData=undefined; });
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>
       /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
@@ -8019,14 +7954,8 @@ async function handleStockImgUpload(inp){
     await new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=async ev=>{
-        const original=ev.target.result;
-        const data=await compressImageToThumb(original);
-        let fbKey=null;
-        if(!_isDemoMode()){
-          try{const hq=await compressForFirebase(original);fbKey=await uploadImageToRTDB(hq);}
-          catch(err){console.warn('Cloud image upload failed:',err.message);}
-        }
-        window._stockModalImages.push({data,hqData:original,name:file.name,...(fbKey?{fbKey}:{})});
+        const data=await compressImageToThumb(ev.target.result); // 1200px @ 0.92
+        window._stockModalImages.push({data,name:file.name});
         resolve();
       };reader.readAsDataURL(file);
     });
@@ -9133,9 +9062,7 @@ const FB_DATA  = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.jso
 const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json';
 const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
 const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
-// Full-quality images are stored at /bangImages/{key} in Firebase RTDB (free plan).
-// No external services or paid plans needed.
-const LOCK_EXPIRE_MS = 90 * 1000; // 90 seconds without heartbeat = lock expired (was 5 min)
+const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
 
 // Unique device ID so we don't re-apply our own pushed updates
 const FB_DEVICE_ID = (()=>{
@@ -9157,28 +9084,6 @@ let _grantPollTimer   = null;   // Device 2: fast-poll for lock release after re
 let _waitingForGrant  = false;  // Device 2: request is in flight
 let _grantBannerUp    = false;  // Device 1: grant prompt is currently shown
 let _lockOwnerCheckTimer = null; // Device 1: verify lock still belongs to us every 5 s
-
-// ── INSTANT LOCK RELEASE ON TAB CLOSE ────────────────────────────────────────
-// beforeunload fires on desktop when tab/window is closed.
-// pagehide fires on iOS Safari when the user navigates away or closes the tab.
-// keepalive:true tells the browser to complete the DELETE even as the page unloads.
-function _releaseOnUnload(){
-  if(!_hasLock) return;
-  try{ fetch(FB_LOCK, {method:'DELETE', keepalive:true}); }catch(e){}
-}
-window.addEventListener('beforeunload', _releaseOnUnload);
-window.addEventListener('pagehide',     _releaseOnUnload);
-
-// ── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
-// Catch any unhandled promise rejection so errors are never silently lost.
-window.addEventListener('unhandledrejection', ev=>{
-  const reason = ev.reason;
-  const msg = reason instanceof Error ? reason.message : String(reason||'unknown');
-  // Ignore benign errors (cross-origin scripts, cancelled fetches)
-  if(msg.includes('AbortError')||msg.includes('cross-origin')) return;
-  console.error('Unhandled rejection:', reason);
-  fbSetStatus('error','App error — '+msg.slice(0,80));
-});
 
 // ── STATUS BAR ───────────────────────────────────────────────────────────────
 function fbSetStatus(state, msg){
@@ -9262,7 +9167,6 @@ async function doLogout(){
   if(_lockPollTimer){ clearInterval(_lockPollTimer); _lockPollTimer=null; }
   if(_lockOwnerCheckTimer){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; }
   if(_reqWatchTimer){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; }
-  if(_fb && _fb.pushTimer){ clearTimeout(_fb.pushTimer); _fb.pushTimer=null; }
   _grantBannerUp=false;
   const gb=document.getElementById('grant-request-banner');if(gb)gb.remove();
 
@@ -9342,41 +9246,26 @@ const IS_DEMO_MODE = _isDemoMode();
 // NOTE: We wrap state as a JSON string inside {data:"..."} because the app uses
 // bangle size keys like "2/2", "2/4" — Firebase treats "/" as a path separator
 // and rejects such keys. Storing as a string value sidesteps this entirely.
-async function fbPush(silent, _stripImages=false){
-  if(_readOnly) return;            // defense-in-depth: read-only session never writes
+async function fbPush(silent){
   _fb.lastPush = Date.now();
   try{
-    // forFirebase=true keeps small images inline so every device receives them.
-    // If a previous attempt got HTTP 400 (payload too large for Firebase's 1 MB
-    // per-value limit), we strip all images and retry so text data is never lost.
+    // forFirebase=true: small images stay inline in payload so every device
+    // receives full-quality images via Firebase without needing local IDB.
     const { stateNoImages } = extractImages({
       ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
-    }, !_stripImages);
+    }, true);
     // Wrap state as a plain string so Firebase never sees the "/" keys
-    const innerJson = JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]});
-    if(!innerJson) throw new Error('State could not be serialised');
     const payload = JSON.stringify({
-      data    : innerJson,
+      data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
       savedAt : new Date().toISOString(),
       device  : FB_DEVICE_ID
     });
-    if(!payload) throw new Error('Payload could not be serialised');
     const r = await fetch(FB_DATA, {
       method : 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body   : payload
     });
-    if(!r.ok){
-      const msg = await r.text();
-      // Firebase returns HTTP 400 when the payload exceeds its per-value string
-      // size limit (images pushed the "data" field over the limit). Strip all
-      // images and retry once — this guarantees orders/designs always reach the cloud.
-      if(r.status === 400 && !_stripImages){
-        console.warn('fbPush: HTTP 400 — retrying without images (payload was too large)');
-        return fbPush(silent, true);
-      }
-      throw new Error('HTTP ' + r.status + ' — ' + msg);
-    }
+    if(!r.ok){ const msg = await r.text(); throw new Error('HTTP ' + r.status + ' — ' + msg); }
     // Our local changes are now safely in Firebase — clear the "dirty" flag
     // so incoming remote updates are allowed to apply again.
     _fb.pendingLocal = false;
@@ -9385,14 +9274,7 @@ async function fbPush(silent, _stripImages=false){
   } catch(e){
     // Keep pendingLocal = true so we retry and keep protecting local edits
     fbSetStatus('error', 'Save failed — ' + e.message);
-    if(!silent) showToast('⚠ Database save failed — will retry automatically', 'red');
-    // Auto-retry after 8 seconds for transient network errors
-    if(!_fb.pushTimer){
-      _fb.pushTimer = setTimeout(()=>{
-        _fb.pushTimer = null;
-        if(_fb.pendingLocal) fbPush(true); // silent retry
-      }, 8000);
-    }
+    if(!silent) showToast('⚠ Database save failed', 'red');
   }
 }
 
@@ -9403,7 +9285,6 @@ async function fbPush(silent, _stripImages=false){
 // This keeps the dashboard light and operations smooth.
 function fbSchedulePush(){
   if(_isDemoMode()) return;        // demo mode never pushes to the real DB
-  if(_readOnly) return;            // read-only session must never write to Firebase
   // Mark local changes BEFORE the ready check — this protects a just-created
   // order even if Firebase isn't connected yet (e.g. first-load race or
   // reconnection window). When Firebase comes online, pendingLocal=true
@@ -9504,18 +9385,9 @@ function _mergeLocalIntoRemote(remoteState){
   const cleanedIds=new Set(cleanedOrders.map(o=>o.id));
 
   // Rescue local-only client orders (created on this device but absent from remote
-  // due to a sync race — e.g. another device pushed before our new order reached FB).
-  // IMPORTANT: Only rescue orders created in the last 2 hours. Orders older than that
-  // should already be in Firebase; if they're missing, they were deleted on another
-  // device and resurrecting them would be wrong (e.g. old test entries like MENA traders).
-  const RESCUE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
-  const now = Date.now();
+  // due to a sync race — e.g. another device pushed before our new order reached FB)
   const rescued=localState&&localState.orders
-    ?(localState.orders).filter(o=>{
-        if(!o.id||cleanedIds.has(o.id)||deletedIds.has(o.id))return false;
-        const age=now-new Date(o.createdAt||0).getTime();
-        return age < RESCUE_WINDOW_MS;
-      })
+    ?(localState.orders).filter(o=>o.id&&!cleanedIds.has(o.id)&&!deletedIds.has(o.id))
     :[];
 
   const needsPush=rescued.length>0||ordersFiltered||vendorFiltered;
@@ -9549,12 +9421,8 @@ function _applyRemoteState(parsed, savedAt){
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   render();
-  // Repair any broken thumbnails from other devices (runs only for images that
-  // have fbKey but broken img.data — sequential, low memory, safe to call often)
-  loadAllImagesFromFB();
-  if(needsPush && !_readOnly){
-    // Push cleaned/merged state back so all other devices also get the correction.
-    // Never push from read-only mode — only the device holding the edit lock should write.
+  if(needsPush){
+    // Push cleaned/merged state back so all other devices also get the correction
     fbSchedulePush();
     if(added) showToast(`✅ ${count} order(s) restored — cloud was missing them`,'green');
   }
@@ -9564,7 +9432,7 @@ function _applyRemoteState(parsed, savedAt){
 // ── EDIT LOCK ─────────────────────────────────────────────────────────────────
 async function _tryAcquireLock(){
   try{
-    const r = await fetch(FB_LOCK, {cache:'no-store'});
+    const r = await fetch(FB_LOCK);
     const lock = r.ok ? await r.json() : null;
     const now  = Date.now();
     const expired = !lock || !lock.heartbeat
@@ -9608,20 +9476,6 @@ function _startHeartbeat(){
   _lockHbTimer = setInterval(async()=>{
     if(!_hasLock) return;
     try{
-      // Verify we still own the lock before writing — prevent overwriting a takeover
-      const check = await fetch(FB_LOCK, {cache:'no-store'});
-      if(check.ok){
-        const lock = await check.json();
-        if(lock && lock.deviceId && lock.deviceId !== FB_DEVICE_ID){
-          // Another device took the lock — stop heartbeat and enter read-only
-          clearInterval(_lockHbTimer); _lockHbTimer=null;
-          _hasLock=false; _readOnly=true;
-          _setReadOnlyUI(true, lock.user||'another user');
-          _startLockPolling();
-          showToast('🔒 Edit access was taken by another device — now read-only','red');
-          return;
-        }
-      }
       await fetch(FB_LOCK,{
         method:'PUT', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
@@ -9630,7 +9484,7 @@ function _startHeartbeat(){
         })
       });
     }catch(e){}
-  }, 25000); // 25s heartbeat — lock expires 90s after last ping, so 3+ missed beats before expiry
+  }, 60000);
   // Watch for incoming access requests every 3 s while holding the lock
   _startRequestWatcher();
 }
@@ -9641,7 +9495,7 @@ function _startLockPolling(fast){
   if(_lockPollTimer) clearInterval(_lockPollTimer);
   _lockPollTimer = setInterval(async()=>{
     try{
-      const r   = await fetch(FB_LOCK, {cache:'no-store'});
+      const r   = await fetch(FB_LOCK);
       const lock= r.ok ? await r.json() : null;
       const expired = !lock || !lock.heartbeat
                     ||(Date.now()-new Date(lock.heartbeat).getTime()) > LOCK_EXPIRE_MS;
@@ -9651,16 +9505,6 @@ function _startLockPolling(fast){
         _waitingForGrant=false;
         await _tryAcquireLock();
         // (toast is shown inside _tryAcquireLock when wasReadOnly)
-      } else if(lock.user && lock.user !== _lockHolder){
-        // Lock changed hands while we were waiting — cancel stale request, reset to
-        // normal read-only so the user can request from the new lock holder.
-        const newHolder = lock.user;
-        _lockHolder = newHolder;
-        _waitingForGrant = false;
-        try{ await fetch(FB_ACCESS_REQUEST,{method:'DELETE'}); }catch(e2){}
-        _setReadOnlyUI(true, newHolder);
-        _startLockPolling(false); // drop back to 10-s background poll
-        showToast('ℹ️ '+newHolder+' is now the editor — tap "Request access" to ask them','amber');
       }
     }catch(e){}
   }, fast ? 2000 : 10000);
@@ -9695,9 +9539,9 @@ function _setReadOnlyUI(readonly, lockUser){
   const who=_lockHolder||lockUser||'another user';
   banner.style.display='flex';
   const isOwner = _currentUser?.role==='owner';
-  banner.innerHTML=`&#128274; <strong>Read-only</strong> — <strong id="ro-banner-user">${esc(who)}</strong> is currently editing. Your changes won't be saved.&nbsp;
-    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Request access</button>
-    ${isOwner?`<button onclick="takeEditAccess()" style="margin-left:6px;padding:5px 14px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Take access</button>`:''}` ;
+  banner.innerHTML=`🔒 <strong>Read-only</strong> — <strong id="ro-banner-user">${esc(who)}</strong> is currently editing. Your changes won't be saved.&nbsp;
+    <button id="ro-request-btn" onclick="requestEditAccess()" style="margin-left:10px;padding:5px 14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.5);border-radius:7px;color:#fff;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">📨 Request access</button>
+    ${isOwner?`<button onclick="takeEditAccess()" style="margin-left:6px;padding:5px 14px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">🔓 Take access</button>`:''}` ;
   fbSetStatus('connected',`🔒 Read-only — ${who} is editing`);
 }
 
@@ -9707,8 +9551,7 @@ function _setBannerWaiting(){
   if(!banner) return;
   const who=_lockHolder||'the current editor';
   banner.style.display='flex';
-  banner.innerHTML=`⏳ <strong>Access requested</strong> — waiting for <strong>${esc(who)}</strong> to approve…
-    <span style="font-size:11px;opacity:.75;margin-left:4px">(auto-granted if they log out)</span>&nbsp;
+  banner.innerHTML=`⏳ <strong>Access requested</strong> — waiting for <strong>${esc(who)}</strong> to approve…&nbsp;
     <button onclick="cancelAccessRequest()" style="margin-left:10px;padding:5px 12px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);border-radius:7px;color:#fff;cursor:pointer;font-size:12px">✕ Cancel</button>`;
 }
 
@@ -9851,7 +9694,7 @@ async function requestEditAccess(){
 
   // Write the request to /accessRequest.json so Device 1 can see it
   try{
-    const lockR = await fetch(FB_LOCK, {cache:'no-store'});
+    const lockR = await fetch(FB_LOCK);
     const lock  = lockR.ok ? await lockR.json() : null;
     await fetch(FB_ACCESS_REQUEST,{
       method:'PUT', headers:{'Content-Type':'application/json'},
@@ -9886,7 +9729,7 @@ function _startLockOwnershipCheck(){
   _lockOwnerCheckTimer = setInterval(async()=>{
     if(!_hasLock){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; return; }
     try{
-      const r = await fetch(FB_LOCK, {cache:'no-store'});
+      const r = await fetch(FB_LOCK);
       const lock = r.ok ? await r.json() : null;
       // Lock was deleted or overwritten by another device
       if(!lock || lock.deviceId !== FB_DEVICE_ID){
@@ -9913,7 +9756,7 @@ function _startRequestWatcher(){
   _reqWatchTimer = setInterval(async()=>{
     if(!_hasLock){ clearInterval(_reqWatchTimer); _reqWatchTimer=null; return; }
     try{
-      const r   = await fetch(FB_ACCESS_REQUEST, {cache:'no-store'});
+      const r   = await fetch(FB_ACCESS_REQUEST);
       const req = r.ok ? await r.json() : null;
       if(req && req.status==='pending' && req.toDevice===FB_DEVICE_ID){
         if(!_grantBannerUp){ _grantBannerUp=true; _showGrantPrompt(req); }
@@ -9938,9 +9781,9 @@ function _showGrantPrompt(req){
     b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2000;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;text-align:center;padding:12px 20px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 20px rgba(83,74,183,.45)';
     document.body.prepend(b);
   }
-  b.innerHTML=`&#128276; <strong>${esc(req.fromUser)}</strong> is requesting edit access — do you want to hand over control?
-    <button onclick="grantEditAccess()" style="padding:6px 18px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap">Grant access</button>
-    <button onclick="denyEditAccess()" style="padding:6px 14px;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap">Deny</button>`;
+  b.innerHTML=`🔔 <strong>${esc(req.fromUser)}</strong> is requesting edit access — do you want to hand over control?
+    <button onclick="grantEditAccess()" style="padding:6px 18px;background:#E1F5EE;color:#0F6E56;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap">✅ Grant access</button>
+    <button onclick="denyEditAccess()" style="padding:6px 14px;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap">✕ Deny</button>`;
 }
 
 // Device 1: grant access — release the lock so Device 2 can acquire it
@@ -10035,12 +9878,6 @@ async function fbInit(){
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();
-      // Fetch images from /bangImages/ for any image with fbKey but no local data.
-      // Non-blocking — images appear as they load without delaying the rest of startup.
-      loadAllImagesFromFB();
-      // After the edit lock is acquired (short delay), upload any images that don't
-      // have a cloud key yet so they become visible on all devices.
-      setTimeout(()=>{ if(!_isDemoMode()&&!_readOnly) migrateImagesToFirebase(); }, 3000);
       if(added){
         // Rescued orders were missing from Firebase — push merged state now
         fbSetStatus('connected',`Live · restored ${count} order(s) missing from cloud`);
@@ -10073,8 +9910,6 @@ async function migrateImagesToThumbs(){
   const compressArr = async (arr)=>{
     if(!arr) return;
     for(const img of arr){
-      // Skip images already on Firebase Storage — they don't need RTDB compression
-      if(img && img.url) continue;
       if(img && img.data && typeof img.data === 'string'
          && img.data.startsWith('data:') && img.data.length > IMAGE_FB_THRESHOLD){
         try{
@@ -10092,7 +9927,6 @@ async function migrateImagesToThumbs(){
   }
   for(const vo of (S.vendorOrders||[])){
     for(const d of (vo.designs||[])){
-      await compressArr(d.images);
       for(const v of (d.varieties||[])) await compressArr(v.images);
     }
   }
@@ -10136,21 +9970,15 @@ function fbStartListener(){
         return;
       }
       _applyRemoteState(parsed, envelope.savedAt);
-    } catch(e){ console.warn('SSE parse error:', e); }
+    } catch(e){ /* ignore malformed events */ }
   });
 
-  // Reconnect with exponential backoff (5s → 10s → 20s → max 60s)
-  if(!_fb._sseRetryDelay) _fb._sseRetryDelay = 5000;
   _fb.es.onerror = ()=>{
     fbSetStatus('error', 'Connection lost — reconnecting…');
     try{ _fb.es.close(); }catch(e){}
     _fb.es = null;
-    const delay = _fb._sseRetryDelay;
-    _fb._sseRetryDelay = Math.min(_fb._sseRetryDelay * 2, 60000);
-    setTimeout(fbStartListener, delay);
+    setTimeout(fbStartListener, 5000);
   };
-  // Reset backoff on successful connection (first 'put' event received)
-  _fb.es.addEventListener('put', ()=>{ _fb._sseRetryDelay = 5000; }, {once:true});
 }
 
 // ── HOOK INTO EXISTING save() ─────────────────────────────────────────────────
@@ -10170,7 +9998,7 @@ window.save = function(){
 // Register service worker for offline support + faster repeat loads.
 if('serviceWorker' in navigator && !_isDemoMode()){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('bangle-sw.js',{scope:'/bangle-tracker/bangle_v19.html'})
+    navigator.serviceWorker.register('bangle-sw.js')
       .then(reg=>{ console.log('SW registered:', reg.scope); })
       .catch(err=>{ console.warn('SW registration failed:', err); });
   });
