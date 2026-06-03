@@ -54,7 +54,7 @@ One repo, two independent web apps — deployed via **both** GitHub Pages AND Cl
 | App | Source File | GitHub Pages URL | Cloudflare Pages URL |
 |-----|-------------|-----------------|---------------------|
 | Bangle Tracker | `bangle_v19.html` | `https://sayyamranka1610.github.io/bangle-tracker/` | `https://bangle-tracker.pages.dev` ✅ PRIMARY |
-| WorkBoard | `workboard.html` | `https://sayyamranka1610.github.io/bangle-tracker/workboard.html` | `https://bangle-tracker.pages.dev/workboard.html` |
+| WorkBoard | `workboard/index.html` | `https://sayyamranka1610.github.io/bangle-tracker/workboard/` | `https://bangle-tracker.pages.dev/workboard/` |
 
 **Repo:** `https://github.com/Sayyamranka1610/bangle-tracker`  
 Push to `main` → GitHub Pages AND Cloudflare Pages both auto-deploy (≈1 min).  
@@ -118,11 +118,14 @@ bangle-tracker/
 ├── icon-192.png             # PWA icon (192×192)
 ├── icon-512.png             # PWA icon (512×512, maskable)
 │
-├── workboard.html           # WorkBoard app (~1,426 lines)
-├── workboard-sw.js          # Service worker for WorkBoard (cache: workboard-v6)
-├── workboard-manifest.json  # PWA manifest for WorkBoard
-├── workboard-icon-192.png   # PWA icon (192×192)
-├── workboard-icon-512.png   # PWA icon (512×512, maskable)
+├── workboard.html           # Redirect → /workboard/ (preserves old bookmarks)
+│
+├── workboard/               # WorkBoard app — fully self-contained subfolder
+│   ├── index.html           # WorkBoard app (~1,426 lines)
+│   ├── workboard-sw.js      # Service worker for WorkBoard (cache: workboard-v7)
+│   ├── workboard-manifest.json  # PWA manifest for WorkBoard
+│   ├── workboard-icon-192.png   # PWA icon (192×192)
+│   └── workboard-icon-512.png   # PWA icon (512×512, maskable)
 │
 ├── Bangle_Order_Template.xlsx  # Order spreadsheet template (gitignored)
 ├── CLAUDE.md                # This file
@@ -206,7 +209,7 @@ Production-management dashboard for a bangles manufacturing business.
 
 ---
 
-## App 2: WorkBoard (`workboard.html`)
+## App 2: WorkBoard (`workboard/index.html`)
 
 Team task management — mobile-first, real-time.
 
@@ -254,9 +257,9 @@ Team task management — mobile-first, real-time.
 | `setupBgNotifs()` | Registers periodic background sync with SW |
 | `saveBgState()` | Caches login state for background notification checks |
 
-### Service Worker (`workboard-sw.js`)
+### Service Worker (`workboard/workboard-sw.js`)
 
-- **Cache name:** `workboard-v6`
+- **Cache name:** `workboard-v7`
 - **Notification state cache:** `wb-notif-state` (stores userId, seenTasks, notified set)
 - **Strategies:**
   - HTML: network-first (no-cache header)
@@ -265,7 +268,7 @@ Team task management — mobile-first, real-time.
   - Everything else: network with cache fallback
 - **Background sync:** Periodic sync handler `wb-notif-check` (15-min minimum interval) fetches fresh task data and fires notifications when app is closed
 
-**Rule:** Increment `workboard-v6` → `workboard-v7` on every deploy that changes cached assets.
+**Rule:** Increment `workboard-v7` → `workboard-v8` on every deploy that changes cached assets.
 
 ---
 
@@ -314,7 +317,7 @@ When editing any file included in an app shell (HTML, icons, manifest, CDN URLs)
 
 ```bash
 # Stage files you changed
-git add bangle_v19.html bangle-sw.js   # or workboard.html workboard-sw.js
+git add bangle_v19.html bangle-sw.js   # or workboard/index.html workboard/workboard-sw.js
 
 git commit -m "brief description of change"
 git push origin main
@@ -329,13 +332,13 @@ git push origin main
 
 | | Bangle Tracker | WorkBoard |
 |--|--|--|
-| Manifest | `manifest.json` | `workboard-manifest.json` |
-| SW file | `bangle-sw.js` | `workboard-sw.js` |
-| Cache name | `bangle-tracker-v9` | `workboard-v6` |
+| Manifest | `manifest.json` | `workboard/workboard-manifest.json` |
+| SW file | `bangle-sw.js` | `workboard/workboard-sw.js` |
+| Cache name | `bangle-tracker-v9` | `workboard-v7` |
 | App name | "Siddhi Bangle Tracker" | "Siddhi Workboard" |
 | Theme color | `#534AB7` | `#6366f1` |
 | Background | `#1a1750` | `#0f172a` |
-| Start URL | `bangle_v19.html?pwa=bangle` | `workboard.html?pwa=1` |
+| Start URL | `bangle_v19.html?pwa=bangle` | `workboard/?pwa=1` |
 
 ---
 

@@ -1,10 +1,10 @@
 {
-  "id": "/bangle-tracker/workboard.html",
+  "id": "/workboard/",
   "name": "Siddhi Workboard",
   "short_name": "Siddhi WB",
   "description": "Siddhi Creation — team task management, assign and track tasks across the organisation",
-  "start_url": "/bangle-tracker/workboard.html?pwa=1",
-  "scope": "/bangle-tracker/workboard.html",
+  "start_url": "/workboard/?pwa=1",
+  "scope": "/workboard/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0f172a",

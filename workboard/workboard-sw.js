@@ -1,15 +1,15 @@
-// WorkBoard Service Worker — v6
+// WorkBoard Service Worker — v7
 // Handles: caching, background notifications, notification taps
 
-const CACHE = 'workboard-v6';
+const CACHE = 'workboard-v7';
 const NS_CACHE = 'wb-notif-state'; // stores logged-in user + seen-task IDs
 const FB = 'https://bangle-tracker-default-rtdb.firebaseio.com';
 
 const PRECACHE = [
-  '/bangle-tracker/workboard.html',
-  '/bangle-tracker/workboard-icon-192.png',
-  '/bangle-tracker/workboard-icon-512.png',
-  '/bangle-tracker/workboard-manifest.json',
+  '/workboard/',
+  '/workboard/workboard-icon-192.png',
+  '/workboard/workboard-icon-512.png',
+  '/workboard/workboard-manifest.json',
 ];
 
 const CDN_HOSTS = [
@@ -51,14 +51,14 @@ self.addEventListener('fetch', e => {
   if (url.hostname.includes('firebaseio.com') || url.hostname.includes('firebase')) return;
 
   // Network-first for HTML
-  if (url.pathname.endsWith('.html') && url.origin === self.location.origin) {
+  if ((url.pathname.endsWith('.html') || url.pathname.endsWith('/')) && url.origin === self.location.origin) {
     e.respondWith(
       fetch(e.request, { cache: 'no-cache' })
         .then(r => {
           if (r.ok) caches.open(CACHE).then(c => c.put(e.request, r.clone()));
           return r;
         })
-        .catch(() => caches.match(e.request) || caches.match('/bangle-tracker/workboard.html'))
+        .catch(() => caches.match(e.request) || caches.match('/workboard/'))
     );
     return;
   }
@@ -93,7 +93,7 @@ self.addEventListener('notificationclick', e => {
       for (const c of list) {
         if (c.url.includes('workboard') && 'focus' in c) return c.focus();
       }
-      return self.clients.openWindow('/bangle-tracker/workboard.html');
+      return self.clients.openWindow('/workboard/');
     })
   );
 });
@@ -177,10 +177,10 @@ async function runBackgroundCheck() {
 async function showNotif(title, body, tag) {
   return self.registration.showNotification(title, {
     body,
-    icon:    '/bangle-tracker/workboard-icon-192.png',
-    badge:   '/bangle-tracker/workboard-icon-192.png',
+    icon:    '/workboard/workboard-icon-192.png',
+    badge:   '/workboard/workboard-icon-192.png',
     tag,
     renotify: false,
-    data: { url: '/bangle-tracker/workboard.html' },
+    data: { url: '/workboard/' },
   });
 }
