@@ -1401,7 +1401,9 @@ async function downloadOrderAttachment(orderId){
   setTimeout(()=>document.body.removeChild(a),100);
 }
 
-// Load images from IDB and inject into state (called on startup)
+// Load images from IDB and inject into state (called on startup).
+// If IDB had any image data, automatically migrate it to R2 in the background
+// so it becomes a permanent cloud URL visible on every device — no manual action needed.
 async function loadImagesFromIDB(){
   try{
     const all=await idbGetAll();
@@ -1409,9 +1411,46 @@ async function loadImagesFromIDB(){
     all.forEach(entry=>{imageMap[entry.key]=entry.value;});
     if(Object.keys(imageMap).length>0){
       reinjectImages(S,imageMap);
+      // IDB had data — kick off silent background migration to R2
+      setTimeout(_autoMigrateToR2, 2500);
     }
   }catch(e){
     console.warn('Could not load images from IndexedDB:',e.message);
+  }
+}
+
+// Silently uploads any base64 images in state to Cloudflare R2 and replaces
+// them with permanent cloud URLs. Runs automatically after loadImagesFromIDB
+// injects IDB data — no user action needed. Safe to call multiple times.
+async function _autoMigrateToR2(){
+  if(!R2_WORKER_URL||!R2_UPLOAD_KEY) return;
+  const toUpload=[];
+  const collect=img=>{if(img&&typeof img.data==='string'&&img.data.startsWith('data:'))toUpload.push(img);};
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    (d.images||[]).forEach(collect);
+    (d.varieties||[]).forEach(v=>(v.images||[]).forEach(collect));
+  }));
+  (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    (d.images||[]).forEach(collect);
+    (d.varieties||[]).forEach(v=>(v.images||[]).forEach(collect));
+  }));
+  (S.stockItems||[]).forEach(it=>(it.images||[]).forEach(collect));
+  if(!toUpload.length) return;
+  let done=0;
+  for(let i=0;i<toUpload.length;i+=3){
+    await Promise.all(toUpload.slice(i,i+3).map(async img=>{
+      try{
+        const compressed=await compressImageToThumb(img.data,1200);
+        const r2url=await uploadToR2(compressed);
+        if(r2url){img.data=r2url;done++;}
+      }catch(e){}
+    }));
+  }
+  if(done>0){
+    fbPushNow();
+    save();
+    render();
+    console.log('[AutoMigrate] Uploaded '+done+' image(s) to R2');
   }
 }
 
