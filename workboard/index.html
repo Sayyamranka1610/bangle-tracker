@@ -785,7 +785,9 @@ function startApp(){
   S.filter = 'all';
   startSync();
   render();
+  cleanupOldCompleted(); // delete completed tasks older than 2 days on login
   _dlTimer = setInterval(()=>render(), 60000); // re-render to update overdue display (no Firebase write)
+  setInterval(()=>cleanupOldCompleted(), 6*60*60*1000); // re-run cleanup every 6 hours
   if(Notification.permission==='granted'){ checkNotifs(); setupBgNotifs(); }
   else if(Notification.permission==='default' && !localStorage.getItem('wb_nf_dismiss')){
     document.getElementById('notif-banner').style.display='flex';
@@ -1290,7 +1292,7 @@ function renderSettingsView(){
           <div style="background:var(--bg);border-radius:10px;padding:12px 14px">
             <div style="font-size:12px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Share this link with your team</div>
             <div style="display:flex;align-items:center;gap:8px">
-              <div id="app-link" style="font-size:12px;color:var(--p);font-weight:600;word-break:break-all;flex:1">https://sayyamranka1610.github.io/bangle-tracker/workboard.html</div>
+              <div id="app-link" style="font-size:12px;color:var(--p);font-weight:600;word-break:break-all;flex:1">https://tinyurl.com/2d8tshtn</div>
               <button onclick="copyAppLink()" style="flex-shrink:0;background:var(--p);color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer" id="copy-btn">Copy</button>
             </div>
           </div>
@@ -1438,7 +1440,7 @@ function triggerInstall(){
       </div>
       <div style="background:var(--bg);border-radius:12px;padding:14px">
         <div style="font-size:12px;font-weight:700;color:var(--t2);margin-bottom:6px">APP LINK</div>
-        <div style="font-size:13px;color:var(--p);font-weight:600;word-break:break-all;margin-bottom:10px">https://sayyamranka1610.github.io/bangle-tracker/workboard.html</div>
+        <div style="font-size:13px;color:var(--p);font-weight:600;word-break:break-all;margin-bottom:10px">https://tinyurl.com/2d8tshtn</div>
         <button class="btn btn-p" onclick="copyAppLink()">📋 Copy Link</button>
       </div>`;
     openModal('m-install');
@@ -1446,7 +1448,7 @@ function triggerInstall(){
 }
 
 function copyAppLink(){
-  const link = 'https://sayyamranka1610.github.io/bangle-tracker/workboard.html';
+  const link = 'https://tinyurl.com/2d8tshtn';
   navigator.clipboard.writeText(link).then(()=>{
     const btn = document.getElementById('copy-btn');
     if(btn){ btn.textContent='Copied ✓'; btn.style.background='var(--ok)'; setTimeout(()=>{ btn.textContent='Copy'; btn.style.background=''; },2000); }
@@ -1458,6 +1460,23 @@ function copyAppLink(){
     document.execCommand('copy'); document.body.removeChild(el);
     toast('Link copied ✓','ok');
   });
+}
+
+// ══════════════════════════════════════════════════════════
+//  AUTO-CLEANUP: delete completed tasks older than 2 days
+//  Runs on login and every 6 hours. Keeps workboard clean.
+// ══════════════════════════════════════════════════════════
+async function cleanupOldCompleted(){
+  const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+  const cutoff   = now() - TWO_DAYS;
+  const old = Object.values(S.tasks).filter(t =>
+    t.status === 'completed' && t.completedAt && t.completedAt < cutoff
+  );
+  if(!old.length) return;
+  for(const t of old){
+    try{ await TASKS.child(t.id).remove(); } catch(e){}
+  }
+  // S.tasks will auto-update via the Firebase listener after removal
 }
 
 // ══════════════════════════════════════════════════════════
