@@ -1401,21 +1401,31 @@ async function downloadOrderAttachment(orderId){
   setTimeout(()=>document.body.removeChild(a),100);
 }
 
-// Load images from IDB and inject into state (called on startup).
-// If IDB had any image data, automatically migrate it to R2 in the background
-// so it becomes a permanent cloud URL visible on every device — no manual action needed.
-async function loadImagesFromIDB(){
+// Re-inject IDB images into S without triggering migration.
+// Called on startup AND after every Firebase sync so IDB images
+// are never lost when the remote state is applied.
+// Returns true if IDB had any data.
+async function _injectIDBImages(){
   try{
     const all=await idbGetAll();
     const imageMap={};
     all.forEach(entry=>{imageMap[entry.key]=entry.value;});
     if(Object.keys(imageMap).length>0){
       reinjectImages(S,imageMap);
-      // IDB had data — kick off silent background migration to R2
-      setTimeout(_autoMigrateToR2, 2500);
+      return true;
     }
   }catch(e){
-    console.warn('Could not load images from IndexedDB:',e.message);
+    console.warn('IDB inject failed:',e.message);
+  }
+  return false;
+}
+
+// Load images from IDB and inject into state (called on startup).
+// If IDB had any image data, automatically migrate it to R2 in the background.
+async function loadImagesFromIDB(){
+  const hadData = await _injectIDBImages();
+  if(hadData){
+    setTimeout(_autoMigrateToR2, 2500);
   }
 }
 
@@ -9688,7 +9698,9 @@ function _applyRemoteState(parsed, savedAt){
   renumberOrders();
   _origSave();
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
-  render();
+  // Re-inject IDB images after every Firebase sync — without this, Firebase
+  // __IDB__ placeholders overwrite locally-loaded image data on every sync.
+  _injectIDBImages().then(()=>render());
   if(needsPush){
     // Push cleaned/merged state back so all other devices also get the correction
     fbSchedulePush();
