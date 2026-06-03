@@ -114,6 +114,39 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .client-meta{font-size:11px;color:#AFA9EC;margin-top:2px}
 .client-body{background:#fff;border:1.5px solid #AFA9EC;border-top:none;border-radius:0 0 14px 14px;padding:12px}
 .client-body.closed{display:none}
+/* ── ORDERS / VENDOR SPLIT-PANEL LAYOUT ─────────────────────────────────── */
+.orders-split{display:flex;gap:0;align-items:flex-start;margin-top:4px}
+.orders-sidebar{width:196px;min-width:196px;flex-shrink:0;position:sticky;top:46px;max-height:calc(100vh - 54px);overflow-y:auto;border-radius:14px;border:1.5px solid var(--border);background:#fafaf8;margin-right:10px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.orders-sidebar-hd{padding:9px 13px 7px;font-size:10px;font-weight:700;color:#888;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid var(--border);flex-shrink:0}
+.orders-sb-item{padding:9px 12px;cursor:pointer;border-left:3px solid transparent;display:flex;justify-content:space-between;align-items:center;gap:6px;transition:background .1s}
+.orders-sb-item:hover{background:var(--indigo-light)}
+.orders-sb-item.active{background:#EEEDFE;border-left-color:var(--indigo)}
+.orders-sb-name{font-size:12px;font-weight:600;color:#1a1916;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.orders-sb-item.active .orders-sb-name{color:var(--indigo)}
+.orders-sb-badge{background:#f0efee;color:#534AB7;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;flex-shrink:0}
+.orders-sb-item.active .orders-sb-badge{background:var(--indigo);color:#fff}
+.orders-sb-badge.sb-late{background:var(--red-light);color:var(--red)}
+.orders-sb-item.active .orders-sb-badge.sb-late{background:var(--red);color:#fff}
+.orders-main-wrap{flex:1;min-width:0;display:flex;flex-direction:column}
+.orders-top-bar{background:#fff;border-radius:12px 12px 0 0;border:1.5px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.orders-search{flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:12px;background:#fafaf8}
+.orders-search:focus{outline:none;border-color:var(--indigo)}
+.orders-chip{padding:4px 11px;border-radius:14px;border:1.5px solid var(--border);font-size:11px;cursor:pointer;background:#fff;color:#555;font-weight:500;transition:.1s}
+.orders-chip.active{background:var(--indigo);color:#fff;border-color:var(--indigo)}
+.orders-section-hd{position:sticky;top:46px;z-index:15;background:linear-gradient(135deg,var(--indigo),var(--indigo-dark));color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1.5px solid var(--indigo);border-top:none}
+.orders-section-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orders-section-meta{font-size:10px;opacity:.82;margin-top:1px}
+.orders-section-acts{display:flex;gap:5px;flex-shrink:0}
+.orders-cards-list{padding:12px;display:flex;flex-direction:column;gap:10px;border:1.5px solid var(--border);border-top:none;border-radius:0 0 12px 12px;background:var(--bg)}
+@media(max-width:600px){
+  .orders-split{flex-direction:column}
+  .orders-sidebar{position:static;max-height:none;width:100%;min-width:unset;margin-right:0;margin-bottom:8px;border-radius:12px;display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden}
+  .orders-sidebar-hd{display:none}
+  .orders-sb-item{padding:8px 10px;border-left:none;border-bottom:3px solid transparent;flex-shrink:0;min-width:80px;flex-direction:column;align-items:center;gap:2px;text-align:center}
+  .orders-sb-item.active{border-bottom-color:var(--indigo);background:var(--indigo-light);border-left:none}
+  .orders-sb-name{font-size:10px;white-space:normal;max-width:80px}
+  .orders-section-hd{position:relative;top:0}
+}
 .order-card{border-radius:14px;margin-bottom:10px;overflow:hidden;border:1.5px solid var(--border);background:#fff;transition:box-shadow .18s,transform .18s;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .order-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.09);transform:translateY(-1px)}
 .order-card.al-late{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}.order-card.al-warn{border-color:#FAC775;box-shadow:0 2px 8px rgba(186,117,23,.08)}.order-card.al-done{border-color:#C0DD97;box-shadow:0 2px 8px rgba(59,109,17,.06)}.order-card.al-ok{border-color:#9FE1CB;box-shadow:0 2px 8px rgba(15,110,86,.06)}
@@ -973,7 +1006,13 @@ let S = {
   vendorOrders:[],        // [{id,orderId,vendor,startDate,deliveryDate,priority,status,notes,designs:[]}]
   openVendorOrders:[],    // serialised as array, converted to Set on load
   vendorActiveTabs:{},    // {orderId → 'details'|'designs'}
-  vendorFilters:{vendor:'',design:'',code:''}
+  vendorFilters:{vendor:'',design:'',code:''},
+  selectedClient:'',      // active client in orders sidebar
+  selectedVendor:'',      // active vendor in vendor sidebar
+  orderSearchQ:'',        // search text in orders view
+  orderStatusFilter:'',   // '' | 'late' | 'warn' | 'done'
+  vendorSearchQ:'',       // search text in vendor view
+  vendorStatusFilter:''   // '' | 'late' | 'warn'
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -2690,7 +2729,7 @@ function switchMain(view){
   document.getElementById('view-inventory').style.display=view==='inventory'?'':'none';
   document.getElementById('view-masters').style.display=view==='masters'?'':'none';
   document.getElementById('view-library').style.display=view==='library'?'':'none';
-  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library')?'none':'';
+  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders')?'none':'';
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
   if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library')?'none':'';
@@ -2761,31 +2800,94 @@ function renderStats(){
 function renderOrdersView(){
   const container=document.getElementById('view-orders');
   const empty=document.getElementById('empty-msg');
-  const filtered=S.orders.filter(orderMatchesFilter);
   if(!S.orders.length){container.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  const clientMap={};
-  filtered.forEach(order=>{if(!clientMap[order.client])clientMap[order.client]=[];clientMap[order.client].push(order);});
-  Object.keys(clientMap).forEach(c=>clientMap[c].sort((a,b)=>new Date(a.startDate)-new Date(b.startDate)));
-  const clients=Object.keys(clientMap).sort();
-  if(!clients.length){container.innerHTML='<div class="empty-state"><div>No orders match your filters.</div></div>';return;}
-  container.innerHTML=clients.map(client=>{
-    const orders=clientMap[client];
-    const isOpen=S.openClients.has(client);
-    return `<div class="client-section" id="cs-${esc(client.replace(/\s+/g,'_'))}">
-      <div class="client-header" onclick="toggleClient('${esc(client)}')">
-        <div><h2>👤 ${esc(client)}</h2><div class="client-meta">${orders.length} order${orders.length!==1?'s':''}</div></div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();askClientExport('${esc(client)}')">📥 Export</button>
-          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();askClientPrint('${esc(client)}')">🖨️ Print</button>
-          <span class="chevron${isOpen?' open':''}">▶</span>
-        </div>
-      </div>
-      <div class="client-body${isOpen?'':' closed'}">
-        ${orders.map(order=>buildOrderCard(order,S.orders.indexOf(order))).join('')}
-      </div>
+
+  // Build full client map from ALL orders (sidebar always shows every client)
+  const allClientMap={};
+  S.orders.forEach(o=>{
+    if(!allClientMap[o.client])allClientMap[o.client]={orders:[],late:0,warn:0,done:0};
+    allClientMap[o.client].orders.push(o);
+    const al=orderAlert(o);
+    if(al==='late')allClientMap[o.client].late++;
+    else if(al==='warn')allClientMap[o.client].warn++;
+    else if(al==='done')allClientMap[o.client].done++;
+  });
+  const allClients=Object.keys(allClientMap).sort();
+
+  // Auto-select first client if none chosen or chosen client no longer exists
+  if(!S.selectedClient||!allClientMap[S.selectedClient])S.selectedClient=allClients[0]||'';
+
+  const ci=allClientMap[S.selectedClient]||{orders:[],late:0,warn:0,done:0};
+  const totalOrds=ci.orders.length,lateOrds=ci.late,warnOrds=ci.warn,doneOrds=ci.done;
+  const okOrds=totalOrds-lateOrds-warnOrds-doneOrds;
+
+  // Apply search + status chip filter to the selected client's orders
+  const q=(S.orderSearchQ||'').toLowerCase().trim();
+  const sf=S.orderStatusFilter||'';
+  let clientOrders=[...ci.orders];
+  if(q)clientOrders=clientOrders.filter(o=>
+    (o.orderId||'').toLowerCase().includes(q)||
+    (o.client||'').toLowerCase().includes(q)||
+    (o.notes||'').toLowerCase().includes(q)||
+    (o.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
+  );
+  if(sf)clientOrders=clientOrders.filter(o=>orderAlert(o)===sf);
+  clientOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+
+  const chipA=v=>(S.orderStatusFilter||'')===v?' active':'';
+
+  const sidebarHTML=allClients.map(c=>{
+    const cd=allClientMap[c];
+    const hasLate=cd.late>0,hasWarn=cd.warn>0;
+    const bc=hasLate?'orders-sb-badge sb-late':'orders-sb-badge';
+    const bl=cd.orders.length+(hasLate?' 🔴':hasWarn?' 🟡':'');
+    return`<div class="orders-sb-item${c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
+      <span class="orders-sb-name">👤 ${esc(c)}</span>
+      <span class="${bc}">${bl}</span>
     </div>`;
   }).join('');
+
+  const cardsHTML=clientOrders.length
+    ?clientOrders.map(o=>buildOrderCard(o,S.orders.indexOf(o))).join('')
+    :`<div class="empty-state" style="margin:0">No orders match the current filter.</div>`;
+
+  container.innerHTML=`
+  <div class="orders-split">
+    <div class="orders-sidebar">
+      <div class="orders-sidebar-hd">Clients (${allClients.length})</div>
+      ${sidebarHTML}
+    </div>
+    <div class="orders-main-wrap">
+      <div class="orders-top-bar">
+        <input class="orders-search" placeholder="Search order ID, design code…"
+          value="${esc(S.orderSearchQ||'')}"
+          oninput="S.orderSearchQ=this.value;renderOrdersView()">
+        <button class="orders-chip${chipA('')}" onclick="S.orderStatusFilter='';renderOrdersView()">All</button>
+        <button class="orders-chip${chipA('late')}" onclick="S.orderStatusFilter='late';renderOrdersView()">🔴 Late</button>
+        <button class="orders-chip${chipA('warn')}" onclick="S.orderStatusFilter='warn';renderOrdersView()">🟡 Soon</button>
+        <button class="orders-chip${chipA('done')}" onclick="S.orderStatusFilter='done';renderOrdersView()">✅ Done</button>
+      </div>
+      <div class="orders-section-hd">
+        <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
+          <span style="font-size:18px">👤</span>
+          <div style="min-width:0">
+            <div class="orders-section-name">${esc(S.selectedClient)}</div>
+            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${okOrds} on track · ${lateOrds} late · ${warnOrds} soon</div>
+          </div>
+        </div>
+        <div class="orders-section-acts">
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="askClientExport('${esc(S.selectedClient)}')">📥 Export</button>
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="askClientPrint('${esc(S.selectedClient)}')">🖨️ Print</button>
+        </div>
+      </div>
+      <div class="orders-cards-list">${cardsHTML}</div>
+    </div>
+  </div>`;
+}
+function selectOrderClient(name){
+  S.selectedClient=name;S.orderSearchQ='';S.orderStatusFilter='';
+  renderOrdersView();scheduleAutosave();
 }
 
 function buildOrderCard(order,oi){
@@ -5938,81 +6040,100 @@ function buildVendorStatsBar(){
 // ── Render ──────────────────────────────────────────────────────────────────
 function renderVendorOrders(){
   const container=document.getElementById('view-vendor');
-  const filtered=S.vendorOrders.filter(vendorOrderMatchesFilter);
 
-  // Unique vendors / design names / codes for filter dropdowns
-  const allVendors=[...new Set(S.vendorOrders.map(o=>o.vendor).filter(Boolean))].sort();
-  const allDnames=[...new Set(S.vendorOrders.flatMap(o=>o.designs.map(d=>d.name)).filter(Boolean))].sort();
-  const allCodes=[...new Set(S.vendorOrders.flatMap(o=>o.designs.map(d=>d.code)).filter(Boolean))].sort();
-  const f=S.vendorFilters||{};
+  if(!S.vendorOrders.length){
+    container.innerHTML=`${buildVendorStatsBar()}<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:var(--indigo)">🏭 Vendor Orders</div><button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button></div><div class="empty-state"><div style="font-size:32px;margin-bottom:8px">🏭</div><div style="font-size:14px;font-weight:600;color:#888">No vendor orders yet</div><div style="font-size:12px;color:#aaa;margin-top:4px">Click "+ New Vendor Order" to get started</div></div>`;
+    return;
+  }
 
-  // Group by vendor
-  const vendorMap={};
-  filtered.forEach(vo=>{
+  // Build full vendor map from ALL vendor orders
+  const allVendorMap={};
+  S.vendorOrders.forEach(vo=>{
     const v=vo.vendor||'(No vendor)';
-    if(!vendorMap[v])vendorMap[v]=[];
-    vendorMap[v].push(vo);
+    if(!allVendorMap[v])allVendorMap[v]={orders:[],late:0,warn:0};
+    allVendorMap[v].orders.push(vo);
+    const al=vendorOrderAlert(vo);
+    if(al==='late')allVendorMap[v].late++;
+    else if(al==='warn')allVendorMap[v].warn++;
   });
+  const allVendors=Object.keys(allVendorMap).sort();
 
-  const vendorSections=Object.keys(vendorMap).sort().map(vendor=>{
-    const orders=vendorMap[vendor].sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
-    const lateOrds=orders.filter(o=>vendorOrderAlert(o)==='late').length;
-    const isOpen=!(S.openVendorOrders||[]).includes('closed_'+vendor);
-    return`<div class="client-section">
-      <div class="client-header" onclick="toggleVendorSection('${esc(vendor)}')">
-        <div><h2>🏭 ${esc(vendor)}</h2><div class="client-meta">${orders.length} order${orders.length!==1?'s':''} · ${lateOrds} overdue</div></div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();exportVendorSectionCSV('${esc(vendor)}')">📥 Export</button>
-          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="event.stopPropagation();printVendorSection('${esc(vendor)}')">🖨️ Print</button>
-          <span class="chevron${isOpen?' open':''}">▶</span>
-        </div>
-      </div>
-      <div class="client-body${isOpen?'':' closed'}">
-        ${orders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo))).join('')}
-      </div>
+  // Auto-select first vendor if none chosen or chosen vendor no longer exists
+  if(!S.selectedVendor||!allVendorMap[S.selectedVendor])S.selectedVendor=allVendors[0]||'';
+
+  const vi=allVendorMap[S.selectedVendor]||{orders:[],late:0,warn:0};
+  const totalOrds=vi.orders.length,lateOrds=vi.late,warnOrds=vi.warn;
+
+  // Apply search + status chip filter
+  const q=(S.vendorSearchQ||'').toLowerCase().trim();
+  const sf=S.vendorStatusFilter||'';
+  let vendOrders=[...vi.orders];
+  if(q)vendOrders=vendOrders.filter(vo=>
+    (vo.orderId||'').toLowerCase().includes(q)||
+    (vo.vendor||'').toLowerCase().includes(q)||
+    (vo.notes||'').toLowerCase().includes(q)||
+    (vo.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
+  );
+  if(sf)vendOrders=vendOrders.filter(vo=>vendorOrderAlert(vo)===sf);
+  vendOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+
+  const chipA=v=>(S.vendorStatusFilter||'')===v?' active':'';
+
+  const sidebarHTML=allVendors.map(v=>{
+    const vd=allVendorMap[v];
+    const hasLate=vd.late>0,hasWarn=vd.warn>0;
+    const bc=hasLate?'orders-sb-badge sb-late':'orders-sb-badge';
+    const bl=vd.orders.length+(hasLate?' 🔴':hasWarn?' 🟡':'');
+    return`<div class="orders-sb-item${v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
+      <span class="orders-sb-name">🏭 ${esc(v)}</span>
+      <span class="${bc}">${bl}</span>
     </div>`;
   }).join('');
 
+  const cardsHTML=vendOrders.length
+    ?vendOrders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo))).join('')
+    :`<div class="empty-state" style="margin:0">No orders match the current filter.</div>`;
+
   container.innerHTML=`
-    <!-- Stats bar -->
-    ${buildVendorStatsBar()}
-
-    <!-- Toolbar -->
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-      <div style="font-size:13px;font-weight:700;color:#534AB7">🏭 Vendor Orders</div>
-      <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
+  ${buildVendorStatsBar()}
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <div style="font-size:13px;font-weight:700;color:var(--indigo)">🏭 Vendor Orders</div>
+    <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
+  </div>
+  <div class="orders-split">
+    <div class="orders-sidebar">
+      <div class="orders-sidebar-hd">Vendors (${allVendors.length})</div>
+      ${sidebarHTML}
     </div>
-
-    <!-- Filter bar -->
-    <div class="filter-bar" style="margin-bottom:14px">
-      <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
-      <div><label>Vendor</label>
-        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.vendor=this.value;renderVendorOrders()">
-          <option value="">All vendors</option>
-          ${allVendors.map(v=>`<option value="${esc(v)}"${f.vendor===v?' selected':''}>${esc(v)}</option>`).join('')}
-        </select>
+    <div class="orders-main-wrap">
+      <div class="orders-top-bar">
+        <input class="orders-search" placeholder="Search order ID, design code…"
+          value="${esc(S.vendorSearchQ||'')}"
+          oninput="S.vendorSearchQ=this.value;renderVendorOrders()">
+        <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
+        <button class="orders-chip${chipA('late')}" onclick="S.vendorStatusFilter='late';renderVendorOrders()">🔴 Late</button>
+        <button class="orders-chip${chipA('warn')}" onclick="S.vendorStatusFilter='warn';renderVendorOrders()">🟡 Soon</button>
       </div>
-      <div><label>Design name</label>
-        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.design=this.value;renderVendorOrders()">
-          <option value="">All designs</option>
-          ${allDnames.map(v=>`<option value="${esc(v)}"${f.design===v?' selected':''}>${esc(v)}</option>`).join('')}
-        </select>
+      <div class="orders-section-hd">
+        <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
+          <span style="font-size:18px">🏭</span>
+          <div style="min-width:0">
+            <div class="orders-section-name">${esc(S.selectedVendor)}</div>
+            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${lateOrds} late · ${warnOrds} due soon</div>
+          </div>
+        </div>
+        <div class="orders-section-acts">
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="exportVendorSectionCSV('${esc(S.selectedVendor)}')">📥 Export</button>
+          <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="printVendorSection('${esc(S.selectedVendor)}')">🖨️ Print</button>
+        </div>
       </div>
-      <div><label>Design code</label>
-        <select style="max-width:155px;font-size:11px;padding:5px 8px" onchange="S.vendorFilters.code=this.value;renderVendorOrders()">
-          <option value="">All codes</option>
-          ${allCodes.map(v=>`<option value="${esc(v)}"${f.code===v?' selected':''}>${esc(v)}</option>`).join('')}
-        </select>
-      </div>
-      <button class="filter-clear" onclick="S.vendorFilters={vendor:'',design:'',code:''};renderVendorOrders()">✕ Clear</button>
+      <div class="orders-cards-list">${cardsHTML}</div>
     </div>
-
-    <!-- Vendor sections -->
-    ${S.vendorOrders.length===0
-      ?'<div class="empty-state"><div style="font-size:32px;margin-bottom:8px">🏭</div><div style="font-size:14px;font-weight:600;color:#888">No vendor orders yet</div><div style="font-size:12px;color:#aaa;margin-top:4px">Click "+ New Vendor Order" to get started</div></div>'
-      :filtered.length===0
-        ?'<div class="empty-state">No vendor orders match the current filters.</div>'
-        :vendorSections}`;
+  </div>`;
+}
+function selectVendorSection(name){
+  S.selectedVendor=name;S.vendorSearchQ='';S.vendorStatusFilter='';
+  renderVendorOrders();
 }
 
 function toggleVendorSection(vendor){
