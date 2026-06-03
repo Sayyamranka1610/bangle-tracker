@@ -32,6 +32,21 @@ This file is automatically read by Claude Code on any device. Keep it up to date
 
 ---
 
+## ═══ TWO-SESSION WORKFLOW — READ AT THE START OF EVERY SESSION ═══
+
+Two parallel Claude Code conversations are running simultaneously. Identify which session you are in from the user's first message.
+
+| Session | Trigger phrase | Scope | Key rule |
+|---------|---------------|-------|----------|
+| **Current App** | "Continue current app session" | `bangle_v19.html` — live app features & fixes | Every new feature added → log it in `PHASE2_TRACKER.md` |
+| **Phase 2** | "Continue Phase 2 session" | `./v2/` subfolder — React + Vite + TypeScript | Read `PHASE2_TRACKER.md` first, implement pending items |
+
+**Linking file:** `PHASE2_TRACKER.md` in the repo root. Both sessions read and write it to stay in sync.
+
+**No data migration:** Phase 2 connects to the same Firebase DB. Cutover = swap Cloudflare Pages URL.
+
+---
+
 ## Project Overview
 
 One repo, two independent web apps — deployed via **both** GitHub Pages AND Cloudflare Pages:
