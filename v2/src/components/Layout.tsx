@@ -5,6 +5,7 @@ import ToastContainer from './ToastContainer';
 const navItems = [
   { to: '/orders',    label: 'Orders',    icon: '📋' },
   { to: '/designs',   label: 'Designs',   icon: '🎨' },
+  { to: '/vendors',   label: 'Vendors',   icon: '🏭' },
   { to: '/inventory', label: 'Inventory', icon: '📦' },
   { to: '/analytics', label: 'Analytics', icon: '📊' },
   { to: '/audit',     label: 'Audit',     icon: '🔍' },

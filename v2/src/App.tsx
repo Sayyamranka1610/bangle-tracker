@@ -9,6 +9,7 @@ import Inventory from './pages/Inventory';
 import Analytics from './pages/Analytics';
 import Audit from './pages/Audit';
 import Users from './pages/Users';
+import Vendors from './pages/Vendors';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
               <Route index element={<Navigate to="/orders" replace />} />
               <Route path="/orders"    element={<Orders />} />
               <Route path="/designs"   element={<Designs />} />
+              <Route path="/vendors"   element={<Vendors />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/audit"     element={<Audit />} />

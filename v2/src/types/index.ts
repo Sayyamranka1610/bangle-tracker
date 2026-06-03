@@ -115,10 +115,39 @@ export interface Vocabulary {
   units?: string[];
 }
 
+// ─── Vendor orders ────────────────────────────────────────────────────────────
+
+export type VendorStatus =
+  | 'pending'
+  | 'processing'
+  | 'in_progress'
+  | 'qa'
+  | 'dispatched'
+  | 'delivered';
+
+export interface VendorDesign {
+  name?: string;
+  code?: string;
+  varieties?: DesignVariety[];
+}
+
+export interface VendorOrder {
+  id: string;
+  orderId: string;          // VORD-01, VORD-02...
+  vendor: string;
+  startDate: string;        // YYYY-MM-DD
+  deliveryDate?: string;    // YYYY-MM-DD — absence means no deadline
+  priority: Priority;
+  status: VendorStatus;
+  notes?: string;
+  designs?: VendorDesign[];
+}
+
 // ─── Top-level appData stored at /appData in Firebase ────────────────────────
 
 export interface AppData {
   orders?: Order[];
+  vendorOrders?: VendorOrder[];
   invLedger?: LedgerEntry[];
   auditLog?: AuditEntry[];
   vocabulary?: Vocabulary;
