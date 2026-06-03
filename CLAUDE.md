@@ -4,6 +4,18 @@ This file is automatically read by Claude Code on any device. Keep it up to date
 
 ---
 
+## ⚠️ RULE 0.5: EXPLAIN EVERY CHANGE IN PLAIN LANGUAGE — MANDATORY
+
+Owner is non-technical. For **every** change made to the app, always explain:
+1. **What it was before** — how it worked previously
+2. **What was changed** — exactly what was done
+3. **How it helps** — the benefit in plain terms
+4. **Consequences** — anything that could go wrong, side effects, or things the user should know
+
+Never skip this. Never assume the owner understands technical terms.
+
+---
+
 ## ⚠️ RULE 0: FULL-IMPACT ANALYSIS BEFORE EVERY FIX — READ THIS FIRST
 
 **Before writing any fix, you MUST answer all five questions below. If you cannot answer them, read more code until you can. Do not write code first and think second.**
