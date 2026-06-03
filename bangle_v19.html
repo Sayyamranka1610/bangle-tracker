@@ -1434,6 +1434,11 @@ async function loadImagesFromIDB(){
 // injects IDB data — no user action needed. Safe to call multiple times.
 async function _autoMigrateToR2(){
   if(!R2_WORKER_URL||!R2_UPLOAD_KEY) return;
+  // Block Firebase FIRST — prevents _applyRemoteState from overwriting
+  // IDB-injected data:... images back to __IDB__ refs before we collect them
+  try{ _fb.pendingLocal=true; }catch(e){}
+  // Re-inject IDB images now that Firebase is blocked
+  await _injectIDBImages();
   const toUpload=[];
   const collect=img=>{if(img&&typeof img.data==='string'&&img.data.startsWith('data:'))toUpload.push(img);};
   (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
@@ -1445,9 +1450,10 @@ async function _autoMigrateToR2(){
     (d.varieties||[]).forEach(v=>(v.images||[]).forEach(collect));
   }));
   (S.stockItems||[]).forEach(it=>(it.images||[]).forEach(collect));
-  if(!toUpload.length) return;
-  // Block Firebase listener from overwriting migrated images during upload
-  try{ _fb.pendingLocal=true; }catch(e){}
+  if(!toUpload.length){
+    try{ _fb.pendingLocal=false; }catch(e){} // nothing to migrate, release block
+    return;
+  }
   let done=0;
   for(let i=0;i<toUpload.length;i+=3){
     await Promise.all(toUpload.slice(i,i+3).map(async img=>{
@@ -1529,11 +1535,14 @@ async function migrateImagesToCloud(){
   if(btn){ btn.disabled=true; btn.textContent='☁️ Migrating…'; }
 
   try{
-    // Step 1 — re-load IDB so any __IDB__ placeholders become real data:... URLs
-    await loadImagesFromIDB();
+    // Step 1 — block Firebase FIRST so it cannot overwrite IDB-injected images
+    // before we get a chance to collect and upload them (race condition fix)
+    try{ _fb.pendingLocal=true; }catch(e){}
 
-    // Step 2 — collect every image that is currently a base64 data URL
-    //           (these are the ones that came out of IDB and need to go to R2)
+    // Step 2 — inject IDB images into S now that Firebase is blocked
+    await _injectIDBImages();
+
+    // Step 3 — collect every image that is currently a base64 data URL
     const toUpload = [];
     const collect = img => {
       if(img && typeof img.data === 'string' && img.data.startsWith('data:'))
@@ -1550,15 +1559,15 @@ async function migrateImagesToCloud(){
     (S.stockItems||[]).forEach(it=>(it.images||[]).forEach(collect));
 
     if(!toUpload.length){
-      showToast('No images found on this device to migrate. Please open this app on the original device/browser where you uploaded your images, then click Migrate Images again.','orange',9000);
+      try{ _fb.pendingLocal=false; }catch(e){} // nothing found, release block
+      showToast('No images found on this device. If you have not yet opened the app on the original upload device/browser, please do so and try again.','orange',9000);
       return;
     }
 
     const total = toUpload.length;
     showToast(`Found ${total} image(s) — uploading to cloud…`,'blue',120000);
 
-    // Step 3 — block Firebase listener, then upload in batches of 3
-    try{ _fb.pendingLocal=true; }catch(e){}
+    // Step 4 — upload in batches of 3 (Firebase still blocked)
     let done=0, failed=0;
     for(let i=0; i<toUpload.length; i+=3){
       await Promise.all(toUpload.slice(i,i+3).map(async img=>{
