@@ -1,0 +1,24 @@
+{
+  "name": "Siddhi Bangle Tracker",
+  "short_name": "Bangle Tracker",
+  "description": "Production management dashboard for Siddhi Bangles",
+  "start_url": "/?pwa=1",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#534AB7",
+  "background_color": "#0f0e1a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

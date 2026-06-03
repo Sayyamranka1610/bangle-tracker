@@ -83,16 +83,20 @@ export interface Order {
 
 export interface LedgerEntry {
   id: string;
-  date: string;           // YYYY-MM-DD
+  date: string;                 // YYYY-MM-DD
   designName?: string;
   designCode?: string;
-  type: 'in' | 'out';
+  type: string;                 // raw_in | raw_out | raw_rejection | semi_in | ... | fin_rejection
   qty: number;
-  unit?: string;
+  qtyKg?: number;               // legacy field (always 0 in new entries)
+  qtySets?: number;             // legacy field
   orderId?: string;
+  vendor?: string;
   note?: string;
   source?: string;
-  vendor?: string;
+  autoType?: string;
+  stageRef?: { oi: number; di: number; si: number; groupId: string } | null;
+  rejections?: number;
 }
 
 // ─── Audit log entry ──────────────────────────────────────────────────────────
