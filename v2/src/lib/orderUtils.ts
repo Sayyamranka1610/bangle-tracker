@@ -1,4 +1,5 @@
 import type { Order, EmbeddedDesign, DesignStage, AlertLevel, Priority } from '../types';
+import { getTemplate } from './designUtils';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -16,10 +17,12 @@ function parseDate(s: string): Date {
 
 function getEffDays(order: Order, design: EmbeddedDesign, stageIndex: number): number {
   const stage = design.stages[stageIndex];
-  if (stage.effDays != null) return stage.effDays;
+  if (stage.days != null) return stage.days;  // custom override stored on the stage instance
+  const tmpl = getTemplate(stage.stageId);
+  if (!tmpl) return 1;
   return order.priority === 'urgent' || order.priority === 'critical'
-    ? (stage.urgDays ?? stage.days ?? 1)
-    : (stage.days ?? 1);
+    ? tmpl.urgDays
+    : tmpl.days;
 }
 
 function stageDeadline(order: Order, design: EmbeddedDesign, stageIndex: number): Date {
@@ -78,7 +81,7 @@ export function designQty(design: EmbeddedDesign): number {
     return design.varieties.reduce((acc: number, v) =>
       acc + Object.values(v.sizes ?? {}).reduce((x: number, q) => x + (parseInt(String(q)) || 0), 0), 0);
   }
-  return design.cncQty ?? 0;
+  return 0;
 }
 
 export function orderTotalQty(order: Order): number {

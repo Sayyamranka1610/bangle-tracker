@@ -4,29 +4,48 @@ export type Role = 'owner' | 'worker';
 export type Priority = 'normal' | 'urgent' | 'critical';
 export type BangleType = 'dye_gold' | 'cnc' | 'both';
 export type AlertLevel = 'ok' | 'warn' | 'late' | 'done';
-export type StageStatus = 'pending' | 'in_progress' | 'done';
+export type StageStatus = 'pending' | 'done' | 'delayed';
+export type StageGroup = 'raw' | 'semi' | 'finished';
 
-// ─── Design stages (production steps within a design) ────────────────────────
+// ─── Stage template (from DEFAULT_STAGES) ────────────────────────────────────
 
-export interface DesignStage {
-  id: string;
+export interface StageTemplate {
+  id: string;       // 's1' – 's9'
   name: string;
-  loc?: string;
-  days?: number;
-  urgDays?: number;
-  group?: string;
-  status: StageStatus;
-  completionDate?: string;  // YYYY-MM-DD
-  completionNote?: string;
-  effDays?: number;
+  loc: string;
+  days: number;
+  urgDays: number;
+  group: StageGroup;
 }
 
-// ─── Variety (size grid within a design) ─────────────────────────────────────
+// ─── Stage instance stored on a design ───────────────────────────────────────
+
+export interface DesignStage {
+  stageId: string;          // references StageTemplate.id
+  status: StageStatus;
+  completionDate?: string;  // YYYY-MM-DD
+  qty?: number;
+  vendor?: string;
+  stageNote?: string;
+  days?: number;            // custom effDays override (null = use template)
+}
+
+// ─── Design image ─────────────────────────────────────────────────────────────
+
+export interface DesignImage {
+  data: string;   // base64 data URL or R2 URL
+  name?: string;
+}
+
+// ─── Variety (sub-design per code) ───────────────────────────────────────────
 
 export interface DesignVariety {
-  id?: string;
-  name?: string;
-  sizes: Record<string, string | number>;  // e.g. { "S": 10, "M": 20 }
+  id: string;
+  name: string;
+  sizes: Record<string, number>;  // e.g. { "2/2": 50, "2/4": 100 }
+  images?: DesignImage[];
+  unit?: string;
+  rate?: number;
 }
 
 // ─── Design embedded inside an order ─────────────────────────────────────────
@@ -35,13 +54,14 @@ export interface EmbeddedDesign {
   id: string;
   name: string;
   code?: string;
-  sizes?: string[];
+  sizes?: Record<string, number>;  // aggregate across varieties
+  sizesLocked?: boolean;
+  images?: DesignImage[];
   varieties?: DesignVariety[];
   stages: DesignStage[];
-  image?: string;       // base64 thumbnail
-  r2ImageKey?: string;
-  notes?: string;
-  cncQty?: number;      // simplified CNC quantity mode
+  unit?: string;
+  rate?: number;
+  bangleType?: 'cnc';  // set only for CNC designs
 }
 
 // ─── Order ───────────────────────────────────────────────────────────────────
