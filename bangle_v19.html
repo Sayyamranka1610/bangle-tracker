@@ -818,6 +818,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <button onclick="backupToFile()" title="Download a full backup of all data as a JSON file">📤 Backup</button>
   <button onclick="restoreFromFile()" title="Restore from a previously downloaded backup">📥 Restore</button>
   <button id="btn-migrate-imgs" onclick="migrateImagesToCloud()" title="Upload all images from this device to cloud so they appear everywhere" style="background:#534AB7;color:#fff;border-color:#534AB7">☁️ Migrate Images</button>
+  <button id="btn-recover-imgs" onclick="openImageRecovery()" title="Visually assign R2 cloud images back to your designs" style="background:#1D9E75;color:#fff;border-color:#1D9E75">🔄 Recover Images</button>
   <div class="save-bar-sep"></div>
   <button onclick="openDataHealthModal()" title="Check storage health and data size">🩺 Health</button>
   <button class="sb-danger" onclick="confirmClearAll()" title="Wipe all data and reset to sample defaults">🗑 Reset all</button>
@@ -1598,6 +1599,154 @@ async function migrateImagesToCloud(){
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='☁️ Migrate Images'; }
   }
+}
+
+// ── IMAGE RECOVERY PANEL ──────────────────────────────────────────────────────
+// Fetches all images from R2, shows them alongside broken design slots.
+// User clicks an image then clicks the design it belongs to — fully accurate.
+let _recoverUrls=[], _recoverSlots=[], _recoverSelected=null, _recoverAssigned={};
+
+async function openImageRecovery(){
+  const btn=document.getElementById('btn-recover-imgs');
+  if(btn){btn.disabled=true;btn.textContent='Loading…';}
+  showToast('Fetching your images from cloud…','blue',15000);
+  try{
+    const resp=await fetch(R2_WORKER_URL+'?action=list');
+    if(!resp.ok) throw new Error('Worker not responding. Please check it is deployed.');
+    const {urls}=await resp.json();
+    if(!urls||!urls.length) throw new Error('No images found in R2 bucket.');
+    _recoverUrls=urls; _recoverSlots=[]; _recoverSelected=null; _recoverAssigned={};
+    // Collect all image slots that are broken or missing
+    const addSlot=(img,label)=>{
+      if(img&&(typeof img.data!=='string'||img.data===''||img.data.startsWith('__IDB__')))
+        _recoverSlots.push({img,label});
+    };
+    (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach((img,ii)=>addSlot(img,`${o.orderId} › ${d.name||d.code||'Design'} — image ${ii+1}`));
+      (d.varieties||[]).forEach(v=>(v.images||[]).forEach((img,ii)=>addSlot(img,`${o.orderId} › ${d.name||d.code} › ${v.name} — image ${ii+1}`)));
+    }));
+    _renderRecoveryModal();
+  }catch(e){
+    showToast('Error: '+e.message,'red',8000);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='🔄 Recover Images';}
+  }
+}
+
+function _renderRecoveryModal(){
+  const old=document.getElementById('img-recovery-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='img-recovery-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:8px';
+  wrap.innerHTML=`
+<div style="background:#fff;border-radius:16px;width:min(1120px,98vw);height:93vh;display:flex;flex-direction:column;padding:16px 18px;gap:10px">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0">
+    <div>
+      <div style="font-size:16px;font-weight:700;color:#534AB7">🔄 Image Recovery Panel</div>
+      <div style="font-size:12px;color:#555;margin-top:3px">
+        <strong>Step 1:</strong> Click an image on the left to select it (turns green border).<br>
+        <strong>Step 2:</strong> Click the design on the right where that image belongs.<br>
+        <strong>Step 3:</strong> When all done, click Save.
+      </div>
+    </div>
+    <button onclick="closeRecovery()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;flex-shrink:0;margin-left:12px">✕ Close</button>
+  </div>
+  <div style="display:flex;gap:12px;flex:1;min-height:0">
+    <div style="flex:1;display:flex;flex-direction:column;border:1.5px solid #534AB7;border-radius:12px;overflow:hidden">
+      <div style="background:#534AB7;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;flex-shrink:0">
+        YOUR ${_recoverUrls.length} IMAGES IN CLOUD — Click one to select
+      </div>
+      <div id="r2-grid" style="flex:1;overflow-y:auto;padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;align-content:start">
+        ${_recoverUrls.map((url,i)=>`
+          <div id="r2img-${i}" onclick="selectR2Img(${i})" style="cursor:pointer;border-radius:8px;border:2.5px solid #E8E7E0;overflow:hidden;transition:border-color .15s">
+            <img src="${url}" style="width:100%;height:78px;object-fit:cover;display:block">
+          </div>`).join('')}
+      </div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;border:1.5px solid #1D9E75;border-radius:12px;overflow:hidden">
+      <div style="background:#1D9E75;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;flex-shrink:0">
+        ${_recoverSlots.length} DESIGN SLOTS NEEDING IMAGES — Click to assign
+      </div>
+      <div id="slot-list" style="flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px">
+        ${_recoverSlots.length?_recoverSlots.map((slot,i)=>`
+          <div id="rslot-${i}" onclick="assignToSlot(${i})" style="cursor:pointer;border:2px solid #E8E7E0;border-radius:8px;padding:7px 10px;display:flex;align-items:center;gap:8px;background:#fff;transition:all .15s">
+            <div id="rslot-prev-${i}" style="width:48px;height:48px;border-radius:6px;background:#EEEDFE;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden">📷</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;font-weight:600;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${slot.label}</div>
+              <div id="rslot-status-${i}" style="font-size:10px;color:#aaa;margin-top:1px">Not assigned</div>
+            </div>
+          </div>`).join('')
+        :'<div style="color:#888;font-size:12px;padding:20px;text-align:center">All slots already have images!</div>'}
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding-top:8px;border-top:1px solid #eee">
+    <div id="recov-progress" style="font-size:12px;color:#555;font-weight:500">0 / ${_recoverSlots.length} assigned</div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeRecovery()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+      <button onclick="saveRecovery()" style="padding:8px 22px;border-radius:8px;background:#534AB7;color:#fff;border:none;cursor:pointer;font-weight:700;font-size:13px">✅ Save All to Firebase</button>
+    </div>
+  </div>
+</div>`;
+  document.body.appendChild(wrap);
+}
+
+function selectR2Img(idx){
+  if(_recoverSelected!==null){
+    const prev=document.getElementById('r2img-'+_recoverSelected);
+    if(prev)prev.style.borderColor='#E8E7E0';
+  }
+  _recoverSelected=idx;
+  const el=document.getElementById('r2img-'+idx);
+  if(el)el.style.borderColor='#22C55E';
+  showToast('Image selected ✓ — now click the design slot on the right where it belongs','blue',3000);
+}
+
+function assignToSlot(slotIdx){
+  if(_recoverSelected===null){showToast('First click an image on the LEFT to select it','orange',3000);return;}
+  const url=_recoverUrls[_recoverSelected];
+  const slot=_recoverSlots[slotIdx];
+  if(!url||!slot)return;
+  slot.img.data=url;
+  _recoverAssigned[slotIdx]=_recoverSelected;
+  // Update slot UI
+  const prev=document.getElementById('rslot-prev-'+slotIdx);
+  if(prev)prev.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block">`;
+  const status=document.getElementById('rslot-status-'+slotIdx);
+  if(status){status.textContent='✓ Assigned';status.style.color='#22C55E';}
+  const slotEl=document.getElementById('rslot-'+slotIdx);
+  if(slotEl){slotEl.style.borderColor='#22C55E';slotEl.style.background='#F0FFF4';}
+  // Dim used R2 image
+  const imgEl=document.getElementById('r2img-'+_recoverSelected);
+  if(imgEl){imgEl.style.opacity='0.35';imgEl.style.borderColor='#22C55E';}
+  _recoverSelected=null;
+  // Update progress
+  const prog=document.getElementById('recov-progress');
+  if(prog)prog.textContent=Object.keys(_recoverAssigned).length+' / '+_recoverSlots.length+' assigned';
+}
+
+async function saveRecovery(){
+  const n=Object.keys(_recoverAssigned).length;
+  if(!n){showToast('No assignments yet — please assign images first','orange',4000);return;}
+  if(!confirm(n+' images will be saved permanently to Firebase and will appear on ALL devices. Continue?'))return;
+  try{_fb.pendingLocal=true;}catch(e){}
+  render();
+  save();
+  try{
+    await fbPush(true);
+    showToast('✅ '+n+' images saved! Open the app on any device — all images now visible.','green',10000);
+    audit('Image Recovery','Manually assigned '+n+' image(s) from R2 back to designs');
+    closeRecovery();
+  }catch(e){
+    showToast('Save failed: '+e.message,'red',8000);
+    try{_fb.pendingLocal=false;}catch(_){}
+  }
+}
+
+function closeRecovery(){
+  const m=document.getElementById('img-recovery-modal');
+  if(m)m.remove();
+  _recoverUrls=[];_recoverSlots=[];_recoverSelected=null;_recoverAssigned={};
 }
 
 // ── RESTORE FROM FILE ─────────────────────────────────────────────────────────
