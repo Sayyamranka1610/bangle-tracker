@@ -1,4 +1,7 @@
 # Cloudflare Pages redirect rules
-# Makes sure visiting the root URL goes to the main app
 
-/app   /bangle_v19.html  200
+# Serve the main app directly at the root URL — no redirect flash
+/        /bangle_v19.html  200
+
+# Short alias — /app also opens the main app
+/app     /bangle_v19.html  200

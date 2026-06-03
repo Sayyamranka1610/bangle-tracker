@@ -2017,7 +2017,8 @@ function buildDesignsPanel(order,oi){
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'
         +allGroupImgs.map(({img,label})=>
           '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
-            +'<img src="'+img.data+'" onclick="openLbDirect(\''+img.data+'\')" '
+            +'<img src="'+_resolveImgSrc(img)+'" onclick="openLbDirect(\''+_resolveImgSrc(img)+'\')" '
+              +'onerror="this.style.display=\'none\'" '
               +'style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
             +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
           +'</div>'
@@ -2094,11 +2095,11 @@ function buildDesignsGroupTable(order,oi,g){
     const dImages=d.images||[];
     const vImagesFlat=d.varieties.flatMap((v,vi)=>(v.images||[]).map((img,ii)=>({img,vi,ii})));
     const designImgThumbs=dImages.map((img,ii)=>
-      `<img class="variety-thumb" src="${img.data}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
+      `<img class="variety-thumb" src="${_resolveImgSrc(img)}" onerror="this.style.display='none'" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
       `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`
     ).join('');
     const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>
-      `<img class="variety-thumb" src="${img.data}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
+      `<img class="variety-thumb" src="${_resolveImgSrc(img)}" onerror="this.style.display='none'" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
       `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`
     ).join('');
     const imgThumbs=designImgThumbs+varImgThumbs;
@@ -2182,7 +2183,7 @@ function buildDesignsGroupTable(order,oi,g){
       d.varieties.forEach((v,vi)=>{
         const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
         const varImgs=(v.images||[]).map((img,ii)=>
-          '<img class="variety-thumb" src="'+img.data+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
+          '<img class="variety-thumb" src="'+_resolveImgSrc(img)+'" onerror="this.style.display=\'none\'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
           +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
         ).join('');
         const addVarImg='<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image">'
@@ -2433,7 +2434,7 @@ function renderDesignView(){
     const imgGalleryHtml = allImgs.length
       ? '<div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">All images for '+esc(dname)+'</div>'
         +'<div class="design-imgs-gallery" style="margin-bottom:12px">'
-        +allImgs.map((img,ii)=>'<div class="gallery-img-card"><img src="'+img.data+'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+img.data+'\')"><div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>').join('')
+        +allImgs.map((img,ii)=>'<div class="gallery-img-card"><img src="'+_resolveImgSrc(img)+'" onerror="this.style.display=\'none\'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+_resolveImgSrc(img)+'\')"><div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>').join('')
         +'</div>'
       : '';
 
