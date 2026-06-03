@@ -1436,6 +1436,8 @@ async function _autoMigrateToR2(){
   }));
   (S.stockItems||[]).forEach(it=>(it.images||[]).forEach(collect));
   if(!toUpload.length) return;
+  // Block Firebase listener from overwriting migrated images during upload
+  try{ _fb.pendingLocal=true; }catch(e){}
   let done=0;
   for(let i=0;i<toUpload.length;i+=3){
     await Promise.all(toUpload.slice(i,i+3).map(async img=>{
@@ -1447,10 +1449,12 @@ async function _autoMigrateToR2(){
     }));
   }
   if(done>0){
-    fbPushNow();
-    save();
-    render();
+    render(); // Show images immediately from in-memory state
+    save();   // Persist to localStorage + IDB
+    try{ await fbPush(true); }catch(e){} // Push directly — fbPush clears pendingLocal on success
     console.log('[AutoMigrate] Uploaded '+done+' image(s) to R2');
+  } else {
+    try{ _fb.pendingLocal=false; }catch(e){} // Nothing changed — release the block
   }
 }
 
@@ -1543,31 +1547,31 @@ async function migrateImagesToCloud(){
     const total = toUpload.length;
     showToast(`Found ${total} image(s) — uploading to cloud…`,'blue',120000);
 
-    // Step 3 — upload in batches of 3, update img.data in place
+    // Step 3 — block Firebase listener, then upload in batches of 3
+    try{ _fb.pendingLocal=true; }catch(e){}
     let done=0, failed=0;
     for(let i=0; i<toUpload.length; i+=3){
       await Promise.all(toUpload.slice(i,i+3).map(async img=>{
         try{
-          // Compress to max 1200px before uploading (good quality, web-safe size)
           const compressed = await compressImageToThumb(img.data, 1200);
           const r2url = await uploadToR2(compressed);
           if(r2url){ img.data=r2url; done++; }
           else failed++;
         }catch(e){ failed++; }
       }));
-      // Live progress update
       if(btn) btn.textContent=`☁️ ${done}/${total}…`;
       showToast(`Uploading… ${done}/${total} done`,'blue',120000);
     }
 
-    // Step 4 — save updated state to Firebase and localStorage
+    // Step 4 — render immediately, then push to Firebase
     if(done>0){
-      fbPushNow();
-      save();
-      render();
+      render(); // Show images on screen right away
+      save();   // Persist to localStorage + IDB
+      try{ await fbPush(true); }catch(e){} // Direct push — fbPush clears pendingLocal on success
       audit('Migrate images',`Migrated ${done} image(s) to Cloudflare R2`);
       showToast('✅ Migration complete! '+done+' image(s) are now in the cloud and will appear on every device.'+(failed?' ('+failed+' failed — try again)':''),'green',10000);
     } else {
+      try{ _fb.pendingLocal=false; }catch(e){}
       showToast(`Upload failed for all ${failed} image(s). Check your internet connection and try again.`,'red',8000);
     }
   }catch(e){
