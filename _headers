@@ -1,19 +1,37 @@
 /*
-  # Security headers — applied to every file served by Cloudflare Pages.
-  # These protect your users from common web attacks without changing
-  # how the app looks or works.
-
-  # Prevents other websites from loading your app inside their page
-  # (protects against "clickjacking" — where a bad site tricks users
-  #  into clicking things they can't see)
   X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
 
-  # Tells browsers to never guess the file type — only use what we declare
+# ── PERFORMANCE: Cache-Control ──────────────────────────────────────────────
+# The service worker MUST never be cached — if it's stale the app gets stuck
+# on an old version. Cloudflare edge must always serve the freshest SW.
+/bangle-sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# The main HTML file: tell Cloudflare edge to revalidate every time,
+# but allow the browser's own service-worker cache to serve it instantly.
+/bangle_v19.html
+  Cache-Control: no-cache
+  X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
 
-  # Controls what information is sent when your users click external links
-  Referrer-Policy: strict-origin-when-cross-origin
+/bangle_v19
+  Cache-Control: no-cache
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
 
-  # Disables browser features your app doesn't need
-  # (location access, microphone, camera — this app never needs these)
-  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+# Static images and icons never change — cache at Cloudflare edge for 1 year.
+# The service worker version bump forces users to re-download when anything changes.
+/bangle-logo.jpg
+  Cache-Control: public, max-age=31536000, immutable
+
+/icon-192.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/icon-512.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/manifest.json
+  Cache-Control: no-cache

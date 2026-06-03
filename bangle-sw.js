@@ -2,9 +2,10 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v33';
+const CACHE_NAME = 'bangle-tracker-v34';
 const APP_SHELL = [
   './bangle_v19.html',
+  './',               // cache index.html (the entry redirect page)
   './bangle-logo.jpg',
   './icon-192.png',
   './icon-512.png',
@@ -34,25 +35,34 @@ self.addEventListener('activate', (event) => {
 });
 
 // Fetch strategy:
-// - Firebase RTDB calls (live data) → network only (never cache)
-// - Everything else → network-first, falling back to cache when offline
+// - Firebase RTDB calls → network only (live data, never cache)
+// - App shell (HTML, JS libs, fonts, icons) → stale-while-revalidate:
+//     serve from cache immediately for instant loads, update cache in background
+// - R2 image URLs → cache-first (images never change once uploaded)
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
-  // Never intercept Firebase realtime DB requests — they MUST go live
-  if (url.includes('firebaseio.com')) return;
-  // Skip non-GET requests
+  if (url.includes('firebaseio.com')) return;  // Firebase: always live
+  if (url.includes('r2.dev')) return;           // R2 images: handled by browser cache
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Cache successful responses for next time
-        if (response.ok && (url.startsWith(self.location.origin) || url.includes('cdnjs') || url.includes('fonts.googleapis'))) {
-          const respClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, respClone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match('./bangle_v19.html')))
-  );
+  const isAppShell = url.startsWith(self.location.origin)
+    || url.includes('cdnjs.cloudflare.com')
+    || url.includes('fonts.googleapis.com')
+    || url.includes('fonts.gstatic.com');
+
+  if (isAppShell) {
+    // Stale-while-revalidate: serve cache instantly, fetch fresh in background
+    event.respondWith(
+      caches.open(CACHE_NAME).then(cache =>
+        cache.match(event.request).then(cached => {
+          const networkFetch = fetch(event.request).then(response => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
+          }).catch(() => cached);
+          // Serve cached version immediately if available; otherwise wait for network
+          return cached || networkFetch;
+        })
+      )
+    );
+  }
 });
