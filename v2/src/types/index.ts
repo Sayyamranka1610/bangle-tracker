@@ -1,104 +1,108 @@
-// ─── Core data types matching the Phase 1 Firebase schema ───────────────────
+// ─── Core types — mirror the Phase 1 Firebase schema exactly ────────────────
 
 export type Role = 'owner' | 'worker';
+export type Priority = 'normal' | 'urgent' | 'critical';
+export type BangleType = 'dye_gold' | 'cnc' | 'both';
+export type AlertLevel = 'ok' | 'warn' | 'late' | 'done';
+export type StageStatus = 'pending' | 'in_progress' | 'done';
 
-export interface User {
-  password: string;
-  role: Role;
+// ─── Design stages (production steps within a design) ────────────────────────
+
+export interface DesignStage {
+  id: string;
+  name: string;
+  loc?: string;
+  days?: number;
+  urgDays?: number;
+  group?: string;
+  status: StageStatus;
+  completionDate?: string;  // YYYY-MM-DD
+  completionNote?: string;
+  effDays?: number;
+}
+
+// ─── Variety (size grid within a design) ─────────────────────────────────────
+
+export interface DesignVariety {
+  id?: string;
   name?: string;
+  sizes: Record<string, string | number>;  // e.g. { "S": 10, "M": 20 }
 }
 
-export interface UsersMap {
-  [username: string]: User;
+// ─── Design embedded inside an order ─────────────────────────────────────────
+
+export interface EmbeddedDesign {
+  id: string;
+  name: string;
+  code?: string;
+  sizes?: string[];
+  varieties?: DesignVariety[];
+  stages: DesignStage[];
+  image?: string;       // base64 thumbnail
+  r2ImageKey?: string;
+  notes?: string;
+  cncQty?: number;      // simplified CNC quantity mode
 }
 
-// ─── Orders ──────────────────────────────────────────────────────────────────
-
-export type OrderStatus = 'pending' | 'in_progress' | 'done';
+// ─── Order ───────────────────────────────────────────────────────────────────
 
 export interface Order {
   id: string;
-  clientName: string;
-  orderId: string;
-  deadline: number; // Unix ms
-  status: OrderStatus;
+  orderId: string;        // ORD-001 assigned by renumberOrders()
+  createdAt: string;      // ISO string
+  client: string;
+  startDate: string;      // YYYY-MM-DD
+  priority: Priority;
   notes?: string;
-  createdAt: number;
-  updatedAt: number;
+  bangleType: BangleType;
+  designs: EmbeddedDesign[];
+  attachedFile?: { name: string; type: string; data?: string } | null;
 }
 
-// ─── Designs ─────────────────────────────────────────────────────────────────
-
-export type DesignType = 'cnc' | 'dye_gold';
-
-export interface SizeVariety {
-  size: string;  // e.g. "S", "M", "L", "8cm"
-  qty: number;
-}
-
-export interface DesignImage {
-  data: string;     // base64 data URL (compressed thumbnail) or R2 URL
-  r2Key?: string;   // key in R2 bucket if stored there
-  isR2?: boolean;
-}
-
-export interface Design {
-  id: string;
-  code: string;
-  name: string;
-  type: DesignType;
-  varieties: SizeVariety[];
-  simplifiedCncQty?: number;  // used in simplified CNC mode
-  image?: DesignImage;
-  hqImageKey?: string;        // Firebase key at /bangImages/{key}
-  orderId?: string;
-  notes?: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// ─── Inventory ───────────────────────────────────────────────────────────────
-
-export type LedgerEntryType = 'in' | 'out';
+// ─── Inventory ledger entry ───────────────────────────────────────────────────
 
 export interface LedgerEntry {
   id: string;
-  type: LedgerEntryType;
-  material: string;
+  date: string;           // YYYY-MM-DD
+  designName?: string;
+  designCode?: string;
+  type: 'in' | 'out';
   qty: number;
-  unit: string;
-  vendor?: string;
+  unit?: string;
   orderId?: string;
-  designId?: string;
-  notes?: string;
-  date: number; // Unix ms
-  createdAt: number;
+  note?: string;
+  source?: string;
+  vendor?: string;
 }
 
-// ─── Audit ───────────────────────────────────────────────────────────────────
+// ─── Audit log entry ──────────────────────────────────────────────────────────
 
 export interface AuditEntry {
   id: string;
-  user: string;
+  at: string;             // ISO string
   action: string;
-  entity: string;
-  entityId?: string;
   detail?: string;
-  at: number; // Unix ms
+  user?: string;
 }
 
-// ─── Top-level app data (stored at /appData in Firebase) ─────────────────────
+// ─── Vocabulary (autocomplete data) ──────────────────────────────────────────
+
+export interface Vocabulary {
+  clients?: string[];
+  vendors?: string[];
+  dnames?: string[];
+  dcodes?: string[];
+  units?: string[];
+}
+
+// ─── Top-level appData stored at /appData in Firebase ────────────────────────
 
 export interface AppData {
-  orders?: Record<string, Order>;
-  designs?: Record<string, Design>;
-  inventory?: Record<string, LedgerEntry>;
-  audit?: Record<string, AuditEntry>;
-  vocabulary?: {
-    materials?: string[];
-    units?: string[];
-    vendors?: string[];
-  };
+  orders?: Order[];
+  invLedger?: LedgerEntry[];
+  auditLog?: AuditEntry[];
+  vocabulary?: Vocabulary;
+  vocabularyManual?: Vocabulary;
 }
 
 // ─── Edit lock ───────────────────────────────────────────────────────────────
@@ -109,7 +113,7 @@ export interface EditLock {
   at: number;
 }
 
-// ─── Session ─────────────────────────────────────────────────────────────────
+// ─── Auth session ─────────────────────────────────────────────────────────────
 
 export interface Session {
   username: string;
