@@ -2293,9 +2293,13 @@ function openLibraryImport(){
   document.body.appendChild(wrap);
 }
 
+// Folders/patterns that are never real photos — always skip
+const _LIB_SKIP_FOLDERS=/^\.picaoriginals$|^\.picasaoriginals$|^\.picasa$|^thumbs$|^\.thumbnails$|^\.@__thumb$|^eadir$/i;
+const _LIB_SKIP_FILES=/^thumbs\.db$|^\.ds_store$|^desktop\.ini$/i;
+
 async function _libImportFiles(input, forceFolder){
-  const files=Array.from(input.files);
-  if(!files.length)return;
+  const allFiles=Array.from(input.files);
+  if(!allFiles.length)return;
   await _ensureLibraryLoaded();
 
   const prog=document.getElementById('lib-import-progress');
@@ -2304,6 +2308,18 @@ async function _libImportFiles(input, forceFolder){
   const sub=document.getElementById('lib-import-sub');
   const statsEl=document.getElementById('lib-import-stats');
   if(prog){prog.style.display='flex';}
+
+  // Filter out system/backup folders (.picaoriginals, .picasa, Thumbs, etc.)
+  let systemSkipped=0;
+  const files=allFiles.filter(f=>{
+    const rel=f.webkitRelativePath||f.name;
+    const parts=rel.split('/');
+    // Check every path segment — if any is a system folder, skip the file
+    const inSystemFolder=parts.slice(0,-1).some(seg=>_LIB_SKIP_FOLDERS.test(seg.trim()));
+    const isSystemFile=_LIB_SKIP_FILES.test(f.name);
+    if(inSystemFolder||isSystemFile){systemSkipped++;return false;}
+    return true;
+  });
 
   // Parse folder + design code from webkitRelativePath
   const plan=files.map(f=>{
@@ -2332,7 +2348,8 @@ async function _libImportFiles(input, forceFolder){
   const skipCount=plan.length-toUpload.length;
 
   if(toUpload.length===0){
-    if(label)label.textContent='✅ All '+plan.length.toLocaleString()+' photos are already in the library!';
+    const sysMsg=systemSkipped?` (${systemSkipped} Picasa/system files ignored)`:'';
+    if(label)label.textContent='✅ All '+plan.length.toLocaleString()+' photos are already in the library!'+sysMsg;
     if(fill){fill.style.width='100%';fill.style.background='#22C55E';}
     showToast('All photos already in library — nothing new to upload','green',4000);
     input.value='';return;
@@ -2341,14 +2358,18 @@ async function _libImportFiles(input, forceFolder){
   const total=toUpload.length;
   let done=0,failed=0;
   const folderCounts={};
+  const failedFiles=[];        // track exactly which files failed
   const BATCH=8, SAVE_EVERY=50;
   let pending=[];
 
   const _upd=()=>{
     const pct=Math.round((done/total)*100);
     if(fill)fill.style.width=pct+'%';
-    if(label)label.textContent=`Uploading ${done.toLocaleString()} / ${total.toLocaleString()} photos (${pct}%)…`+(skipCount?` · ${skipCount} already existed`:'');
-    if(sub)sub.textContent=failed?`${failed} failed (bad files or slow connection) — rest continuing`:'All uploads successful so far ✓';
+    let topLine=`Uploading ${done.toLocaleString()} / ${total.toLocaleString()} photos (${pct}%)…`;
+    if(skipCount)topLine+=` · ${skipCount} already in library`;
+    if(systemSkipped)topLine+=` · ${systemSkipped} Picasa/backup files skipped`;
+    if(label)label.textContent=topLine;
+    if(sub)sub.textContent=failed?`${failed} failed — will show list at end`:'All uploads successful so far ✓';
     if(statsEl)statsEl.innerHTML=Object.entries(folderCounts).map(([f,n])=>`<span style="background:#f0efff;border-radius:5px;padding:2px 8px">${esc(f)}: ${n}</span>`).join('');
   };
   _upd();
@@ -2367,24 +2388,41 @@ async function _libImportFiles(input, forceFolder){
         done++;
       }catch(e){
         failed++;done++;
-        console.warn('Library import failed:',p.fileName,e.message);
+        failedFiles.push({folder:p.folder,fileName:p.fileName,reason:e.message});
+        console.warn('Library import failed:',p.folder+'/'+p.fileName,e.message);
       }
       _upd();
     }));
-    // Save every SAVE_EVERY uploads so progress is never lost
     if(pending.length>=SAVE_EVERY){
       await _batchAddLibraryEntries([...pending]);
       pending=[];
     }
   }
-  // Save any remaining
   if(pending.length)await _batchAddLibraryEntries(pending);
 
   const ok=done-failed;
-  const msg=`✅ ${ok.toLocaleString()} photos imported!`+(skipCount?` (${skipCount} skipped — already in library)`:'')+(failed?` · ${failed} failed`:'');
-  if(label)label.textContent=msg;
+  let finalMsg=`✅ ${ok.toLocaleString()} photos imported!`;
+  if(skipCount)finalMsg+=` · ${skipCount} already existed`;
+  if(systemSkipped)finalMsg+=` · ${systemSkipped} Picasa/system files skipped automatically`;
+  if(failed)finalMsg+=` · ${failed} failed`;
+  if(label)label.textContent=finalMsg;
   if(fill){fill.style.width='100%';fill.style.background=failed?'#F59E0B':'#22C55E';}
-  showToast(msg,'green',10000);
+
+  // Show failed files list if any
+  if(failed>0&&statsEl){
+    const byFolder={};
+    failedFiles.forEach(f=>{if(!byFolder[f.folder])byFolder[f.folder]=[];byFolder[f.folder].push(f.fileName);});
+    const retryNote='<div style="margin-top:8px;padding:8px 10px;background:#FFF7E6;border:1px solid #FAC775;border-radius:8px;font-size:11px">'
+      +'<strong style="color:#BA7517">⚠ '+failed+' files failed to upload:</strong><br>'
+      +Object.entries(byFolder).map(([folder,names])=>
+        '<div style="margin-top:4px"><strong>'+esc(folder)+':</strong> '+names.map(n=>esc(n)).join(', ')+'</div>'
+      ).join('')
+      +'<div style="margin-top:6px;color:#555">Re-run the import to retry — files already imported will be skipped automatically.</div>'
+      +'</div>';
+    statsEl.innerHTML=statsEl.innerHTML+retryNote;
+  }
+
+  showToast(finalMsg,'green',10000);
   if(S.mainView==='library')renderLibrary();
   input.value='';
 }
