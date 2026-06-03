@@ -451,6 +451,7 @@ img{display:block}
           <select class="fsel" id="t-sta">
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
           </select>
         </div>
       </div>
@@ -818,6 +819,8 @@ function submitTask(){
     createdBy:   S.me.id,
     createdAt:   ex.createdAt || now(),
     lastModified: now(),
+    // Auto-stamp completedAt if submitted as completed
+    completedAt: sta === 'completed' ? (ex.completedAt || now()) : (ex.completedAt || null),
   };
   writeTask(task);
   closeModal('m-task');
@@ -883,12 +886,20 @@ function openCreateTask(){
   document.getElementById('t-time').value='';
   document.getElementById('t-date').value='';
   document.getElementById('t-pri').value='medium';
-  document.getElementById('t-sta').value='pending';
+  // Employees log completed work by default; admins assign pending tasks
+  document.getElementById('t-sta').value = isAdmin() ? 'pending' : 'completed';
   const sel = document.getElementById('t-who');
-  sel.innerHTML = '<option value="">— Select person —</option>'+
-    Object.values(S.users).sort((a,b)=>a.name.localeCompare(b.name))
-      .map(u=>`<option value="${xe(u.id)}">${xe(u.name)}</option>`).join('');
-  if(!isAdmin()) sel.value = S.me.id;
+  if(isAdmin()){
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">— Select person —</option>'+
+      Object.values(S.users).sort((a,b)=>a.name.localeCompare(b.name))
+        .map(u=>`<option value="${xe(u.id)}">${xe(u.name)}</option>`).join('');
+  } else {
+    // Employees can only log tasks for themselves
+    sel.disabled = true;
+    sel.innerHTML = `<option value="${xe(S.me.id)}">${xe(S.me.name)}</option>`;
+    sel.value = S.me.id;
+  }
   openModal('m-task');
   setTimeout(()=>document.getElementById('t-title').focus(),100);
 }
@@ -1067,7 +1078,7 @@ function renderTasksView(){
     </div>`).join('');
 
   const title  = isAdmin() ? 'All Tasks' : 'My Tasks';
-  const addBtn = isAdmin() ? `<button class="btn-add" onclick="openCreateTask()">＋</button>` : '';
+  const addBtn = `<button class="btn-add" onclick="openCreateTask()">＋</button>`;
 
   return `
     <div class="page-hdr"><div><div class="page-title">${title}</div></div>${addBtn}</div>
