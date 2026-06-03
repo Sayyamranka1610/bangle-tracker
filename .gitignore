@@ -6,6 +6,11 @@
 *.xlsx
 *.pdf
 
+# Phase 2 build artifacts
+v2/node_modules/
+v2/dist/
+v2/.env.local
+
 # OS
 .DS_Store
 Thumbs.db
