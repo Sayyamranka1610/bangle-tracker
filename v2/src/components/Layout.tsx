@@ -16,8 +16,15 @@ export default function Layout() {
   const { state, logout } = useApp();
   const { session, syncStatus } = state;
 
+  const isReadOnly = session && session.role !== 'owner';
+
   return (
     <div className="flex h-screen bg-[#0f0e1a] text-white">
+      {isReadOnly && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-red-600/90 text-white text-xs text-center py-1 font-medium">
+          READ-ONLY MODE — You can view everything but cannot make changes
+        </div>
+      )}
       {/* Sidebar */}
       <aside className="w-56 flex-shrink-0 bg-[#1a1750] flex flex-col">
         <div className="px-4 py-5 border-b border-white/10">
@@ -66,7 +73,7 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className={`flex-1 overflow-auto ${isReadOnly ? 'pt-6' : ''}`}>
         <Outlet />
       </main>
 

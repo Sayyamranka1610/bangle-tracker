@@ -3,6 +3,7 @@ import { useApp } from '../store/AppContext';
 import type { VendorOrder, VendorStatus } from '../types';
 import { vendorAlert, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
 import { db, PATHS } from '../lib/firebase';
+import { writeAudit } from '../lib/auditUtils';
 import VendorOrderCard from '../components/vendors/VendorOrderCard';
 import VendorModal from '../components/vendors/VendorModal';
 
@@ -58,10 +59,13 @@ export default function Vendors() {
 
   // ── Persist helpers ───────────────────────────────────────────────────────────
 
-  async function persist(next: VendorOrder[]) {
+  async function persist(next: VendorOrder[], auditAction?: string, auditDetail?: string) {
     setSaving(true);
     try {
       await db.set(`${PATHS.appData}/vendorOrders`, next);
+      if (auditAction && session?.username) {
+        await writeAudit(auditAction, auditDetail ?? '', session.username, data.auditLog ?? []);
+      }
     } catch {
       showToast('Failed to save — check your connection', 'error');
     } finally {
@@ -76,12 +80,12 @@ export default function Vendors() {
       : [saved, ...vendorOrders];
     setModalOrder(undefined);
     showToast(exists ? 'Vendor order updated' : 'Vendor order created', 'success');
-    await persist(next);
+    await persist(next, exists ? 'Edit vendor order' : 'Create vendor order', `${saved.orderId} — ${saved.vendor}`);
   }
 
   async function handleStatusChange(order: VendorOrder, status: VendorStatus) {
     const next = vendorOrders.map(o => o.id === order.id ? { ...o, status } : o);
-    await persist(next);
+    await persist(next, 'Edit vendor order', `${order.orderId} status → ${status}`);
   }
 
   async function handleDelete() {
@@ -89,7 +93,7 @@ export default function Vendors() {
     const next = vendorOrders.filter(o => o.id !== deleteTarget.id);
     setDeleteTarget(null);
     showToast(`Deleted vendor order ${deleteTarget.orderId}`, 'info');
-    await persist(next);
+    await persist(next, 'Delete vendor order', `${deleteTarget.orderId} (${deleteTarget.vendor}) deleted`);
   }
 
   function toggleCollapse(vendor: string) {

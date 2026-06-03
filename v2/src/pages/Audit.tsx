@@ -113,6 +113,19 @@ export default function Audit() {
     setDateFrom(''); setDateTo(''); setPage(1);
   }
 
+  function exportCSV() {
+    const rows = [['Date', 'Time', 'Action', 'User', 'Details']];
+    filtered.forEach(e => {
+      rows.push([fmtDate(e.ts), fmtTime(e.ts), e.action, e.user ?? '—', (e.detail ?? '').replace(/,/g, ';')]);
+    });
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `audit_trail_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const hasFilters = search || userFilter || actionFilter || dateFrom || dateTo;
 
   // Quick date presets
@@ -135,14 +148,20 @@ export default function Audit() {
             {filtered.length !== entries.length ? ' (filtered)' : ''}
           </p>
         </div>
-        {hasFilters && (
-          <button
-            onClick={resetFilters}
-            className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors"
-          >
-            Clear filters
-          </button>
-        )}
+        <div className="flex gap-2">
+          {hasFilters && (
+            <button onClick={resetFilters}
+              className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">
+              Clear filters
+            </button>
+          )}
+          {filtered.length > 0 && (
+            <button onClick={exportCSV}
+              className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">
+              📥 Export CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
