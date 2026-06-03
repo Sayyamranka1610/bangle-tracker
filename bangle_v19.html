@@ -922,11 +922,11 @@ async function uploadToR2(base64DataUrl){
   }
 }
 
-// ── IMAGE PLACEHOLDER ─────────────────────────────────────────────────────────
-// Shown whenever an image cannot be resolved (IDB placeholder stored on a
-// different device/browser origin, or a URL that failed to load).
-// SVG inline — zero network requests, always visible.
-const _IMG_PH = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Crect width='80' height='80' rx='10' fill='%23EEEDFE'/%3E%3Crect x='22' y='28' width='36' height='26' rx='4' stroke='%23AFA9EC' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='40' cy='41' r='7' stroke='%23AFA9EC' stroke-width='2.5' fill='none'/%3E%3Crect x='34' y='24' width='12' height='6' rx='2' fill='%23AFA9EC'/%3E%3C/svg%3E";
+// ── IMAGE SRC HELPER ──────────────────────────────────────────────────────────
+// Returns img.data if it is a displayable URL (base64 data: or https://).
+// Deliberately uses img.data only — thumbnail views must never use hqData.
+// Returns null for __IDB__ placeholders, null, undefined, or empty strings.
+function _vd(img){const d=img&&img.data;return typeof d==='string'&&(d.startsWith('data:')||d.startsWith('https://'))? d:null;}
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────────
 const DEFAULT_SIZES = ['2/2','2/4','2/6','2/8','2/10','2/12'];
@@ -1412,53 +1412,6 @@ async function loadImagesFromIDB(){
   }catch(e){
     console.warn('Could not load images from IndexedDB:',e.message);
   }
-  // After attempting IDB recovery, check for any remaining placeholders
-  setTimeout(_checkForBrokenImages, 1500);
-}
-
-// Scans all images in state for __IDB__ placeholders (images that exist but
-// are stored in another device's IndexedDB and cannot be loaded here).
-// Shows a prominent recovery notice with exact steps to get them back.
-function _checkForBrokenImages(){
-  let count=0;
-  const scan=img=>{if(img&&typeof img.data==='string'&&img.data.startsWith('__IDB__'))count++;};
-  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
-    (d.images||[]).forEach(scan);
-    (d.varieties||[]).forEach(v=>(v.images||[]).forEach(scan));
-  }));
-  (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
-    (d.images||[]).forEach(scan);
-    (d.varieties||[]).forEach(v=>(v.images||[]).forEach(scan));
-  }));
-  if(count>0){
-    // Show a persistent orange banner (not auto-dismissing) with recovery steps
-    _showRecoveryBanner(count);
-  }
-}
-
-function _showRecoveryBanner(count){
-  // Remove any existing banner first
-  const old=document.getElementById('img-recovery-banner');
-  if(old)old.remove();
-  const banner=document.createElement('div');
-  banner.id='img-recovery-banner';
-  banner.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:9999;background:#7C5301;color:#fff;border-radius:12px;padding:14px 18px;max-width:92vw;width:420px;box-shadow:0 4px 24px rgba(0,0,0,.3);font-size:13px;line-height:1.5';
-  banner.innerHTML=`
-    <div style="display:flex;align-items:flex-start;gap:10px">
-      <span style="font-size:22px;flex-shrink:0">📷</span>
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:14px;margin-bottom:4px">${count} image(s) stored on old device</div>
-        <div style="opacity:.9;font-size:12px">These images were saved in a previous browser on a different device. To recover them:</div>
-        <ol style="margin:6px 0 0 14px;padding:0;font-size:12px;opacity:.9">
-          <li>Open the old device/browser and go to the app</li>
-          <li>Go to <strong>Settings → Download Backup</strong></li>
-          <li>Come back here and go to <strong>Settings → Restore from Backup</strong></li>
-          <li>Select that backup file — all images will be restored</li>
-        </ol>
-      </div>
-      <button onclick="document.getElementById('img-recovery-banner').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0">✕</button>
-    </div>`;
-  document.body.appendChild(banner);
 }
 
 // ── CORE SAVE (quota-safe) ─────────────────────────────────────────────────────
@@ -2070,9 +2023,7 @@ function buildDesignsPanel(order,oi){
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'
         +allGroupImgs.map(({img,label})=>
           '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
-            +(()=>{const s=_resolveImgSrc(img);return '<img src="'+(s||_IMG_PH)+'" onclick="'+(s?'openLbDirect(\''+s+'\')':'void 0')+'" '
-              +'onerror="this.src=_IMG_PH" '
-              +'style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;'+(s?'cursor:zoom-in;':'cursor:default;')+'box-shadow:0 2px 6px rgba(83,74,183,.12)">';})()
+            +(()=>{const s=_vd(img);return s?'<img src="'+s+'" onclick="openLbDirect(\''+s+'\')" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">':'';})()
             +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
           +'</div>'
         ).join('')
@@ -2147,13 +2098,15 @@ function buildDesignsGroupTable(order,oi,g){
     // Design-level images — each with ✕ delete button; click opens HQ lightbox
     const dImages=d.images||[];
     const vImagesFlat=d.varieties.flatMap((v,vi)=>(v.images||[]).map((img,ii)=>({img,vi,ii})));
-    const designImgThumbs=dImages.map((img,ii)=>{const s=_resolveImgSrc(img);return
-      `<img class="variety-thumb" src="${s||_IMG_PH}" onerror="this.src=_IMG_PH" onclick="${s?`openDesignImgsLb(${oi},${di},${ii})`:'void 0'}" style="${s?'cursor:zoom-in':'cursor:default'}" title="${esc(img.name||'Image')}">`+
-      `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`;}
+    const designImgThumbs=dImages.map((img,ii)=>{const s=_vd(img);return s
+      ?`<img class="variety-thumb" src="${s}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
+       `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`
+      :`<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`;}
     ).join('');
-    const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>{const s=_resolveImgSrc(img);return
-      `<img class="variety-thumb" src="${s||_IMG_PH}" onerror="this.src=_IMG_PH" onclick="${s?`openDesignImgsLb(${oi},${di},${dImages.length+gOff})`:'void 0'}" style="${s?'cursor:zoom-in':'cursor:default'}">`+
-      `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`;}
+    const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>{const s=_vd(img);return s
+      ?`<img class="variety-thumb" src="${s}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
+       `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`
+      :`<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`;}
     ).join('');
     const imgThumbs=designImgThumbs+varImgThumbs;
     const addImgBtn=`<label class="variety-img-add no-print" for="dlvl-${d.id}" title="Add image to this design code">
@@ -2235,9 +2188,10 @@ function buildDesignsGroupTable(order,oi,g){
       // Variety sub-rows (indented, white background)
       d.varieties.forEach((v,vi)=>{
         const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const varImgs=(v.images||[]).map((img,ii)=>{const s=_resolveImgSrc(img);return
-          '<img class="variety-thumb" src="'+(s||_IMG_PH)+'" onerror="this.src=_IMG_PH" onclick="'+(s?'openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')':'void 0')+'" style="'+(s?'cursor:zoom-in':'cursor:default')+'">'
-          +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>';}
+        const varImgs=(v.images||[]).map((img,ii)=>{const s=_vd(img);return s
+          ?'<img class="variety-thumb" src="'+s+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
+           +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
+          :'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>';}
         ).join('');
         const addVarImg='<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image">'
           +'<span style="font-size:16px;line-height:1">+</span></label>'
@@ -2487,7 +2441,7 @@ function renderDesignView(){
     const imgGalleryHtml = allImgs.length
       ? '<div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">All images for '+esc(dname)+'</div>'
         +'<div class="design-imgs-gallery" style="margin-bottom:12px">'
-        +allImgs.map((img,ii)=>{const s=_resolveImgSrc(img);return '<div class="gallery-img-card"><img src="'+(s||_IMG_PH)+'" onerror="this.src=_IMG_PH" alt="'+esc(dname)+' '+(ii+1)+'" '+(s?'onclick="openLbDirect(\''+s+'\')"':'')+' style="'+(s?'':'cursor:default')+'">'+'<div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>';}).join('')
+        +allImgs.map((img,ii)=>{const s=_vd(img);return s?'<div class="gallery-img-card"><img src="'+s+'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+s+'\')">'+'<div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>':''}).join('')
         +'</div>'
       : '';
 
