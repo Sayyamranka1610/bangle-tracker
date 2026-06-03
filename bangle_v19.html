@@ -851,7 +851,6 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <button onclick="backupToFile()" title="Download a full backup of all data as a JSON file">📤 Backup</button>
   <button onclick="restoreFromFile()" title="Restore from a previously downloaded backup">📥 Restore</button>
   <button id="btn-migrate-imgs" onclick="migrateImagesToCloud()" title="Upload all images from this device to cloud so they appear everywhere" style="background:#534AB7;color:#fff;border-color:#534AB7">☁️ Migrate Images</button>
-  <button id="btn-recover-imgs" onclick="openImageRecovery()" title="Upload many photos at once and link them to designs permanently" style="background:#1D9E75;color:#fff;border-color:#1D9E75">📸 Upload Photos</button>
   <button onclick="exportImageManifest()" title="Download a CSV listing every image and exactly which order/design/variety it belongs to — keep this as your image backup" style="background:#185FA5;color:#fff;border-color:#185FA5">🗂️ Image Backup</button>
   <div class="save-bar-sep"></div>
   <button onclick="openDataHealthModal()" title="Check storage health and data size">🩺 Health</button>
@@ -1992,6 +1991,7 @@ function closeRecovery(){
 // Photos are permanent in R2. The library is just a searchable index of URLs.
 
 let _imageLibrary=[], _libLoaded=false, _libPage=0, _lpPage=0;
+let _libFolder=''; // '' = show folder tiles; 'FolderName' = show that folder's images
 const LIB_PAGE=60;
 
 // Load library from Firebase (lazy — only when Library tab or picker first opens)
@@ -2048,6 +2048,7 @@ async function deleteLibraryEntry(id){
 // ── LIBRARY VIEW ───────────────────────────────────────────────────────────────
 async function openLibraryView(){
   _libPage=0;
+  _libFolder='';
   await _ensureLibraryLoaded();
   renderLibrary();
 }
@@ -2059,68 +2060,186 @@ function renderLibrary(){
     el.innerHTML='<div style="text-align:center;padding:80px;color:#888;font-size:14px">Loading library…</div>';
     return;
   }
-  const searchVal=(document.getElementById('lib-search')||{}).value||'';
-  const folderVal=(document.getElementById('lib-folder-filter')||{}).value||'';
-  const folders=[...new Set(_imageLibrary.map(e=>e.folder||'').filter(Boolean))].sort();
-  const q=searchVal.trim().toLowerCase();
-  let items=_imageLibrary.filter(e=>{
-    if(folderVal&&(e.folder||'')!==folderVal)return false;
-    if(q)return (e.designCode||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q)||(e.folder||'').toLowerCase().includes(q);
-    return true;
-  });
-  const total=items.length;
-  const shown=items.slice(0,(_libPage+1)*LIB_PAGE);
-  const folderOpts=folders.map(f=>`<option value="${esc(f)}"${folderVal===f?' selected':''}>${esc(f)}</option>`).join('');
 
-  el.innerHTML=`<div style="padding:14px 16px 24px">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+  const searchVal=(document.getElementById('lib-search')||{}).value||'';
+  const q=searchVal.trim().toLowerCase();
+
+  // Build folder map: { folderName → { count, preview } }
+  const folderMap={};
+  _imageLibrary.forEach(e=>{
+    const f=e.folder||'Uncategorized';
+    if(!folderMap[f]){folderMap[f]={count:0,preview:null};}
+    folderMap[f].count++;
+    if(!folderMap[f].preview)folderMap[f].preview=e.r2url;
+  });
+  const allFolders=Object.keys(folderMap).sort();
+
+  // ── TOOLBAR (always visible) ───────────────────────────────────────────
+  const toolbar=`
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
     <div>
       <div style="font-size:16px;font-weight:700;color:#534AB7">🖼️ Image Library</div>
-      <div style="font-size:12px;color:#888;margin-top:2px">${_imageLibrary.length.toLocaleString()} photos stored permanently in cloud — available on every device</div>
+      <div style="font-size:12px;color:#888;margin-top:2px">${_imageLibrary.length.toLocaleString()} photos · ${allFolders.length} folder${allFolders.length!==1?'s':''} — stored permanently in cloud</div>
     </div>
-    <button onclick="openLibraryImport()" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">📁 Import Photos from Folder</button>
-  </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="_libOpenNewFolderDialog()" style="background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">➕ New Folder</button>
+      <button onclick="openLibraryImport()" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📁 Import Folder</button>
+      <button onclick="openImageRecovery()" style="background:#185FA5;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📸 Upload &amp; Assign to Orders</button>
+    </div>
+  </div>`;
 
-  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input id="lib-search" placeholder="Search by design code or filename…" value="${esc(searchVal)}"
-      oninput="_libPage=0;renderLibrary()"
-      style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px">
-    <select id="lib-folder-filter" onchange="_libPage=0;renderLibrary()"
-      style="padding:8px 10px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:12px;min-width:130px">
-      <option value="">All folders (${folders.length})</option>
-      ${folderOpts}
-    </select>
-  </div>
-
-  ${_imageLibrary.length===0?`
-    <div style="text-align:center;padding:70px 20px;color:#888">
+  // ── EMPTY STATE ────────────────────────────────────────────────────────
+  if(_imageLibrary.length===0){
+    el.innerHTML=`<div style="padding:14px 16px 24px">${toolbar}
+    <div style="text-align:center;padding:60px 20px;color:#888;border:2px dashed #AFA9EC;border-radius:14px;background:#fafaf8">
       <div style="font-size:44px;margin-bottom:12px">🖼️</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:8px">Library is empty</div>
-      <div style="font-size:13px;margin-bottom:20px">Import your design photos once — then attach them to any order with one click, forever.</div>
-      <button onclick="openLibraryImport()" style="background:#534AB7;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer">📁 Import Photos Now</button>
+      <div style="font-size:13px;margin-bottom:20px">Upload your design photos folder here — the folder structure is preserved automatically.</div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button onclick="_libOpenNewFolderDialog()" style="background:#1D9E75;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:13px;font-weight:600;cursor:pointer">➕ Create First Folder</button>
+        <button onclick="openLibraryImport()" style="background:#534AB7;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:13px;font-weight:600;cursor:pointer">📁 Import Folder from Computer</button>
+      </div>
+    </div></div>`;
+    return;
+  }
+
+  // ── FOLDER CONTENTS VIEW ───────────────────────────────────────────────
+  if(_libFolder){
+    const folderItems=_imageLibrary.filter(e=>(e.folder||'Uncategorized')===_libFolder);
+    const filteredItems=q?folderItems.filter(e=>(e.designCode||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q)):folderItems;
+    const shown=filteredItems.slice(0,(_libPage+1)*LIB_PAGE);
+    el.innerHTML=`<div style="padding:14px 16px 24px">
+    ${toolbar}
+    <!-- Breadcrumb -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button onclick="_libSelectFolder('')" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">← All Folders</button>
+      <span style="font-size:13px;color:#888">›</span>
+      <span style="font-size:14px;font-weight:700;color:#534AB7">📁 ${esc(_libFolder)}</span>
+      <span style="font-size:12px;color:#aaa">${folderItems.length} photo${folderItems.length!==1?'s':''}</span>
+      <button onclick="_libUploadMoreToFolder('${esc(_libFolder)}')" style="background:#1D9E75;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;margin-left:4px">+ Upload More Here</button>
     </div>
-  `:shown.length===0?`
-    <div style="text-align:center;padding:50px;color:#888;font-size:13px">No photos match "<strong>${esc(searchVal)}</strong>"</div>
-  `:`
-    <div style="font-size:11px;color:#888;margin-bottom:10px">Showing ${shown.length.toLocaleString()} of ${total.toLocaleString()} photos${q?' matching "'+esc(searchVal)+'"':''}</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">
+    <!-- Search within folder -->
+    <input id="lib-search" placeholder="Search within ${esc(_libFolder)}…" value="${esc(searchVal)}"
+      oninput="_libPage=0;renderLibrary()"
+      style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:12px">
+    ${shown.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">No photos${q?' matching "'+esc(searchVal)+'"':''} in this folder.</div>`:`
+    <div style="font-size:11px;color:#888;margin-bottom:10px">Showing ${shown.length.toLocaleString()} of ${filteredItems.length.toLocaleString()} photos</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">
       ${shown.map(e=>`
-        <div style="border-radius:10px;border:1.5px solid #E8E7E0;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05)">
-          <div style="height:88px;background:#f5f5f5;cursor:zoom-in" onclick="openLbDirect('${esc(e.r2url)}')">
+        <div style="border-radius:10px;border:1.5px solid #E8E7E0;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 12px rgba(83,74,183,.15)'" onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.05)'">
+          <div style="height:96px;background:#f5f5f5;cursor:zoom-in" onclick="openLbDirect('${esc(e.r2url)}')">
             <img src="${esc(e.r2url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">
           </div>
-          <div style="padding:5px 7px">
-            <div style="font-size:11px;font-weight:700;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.designCode)}">${esc(e.designCode)||'—'}</div>
-            <div style="font-size:10px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.folder||'')}</div>
-            <button onclick="deleteLibraryEntry('${e._id}')" style="margin-top:4px;width:100%;font-size:10px;padding:2px 0;background:#fff;border:1px solid #eee;border-radius:4px;cursor:pointer;color:#bbb">✕ Remove</button>
+          <div style="padding:6px 7px">
+            <div style="font-size:11px;font-weight:700;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.designCode||e.fileName)}">${esc(e.designCode||e.fileName||'—')}</div>
+            <button onclick="deleteLibraryEntry('${esc(e._id)}')" style="margin-top:4px;width:100%;font-size:10px;padding:2px 0;background:#fff;border:1px solid #eee;border-radius:4px;cursor:pointer;color:#bbb">✕ Remove</button>
           </div>
         </div>`).join('')}
     </div>
-    ${shown.length<total?`<div style="text-align:center;margin-top:18px">
-      <button onclick="_libPage++;renderLibrary()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:9px 26px;font-size:13px;font-weight:600;cursor:pointer">Load more (${(total-shown.length).toLocaleString()} remaining)</button>
+    ${shown.length<filteredItems.length?`<div style="text-align:center;margin-top:18px">
+      <button onclick="_libPage++;renderLibrary()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:9px 26px;font-size:13px;font-weight:600;cursor:pointer">Load more (${(filteredItems.length-shown.length).toLocaleString()} remaining)</button>
     </div>`:''}
+    `}
+    </div>`;
+    return;
+  }
+
+  // ── FOLDER TILES VIEW (main view) ─────────────────────────────────────
+  const filteredFolders=q?allFolders.filter(f=>f.toLowerCase().includes(q)):allFolders;
+  el.innerHTML=`<div style="padding:14px 16px 24px">
+  ${toolbar}
+  <!-- Search -->
+  <input id="lib-search" placeholder="Search folders…" value="${esc(searchVal)}"
+    oninput="_libPage=0;renderLibrary()"
+    style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:14px">
+
+  ${filteredFolders.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">No folders match "<strong>${esc(searchVal)}</strong>"</div>`:`
+  <!-- Folder tiles grid -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
+    ${filteredFolders.map(f=>{
+      const fd=folderMap[f];
+      return`<div onclick="_libSelectFolder('${esc(f)}')" style="border-radius:12px;border:1.5px solid #E8E7E0;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);cursor:pointer;transition:box-shadow .15s,transform .15s" onmouseover="this.style.boxShadow='0 4px 16px rgba(83,74,183,.18)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.05)';this.style.transform=''">
+        <div style="height:110px;background:#f0efff;position:relative;overflow:hidden">
+          ${fd.preview?`<img src="${esc(fd.preview)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:36px">📁</div>`}
+          <div style="position:absolute;bottom:5px;right:6px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;padding:2px 7px;font-size:10px;font-weight:700">${fd.count}</div>
+        </div>
+        <div style="padding:8px 10px;border-top:1px solid #f0efee">
+          <div style="font-size:12px;font-weight:700;color:#1a1916;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f)}">📁 ${esc(f)}</div>
+          <div style="font-size:10px;color:#888;margin-top:2px">${fd.count} photo${fd.count!==1?'s':''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
   `}
-</div>`;
+  </div>`;
+}
+
+function _libSelectFolder(name){
+  _libFolder=name;
+  _libPage=0;
+  const s=document.getElementById('lib-search');
+  if(s)s.value='';
+  renderLibrary();
+}
+
+function _libUploadMoreToFolder(folderName){
+  const inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;inp.accept='image/*';
+  inp.onchange=()=>{ if(inp.files.length) _libImportFiles(inp,folderName); };
+  inp.click();
+}
+
+function _libOpenNewFolderDialog(){
+  const old=document.getElementById('lib-new-folder-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='lib-new-folder-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px';
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:16px;width:min(460px,96vw);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:15px;font-weight:700;color:#534AB7">➕ Create New Folder</div>
+      <button onclick="document.getElementById('lib-new-folder-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:5px 11px;cursor:pointer">✕</button>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:6px">Folder name</label>
+      <input id="lib-new-folder-name" placeholder="e.g. 8MM CNC, 12MM SILVER, Dye Gold…"
+        style="width:100%;padding:9px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px"
+        onkeydown="if(event.key==='Enter')_libNewFolderProceed()">
+    </div>
+    <div style="background:#f0efff;border-radius:10px;padding:12px 14px;font-size:12px;color:#534AB7;line-height:1.6">
+      📌 Type the folder name first, then select the photos from your computer. The photos will be saved under this folder name in the library.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('lib-new-folder-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:9px 20px;font-size:13px;cursor:pointer">Cancel</button>
+      <button onclick="_libNewFolderProceed()" style="background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">📂 Select Photos →</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  setTimeout(()=>{const i=document.getElementById('lib-new-folder-name');if(i)i.focus();},80);
+}
+
+function _libNewFolderProceed(){
+  const nameEl=document.getElementById('lib-new-folder-name');
+  const name=(nameEl?nameEl.value:'').trim();
+  if(!name){if(nameEl){nameEl.style.borderColor='#E24B4A';nameEl.focus();}return;}
+  document.getElementById('lib-new-folder-modal').remove();
+  const inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;inp.accept='image/*';
+  inp.onchange=()=>{
+    if(inp.files.length){
+      // Open the import modal so user sees progress
+      openLibraryImport();
+      // Wait a tick for the modal to render, then trigger the import
+      setTimeout(()=>{
+        const prog=document.getElementById('lib-import-progress');
+        if(prog)prog.style.display='flex';
+        _libImportFiles(inp,name).then(()=>{
+          _libSelectFolder(name);
+        });
+      },120);
+    }
+  };
+  inp.click();
 }
 
 // ── BULK IMPORT PANEL ──────────────────────────────────────────────────────────
