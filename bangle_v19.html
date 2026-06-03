@@ -1999,8 +1999,8 @@ async function _ensureLibraryLoaded(){
   if(_libLoaded)return;
   _libLoaded=true;
   try{
-    const snap=await db.ref('imageLibrary').once('value');
-    const data=snap.val()||{};
+    const resp=await fetch(FB_LIB+'.json',{signal:AbortSignal.timeout(15000)});
+    const data=resp.ok?(await resp.json()||{}):{};
     _imageLibrary=Object.entries(data).map(([id,v])=>({...v,_id:id}));
   }catch(e){
     console.warn('Library load failed:',e.message);
@@ -2013,8 +2013,10 @@ async function _ensureLibraryLoaded(){
 async function _addLibraryEntry(r2url,designCode,folder,fileName){
   const entry={designCode:designCode||'',folder:folder||'General',r2url,fileName:fileName||'',uploadedAt:Date.now()};
   try{
-    const ref=await db.ref('imageLibrary').push(entry);
-    _imageLibrary.push({...entry,_id:ref.key});
+    const resp=await fetch(FB_LIB+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)});
+    const result=resp.ok?await resp.json():null;
+    const key=(result&&result.name)||('tmp-'+Date.now());
+    _imageLibrary.push({...entry,_id:key});
   }catch(e){
     console.warn('Library entry save failed:',e.message);
     _imageLibrary.push({...entry,_id:'tmp-'+Date.now()});
@@ -2026,19 +2028,21 @@ async function _batchAddLibraryEntries(entries){
   if(!entries.length)return;
   const updates={};
   entries.forEach(e=>{
-    const key=db.ref('imageLibrary').push().key;
+    const key='-lib'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
     updates['imageLibrary/'+key]=e;
     _imageLibrary.push({...e,_id:key});
   });
-  try{ await db.ref().update(updates); }
-  catch(e){ console.warn('Batch library write failed:',e.message); }
+  try{
+    const FB_ROOT='https://bangle-tracker-default-rtdb.firebaseio.com';
+    await fetch(FB_ROOT+'/.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)});
+  }catch(e){ console.warn('Batch library write failed:',e.message); }
 }
 
 // Remove a library entry (designs that use it keep showing the R2 URL)
 async function deleteLibraryEntry(id){
   if(!confirm('Remove this photo from the library?\n\nDesigns already using it will keep showing it.'))return;
   try{
-    await db.ref('imageLibrary/'+id).remove();
+    await fetch(FB_LIB+'/'+id+'.json',{method:'DELETE'});
     _imageLibrary=_imageLibrary.filter(e=>e._id!==id);
     renderLibrary();
     showToast('Photo removed from library','green',2000);
@@ -2914,6 +2918,7 @@ function switchMain(view){
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
   if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library')?'none':'';
+  if(view==='orders')renderOrdersView();
   if(view==='analytics')renderAnalytics();
   if(view==='inventory')renderInventory();
   if(view==='vendor')renderVendorOrders();
@@ -3085,6 +3090,8 @@ function buildOrderCard(order,oi){
       </div>
       <div class="oh-right">
         ${prioBadge(order.priority)}
+        ${p===100?'<span style="background:#E1F5EE;color:#0F6E56;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;border:1px solid #9FE1CB">✅ Done</span>':''}
+        <button class="icon-btn no-print" style="background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB;font-weight:600" onclick="event.stopPropagation();markOrderComplete(${oi})" title="Mark all stages done — use when order is dispatched">✓ Complete</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderExport('${order.id}')" title="Export this order">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderPrint('${order.id}')" title="Print this order">🖨️</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delOrder(${oi})">Delete</button>
@@ -3109,12 +3116,32 @@ function buildOrderCard(order,oi){
       </div>
       <!-- Mobile-only action bar (hidden on desktop via CSS) -->
       <div class="mobile-action-bar no-print" style="display:none">
+        <button onclick="markOrderComplete(${oi})" style="background:#E1F5EE;color:#0F6E56;border:1px solid #9FE1CB">✓ Complete</button>
         <button onclick="askOrderExport('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
         <button onclick="askOrderPrint('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
         <button onclick="delOrder(${oi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
       </div>
     </div>
   </div>`;
+}
+
+function markOrderComplete(oi){
+  const order=S.orders[oi];
+  if(!order)return;
+  const total=order.designs.reduce((a,d)=>a+(d.stages||[]).length,0);
+  if(!confirm(`Mark ALL ${total} production stage${total!==1?'s':''} of ${order.orderId} as Done?\n\nUse this when the order is dispatched and you want to skip filling each stage manually.\n\nThis cannot be undone automatically.`))return;
+  const today=new Date().toISOString().split('T')[0];
+  order.designs.forEach(d=>{
+    (d.stages||[]).forEach(st=>{
+      st.status='done';
+      if(!st.completionDate)st.completionDate=today;
+    });
+  });
+  histPush();
+  save();
+  render();
+  showToast(`✅ ${order.orderId} marked complete — all ${total} stage${total!==1?'s':''} set to Done`,'green',5000);
+  audit('Mark Complete',`${order.orderId} (${order.client}): all ${total} stages marked done`);
 }
 
 function buildDetailsPanel(order,oi){
@@ -10440,6 +10467,7 @@ const FB_DATA  = 'https://bangle-tracker-default-rtdb.firebaseio.com/appData.jso
 const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json';
 const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
 const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
+const FB_LIB   = 'https://bangle-tracker-default-rtdb.firebaseio.com/imageLibrary';
 const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
 
 // Unique device ID so we don't re-apply our own pushed updates
