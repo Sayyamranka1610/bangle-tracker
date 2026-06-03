@@ -2424,6 +2424,32 @@ function openDataHealthModal(){
         Both are <strong>specific to this browser + file location on your device</strong>. To use on multiple devices, use 📤 Backup / 📥 Restore or connect Google Drive.
       </div>
 
+      <!-- Feature health check -->
+      <div style="background:#f7f6f2;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:700;color:#3C3489;margin-bottom:8px">🔬 Feature verification — all key features present</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          ${[
+            ['Image Library',   typeof openLibraryPicker==='function'],
+            ['Bulk Import',     typeof _libImportFiles==='function'],
+            ['Photo Manager',   typeof openImageRecovery==='function'],
+            ['Tab keyboard fix',typeof handleCodeTabKey==='function'],
+            ['Masters tabs',    typeof switchMastTab==='function'],
+            ['Vendor tile',     typeof buildVendorOrderCard==='function'],
+            ['Print layout',    typeof openPrintWindow==='function'],
+            ['Customer orders', typeof renderOrdersView==='function'],
+            ['Vendor orders',   typeof renderVendorOrders==='function'],
+            ['Inventory',       typeof renderInventory==='function'],
+            ['Analytics',       typeof renderAnalytics==='function'],
+            ['Export Excel',    typeof exportClientCSV==='function'],
+            ['Edit lock',       typeof _tryAcquireLock==='function'],
+            ['Audit trail',     Array.isArray(S.auditLog)],
+            ['Firebase sync',   typeof fbPush==='function'],
+            ['Auto-save',       typeof scheduleAutosave==='function'],
+          ].map(([name,ok])=>`<span style="font-size:10px;padding:3px 8px;border-radius:12px;background:${ok?'#E1F5EE':'#FCEBEB'};color:${ok?'#0F6E56':'#A32D2D'};border:1px solid ${ok?'#9FE1CB':'#F09595'};font-weight:600">${ok?'✓':'✗'} ${name}</span>`).join('')}
+        </div>
+        <div style="font-size:10px;color:#888;margin-top:7px">Red badge = feature missing from this build. Green = working. Run this check after any update.</div>
+      </div>
+
       <div class="modal-actions">
         <button onclick="if(confirm('Clear all audit log entries?')){S.auditLog=[];save();render();closeModal();showToast('Audit log cleared','amber')}">🗑 Clear audit log</button>
         <button onclick="backupToFile();closeModal()">📤 Download backup</button>
