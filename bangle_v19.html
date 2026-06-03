@@ -2148,7 +2148,7 @@ function buildDesignsPanel(order,oi){
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'
         +allGroupImgs.map(({img,label})=>
           '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
-            +(()=>{const s=_vd(img);return s?'<img src="'+s+'" onclick="openLbDirect(\''+s+'\')" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">':'';})()
+            +'<img src="'+(img.data||'')+'" onclick="openLbDirect(\''+(img.data||'')+'\')" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
             +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
           +'</div>'
         ).join('')
@@ -2223,15 +2223,13 @@ function buildDesignsGroupTable(order,oi,g){
     // Design-level images — each with ✕ delete button; click opens HQ lightbox
     const dImages=d.images||[];
     const vImagesFlat=d.varieties.flatMap((v,vi)=>(v.images||[]).map((img,ii)=>({img,vi,ii})));
-    const designImgThumbs=dImages.map((img,ii)=>{const s=_vd(img);return s
-      ?`<img class="variety-thumb" src="${s}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
-       `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`
-      :`<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`;}
+    const designImgThumbs=dImages.map((img,ii)=>
+      `<img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
+      `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`
     ).join('');
-    const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>{const s=_vd(img);return s
-      ?`<img class="variety-thumb" src="${s}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
-       `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`
-      :`<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`;}
+    const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>
+      `<img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
+      `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`
     ).join('');
     const imgThumbs=designImgThumbs+varImgThumbs;
     const addImgBtn=`<label class="variety-img-add no-print" for="dlvl-${d.id}" title="Add image to this design code">
@@ -2313,10 +2311,9 @@ function buildDesignsGroupTable(order,oi,g){
       // Variety sub-rows (indented, white background)
       d.varieties.forEach((v,vi)=>{
         const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
-        const varImgs=(v.images||[]).map((img,ii)=>{const s=_vd(img);return s
-          ?'<img class="variety-thumb" src="'+s+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
-           +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
-          :'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>';}
+        const varImgs=(v.images||[]).map((img,ii)=>
+          '<img class="variety-thumb" src="'+(img.data||'')+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
+          +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
         ).join('');
         const addVarImg='<label class="variety-img-add no-print" for="vimg-'+d.id+'-'+vi+'" title="Add image">'
           +'<span style="font-size:16px;line-height:1">+</span></label>'
@@ -2566,7 +2563,7 @@ function renderDesignView(){
     const imgGalleryHtml = allImgs.length
       ? '<div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">All images for '+esc(dname)+'</div>'
         +'<div class="design-imgs-gallery" style="margin-bottom:12px">'
-        +allImgs.map((img,ii)=>{const s=_vd(img);return s?'<div class="gallery-img-card"><img src="'+s+'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+s+'\')">'+'<div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>':''}).join('')
+        +allImgs.map((img,ii)=>'<div class="gallery-img-card"><img src="'+(img.data||'')+'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+(img.data||'')+'\')">'+'<div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>').join('')
         +'</div>'
       : '';
 
