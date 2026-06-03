@@ -99,7 +99,7 @@ export interface LedgerEntry {
 
 export interface AuditEntry {
   id: string;
-  at: string;             // ISO string
+  ts: string;             // ISO string (Phase 1 field name)
   action: string;
   detail?: string;
   user?: string;
