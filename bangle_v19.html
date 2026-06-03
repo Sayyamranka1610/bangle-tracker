@@ -817,6 +817,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <button onclick="manualSave()" title="Force-save all data right now">💾 Save now</button>
   <button onclick="backupToFile()" title="Download a full backup of all data as a JSON file">📤 Backup</button>
   <button onclick="restoreFromFile()" title="Restore from a previously downloaded backup">📥 Restore</button>
+  <button id="btn-migrate-imgs" onclick="migrateImagesToCloud()" title="Upload all images from this device to cloud so they appear everywhere" style="background:#534AB7;color:#fff;border-color:#534AB7">☁️ Migrate Images</button>
   <div class="save-bar-sep"></div>
   <button onclick="openDataHealthModal()" title="Check storage health and data size">🩺 Health</button>
   <button class="sb-danger" onclick="confirmClearAll()" title="Wipe all data and reset to sample defaults">🗑 Reset all</button>
@@ -1464,6 +1465,77 @@ function backupToFile(){
   URL.revokeObjectURL(url);
   showToast('📤 Backup downloaded','green');
   audit('Backup','Full data backup downloaded to file');
+}
+
+// ── MIGRATE IMAGES TO CLOUD ───────────────────────────────────────────────────
+// Reads every image stored locally on THIS device (IndexedDB), uploads each
+// one to Cloudflare R2, and updates Firebase with permanent cloud URLs.
+// Must be run on the device/browser where images were originally uploaded.
+async function migrateImagesToCloud(){
+  const btn = document.getElementById('btn-migrate-imgs');
+  if(btn){ btn.disabled=true; btn.textContent='☁️ Migrating…'; }
+
+  try{
+    // Step 1 — re-load IDB so any __IDB__ placeholders become real data:... URLs
+    await loadImagesFromIDB();
+
+    // Step 2 — collect every image that is currently a base64 data URL
+    //           (these are the ones that came out of IDB and need to go to R2)
+    const toUpload = [];
+    const collect = img => {
+      if(img && typeof img.data === 'string' && img.data.startsWith('data:'))
+        toUpload.push(img);
+    };
+    (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach(collect);
+      (d.varieties||[]).forEach(v=>(v.images||[]).forEach(collect));
+    }));
+    (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach(collect);
+      (d.varieties||[]).forEach(v=>(v.images||[]).forEach(collect));
+    }));
+    (S.stockItems||[]).forEach(it=>(it.images||[]).forEach(collect));
+
+    if(!toUpload.length){
+      showToast('No images found on this device to migrate. Please open this app on the original device/browser where you uploaded your images, then click Migrate Images again.','orange',9000);
+      return;
+    }
+
+    const total = toUpload.length;
+    showToast(`Found ${total} image(s) — uploading to cloud…`,'blue',120000);
+
+    // Step 3 — upload in batches of 3, update img.data in place
+    let done=0, failed=0;
+    for(let i=0; i<toUpload.length; i+=3){
+      await Promise.all(toUpload.slice(i,i+3).map(async img=>{
+        try{
+          // Compress to max 1200px before uploading (good quality, web-safe size)
+          const compressed = await compressImageToThumb(img.data, 1200);
+          const r2url = await uploadToR2(compressed);
+          if(r2url){ img.data=r2url; done++; }
+          else failed++;
+        }catch(e){ failed++; }
+      }));
+      // Live progress update
+      if(btn) btn.textContent=`☁️ ${done}/${total}…`;
+      showToast(`Uploading… ${done}/${total} done`,'blue',120000);
+    }
+
+    // Step 4 — save updated state to Firebase and localStorage
+    if(done>0){
+      fbPushNow();
+      save();
+      render();
+      audit('Migrate images',`Migrated ${done} image(s) to Cloudflare R2`);
+      showToast('✅ Migration complete! '+done+' image(s) are now in the cloud and will appear on every device.'+(failed?' ('+failed+' failed — try again)':''),'green',10000);
+    } else {
+      showToast(`Upload failed for all ${failed} image(s). Check your internet connection and try again.`,'red',8000);
+    }
+  }catch(e){
+    showToast('Migration error: '+e.message,'red',8000);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='☁️ Migrate Images'; }
+  }
 }
 
 // ── RESTORE FROM FILE ─────────────────────────────────────────────────────────
