@@ -152,9 +152,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Firebase sync ──
 
-  const startSync = useCallback((session: Session) => {
+  const startSync = useCallback(async (session: Session) => {
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
 
+    // Step 1 — GET data immediately so the UI populates without waiting for SSE
+    try {
+      const initialData = await db.get<AppData>(PATHS.appData);
+      dispatch({ type: 'SET_DATA', payload: initialData ?? {} });
+      dispatch({ type: 'SET_SYNC_STATUS', payload: 'idle' });
+    } catch {
+      dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
+    }
+
+    // Step 2 — Edit lock (owners only)
     if (session.role === 'owner') {
       acquireLock(session).then(got => {
         if (!got) showToast('Another session is editing. You can view but not save.', 'info');
@@ -162,10 +172,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       heartbeatRef.current = setInterval(() => heartbeat(session), HEARTBEAT_MS);
     }
 
+    // Step 3 — SSE listener for real-time updates from other devices
     const stop = db.listen(PATHS.appData, (rawData) => {
       dispatch({ type: 'SET_DATA', payload: (rawData as AppData) ?? {} });
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'idle' });
     }, () => {
+      // SSE error is non-fatal — we already have data from the GET above
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     });
     stopListenRef.current = stop;

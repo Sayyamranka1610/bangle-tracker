@@ -30,12 +30,30 @@ export function getTemplate(stageId: string): StageTemplate | undefined {
   return DEFAULT_STAGES.find(s => s.id === stageId);
 }
 
-export function stageName(stageId: string): string {
-  return getTemplate(stageId)?.name ?? stageId;
+// Accept a stage object directly so we can use its inline name/group first
+export function stageName(stageIdOrStage: string | { stageId: string; name?: string }): string {
+  if (typeof stageIdOrStage === 'string') return getTemplate(stageIdOrStage)?.name ?? stageIdOrStage;
+  return stageIdOrStage.name ?? getTemplate(stageIdOrStage.stageId)?.name ?? stageIdOrStage.stageId;
 }
 
-export function stageGroup(stageId: string): StageGroup {
-  return getTemplate(stageId)?.group ?? 'raw';
+export function stageGroup(stageIdOrStage: string | { stageId: string; group?: string }): StageGroup {
+  if (typeof stageIdOrStage === 'string') return getTemplate(stageIdOrStage)?.group ?? 'raw';
+  return (stageIdOrStage.group as StageGroup | undefined) ?? getTemplate(stageIdOrStage.stageId)?.group ?? 'raw';
+}
+
+// Build fresh stage list for a new design — stores template data inline
+export function makeStageFresh(): import('../types').DesignStage[] {
+  return DEFAULT_STAGES.map(s => ({
+    stageId: s.id,
+    name: s.name,
+    loc: s.loc,
+    group: s.group,
+    status: 'pending' as const,
+    completionDate: undefined,
+    vendor: '',
+    stageNote: '',
+    qty: undefined,
+  }));
 }
 
 // ─── Quantity helpers ─────────────────────────────────────────────────────────
@@ -74,12 +92,6 @@ export function stagesDone(stages: DesignStage[]): number {
 export function designPct(design: EmbeddedDesign): number {
   if (!design.stages.length) return 0;
   return Math.round(stagesDone(design.stages) / design.stages.length * 100);
-}
-
-// ─── Build default stage list for a new design ───────────────────────────────
-
-export function buildDefaultStages(): DesignStage[] {
-  return DEFAULT_STAGES.map(t => ({ stageId: t.id, status: 'pending' as const }));
 }
 
 // ─── Build a design group map: code → { design, order }[] ────────────────────

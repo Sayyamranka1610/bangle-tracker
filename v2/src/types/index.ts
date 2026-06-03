@@ -22,12 +22,16 @@ export interface StageTemplate {
 
 export interface DesignStage {
   stageId: string;          // references StageTemplate.id
+  // Inline copies from the template (stored on the stage in Phase 1)
+  name?: string;
+  loc?: string;
+  group?: string;
   status: StageStatus;
   completionDate?: string;  // YYYY-MM-DD
   qty?: number;
   vendor?: string;
   stageNote?: string;
-  days?: number;            // custom effDays override (null = use template)
+  days?: number;            // custom effDays override
 }
 
 // ─── Design image ─────────────────────────────────────────────────────────────

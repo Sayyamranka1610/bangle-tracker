@@ -39,6 +39,8 @@ export default function Orders() {
   }, [orders, filter, search]);
 
   const clients = useMemo(() => data.vocabulary?.clients ?? [], [data.vocabulary]);
+  const dnames  = useMemo(() => data.vocabulary?.dnames  ?? [], [data.vocabulary]);
+  const dcodes  = useMemo(() => data.vocabulary?.dcodes  ?? [], [data.vocabulary]);
 
   // ── Grouped by client ────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
@@ -168,6 +170,8 @@ export default function Orders() {
         <OrderModal
           order={modalOrder}
           clients={clients}
+          dnames={dnames}
+          dcodes={dcodes}
           onSave={handleSave}
           onClose={() => setModalOrder(undefined)}
         />
