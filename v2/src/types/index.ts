@@ -1,6 +1,6 @@
 // ─── Core types — mirror the Phase 1 Firebase schema exactly ────────────────
 
-export type Role = 'owner' | 'worker';
+export type Role = 'owner' | 'member' | 'worker';  // 'worker' is a legacy alias for 'member'
 export type Priority = 'normal' | 'urgent' | 'critical';
 export type BangleType = 'dye_gold' | 'cnc' | 'both';
 export type AlertLevel = 'ok' | 'warn' | 'late' | 'done';
