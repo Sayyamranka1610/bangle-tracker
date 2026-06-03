@@ -852,6 +852,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <button onclick="restoreFromFile()" title="Restore from a previously downloaded backup">📥 Restore</button>
   <button id="btn-migrate-imgs" onclick="migrateImagesToCloud()" title="Upload all images from this device to cloud so they appear everywhere" style="background:#534AB7;color:#fff;border-color:#534AB7">☁️ Migrate Images</button>
   <button id="btn-recover-imgs" onclick="openImageRecovery()" title="Upload many photos at once and link them to designs permanently" style="background:#1D9E75;color:#fff;border-color:#1D9E75">📸 Upload Photos</button>
+  <button onclick="exportImageManifest()" title="Download a CSV listing every image and exactly which order/design/variety it belongs to — keep this as your image backup" style="background:#185FA5;color:#fff;border-color:#185FA5">🗂️ Image Backup</button>
   <div class="save-bar-sep"></div>
   <button onclick="openDataHealthModal()" title="Check storage health and data size">🩺 Health</button>
   <button class="sb-danger" onclick="confirmClearAll()" title="Wipe all data and reset to sample defaults">🗑 Reset all</button>
@@ -1566,6 +1567,67 @@ function backupToFile(){
   URL.revokeObjectURL(url);
   showToast('📤 Backup downloaded','green');
   audit('Backup','Full data backup downloaded to file');
+}
+
+// ── IMAGE MANIFEST BACKUP ─────────────────────────────────────────────────────
+// Exports a CSV listing every image URL with its exact position in the data:
+// order ID, client/vendor, design name, design code, variety, photo number.
+// This is the safest backup for images — keep this CSV file somewhere safe.
+// R2 images are permanent in the cloud; this CSV tells you WHERE each one belongs.
+function exportImageManifest(){
+  const rows=[['Type','Order ID','Client / Vendor','Design Name','Design Code','Variety','Photo #','Image URL','Status']];
+
+  function addImgRows(type,orderId,partyName,dname,dcode,varName,imgArr){
+    (imgArr||[]).forEach((img,i)=>{
+      if(!img)return;
+      const d=img.data||'';
+      let url='',status='';
+      if(d.startsWith('https://')){url=d;status='✅ Cloud (R2)';}
+      else if(d.startsWith('data:')){url='(base64 — not yet in cloud)';status='⚠️ Local only — run Migrate Images';}
+      else if(d.startsWith('__IDB__')){url='(stored in this device only)';status='⚠️ Device-local — run Migrate Images';}
+      else return; // empty / unknown — skip
+      rows.push([type,orderId,partyName,dname,dcode,varName,i+1,url,status]);
+    });
+  }
+
+  // Customer orders
+  (S.orders||[]).forEach(o=>{
+    (o.designs||[]).forEach(d=>{
+      addImgRows('Customer Order',o.orderId||'',o.client||'',d.name||'',d.code||'','(design)',d.images||[]);
+      (d.varieties||[]).forEach(v=>addImgRows('Customer Order',o.orderId||'',o.client||'',d.name||'',d.code||'',v.name||'',v.images||[]));
+    });
+  });
+
+  // Vendor orders
+  (S.vendorOrders||[]).forEach(vo=>{
+    (vo.designs||[]).forEach(d=>{
+      addImgRows('Vendor Order',vo.orderId||'',vo.vendor||'',d.name||'',d.code||'','(design)',d.images||[]);
+      (d.varieties||[]).forEach(v=>addImgRows('Vendor Order',vo.orderId||'',vo.vendor||'',d.name||'',d.code||'',v.name||'',v.images||[]));
+    });
+  });
+
+  // Image Library (central photo database)
+  (_imageLibrary||[]).forEach((e,i)=>{
+    if(e.url)rows.push(['Library','—','—',e.designName||'',e.designCode||'',e.folder||'',i+1,e.url,'✅ Cloud (R2)']);
+  });
+
+  if(rows.length<=1){showToast('No images found — upload photos first','orange',4000);return;}
+
+  const localCount=rows.slice(1).filter(r=>r[8]&&r[8].startsWith('⚠️')).length;
+  const cloudCount=rows.slice(1).filter(r=>r[8]&&r[8].startsWith('✅')).length;
+
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;
+  a.download=`image_manifest_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  let msg=`🗂️ Image manifest saved — ${cloudCount} cloud photos mapped`;
+  if(localCount>0)msg+=` · ⚠️ ${localCount} device-local (click "☁️ Migrate Images" to secure them)`;
+  showToast(msg,'green',8000);
+  audit('Image Backup','Image manifest downloaded — '+cloudCount+' cloud, '+localCount+' local-only');
 }
 
 // ── MIGRATE IMAGES TO CLOUD ───────────────────────────────────────────────────
