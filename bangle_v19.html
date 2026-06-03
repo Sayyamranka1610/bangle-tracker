@@ -3091,7 +3091,6 @@ function buildOrderCard(order,oi){
       <div class="oh-right">
         ${prioBadge(order.priority)}
         ${p===100?'<span style="background:#E1F5EE;color:#0F6E56;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;border:1px solid #9FE1CB">✅ Done</span>':''}
-        <button class="icon-btn no-print" style="background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB;font-weight:600" onclick="event.stopPropagation();markOrderComplete(${oi})" title="Mark all stages done — use when order is dispatched">✓ Complete</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderExport('${order.id}')" title="Export this order">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderPrint('${order.id}')" title="Print this order">🖨️</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delOrder(${oi})">Delete</button>
@@ -3142,6 +3141,26 @@ function markOrderComplete(oi){
   render();
   showToast(`✅ ${order.orderId} marked complete — all ${total} stage${total!==1?'s':''} set to Done`,'green',5000);
   audit('Mark Complete',`${order.orderId} (${order.client}): all ${total} stages marked done`);
+}
+
+function markDesignComplete(oi,di){
+  const order=S.orders[oi];
+  const design=order&&order.designs[di];
+  if(!design)return;
+  const stages=design.stages||[];
+  const pending=stages.filter(st=>st.status!=='done').length;
+  const label=design.code||(design.name||'this design');
+  if(!confirm(`Mark all ${stages.length} production stage${stages.length!==1?'s':''} of "${label}" as Done?\n\nUse this when the design is dispatched.\n${pending} stage${pending!==1?'s are':' is'} currently not done.`))return;
+  const today=new Date().toISOString().split('T')[0];
+  stages.forEach(st=>{
+    st.status='done';
+    if(!st.completionDate)st.completionDate=today;
+  });
+  histPush();
+  save();
+  render();
+  showToast(`✅ "${label}" — all ${stages.length} stage${stages.length!==1?'s':''} marked Done`,'green',4000);
+  audit('Design Complete',`${order.orderId} › ${label}: all ${stages.length} stages marked done`);
 }
 
 function buildDetailsPanel(order,oi){
@@ -3310,14 +3329,18 @@ function buildDesignsGroupTable(order,oi,g){
       // Unit: read from d.unit first, then fall back to first variety's unit (for CNC / legacy data)
       const flatUnit=d.unit||(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'pcs';
       const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
+      const codeEmpty=!(d.code||'').trim();
       tbody+='<tr style="background:#fff">'
         +'<td>'
-          +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+          +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
-            +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code"'
+            +(codeEmpty?'<span style="font-size:9px;font-weight:700;color:#BA7517;letter-spacing:.04em">ADD CODE ↓</span>':'')
+            +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="e.g. DC-001"'
             +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
             +' onkeydown="handleCodeTabKey(event)"'
-            +' onblur="rebuildVocab()" tabindex="0" style="max-width:110px">'
+            +' onblur="rebuildVocab()" tabindex="0"'
+            +' title="Design code — click to add or edit (e.g. DC-001, 12MM CNC)"'
+            +' style="min-width:120px;font-weight:600;'+(codeEmpty?'border-color:#EF9F27;background:#FFFBF0;':'border-color:#AFA9EC;')+'font-size:12px">'
           +'</div>'
         +'</td>'
         +'<td>'+imgCell+'</td>'
@@ -3327,6 +3350,7 @@ function buildDesignsGroupTable(order,oi,g){
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
         +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<button class="icon-btn sm" style="background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB;font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
@@ -3342,13 +3366,17 @@ function buildDesignsGroupTable(order,oi,g){
       const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
 
       // Header row for the design code (purple-tinted, shows images + total)
+      const codeEmptyH=!(d.code||'').trim();
       tbody+='<tr style="background:#EEEDFE">'
         +'<td style="font-weight:700">'
-          +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+          +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
-            +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code"'
+            +(codeEmptyH?'<span style="font-size:9px;font-weight:700;color:#BA7517;letter-spacing:.04em">ADD CODE ↓</span>':'')
+            +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="e.g. DC-001"'
             +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
-            +' onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700">'
+            +' onblur="rebuildVocab()" tabindex="0"'
+            +' title="Design code — click to add or edit (e.g. DC-001, 12MM CNC)"'
+            +' style="min-width:120px;font-weight:700;'+(codeEmptyH?'border-color:#EF9F27;background:#FFFBF0;':'border-color:#AFA9EC;')+'font-size:12px">'
           +'</div>'
         +'</td>'
         +'<td>'+imgCell+'</td>'
@@ -3359,6 +3387,7 @@ function buildDesignsGroupTable(order,oi,g){
         +'<td></td>'
         +'<td></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<button class="icon-btn sm" style="background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB;font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
           +'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>'
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
