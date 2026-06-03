@@ -31,8 +31,13 @@ export default function Users() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await db.get<UserRecord[]>(PATHS.users);
-        setUsers(Array.isArray(data) ? data : []);
+        const raw = await db.get<unknown>(PATHS.users);
+        const arr: UserRecord[] = Array.isArray(raw)
+          ? raw
+          : raw && typeof raw === 'object'
+            ? Object.values(raw as Record<string, UserRecord>)
+            : [];
+        setUsers(arr);
       } catch {
         showToast('Could not load users', 'error');
       } finally {

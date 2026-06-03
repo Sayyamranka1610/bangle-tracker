@@ -95,8 +95,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Auth ──
 
   const login = useCallback(async (username: string, password: string): Promise<boolean> => {
-    const users = await db.get<Record<string, { password: string; role: string }>>(PATHS.users);
-    const userRecord = users?.[username];
+    // Phase 1 stores users as an array [{id, username, password, role, createdAt}]
+    // Firebase may return it as an array or as an object with numeric keys — handle both
+    const raw = await db.get<unknown>(PATHS.users);
+    const usersArr: Array<{ username: string; password: string; role: string }> = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === 'object'
+        ? Object.values(raw as Record<string, { username: string; password: string; role: string }>)
+        : [];
+    const userRecord = usersArr.find(u => u.username === username);
     if (!userRecord || userRecord.password !== password) return false;
 
     const deviceId = sessionStorage.getItem('bt_did_v2') ?? (() => {
