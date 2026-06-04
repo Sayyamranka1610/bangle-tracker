@@ -3240,6 +3240,14 @@ function render(){
   else if(S.mainView==='library')renderLibrary();
   else renderAnalytics();
   scheduleAutosave();
+  // Sync view div visibility + tab highlights with S.mainView.
+  // render() can be called without switchMain() (e.g. on initial load / Firebase sync),
+  // which would leave the wrong view visible. This makes render() always self-consistent.
+  {const _mv=S.mainView||'orders';
+  const _vn=['orders','vendor','design','analytics','inventory','masters','library'];
+  _vn.forEach(v=>{const el=document.getElementById('view-'+v);if(el)el.style.display=_mv===v?'':'none';});
+  const _fb=document.getElementById('filter-bar');if(_fb)_fb.style.display=_mv==='design'?'':'none';
+  document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',_vn[i]===_mv);});}
 
   // ── RESTORE FOCUS + VALUE + SELECTION ──────────────────────────────────────
   if(focusInfo){
@@ -3470,6 +3478,14 @@ function markDesignComplete(oi,di){
   audit('Design Complete',`${order.orderId} › ${label}: all ${stages.length} stages marked done`);
 }
 
+function markVarietyDone(oi,di,vi){
+  const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];
+  if(!v)return;
+  v.done=!v.done;
+  save();render();
+  showToast(v.done?'✅ Variety marked complete':'↩️ Variety marked pending',v.done?'green':'red',2500);
+}
+
 function buildDetailsPanel(order,oi){
   const fileHtml=order.attachedFile
     ? `<div style="margin-top:10px;padding:8px 12px;background:#E1F5EE;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3637,6 +3653,8 @@ function buildDesignsGroupTable(order,oi,g){
       const flatUnit=d.unit||(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'pcs';
       const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
       const codeEmpty=!(d.code||'').trim();
+      const allStagesDone=(d.stages||[]).length>0&&(d.stages||[]).every(st=>st.status==='done');
+      const tickSty=allStagesDone?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0';
       tbody+='<tr style="background:#fff">'
         +'<td>'
           +'<div style="display:flex;flex-direction:column;gap:3px">'
@@ -3657,7 +3675,7 @@ function buildDesignsGroupTable(order,oi,g){
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
         +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
-          +'<button class="icon-btn sm" style="background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB;font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
+          +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
@@ -3694,7 +3712,6 @@ function buildDesignsGroupTable(order,oi,g){
         +'<td></td>'
         +'<td></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
-          +'<button class="icon-btn sm" style="background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB;font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
           +'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>'
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
@@ -3730,7 +3747,10 @@ function buildDesignsGroupTable(order,oi,g){
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
             +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVarietyRate('+oi+','+di+','+vi+',this.value)"></td>'
-          +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button></td>'
+          +'<td class="no-print"><div style="display:flex;gap:3px">'
+            +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as pending':'Mark variety complete')+'">✓</button>'
+            +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
+          +'</div></td>'
         +'</tr>';
       });
     }
