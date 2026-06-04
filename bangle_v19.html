@@ -2198,6 +2198,7 @@ function renderLibrary(){
   if(_libFolder){
     const folderItems=_imageLibrary.filter(e=>(e.segment||'CNC')===_libSegment&&(e.folder||'General')===_libFolder);
     const filtered=q?folderItems.filter(e=>(e.designCode||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q)):folderItems;
+    filtered.sort((a,b)=>(a.designCode||a.fileName||'').localeCompare(b.designCode||b.fileName||'',undefined,{numeric:true,sensitivity:'base'}));
     const shown=filtered.slice(0,(_libPage+1)*LIB_PAGE);
     const selCount=_libSelected.size;
     el.innerHTML=`<div style="padding:14px 16px 24px">
@@ -2242,11 +2243,18 @@ function renderLibrary(){
         </div>`;
       }).join('')}
     </div>
-    ${shown.length<filtered.length?`<div style="text-align:center;margin-top:18px">
-      <button onclick="_libPage++;renderLibrary()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:9px 26px;font-size:13px;font-weight:600;cursor:pointer">Load more (${(filtered.length-shown.length).toLocaleString()} remaining)</button>
-    </div>`:''}
+    ${shown.length<filtered.length?'<div id="lib-scroll-sentinel" style="height:40px;margin-top:8px"></div>':''}
     `}
     </div>`;
+  }
+  // Infinite scroll — watch sentinel, auto-load next page when it enters view
+  if(window._libScrollObs){window._libScrollObs.disconnect();window._libScrollObs=null;}
+  const _libSent=document.getElementById('lib-scroll-sentinel');
+  if(_libSent){
+    window._libScrollObs=new IntersectionObserver(entries=>{
+      if(entries[0].isIntersecting){_libPage++;renderLibrary();}
+    },{threshold:0.1});
+    window._libScrollObs.observe(_libSent);
   }
 }
 
@@ -2592,18 +2600,9 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     return {file:f,folder,designCode,fileName:f.name};
   });
 
-  // Dedup: skip photos already in library (same folder + designCode)
-  const existing=new Set(_imageLibrary.map(e=>((e.folder||'').toLowerCase()+'/'+( e.designCode||'').toLowerCase())));
-  const toUpload=plan.filter(p=>!existing.has((p.folder||'').toLowerCase()+'/'+(p.designCode||'').toLowerCase()));
-  const skipCount=plan.length-toUpload.length;
-
-  if(toUpload.length===0){
-    const sysMsg=systemSkipped?` (${systemSkipped} Picasa/system files ignored)`:'';
-    if(label)label.textContent='✅ All '+plan.length.toLocaleString()+' photos are already in the library!'+sysMsg;
-    if(fill){fill.style.width='100%';fill.style.background='#22C55E';}
-    showToast('All photos already in library — nothing new to upload','green',4000);
-    input.value='';return;
-  }
+  // Upload everything — no duplicate check (user manages duplicates themselves)
+  const toUpload=plan;
+  const skipCount=0;
 
   const total=toUpload.length;
   let done=0,failed=0;
@@ -2616,7 +2615,6 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     const pct=Math.round((done/total)*100);
     if(fill)fill.style.width=pct+'%';
     let topLine=`Uploading ${done.toLocaleString()} / ${total.toLocaleString()} photos (${pct}%)…`;
-    if(skipCount)topLine+=` · ${skipCount} already in library`;
     if(systemSkipped)topLine+=` · ${systemSkipped} Picasa/backup files skipped`;
     if(label)label.textContent=topLine;
     if(sub)sub.textContent=failed?`${failed} failed — will show list at end`:'All uploads successful so far ✓';
@@ -2629,8 +2627,7 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     await Promise.all(batch.map(async p=>{
       try{
         const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(p.file);});
-        const compressed=await compressImageToThumb(dataUrl,1200);
-        const r2url=await uploadToR2(compressed);
+        const r2url=await uploadToR2(dataUrl); // full quality — no compression
         if(!r2url)throw new Error('R2 returned null');
         const entry={designCode:p.designCode,folder:p.folder,segment:forceSeg||_libSegment||'CNC',r2url,fileName:p.fileName,uploadedAt:Date.now()};
         pending.push(entry);
@@ -2777,9 +2774,21 @@ function _lpRender(oi,di,vi){
       </div>
     </div>`).join('');
   if(moreWrap){
-    moreWrap.innerHTML=shown.length<items.length
-      ?`<button onclick="_lpPage++;_lpRender(${oi},${di},${vi})" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:7px 22px;font-size:12px;font-weight:600;cursor:pointer">Load more (${(items.length-shown.length).toLocaleString()} more)</button>`
-      :(items.length?`<div style="font-size:11px;color:#aaa;padding:6px">All ${items.length.toLocaleString()} results shown</div>`:'');
+    if(shown.length<items.length){
+      moreWrap.innerHTML='<div id="lp-scroll-sentinel" style="height:30px"></div>';
+      const _lpSent=document.getElementById('lp-scroll-sentinel');
+      if(window._lpScrollObs){window._lpScrollObs.disconnect();window._lpScrollObs=null;}
+      if(_lpSent){
+        const root=document.getElementById('lp-grid-wrap');
+        window._lpScrollObs=new IntersectionObserver(entries=>{
+          if(entries[0].isIntersecting){_lpPage++;_lpRender(oi,di,vi);}
+        },{root:root||null,threshold:0.1});
+        window._lpScrollObs.observe(_lpSent);
+      }
+    } else {
+      moreWrap.innerHTML=items.length?`<div style="font-size:11px;color:#aaa;padding:6px;text-align:center">All ${items.length.toLocaleString()} photos shown</div>`:'';
+      if(window._lpScrollObs){window._lpScrollObs.disconnect();window._lpScrollObs=null;}
+    }
   }
 }
 
