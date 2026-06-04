@@ -3267,17 +3267,22 @@ function renderStats(){
   if(sub)sub.textContent=`${o.length} orders · ${pc} pending · ${dc} completed`;
 }
 
-// Colored dot grid: green dot per completed order, red dot per pending order
+// Status dots: shows "N🟢 N🔴" — number + single dot per status
 function _sbStatusDots(done,pending){
-  const s='width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0';
+  const dot=(clr)=>`<span style="width:9px;height:9px;border-radius:50%;background:${clr};display:inline-block;flex-shrink:0"></span>`;
   let html='';
-  for(let i=0;i<done;i++)html+=`<span style="${s};background:#22C55E" title="Completed"></span>`;
-  for(let i=0;i<pending;i++)html+=`<span style="${s};background:#E24B4A" title="Pending"></span>`;
-  return`<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:72px;justify-content:flex-end;align-items:center;flex-shrink:0">${html}</div>`;
+  if(done>0)html+=`<span style="display:inline-flex;align-items:center;gap:3px"><span style="font-size:11px;font-weight:700;color:#22C55E">${done}</span>${dot('#22C55E')}</span>`;
+  if(pending>0)html+=`<span style="display:inline-flex;align-items:center;gap:3px${done>0?';margin-left:4px':''}"><span style="font-size:11px;font-weight:700;color:#E24B4A">${pending}</span>${dot('#E24B4A')}</span>`;
+  return`<div style="display:flex;align-items:center;flex-shrink:0">${html}</div>`;
 }
 
 // ── ORDERS VIEW ────────────────────────────────────────────────────────────────
 function renderOrdersView(){
+  // Preserve search input focus across re-renders (typing shouldn't lose cursor)
+  const _sf=document.activeElement;
+  const _sfWas=_sf&&_sf.id==='ord-search-inp';
+  const _sfSel=[_sf&&_sf.selectionStart,_sf&&_sf.selectionEnd];
+
   const container=document.getElementById('view-orders');
   const empty=document.getElementById('empty-msg');
   if(!S.orders.length){container.innerHTML='';empty.style.display='block';return;}
@@ -3334,7 +3339,7 @@ function renderOrdersView(){
     </div>
     <div class="orders-main-wrap">
       <div class="orders-top-bar">
-        <input class="orders-search" placeholder="Search order ID, design code…"
+        <input id="ord-search-inp" class="orders-search" placeholder="Search order ID, design code…"
           value="${esc(S.orderSearchQ||'')}"
           oninput="S.orderSearchQ=this.value;renderOrdersView()">
         <button class="orders-chip${chipA('')}" onclick="S.orderStatusFilter='';renderOrdersView()">All</button>
@@ -3357,6 +3362,8 @@ function renderOrdersView(){
       <div class="orders-cards-list">${cardsHTML}</div>
     </div>
   </div>`;
+  // Restore search focus if user was typing
+  if(_sfWas){const el=document.getElementById('ord-search-inp');if(el){el.focus({preventScroll:true});try{el.setSelectionRange(_sfSel[0],_sfSel[1]);}catch(e){}}}
 }
 function selectOrderClient(name){
   S.selectedClient=name;S.orderSearchQ='';S.orderStatusFilter='';
@@ -6574,6 +6581,9 @@ function buildVendorStatsBar(){
 
 // ── Render ──────────────────────────────────────────────────────────────────
 function renderVendorOrders(){
+  const _vf=document.activeElement;
+  const _vfWas=_vf&&_vf.id==='vord-search-inp';
+  const _vfSel=[_vf&&_vf.selectionStart,_vf&&_vf.selectionEnd];
   const container=document.getElementById('view-vendor');
 
   if(!S.vendorOrders.length){
@@ -6638,7 +6648,7 @@ function renderVendorOrders(){
     </div>
     <div class="orders-main-wrap">
       <div class="orders-top-bar">
-        <input class="orders-search" placeholder="Search order ID, design code…"
+        <input id="vord-search-inp" class="orders-search" placeholder="Search order ID, design code…"
           value="${esc(S.vendorSearchQ||'')}"
           oninput="S.vendorSearchQ=this.value;renderVendorOrders()">
         <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
@@ -6661,6 +6671,7 @@ function renderVendorOrders(){
       <div class="orders-cards-list">${cardsHTML}</div>
     </div>
   </div>`;
+  if(_vfWas){const el=document.getElementById('vord-search-inp');if(el){el.focus({preventScroll:true});try{el.setSelectionRange(_vfSel[0],_vfSel[1]);}catch(e){}}}
 }
 function selectVendorSection(name){
   S.selectedVendor=name;S.vendorSearchQ='';S.vendorStatusFilter='';
