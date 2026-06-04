@@ -2720,7 +2720,7 @@ async function openLibraryPicker(oi,di,vi){
     <input id="lp-search" placeholder="Search design code or filename…" value="${esc(designCode)}"
       oninput="_lpPage=0;_lpRender(${oi},${di},${vi})"
       style="flex:1;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px">
-    <select id="lp-folder" onchange="_lpPage=0;_lpRender(${oi},${di},${vi})"
+    <select id="lp-folder" onchange="_lpPage=0;document.getElementById('lp-search').value='';_lpRender(${oi},${di},${vi})"
       style="padding:8px 10px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:12px;min-width:120px">
       <option value="">All folders</option>
       ${folderOpts}
@@ -2797,27 +2797,78 @@ function _lpAttachById(id,oi,di,vi){
   showToast('Photo attached to design ✓','green',2500);
 }
 
+// ── Folder-picker dialog — returns a Promise<string|null> ────────────────────
+function _lpPickFolder(existingFolders, suggestedName){
+  return new Promise(resolve=>{
+    const old=document.getElementById('lp-folder-picker');if(old)old.remove();
+    const wrap=document.createElement('div');
+    wrap.id='lp-folder-picker';
+    wrap.style.cssText='position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:8px';
+    const folderOpts=existingFolders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    wrap.innerHTML=`
+    <div style="background:#fff;border-radius:14px;padding:20px 22px;width:min(420px,96vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.22)">
+      <div style="font-size:14px;font-weight:700;color:#534AB7">📁 Save to which folder?</div>
+      <div style="font-size:12px;color:#666">Pick an existing folder or type a new folder name below</div>
+      ${existingFolders.length?`<div>
+        <div style="font-size:10px;font-weight:700;color:#888;margin-bottom:5px;letter-spacing:.04em">EXISTING FOLDERS</div>
+        <select onchange="document.getElementById('lpfp-inp').value=this.value;document.getElementById('lpfp-inp').focus()"
+          style="width:100%;padding:8px 10px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px">
+          <option value="">— pick a folder —</option>${folderOpts}
+        </select>
+      </div>`:''}
+      <div>
+        <div style="font-size:10px;font-weight:700;color:#888;margin-bottom:5px;letter-spacing:.04em">FOLDER NAME</div>
+        <input id="lpfp-inp" placeholder="e.g. CNC GOLD, 10MM SILVER…" value="${esc(suggestedName||'')}"
+          style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;outline:none">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:2px">
+        <button onclick="document.getElementById('lp-folder-picker').remove();window._lpfpResolve(null)"
+          style="padding:8px 18px;border:1px solid #ccc;border-radius:7px;font-size:12px;cursor:pointer;background:#f5f4f2">Cancel</button>
+        <button onclick="const v=document.getElementById('lpfp-inp').value.trim();if(!v){document.getElementById('lpfp-inp').style.borderColor='#C0392B';document.getElementById('lpfp-inp').focus();return;}document.getElementById('lp-folder-picker').remove();window._lpfpResolve(v)"
+          style="padding:8px 18px;border:none;border-radius:7px;font-size:12px;cursor:pointer;background:#534AB7;color:#fff;font-weight:600">✓ Save here</button>
+      </div>
+    </div>`;
+    window._lpfpResolve=resolve;
+    document.body.appendChild(wrap);
+    setTimeout(()=>{const inp=document.getElementById('lpfp-inp');if(inp){inp.focus();inp.select();}},80);
+  });
+}
+
 async function _lpUploadNew(input,oi,di,vi){
   const files=Array.from(input.files);
   if(!files.length)return;
+
+  // Ask user which folder to save these photos in
+  const existingFolders=[...new Set(_imageLibrary.map(e=>e.folder||'').filter(Boolean))].sort();
+  const design=S.orders&&S.orders[oi]&&S.orders[oi].designs&&S.orders[oi].designs[di];
+  const designCode=design?(design.code||design.name||''):'';
+  // Pre-suggest current folder selection if active, else design code
+  const curFolderSel=(document.getElementById('lp-folder')||{}).value||'';
+  const suggested=curFolderSel||designCode||'';
+  const targetFolder=await _lpPickFolder(existingFolders,suggested);
+  if(targetFolder===null){input.value='';return;} // user cancelled
+
   const btn=input.closest('label');
   if(btn)btn.style.opacity='0.6';
   showToast('Uploading '+files.length+' photo'+(files.length!==1?'s':'')+' to library…','blue',15000);
+  let attached=0;
   for(const f of files){
     try{
       const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
       const compressed=await compressImageToThumb(dataUrl,1200);
       const r2url=await uploadToR2(compressed);
       if(!r2url)throw new Error('Upload failed');
-      const designCode=f.name.replace(/\.[^.]+$/,'').trim();
-      await _addLibraryEntry(r2url,designCode,'New Uploads',f.name);
+      const dcFromFile=f.name.replace(/\.[^.]+$/,'').trim();
+      await _addLibraryEntry(r2url,dcFromFile||designCode,targetFolder,f.name);
       _lpAttachById(_imageLibrary[_imageLibrary.length-1]._id,oi,di,vi);
+      attached++;
     }catch(e){
       showToast('Upload failed for '+f.name+': '+e.message,'red',4000);
     }
   }
   if(btn)btn.style.opacity='';
   input.value='';
+  if(attached)showToast(`✅ ${attached} photo${attached!==1?'s':''} saved to "${targetFolder}"  ✓`,'green',3000);
 }
 
 // ── RESTORE FROM FILE ─────────────────────────────────────────────────────────
