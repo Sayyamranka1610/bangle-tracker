@@ -2391,15 +2391,54 @@ function _libDeleteFolder(seg,name){
 
 // ── DELETE ALL LIBRARY ENTRIES FOR A SEGMENT ──────────────────────────────────
 async function deleteAllLibraryEntries(seg){
-  const count=_imageLibrary.filter(e=>(e.segment||'CNC')===seg).length;
-  if(count===0){showToast('No entries to delete in '+seg,'red',3000);return;}
-  if(!confirm(`Delete ALL ${count.toLocaleString()} library entries in ${seg}?\n\nThis only removes them from the library catalog — the actual photos in R2 are NOT deleted.\n\nYou can Sync from R2 again to re-add them correctly.`))return;
   const toDelete=_imageLibrary.filter(e=>(e.segment||'CNC')===seg);
-  const updates={};
-  toDelete.forEach(e=>{ updates['imageLibrary/'+e._id]=null; });
-  await db.ref('/').update(updates);
+  const total=toDelete.length;
+  if(total===0){showToast('No entries to delete in '+seg,'red',3000);return;}
+  if(!confirm(`Delete ALL ${total.toLocaleString()} library entries in ${seg}?\n\nThe actual photos in R2 are NOT deleted — only the library listing is cleared.\nYou can Sync from R2 again afterwards to re-add them correctly.`))return;
+
+  // Show progress modal
+  const old=document.getElementById('_delall-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='_delall-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10020;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px';
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:14px;padding:24px;width:min(400px,96vw);display:flex;flex-direction:column;gap:12px">
+    <div style="font-size:15px;font-weight:700;color:#C0392B">🗑️ Deleting ${seg} Library</div>
+    <div id="_da-status" style="font-size:13px;color:#555">Starting…</div>
+    <div style="background:#F0EFEA;border-radius:20px;height:8px;overflow:hidden">
+      <div id="_da-fill" style="height:100%;background:#C0392B;width:0%;transition:width .2s;border-radius:20px"></div>
+    </div>
+    <div id="_da-detail" style="font-size:12px;color:#888">0 / ${total.toLocaleString()} deleted</div>
+  </div>`;
+  document.body.appendChild(wrap);
+
+  const setP=(done)=>{
+    const pct=Math.round((done/total)*100);
+    const s=document.getElementById('_da-status');if(s)s.textContent=`Deleting… ${pct}% done`;
+    const f=document.getElementById('_da-fill');if(f)f.style.width=pct+'%';
+    const d=document.getElementById('_da-detail');if(d)d.textContent=`${done.toLocaleString()} / ${total.toLocaleString()} deleted`;
+  };
+
+  // Delete in batches of 200 to stay within Firebase limits
+  const BATCH=200;
+  let done=0;
+  for(let i=0;i<toDelete.length;i+=BATCH){
+    const slice=toDelete.slice(i,i+BATCH);
+    const updates={};
+    slice.forEach(e=>{ updates['imageLibrary/'+e._id]=null; });
+    await db.ref('/').update(updates);
+    done+=slice.length;
+    setP(done);
+  }
+
   _imageLibrary=_imageLibrary.filter(e=>(e.segment||'CNC')!==seg);
-  showToast(`🗑️ Deleted ${count.toLocaleString()} entries from ${seg} library`,'green',4000);
+
+  // Done — show success then close
+  const s=document.getElementById('_da-status');if(s)s.textContent=`✅ All ${total.toLocaleString()} entries deleted!`;
+  const f=document.getElementById('_da-fill');if(f){f.style.width='100%';f.style.background='#1D9E75';}
+  const d=document.getElementById('_da-detail');if(d)d.textContent='Photos in R2 are safe. You can now Sync from R2 to re-add them correctly.';
+  setTimeout(()=>{ const m=document.getElementById('_delall-modal');if(m)m.remove(); },3000);
+  showToast(`✅ ${total.toLocaleString()} entries cleared from ${seg}`,'green',5000);
   renderLibrary();
 }
 
