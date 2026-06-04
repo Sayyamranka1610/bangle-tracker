@@ -2520,7 +2520,7 @@ function openLibraryImport(seg){
       <div style="font-size:12px;color:#555;margin-top:5px;line-height:1.7">
         Select your entire photos folder. The structure is preserved automatically:<br>
         <code style="background:#f0efff;padding:2px 6px;border-radius:4px;font-size:11px">FolderName / photo.jpg</code> → Folder: <strong>FolderName</strong>, Segment: <strong>${seg||'auto-detected'}</strong><br>
-        Photos already in the library are skipped — safe to re-run anytime.
+        Picasa backup folders (.picasaoriginals) are automatically skipped — all real photos are uploaded.
       </div>
     </div>
     <button onclick="document.getElementById('lib-import-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 12px;cursor:pointer;flex-shrink:0;margin-left:10px">✕</button>
@@ -2552,30 +2552,62 @@ function openLibraryImport(seg){
 }
 
 // Folders/patterns that are never real photos — always skip
-const _LIB_SKIP_FOLDERS=/^\.picaoriginals$|^\.picasaoriginals$|^\.picasa$|^thumbs$|^\.thumbnails$|^\.@__thumb$|^eadir$/i;
-const _LIB_SKIP_FILES=/^thumbs\.db$|^\.ds_store$|^desktop\.ini$/i;
+// Note: no anchors on Picasa patterns so "mypicasaoriginals" also caught; split on / and \ for Windows paths
+const _LIB_SKIP_FOLDERS=/picasaoriginals|picaoriginals|\.picasa|\.thumbnails|^thumbs$|^\.@__thumb$|^eadir$|__macosx|\$recycle/i;
+const _LIB_SKIP_FILES=/^thumbs\.db$|^\.ds_store$|^desktop\.ini$|^picasa\.ini$|^\.picasa\.ini$|^album\.ini$/i;
 
 async function _libImportFiles(input, forceFolder, forceSeg){
   const allFiles=Array.from(input.files);
   if(!allFiles.length)return;
   await _ensureLibraryLoaded();
 
-  const prog=document.getElementById('lib-import-progress');
-  const label=document.getElementById('lib-import-label');
-  const fill=document.getElementById('lib-import-fill');
-  const sub=document.getElementById('lib-import-sub');
-  const statsEl=document.getElementById('lib-import-stats');
-  if(prog){prog.style.display='flex';}
+  // Show progress — use modal's section if open, otherwise create a floating overlay
+  let prog,label,fill,sub,statsEl,_floatOverlay=false;
+  const modalProg=document.getElementById('lib-import-progress');
+  if(modalProg){
+    modalProg.style.display='flex';
+    prog=modalProg;
+    label=document.getElementById('lib-import-label');
+    fill=document.getElementById('lib-import-fill');
+    sub=document.getElementById('lib-import-sub');
+    statsEl=document.getElementById('lib-import-stats');
+  } else {
+    _floatOverlay=true;
+    const old=document.getElementById('_lib-fp');if(old)old.remove();
+    const ov=document.createElement('div');
+    ov.id='_lib-fp';
+    ov.style.cssText='position:fixed;bottom:20px;right:20px;z-index:10009;background:#fff;border-radius:14px;padding:16px 20px;width:min(400px,96vw);box-shadow:0 6px 28px rgba(0,0,0,.25);border:1.5px solid #AFA9EC';
+    ov.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#534AB7">📤 Uploading photos…</span>
+        <button onclick="document.getElementById('_lib-fp').remove()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#aaa;line-height:1">✕</button>
+      </div>
+      <div id="_lib-fp-lbl" style="font-size:12px;color:#333;margin-bottom:6px">Preparing…</div>
+      <div style="background:#E8E7E0;border-radius:20px;height:8px;overflow:hidden;margin-bottom:6px">
+        <div id="_lib-fp-fill" style="height:100%;background:#534AB7;width:0%;transition:width .3s;border-radius:20px"></div>
+      </div>
+      <div id="_lib-fp-sub" style="font-size:11px;color:#888"></div>
+      <div id="_lib-fp-stats" style="font-size:11px;display:flex;flex-wrap:wrap;gap:5px;margin-top:5px"></div>`;
+    document.body.appendChild(ov);
+    prog=ov;
+    label=document.getElementById('_lib-fp-lbl');
+    fill=document.getElementById('_lib-fp-fill');
+    sub=document.getElementById('_lib-fp-sub');
+    statsEl=document.getElementById('_lib-fp-stats');
+  }
 
-  // Filter out system/backup folders (.picaoriginals, .picasa, Thumbs, etc.)
+  // Filter out system/backup folders (.picasaoriginals, .picasa, Thumbs, etc.)
+  // Split on both / and \ to handle Windows paths correctly
   let systemSkipped=0;
   const files=allFiles.filter(f=>{
     const rel=f.webkitRelativePath||f.name;
-    const parts=rel.split('/');
-    // Check every path segment — if any is a system folder, skip the file
+    const parts=rel.split(/[/\\]/);
+    // Skip if any folder segment matches system patterns OR if file itself is a system file
     const inSystemFolder=parts.slice(0,-1).some(seg=>_LIB_SKIP_FOLDERS.test(seg.trim()));
+    // Also skip if the full path contains a system folder name anywhere (catches edge cases)
+    const pathHasSystem=_LIB_SKIP_FOLDERS.test(rel);
     const isSystemFile=_LIB_SKIP_FILES.test(f.name);
-    if(inSystemFolder||isSystemFile){systemSkipped++;return false;}
+    if(inSystemFolder||pathHasSystem||isSystemFile){systemSkipped++;return false;}
     return true;
   });
 
@@ -2672,6 +2704,10 @@ async function _libImportFiles(input, forceFolder, forceSeg){
   showToast(finalMsg,'green',10000);
   if(S.mainView==='library')renderLibrary();
   input.value='';
+  // Auto-dismiss the floating overlay after 10s (keep it longer if there were failures)
+  if(_floatOverlay){
+    setTimeout(()=>{const o=document.getElementById('_lib-fp');if(o)o.remove();}, failed>0?20000:8000);
+  }
 }
 
 // ── LIBRARY PICKER (replaces direct file-upload on design + button) ────────────
