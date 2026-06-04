@@ -150,8 +150,10 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .order-card{border-radius:14px;margin-bottom:10px;overflow:hidden;border:1.5px solid var(--border);background:#fff;transition:box-shadow .18s,transform .18s;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .order-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.09);transform:translateY(-1px)}
 .order-card.al-late{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}.order-card.al-warn{border-color:#FAC775;box-shadow:0 2px 8px rgba(186,117,23,.08)}.order-card.al-done{border-color:#C0DD97;box-shadow:0 2px 8px rgba(59,109,17,.06)}.order-card.al-ok{border-color:#9FE1CB;box-shadow:0 2px 8px rgba(15,110,86,.06)}
+.order-card.al-pending{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}
 .order-header{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none;transition:background .12s}
 .al-late .order-header{background:#FFF5F5}.al-warn .order-header{background:#FFFBF0}.al-done .order-header{background:#F7FAF2}.al-ok .order-header{background:#F2FBF7}
+.al-pending .order-header{background:#FFF5F5}
 .order-header:hover{filter:brightness(.97)}
 .oh-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;font-weight:700;color:#fff}
 .oh-icon-late{background:#E24B4A}.oh-icon-warn{background:#EF9F27}.oh-icon-ok{background:#1D9E75}.oh-icon-done{background:#888780}
@@ -162,6 +164,7 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .pbar-wrap{height:6px;background:#E8E7E0;border-radius:3px;overflow:hidden}
 .pbar-fill{height:100%;transition:width .5s cubic-bezier(.4,0,.2,1);border-radius:3px}
 .al-ok .pbar-fill{background:linear-gradient(90deg,#1D9E75,#5DCAA5)}.al-warn .pbar-fill{background:linear-gradient(90deg,#EF9F27,#F5C15A)}.al-late .pbar-fill{background:linear-gradient(90deg,#E24B4A,#F09595)}.al-done .pbar-fill{background:linear-gradient(90deg,#888780,#B4B2A9)}
+.al-pending .pbar-fill{background:linear-gradient(90deg,#E24B4A,#F09595)}
 .order-body{display:none;padding:14px}
 .order-body.open{display:block}
 /* Tabs */
@@ -3060,9 +3063,8 @@ function designAlert(order,design){
   if(design.stages.every(s=>s.status==='done'))return'done';return'ok';
 }
 function orderAlert(order){
-  const a=order.designs.map(d=>designAlert(order,d));
-  if(a.includes('late'))return'late';if(a.includes('warn'))return'warn';
-  if(a.every(x=>x==='done'))return'done';return'ok';
+  // Simple two-state: 'done' = all stages complete, 'pending' = anything else
+  return orderPct(order)===100?'done':'pending';
 }
 function orderPct(order){
   let total=0,done=0;
@@ -3254,15 +3256,15 @@ function render(){
   }
 }
 function renderStats(){
-  const o=S.orders,lc=o.filter(x=>orderAlert(x)==='late').length,wc=o.filter(x=>orderAlert(x)==='warn').length,dc=o.filter(x=>orderAlert(x)==='done').length,oc=o.length-lc-wc-dc;
+  const o=S.orders;
+  const dc=o.filter(x=>orderAlert(x)==='done').length;
+  const pc=o.length-dc;
   document.getElementById('stats-bar').innerHTML=`
     <div class="stat-card stat-total"><div class="stat-val">${o.length}</div><div class="stat-lbl">Total orders</div></div>
-    <div class="stat-card stat-ontrack"><div class="stat-val">${oc}</div><div class="stat-lbl">On track</div></div>
-    <div class="stat-card stat-soon"><div class="stat-val">${wc}</div><div class="stat-lbl">Due soon</div></div>
-    <div class="stat-card stat-late"><div class="stat-val">${lc}</div><div class="stat-lbl">Overdue</div></div>
-    <div class="stat-card stat-done"><div class="stat-val">${dc}</div><div class="stat-lbl">Completed</div></div>`;
+    <div class="stat-card stat-late"><div class="stat-val" style="color:#A32D2D">${pc}</div><div class="stat-lbl">Pending</div></div>
+    <div class="stat-card stat-done"><div class="stat-val" style="color:#0F6E56">${dc}</div><div class="stat-lbl">Completed</div></div>`;
   const sub=document.getElementById('header-sub');
-  if(sub)sub.textContent=`${o.length} orders · ${lc} overdue · ${wc} due soon`;
+  if(sub)sub.textContent=`${o.length} orders · ${pc} pending · ${dc} completed`;
 }
 
 // ── ORDERS VIEW ────────────────────────────────────────────────────────────────
@@ -3275,21 +3277,18 @@ function renderOrdersView(){
   // Build full client map from ALL orders (sidebar always shows every client)
   const allClientMap={};
   S.orders.forEach(o=>{
-    if(!allClientMap[o.client])allClientMap[o.client]={orders:[],late:0,warn:0,done:0};
+    if(!allClientMap[o.client])allClientMap[o.client]={orders:[],done:0,pending:0};
     allClientMap[o.client].orders.push(o);
-    const al=orderAlert(o);
-    if(al==='late')allClientMap[o.client].late++;
-    else if(al==='warn')allClientMap[o.client].warn++;
-    else if(al==='done')allClientMap[o.client].done++;
+    if(orderAlert(o)==='done')allClientMap[o.client].done++;
+    else allClientMap[o.client].pending++;
   });
   const allClients=Object.keys(allClientMap).sort();
 
   // Auto-select first client if none chosen or chosen client no longer exists
   if(!S.selectedClient||!allClientMap[S.selectedClient])S.selectedClient=allClients[0]||'';
 
-  const ci=allClientMap[S.selectedClient]||{orders:[],late:0,warn:0,done:0};
-  const totalOrds=ci.orders.length,lateOrds=ci.late,warnOrds=ci.warn,doneOrds=ci.done;
-  const okOrds=totalOrds-lateOrds-warnOrds-doneOrds;
+  const ci=allClientMap[S.selectedClient]||{orders:[],done:0,pending:0};
+  const totalOrds=ci.orders.length,doneOrds=ci.done,pendingOrds=ci.pending;
 
   // Apply search + status chip filter to the selected client's orders
   const q=(S.orderSearchQ||'').toLowerCase().trim();
@@ -3308,9 +3307,9 @@ function renderOrdersView(){
 
   const sidebarHTML=allClients.map(c=>{
     const cd=allClientMap[c];
-    const hasLate=cd.late>0,hasWarn=cd.warn>0;
-    const bc=hasLate?'orders-sb-badge sb-late':'orders-sb-badge';
-    const bl=cd.orders.length+(hasLate?' 🔴':hasWarn?' 🟡':'');
+    const allDone=cd.pending===0&&cd.orders.length>0;
+    const bc=allDone?'orders-sb-badge':'orders-sb-badge sb-late';
+    const bl=cd.orders.length+(allDone?' ✅':'');
     return`<div class="orders-sb-item${c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
       <span class="orders-sb-name">👤 ${esc(c)}</span>
       <span class="${bc}">${bl}</span>
@@ -3333,16 +3332,15 @@ function renderOrdersView(){
           value="${esc(S.orderSearchQ||'')}"
           oninput="S.orderSearchQ=this.value;renderOrdersView()">
         <button class="orders-chip${chipA('')}" onclick="S.orderStatusFilter='';renderOrdersView()">All</button>
-        <button class="orders-chip${chipA('late')}" onclick="S.orderStatusFilter='late';renderOrdersView()">🔴 Late</button>
-        <button class="orders-chip${chipA('warn')}" onclick="S.orderStatusFilter='warn';renderOrdersView()">🟡 Soon</button>
-        <button class="orders-chip${chipA('done')}" onclick="S.orderStatusFilter='done';renderOrdersView()">✅ Done</button>
+        <button class="orders-chip${chipA('pending')}" onclick="S.orderStatusFilter='pending';renderOrdersView()" style="${chipA('pending')?'':''}">🔴 Pending</button>
+        <button class="orders-chip${chipA('done')}" onclick="S.orderStatusFilter='done';renderOrdersView()">✅ Completed</button>
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
           <span style="font-size:18px">👤</span>
           <div style="min-width:0">
             <div class="orders-section-name">${esc(S.selectedClient)}</div>
-            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${okOrds} on track · ${lateOrds} late · ${warnOrds} soon</div>
+            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${pendingOrds} pending · ${doneOrds} completed</div>
           </div>
         </div>
         <div class="orders-section-acts">
@@ -3361,12 +3359,13 @@ function selectOrderClient(name){
 
 function buildOrderCard(order,oi){
   const p=orderPct(order);
+  const al=orderAlert(order); // 'done' or 'pending'
   const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   const isOpen=S.openOrders.has(order.id);
   const at=S.activeTabs[order.id]||'designs';
-  return `<div class="order-card al-ok" id="oc-${order.id}" data-active-tab="${at}">
+  return `<div class="order-card al-${al}" id="oc-${order.id}" data-active-tab="${at}">
     <div class="order-header" onclick="toggleOrder('${order.id}')">
-      <div class="oh-icon oh-icon-ok">●</div>
+      <div class="oh-icon ${al==='done'?'oh-icon-done':'oh-icon-late'}">●</div>
       <div class="oh-left">
         <div class="oh-title">${esc(order.orderId)} · ${esc(order.client)}</div>
         <div class="oh-sub">${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}</div>
@@ -3732,7 +3731,7 @@ function buildDesignsGroupTable(order,oi,g){
   return '<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
     +'<table class="variety-table">'
       +'<thead><tr>'
-        +'<th style="min-width:130px;text-align:left">Design code</th>'
+        +'<th style="min-width:130px;text-align:left" title="Click the code cell below to type a design code (e.g. DC-001)">Design code</th>'
         +'<th style="min-width:80px">Images</th>'
         +szKeys.map(sz=>'<th class="sz-head">'
           +esc(sz)
@@ -3749,10 +3748,29 @@ function buildDesignsGroupTable(order,oi,g){
       +'<tbody>'+tbody+'</tbody>'
       +footerHtml
     +'</table>'
-    +'<div style="padding:5px 10px 6px;display:flex;align-items:center;justify-content:flex-end;border-top:1px solid #F1EFE8">'
+    +'<div style="padding:5px 10px 6px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #F1EFE8">'
+      +'<button class="icon-btn sm no-print" onclick="addDesignCodeToGroup('+oi+',\''+esc(g.name.replace(/'/g,"\\'"))+'\')" title="Add another design code under the same design name">+ Add design code</button>'
       +sizeCtrl
     +'</div>'
   +'</div>';
+}
+
+function addDesignCodeToGroup(oi,groupName){
+  const order=S.orders[oi];if(!order)return;
+  const newStages=S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
+  const newId=uid();
+  order.designs.push({id:newId,name:groupName,code:'',sizesLocked:false,sizes:Object.fromEntries(DEFAULT_SIZES.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
+  S.activeTabs[order.id]='designs';
+  audit('Add design code',`${order.orderId}: new code added to group "${groupName}"`);
+  render();
+  requestAnimationFrame(()=>{
+    const orderEl=document.getElementById('oc-'+order.id);
+    if(orderEl){
+      const emptyInps=[...orderEl.querySelectorAll('.variety-name-inp')].filter(el=>!el.value.trim());
+      const target=emptyInps[emptyInps.length-1];
+      if(target){target.scrollIntoView({behavior:'smooth',block:'nearest'});target.focus();}
+    }
+  });
 }
 
 // ── STAGE ROW BUILDER (standalone fn - no nested backticks) ──────────────────
@@ -5915,12 +5933,8 @@ function genVendorOrderId(){
 }
 
 function vendorOrderAlert(vo){
-  if(!vo.deliveryDate)return 'ok';
-  const today=new Date().toISOString().split('T')[0];
-  if(vo.deliveryDate<today)return 'late';
-  const diff=(new Date(vo.deliveryDate)-new Date())/864e5;
-  if(diff<=7)return 'warn';
-  return 'ok';
+  // Simple two-state: 'done' = delivered, 'pending' = everything else
+  return (vo.status==='delivered')?'done':'pending';
 }
 function vendorTotalQty(vo){
   return (vo.designs||[]).reduce((a,d)=>{
@@ -6570,19 +6584,18 @@ function renderVendorOrders(){
   const allVendorMap={};
   S.vendorOrders.forEach(vo=>{
     const v=vo.vendor||'(No vendor)';
-    if(!allVendorMap[v])allVendorMap[v]={orders:[],late:0,warn:0};
+    if(!allVendorMap[v])allVendorMap[v]={orders:[],done:0,pending:0};
     allVendorMap[v].orders.push(vo);
-    const al=vendorOrderAlert(vo);
-    if(al==='late')allVendorMap[v].late++;
-    else if(al==='warn')allVendorMap[v].warn++;
+    if(vendorOrderAlert(vo)==='done')allVendorMap[v].done++;
+    else allVendorMap[v].pending++;
   });
   const allVendors=Object.keys(allVendorMap).sort();
 
   // Auto-select first vendor if none chosen or chosen vendor no longer exists
   if(!S.selectedVendor||!allVendorMap[S.selectedVendor])S.selectedVendor=allVendors[0]||'';
 
-  const vi=allVendorMap[S.selectedVendor]||{orders:[],late:0,warn:0};
-  const totalOrds=vi.orders.length,lateOrds=vi.late,warnOrds=vi.warn;
+  const vi=allVendorMap[S.selectedVendor]||{orders:[],done:0,pending:0};
+  const totalOrds=vi.orders.length,doneVOrds=vi.done,pendingVOrds=vi.pending;
 
   // Apply search + status chip filter
   const q=(S.vendorSearchQ||'').toLowerCase().trim();
@@ -6601,9 +6614,9 @@ function renderVendorOrders(){
 
   const sidebarHTML=allVendors.map(v=>{
     const vd=allVendorMap[v];
-    const hasLate=vd.late>0,hasWarn=vd.warn>0;
-    const bc=hasLate?'orders-sb-badge sb-late':'orders-sb-badge';
-    const bl=vd.orders.length+(hasLate?' 🔴':hasWarn?' 🟡':'');
+    const allVDone=vd.pending===0&&vd.orders.length>0;
+    const bc=allVDone?'orders-sb-badge':'orders-sb-badge sb-late';
+    const bl=vd.orders.length+(allVDone?' ✅':'');
     return`<div class="orders-sb-item${v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
       <span class="orders-sb-name">🏭 ${esc(v)}</span>
       <span class="${bc}">${bl}</span>
@@ -6631,15 +6644,15 @@ function renderVendorOrders(){
           value="${esc(S.vendorSearchQ||'')}"
           oninput="S.vendorSearchQ=this.value;renderVendorOrders()">
         <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
-        <button class="orders-chip${chipA('late')}" onclick="S.vendorStatusFilter='late';renderVendorOrders()">🔴 Late</button>
-        <button class="orders-chip${chipA('warn')}" onclick="S.vendorStatusFilter='warn';renderVendorOrders()">🟡 Soon</button>
+        <button class="orders-chip${chipA('pending')}" onclick="S.vendorStatusFilter='pending';renderVendorOrders()">🔴 Pending</button>
+        <button class="orders-chip${chipA('done')}" onclick="S.vendorStatusFilter='done';renderVendorOrders()">✅ Completed</button>
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
           <span style="font-size:18px">🏭</span>
           <div style="min-width:0">
             <div class="orders-section-name">${esc(S.selectedVendor)}</div>
-            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${lateOrds} late · ${warnOrds} due soon</div>
+            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${pendingVOrds} pending · ${doneVOrds} completed</div>
           </div>
         </div>
         <div class="orders-section-acts">
@@ -6682,7 +6695,7 @@ function buildVendorOrderCard(vo,vi){
   const progressPct=statusProgress[st]||0;
   // Overdue highlight: delivery date passed and not delivered
   const isOverdue=vo.deliveryDate&&new Date(vo.deliveryDate)<new Date()&&st!=='delivered';
-  const cardAlert=isOverdue?'al-late':(st==='delivered'?'al-done':'al-ok');
+  const cardAlert=st==='delivered'?'al-done':'al-pending';
 
   return`<div class="order-card ${cardAlert}" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
