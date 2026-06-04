@@ -1991,8 +1991,18 @@ function closeRecovery(){
 // Photos are permanent in R2. The library is just a searchable index of URLs.
 
 let _imageLibrary=[], _libLoaded=false, _libPage=0, _lpPage=0;
-let _libFolder=''; // '' = show folder tiles; 'FolderName' = show that folder's images
+let _libFolder='';   // '' = folder tiles | 'FolderName' = inside folder
+let _libSegment='';  // '' = root | 'CNC' | 'Dye Gold'
+let _libFolders=[];  // folder registry [{name,segment,_id}] — tracks empty folders too
+let _libFoldersLoaded=false;
+let _libSelected=new Set(); // _ids selected for move/copy/delete
 const LIB_PAGE=60;
+const LIB_SEGMENTS=['CNC','Dye Gold'];
+const LIB_SEG_ICON={'CNC':'⚙️','Dye Gold':'✨'};
+const LIB_SEG_CLR={'CNC':'#534AB7','Dye Gold':'#B45309'};
+const LIB_SEG_BG={'CNC':'#EEEDFE','Dye Gold':'#FEF3C7'};
+const LIB_SEG_BORDER={'CNC':'#AFA9EC','Dye Gold':'#FCD34D'};
+const FB_FOLDERS='https://bangle-tracker-default-rtdb.firebaseio.com/imageFolders';
 
 // Load library from Firebase (lazy — only when Library tab or picker first opens)
 async function _ensureLibraryLoaded(){
@@ -2001,7 +2011,7 @@ async function _ensureLibraryLoaded(){
   try{
     const resp=await fetch(FB_LIB+'.json',{signal:AbortSignal.timeout(15000)});
     const data=resp.ok?(await resp.json()||{}):{};
-    _imageLibrary=Object.entries(data).map(([id,v])=>({...v,_id:id}));
+    _imageLibrary=Object.entries(data).map(([id,v])=>({...v,_id:id,segment:v.segment||'CNC'}));
   }catch(e){
     console.warn('Library load failed:',e.message);
     _imageLibrary=[];
@@ -2023,14 +2033,15 @@ async function _addLibraryEntry(r2url,designCode,folder,fileName){
   }
 }
 
-// Batch-write many entries to Firebase in ONE call (used by bulk import)
-async function _batchAddLibraryEntries(entries){
+// Batch-write many entries to Firebase in ONE call (used by bulk import and copy)
+async function _batchAddLibraryEntries(entries,defaultSeg){
   if(!entries.length)return;
   const updates={};
   entries.forEach(e=>{
     const key='-lib'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    updates['imageLibrary/'+key]=e;
-    _imageLibrary.push({...e,_id:key});
+    const entry={...e,segment:e.segment||defaultSeg||_libSegment||'CNC'};
+    updates['imageLibrary/'+key]=entry;
+    _imageLibrary.push({...entry,_id:key});
   });
   try{
     const FB_ROOT='https://bangle-tracker-default-rtdb.firebaseio.com';
@@ -2051,236 +2062,470 @@ async function deleteLibraryEntry(id){
 
 // ── LIBRARY VIEW ───────────────────────────────────────────────────────────────
 async function openLibraryView(){
-  _libPage=0;
-  _libFolder='';
+  _libPage=0;_libFolder='';_libSegment='';_libSelected=new Set();
   await _ensureLibraryLoaded();
+  await _loadLibFolders();
   renderLibrary();
+}
+async function _loadLibFolders(){
+  if(_libFoldersLoaded)return;
+  _libFoldersLoaded=true;
+  try{
+    const resp=await fetch(FB_FOLDERS+'.json',{signal:AbortSignal.timeout(10000)});
+    const data=resp.ok?(await resp.json()||{}):{};
+    _libFolders=Object.entries(data).map(([id,v])=>({...v,_id:id}));
+  }catch(e){_libFolders=[];_libFoldersLoaded=false;}
+}
+// Merge image-derived folders + registry folders for a segment, sorted
+function _libGetFolders(seg){
+  const map={};
+  _imageLibrary.filter(e=>(e.segment||'CNC')===seg).forEach(e=>{
+    const f=e.folder||'General';
+    if(!map[f]){map[f]={name:f,count:0,preview:null};}
+    map[f].count++;
+    if(!map[f].preview)map[f].preview=e.r2url;
+  });
+  // Add empty folders from registry
+  _libFolders.filter(f=>f.segment===seg).forEach(f=>{
+    if(!map[f.name])map[f.name]={name:f.name,count:0,preview:null,_regId:f._id};
+    else map[f.name]._regId=f._id;
+  });
+  return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name));
 }
 
 function renderLibrary(){
   const el=document.getElementById('view-library');
   if(!el)return;
-  if(!_libLoaded){
-    el.innerHTML='<div style="text-align:center;padding:80px;color:#888;font-size:14px">Loading library…</div>';
-    return;
-  }
+  if(!_libLoaded){el.innerHTML='<div style="text-align:center;padding:80px;color:#888;font-size:14px">Loading library…</div>';return;}
 
   const searchVal=(document.getElementById('lib-search')||{}).value||'';
   const q=searchVal.trim().toLowerCase();
+  const segClr=LIB_SEG_CLR[_libSegment]||'#534AB7';
 
-  // Build folder map: { folderName → { count, preview } }
-  const folderMap={};
-  _imageLibrary.forEach(e=>{
-    const f=e.folder||'Uncategorized';
-    if(!folderMap[f]){folderMap[f]={count:0,preview:null};}
-    folderMap[f].count++;
-    if(!folderMap[f].preview)folderMap[f].preview=e.r2url;
-  });
-  const allFolders=Object.keys(folderMap).sort();
-
-  // ── TOOLBAR (always visible) ───────────────────────────────────────────
-  const toolbar=`
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-    <div>
-      <div style="font-size:16px;font-weight:700;color:#534AB7">🖼️ Image Library</div>
-      <div style="font-size:12px;color:#888;margin-top:2px">${_imageLibrary.length.toLocaleString()} photos · ${allFolders.length} folder${allFolders.length!==1?'s':''} — stored permanently in cloud</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button onclick="_libOpenNewFolderDialog()" style="background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">➕ New Folder</button>
-      <button onclick="openLibraryImport()" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📁 Import Folder</button>
+  // ── ROOT VIEW — two segment cards ──────────────────────────────────────
+  if(!_libSegment&&!_libFolder){
+    el.innerHTML=`<div style="padding:14px 16px 24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#534AB7">🖼️ Image Library</div>
+        <div style="font-size:12px;color:#888;margin-top:2px">${_imageLibrary.length.toLocaleString()} photos permanently in cloud — organized by segment</div>
+      </div>
       <button onclick="openImageRecovery()" style="background:#185FA5;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📸 Upload &amp; Assign to Orders</button>
     </div>
-  </div>`;
-
-  // ── EMPTY STATE ────────────────────────────────────────────────────────
-  if(_imageLibrary.length===0){
-    el.innerHTML=`<div style="padding:14px 16px 24px">${toolbar}
-    <div style="text-align:center;padding:60px 20px;color:#888;border:2px dashed #AFA9EC;border-radius:14px;background:#fafaf8">
-      <div style="font-size:44px;margin-bottom:12px">🖼️</div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:8px">Library is empty</div>
-      <div style="font-size:13px;margin-bottom:20px">Upload your design photos folder here — the folder structure is preserved automatically.</div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button onclick="_libOpenNewFolderDialog()" style="background:#1D9E75;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:13px;font-weight:600;cursor:pointer">➕ Create First Folder</button>
-        <button onclick="openLibraryImport()" style="background:#534AB7;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:13px;font-weight:600;cursor:pointer">📁 Import Folder from Computer</button>
-      </div>
-    </div></div>`;
-    return;
-  }
-
-  // ── FOLDER CONTENTS VIEW ───────────────────────────────────────────────
-  if(_libFolder){
-    const folderItems=_imageLibrary.filter(e=>(e.folder||'Uncategorized')===_libFolder);
-    const filteredItems=q?folderItems.filter(e=>(e.designCode||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q)):folderItems;
-    const shown=filteredItems.slice(0,(_libPage+1)*LIB_PAGE);
-    el.innerHTML=`<div style="padding:14px 16px 24px">
-    ${toolbar}
-    <!-- Breadcrumb -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <button onclick="_libSelectFolder('')" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">← All Folders</button>
-      <span style="font-size:13px;color:#888">›</span>
-      <span style="font-size:14px;font-weight:700;color:#534AB7">📁 ${esc(_libFolder)}</span>
-      <span style="font-size:12px;color:#aaa">${folderItems.length} photo${folderItems.length!==1?'s':''}</span>
-      <button onclick="_libUploadMoreToFolder('${esc(_libFolder)}')" style="background:#1D9E75;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;margin-left:4px">+ Upload More Here</button>
-    </div>
-    <!-- Search within folder -->
-    <input id="lib-search" placeholder="Search within ${esc(_libFolder)}…" value="${esc(searchVal)}"
-      oninput="_libPage=0;renderLibrary()"
-      style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:12px">
-    ${shown.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">No photos${q?' matching "'+esc(searchVal)+'"':''} in this folder.</div>`:`
-    <div style="font-size:11px;color:#888;margin-bottom:10px">Showing ${shown.length.toLocaleString()} of ${filteredItems.length.toLocaleString()} photos</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">
-      ${shown.map(e=>`
-        <div style="border-radius:10px;border:1.5px solid #E8E7E0;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 12px rgba(83,74,183,.15)'" onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.05)'">
-          <div style="height:96px;background:#f5f5f5;cursor:zoom-in" onclick="openLbDirect('${esc(e.r2url)}')">
-            <img src="${esc(e.r2url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+      ${LIB_SEGMENTS.map(seg=>{
+        const imgs=_imageLibrary.filter(e=>(e.segment||'CNC')===seg);
+        const foldersForSeg=_libGetFolders(seg);
+        const previews=imgs.slice(0,4).map(e=>e.r2url).filter(Boolean);
+        const clr=LIB_SEG_CLR[seg];const bg=LIB_SEG_BG[seg];const bdr=LIB_SEG_BORDER[seg];
+        return`<div onclick="_libSelectSegment('${esc(seg)}')" style="border-radius:16px;border:2px solid ${bdr};overflow:hidden;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);cursor:pointer;transition:box-shadow .15s,transform .15s" onmouseover="this.style.boxShadow='0 6px 20px rgba(0,0,0,.12)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,.06)';this.style.transform=''">
+          <div style="background:${bg};padding:16px 18px;display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:18px;font-weight:800;color:${clr}">${LIB_SEG_ICON[seg]} ${esc(seg)}</div>
+            <div style="font-size:12px;color:${clr};font-weight:600;opacity:.8">${foldersForSeg.length} folder${foldersForSeg.length!==1?'s':''} · ${imgs.length} photo${imgs.length!==1?'s':''}</div>
           </div>
-          <div style="padding:6px 7px">
-            <div style="font-size:11px;font-weight:700;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.designCode||e.fileName)}">${esc(e.designCode||e.fileName||'—')}</div>
-            <button onclick="deleteLibraryEntry('${esc(e._id)}')" style="margin-top:4px;width:100%;font-size:10px;padding:2px 0;background:#fff;border:1px solid #eee;border-radius:4px;cursor:pointer;color:#bbb">✕ Remove</button>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);height:80px;background:#f5f5f5;overflow:hidden">
+            ${previews.length?previews.map(url=>`<img src="${esc(url)}" loading="lazy" style="width:100%;height:80px;object-fit:cover;display:block">`).join('')
+              :`<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;font-size:32px;color:#ccc">${LIB_SEG_ICON[seg]}</div>`}
           </div>
-        </div>`).join('')}
+          <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:12px;color:#555">Click to browse &amp; manage</span>
+            <span style="font-size:12px;color:${clr};font-weight:600">→</span>
+          </div>
+        </div>`;
+      }).join('')}
     </div>
-    ${shown.length<filteredItems.length?`<div style="text-align:center;margin-top:18px">
-      <button onclick="_libPage++;renderLibrary()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:9px 26px;font-size:13px;font-weight:600;cursor:pointer">Load more (${(filteredItems.length-shown.length).toLocaleString()} remaining)</button>
-    </div>`:''}
-    `}
     </div>`;
     return;
   }
 
-  // ── FOLDER TILES VIEW (main view) ─────────────────────────────────────
-  const filteredFolders=q?allFolders.filter(f=>f.toLowerCase().includes(q)):allFolders;
-  el.innerHTML=`<div style="padding:14px 16px 24px">
-  ${toolbar}
-  <!-- Search -->
-  <input id="lib-search" placeholder="Search folders…" value="${esc(searchVal)}"
-    oninput="_libPage=0;renderLibrary()"
-    style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:14px">
-
-  ${filteredFolders.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">No folders match "<strong>${esc(searchVal)}</strong>"</div>`:`
-  <!-- Folder tiles grid -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-    ${filteredFolders.map(f=>{
-      const fd=folderMap[f];
-      return`<div onclick="_libSelectFolder('${esc(f)}')" style="border-radius:12px;border:1.5px solid #E8E7E0;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);cursor:pointer;transition:box-shadow .15s,transform .15s" onmouseover="this.style.boxShadow='0 4px 16px rgba(83,74,183,.18)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.05)';this.style.transform=''">
-        <div style="height:110px;background:#f0efff;position:relative;overflow:hidden">
-          ${fd.preview?`<img src="${esc(fd.preview)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:36px">📁</div>`}
-          <div style="position:absolute;bottom:5px;right:6px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;padding:2px 7px;font-size:10px;font-weight:700">${fd.count}</div>
-        </div>
-        <div style="padding:8px 10px;border-top:1px solid #f0efee">
-          <div style="font-size:12px;font-weight:700;color:#1a1916;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f)}">📁 ${esc(f)}</div>
-          <div style="font-size:10px;color:#888;margin-top:2px">${fd.count} photo${fd.count!==1?'s':''}</div>
-        </div>
-      </div>`;
-    }).join('')}
-  </div>
-  `}
+  // Common breadcrumb builder
+  const breadcrumb=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button onclick="_libGoRoot()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">🖼️ Library</button>
+    ${_libSegment?`<span style="color:#aaa">›</span>
+    <button onclick="_libGoSegment()" style="background:${LIB_SEG_BG[_libSegment]};color:${segClr};border:1.5px solid ${LIB_SEG_BORDER[_libSegment]};border-radius:7px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">${LIB_SEG_ICON[_libSegment]} ${esc(_libSegment)}</button>`:''}
+    ${_libFolder?`<span style="color:#aaa">›</span>
+    <span style="font-size:13px;font-weight:700;color:${segClr}">📁 ${esc(_libFolder)}</span>`:''}
   </div>`;
+
+  // ── SEGMENT VIEW — folder tiles ─────────────────────────────────────────
+  if(_libSegment&&!_libFolder){
+    const folders=_libGetFolders(_libSegment);
+    const filtered=q?folders.filter(f=>f.name.toLowerCase().includes(q)):folders;
+    const selCount=_libSelected.size;
+    el.innerHTML=`<div style="padding:14px 16px 24px">
+    ${breadcrumb}
+    <!-- Toolbar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;color:${segClr}">${LIB_SEG_ICON[_libSegment]} ${esc(_libSegment)} — ${folders.length} folder${folders.length!==1?'s':''}</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <button onclick="_libOpenNewFolderDialog('${esc(_libSegment)}')" style="background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">➕ New Folder</button>
+        <button onclick="openLibraryImport('${esc(_libSegment)}')" style="background:${segClr};color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">📁 Import Folder</button>
+      </div>
+    </div>
+    <input id="lib-search" placeholder="Search folders in ${esc(_libSegment)}…" value="${esc(searchVal)}"
+      oninput="_libPage=0;renderLibrary()"
+      style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:14px">
+    ${filtered.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">${q?`No folders match "${esc(searchVal)}"`:`No folders yet — click ➕ New Folder to create one`}</div>`:`
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px">
+      ${filtered.map(f=>`
+        <div style="border-radius:12px;border:1.5px solid #E8E7E0;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);cursor:pointer;transition:box-shadow .15s,transform .15s;position:relative"
+          onmouseover="this.style.boxShadow='0 4px 16px rgba(83,74,183,.18)';this.style.transform='translateY(-2px)'"
+          onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.05)';this.style.transform=''">
+          <div onclick="_libSelectFolder('${esc(f.name)}')" style="height:110px;background:#f0efff;position:relative;overflow:hidden">
+            ${f.preview?`<img src="${esc(f.preview)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:36px">📁</div>`}
+            <div style="position:absolute;bottom:5px;right:6px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;padding:2px 7px;font-size:10px;font-weight:700">${f.count}</div>
+          </div>
+          <div style="padding:6px 8px;border-top:1px solid #f0efee">
+            <div onclick="_libSelectFolder('${esc(f.name)}')" style="font-size:12px;font-weight:700;color:#1a1916;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.name)}">📁 ${esc(f.name)}</div>
+            <div style="font-size:10px;color:#888;margin-top:1px">${f.count} photo${f.count!==1?'s':''}</div>
+            <div style="display:flex;gap:4px;margin-top:5px">
+              <button onclick="_libRenameFolder('${esc(_libSegment)}','${esc(f.name)}')" style="flex:1;font-size:9px;padding:2px 0;background:#f0efff;border:1px solid #AFA9EC;border-radius:4px;cursor:pointer;color:#534AB7">✏️ Rename</button>
+              <button onclick="_libDeleteFolder('${esc(_libSegment)}','${esc(f.name)}')" style="flex:1;font-size:9px;padding:2px 0;background:#FDE8E8;border:1px solid #F09595;border-radius:4px;cursor:pointer;color:#A32D2D">🗑️ Delete</button>
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>`}
+    </div>`;
+    return;
+  }
+
+  // ── FOLDER CONTENTS VIEW — images ──────────────────────────────────────
+  if(_libFolder){
+    const folderItems=_imageLibrary.filter(e=>(e.segment||'CNC')===_libSegment&&(e.folder||'General')===_libFolder);
+    const filtered=q?folderItems.filter(e=>(e.designCode||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q)):folderItems;
+    const shown=filtered.slice(0,(_libPage+1)*LIB_PAGE);
+    const selCount=_libSelected.size;
+    el.innerHTML=`<div style="padding:14px 16px 24px">
+    ${breadcrumb}
+    <!-- Action bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:600;color:#555">${folderItems.length} photo${folderItems.length!==1?'s':''}</span>
+        <button onclick="_libSelectAll()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer">☐ Select All</button>
+        ${selCount?`<span style="background:#534AB7;color:#fff;border-radius:10px;padding:3px 9px;font-size:11px;font-weight:700">${selCount} selected</span>
+        <button onclick="_libShowMovePicker('move')" style="background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer">📂 Move to…</button>
+        <button onclick="_libShowMovePicker('copy')" style="background:#E6F1FB;color:#185FA5;border:1.5px solid #85B7EB;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer">📋 Copy to…</button>
+        <button onclick="_libDeleteSelected()" style="background:#FDE8E8;color:#A32D2D;border:1.5px solid #F09595;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer">🗑️ Delete</button>
+        <button onclick="_libSelected=new Set();renderLibrary()" style="background:#f5f4f2;color:#555;border:1px solid #ccc;border-radius:7px;padding:4px 9px;font-size:11px;cursor:pointer">✕ Clear</button>`:''}
+      </div>
+      <button onclick="_libUploadMoreToFolder('${esc(_libFolder)}')" style="background:#1D9E75;color:#fff;border:none;border-radius:7px;padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer">+ Upload More Here</button>
+    </div>
+    <input id="lib-search" placeholder="Search in ${esc(_libFolder)}…" value="${esc(searchVal)}"
+      oninput="_libPage=0;renderLibrary()"
+      style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:12px">
+    ${shown.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">No photos${q?' matching "'+esc(searchVal)+'"':''} in this folder.</div>`:`
+    <div style="font-size:11px;color:#888;margin-bottom:8px">Showing ${shown.length.toLocaleString()} of ${filtered.length.toLocaleString()} photos</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">
+      ${shown.map(e=>{
+        const sel=_libSelected.has(e._id);
+        return`<div style="border-radius:10px;border:2px solid ${sel?segClr:'#E8E7E0'};overflow:hidden;background:${sel?LIB_SEG_BG[_libSegment]||'#EEEDFE':'#fff'};box-shadow:0 1px 4px rgba(0,0,0,.05);position:relative;transition:border-color .1s">
+          <div style="position:absolute;top:5px;left:5px;z-index:2">
+            <input type="checkbox" ${sel?'checked':''} onclick="event.stopPropagation();_libToggleSelect('${esc(e._id)}')"
+              style="width:16px;height:16px;cursor:pointer;accent-color:${segClr}">
+          </div>
+          <div style="height:90px;background:#f5f5f5;cursor:zoom-in" onclick="openLbDirect('${esc(e.r2url)}')">
+            <img src="${esc(e.r2url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">
+          </div>
+          <div style="padding:5px 6px">
+            <div style="font-size:10px;font-weight:700;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.designCode||e.fileName)}">${esc(e.designCode||e.fileName||'—')}</div>
+            <div style="display:flex;gap:3px;margin-top:3px">
+              <button onclick="event.stopPropagation();_libMoveOne('${esc(e._id)}','move')" style="flex:1;font-size:9px;padding:2px 0;background:#E1F5EE;border:1px solid #9FE1CB;border-radius:3px;cursor:pointer;color:#0F6E56">Move</button>
+              <button onclick="event.stopPropagation();_libMoveOne('${esc(e._id)}','copy')" style="flex:1;font-size:9px;padding:2px 0;background:#E6F1FB;border:1px solid #85B7EB;border-radius:3px;cursor:pointer;color:#185FA5">Copy</button>
+              <button onclick="event.stopPropagation();deleteLibraryEntry('${esc(e._id)}')" style="flex:1;font-size:9px;padding:2px 0;background:#FDE8E8;border:1px solid #F09595;border-radius:3px;cursor:pointer;color:#A32D2D">Del</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${shown.length<filtered.length?`<div style="text-align:center;margin-top:18px">
+      <button onclick="_libPage++;renderLibrary()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:9px 26px;font-size:13px;font-weight:600;cursor:pointer">Load more (${(filtered.length-shown.length).toLocaleString()} remaining)</button>
+    </div>`:''}
+    `}
+    </div>`;
+  }
 }
 
-function _libSelectFolder(name){
-  _libFolder=name;
-  _libPage=0;
-  const s=document.getElementById('lib-search');
-  if(s)s.value='';
+// ── LIBRARY NAVIGATION ─────────────────────────────────────────────────────────
+function _libGoRoot(){_libSegment='';_libFolder='';_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
+function _libGoSegment(){_libFolder='';_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
+function _libSelectSegment(seg){_libSegment=seg;_libFolder='';_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
+function _libSelectFolder(name){_libFolder=name;_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
+
+// ── SELECTION ──────────────────────────────────────────────────────────────────
+function _libToggleSelect(id){if(_libSelected.has(id))_libSelected.delete(id);else _libSelected.add(id);renderLibrary();}
+function _libSelectAll(){
+  const items=_imageLibrary.filter(e=>(e.segment||'CNC')===_libSegment&&(e.folder||'General')===_libFolder);
+  if(_libSelected.size===items.length)_libSelected=new Set();
+  else items.forEach(e=>_libSelected.add(e._id));
   renderLibrary();
 }
 
-function _libUploadMoreToFolder(folderName){
-  const inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;inp.accept='image/*';
-  inp.onchange=()=>{ if(inp.files.length) _libImportFiles(inp,folderName); };
-  inp.click();
-}
-
-function _libOpenNewFolderDialog(){
+// ── FOLDER MANAGEMENT ──────────────────────────────────────────────────────────
+function _libOpenNewFolderDialog(seg){
+  seg=seg||_libSegment||'CNC';
   const old=document.getElementById('lib-new-folder-modal');if(old)old.remove();
   const wrap=document.createElement('div');
   wrap.id='lib-new-folder-modal';
   wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px';
   wrap.innerHTML=`
-  <div style="background:#fff;border-radius:16px;width:min(460px,96vw);padding:24px;display:flex;flex-direction:column;gap:16px">
+  <div style="background:#fff;border-radius:16px;width:min(480px,96vw);padding:24px;display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:15px;font-weight:700;color:#534AB7">➕ Create New Folder</div>
+      <div style="font-size:15px;font-weight:700;color:#534AB7">➕ New Folder</div>
       <button onclick="document.getElementById('lib-new-folder-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:5px 11px;cursor:pointer">✕</button>
     </div>
     <div>
-      <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:6px">Folder name</label>
-      <input id="lib-new-folder-name" placeholder="e.g. 8MM CNC, 12MM SILVER, Dye Gold…"
+      <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:5px">SEGMENT</label>
+      <div style="display:flex;gap:8px">
+        ${LIB_SEGMENTS.map(s=>`<button id="lib-nf-seg-${s.replace(' ','-')}" onclick="_libNfPickSeg('${s}')"
+          style="flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ${s===seg?LIB_SEG_CLR[s]:'#ddd'};background:${s===seg?LIB_SEG_BG[s]:'#fff'};color:${s===seg?LIB_SEG_CLR[s]:'#555'}">
+          ${LIB_SEG_ICON[s]} ${s}</button>`).join('')}
+      </div>
+      <input type="hidden" id="lib-nf-seg-val" value="${esc(seg)}">
+    </div>
+    <div>
+      <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:5px">FOLDER NAME</label>
+      <input id="lib-new-folder-name" placeholder="e.g. 8MM CNC, 12MM SILVER…"
         style="width:100%;padding:9px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px"
         onkeydown="if(event.key==='Enter')_libNewFolderProceed()">
     </div>
-    <div style="background:#f0efff;border-radius:10px;padding:12px 14px;font-size:12px;color:#534AB7;line-height:1.6">
-      📌 Type the folder name first, then select the photos from your computer. The photos will be saved under this folder name in the library.
+    <div style="background:#f0efff;border-radius:10px;padding:10px 14px;font-size:12px;color:#534AB7;line-height:1.5">
+      📌 The folder will be created immediately. You can then upload photos into it, or leave it empty for now.
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button onclick="document.getElementById('lib-new-folder-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:9px 20px;font-size:13px;cursor:pointer">Cancel</button>
-      <button onclick="_libNewFolderProceed()" style="background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">📂 Select Photos →</button>
+      <button onclick="_libNewFolderProceed(false)" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer">📁 Create Empty</button>
+      <button onclick="_libNewFolderProceed(true)" style="background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer">📷 Create &amp; Upload</button>
     </div>
   </div>`;
   document.body.appendChild(wrap);
   setTimeout(()=>{const i=document.getElementById('lib-new-folder-name');if(i)i.focus();},80);
 }
-
-function _libNewFolderProceed(){
+function _libNfPickSeg(seg){
+  document.getElementById('lib-nf-seg-val').value=seg;
+  LIB_SEGMENTS.forEach(s=>{
+    const btn=document.getElementById('lib-nf-seg-'+s.replace(' ','-'));
+    if(!btn)return;
+    btn.style.borderColor=s===seg?LIB_SEG_CLR[s]:'#ddd';
+    btn.style.background=s===seg?LIB_SEG_BG[s]:'#fff';
+    btn.style.color=s===seg?LIB_SEG_CLR[s]:'#555';
+  });
+}
+async function _libNewFolderProceed(uploadAfter){
   const nameEl=document.getElementById('lib-new-folder-name');
+  const segEl=document.getElementById('lib-nf-seg-val');
   const name=(nameEl?nameEl.value:'').trim();
+  const seg=(segEl?segEl.value:'CNC');
   if(!name){if(nameEl){nameEl.style.borderColor='#E24B4A';nameEl.focus();}return;}
   document.getElementById('lib-new-folder-modal').remove();
+  // Register folder in Firebase so it persists even when empty
+  await _libRegisterFolder(seg,name);
+  _libSegment=seg;_libFolder=name;
+  renderLibrary();
+  showToast(`📁 Folder "${name}" created in ${seg}`,'green',3000);
+  if(uploadAfter){
+    setTimeout(()=>_libUploadMoreToFolder(name),200);
+  }
+}
+async function _libRegisterFolder(seg,name){
+  // Check if already registered
+  if(_libFolders.some(f=>f.segment===seg&&f.name===name))return;
+  const entry={name,segment:seg,createdAt:Date.now()};
+  try{
+    const resp=await fetch(FB_FOLDERS+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)});
+    const result=resp.ok?await resp.json():null;
+    const key=(result&&result.name)||('tmp-'+Date.now());
+    _libFolders.push({...entry,_id:key});
+  }catch(e){_libFolders.push({...entry,_id:'tmp-'+Date.now()});}
+}
+function _libRenameFolder(seg,oldName){
+  const newName=prompt(`Rename folder "${oldName}" to:`,oldName);
+  if(!newName||newName.trim()===oldName)return;
+  const trimmed=newName.trim();
+  // Update all images in this folder
+  const toUpdate=_imageLibrary.filter(e=>(e.segment||'CNC')===seg&&(e.folder||'General')===oldName);
+  const updates={};
+  toUpdate.forEach(e=>{updates['imageLibrary/'+e._id+'/folder']=trimmed;e.folder=trimmed;});
+  // Update folder registry
+  _libFolders.filter(f=>f.segment===seg&&f.name===oldName).forEach(f=>{
+    updates['imageFolders/'+f._id+'/name']=trimmed;f.name=trimmed;
+  });
+  if(Object.keys(updates).length){
+    fetch('https://bangle-tracker-default-rtdb.firebaseio.com/.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)}).catch(()=>{});
+  }
+  if(_libFolder===oldName)_libFolder=trimmed;
+  renderLibrary();
+  showToast(`📁 Renamed to "${trimmed}"`,'green',2500);
+}
+function _libDeleteFolder(seg,name){
+  const imgs=_imageLibrary.filter(e=>(e.segment||'CNC')===seg&&(e.folder||'General')===name);
+  if(!confirm(`Delete folder "${name}"?\n\n${imgs.length>0?`This will also DELETE all ${imgs.length} photos inside it.\n`:'(Folder is empty)\n'}\nThis cannot be undone.`))return;
+  // Delete all images in folder
+  const delFetches=imgs.map(e=>fetch(FB_LIB+'/'+e._id+'.json',{method:'DELETE'}));
+  _imageLibrary=_imageLibrary.filter(e=>!(( e.segment||'CNC')===seg&&(e.folder||'General')===name));
+  // Delete folder registry entry
+  _libFolders.filter(f=>f.segment===seg&&f.name===name).forEach(f=>{
+    fetch(FB_FOLDERS+'/'+f._id+'.json',{method:'DELETE'}).catch(()=>{});
+  });
+  _libFolders=_libFolders.filter(f=>!(f.segment===seg&&f.name===name));
+  Promise.all(delFetches).catch(()=>{});
+  if(_libFolder===name)_libFolder='';
+  renderLibrary();
+  showToast(`🗑️ Folder "${name}" deleted`+(imgs.length?` with ${imgs.length} photos`:''),'green',3000);
+}
+
+// ── IMAGE MOVE / COPY / DELETE ─────────────────────────────────────────────────
+function _libToggleSelect(id){if(_libSelected.has(id))_libSelected.delete(id);else _libSelected.add(id);renderLibrary();}
+function _libSelectAll(){
+  const items=_imageLibrary.filter(e=>(e.segment||'CNC')===_libSegment&&(e.folder||'General')===_libFolder);
+  if(_libSelected.size===items.length)_libSelected=new Set();
+  else items.forEach(e=>_libSelected.add(e._id));
+  renderLibrary();
+}
+function _libMoveOne(id,mode){_libSelected=new Set([id]);_libShowMovePicker(mode);}
+function _libShowMovePicker(mode){
+  if(_libSelected.size===0){showToast('Select at least one photo first','orange',3000);return;}
+  const n=_libSelected.size;
+  const old=document.getElementById('lib-move-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='lib-move-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px';
+  const targetSeg=_libSegment||'CNC';
+  const foldersForSeg=_libGetFolders(targetSeg).map(f=>f.name);
+  const folderOpts=foldersForSeg.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:16px;width:min(440px,96vw);padding:22px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:14px;font-weight:700;color:#534AB7">${mode==='move'?'📂 Move':'📋 Copy'} ${n} photo${n!==1?'s':''} to…</div>
+      <button onclick="document.getElementById('lib-move-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:7px;padding:4px 10px;cursor:pointer">✕</button>
+    </div>
+    <div>
+      <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:5px">DESTINATION SEGMENT</label>
+      <div style="display:flex;gap:8px">
+        ${LIB_SEGMENTS.map(s=>`<button id="lib-mv-seg-${s.replace(' ','-')}" onclick="_libMvPickSeg('${s}')"
+          style="flex:1;padding:7px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ${s===targetSeg?LIB_SEG_CLR[s]:'#ddd'};background:${s===targetSeg?LIB_SEG_BG[s]:'#fff'};color:${s===targetSeg?LIB_SEG_CLR[s]:'#555'}">
+          ${LIB_SEG_ICON[s]} ${s}</button>`).join('')}
+      </div>
+      <input type="hidden" id="lib-mv-seg-val" value="${esc(targetSeg)}">
+    </div>
+    <div>
+      <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:5px">DESTINATION FOLDER</label>
+      <select id="lib-mv-folder" style="width:100%;padding:8px 10px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px">
+        <option value="">— select folder —</option>
+        ${folderOpts}
+      </select>
+      <div style="margin-top:6px;font-size:11px;color:#888">Or type a new folder name:</div>
+      <input id="lib-mv-new-folder" placeholder="New folder name…" style="width:100%;padding:7px 10px;border:1.5px solid #AFA9EC;border-radius:7px;font-size:12px;margin-top:4px">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('lib-move-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:8px 18px;font-size:12px;cursor:pointer">Cancel</button>
+      <button onclick="_libExecuteMove('${mode}')" style="background:${mode==='move'?'#1D9E75':'#185FA5'};color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer">${mode==='move'?'Move Here':'Copy Here'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+}
+function _libMvPickSeg(seg){
+  document.getElementById('lib-mv-seg-val').value=seg;
+  LIB_SEGMENTS.forEach(s=>{
+    const btn=document.getElementById('lib-mv-seg-'+s.replace(' ','-'));
+    if(!btn)return;
+    btn.style.borderColor=s===seg?LIB_SEG_CLR[s]:'#ddd';
+    btn.style.background=s===seg?LIB_SEG_BG[s]:'#fff';
+    btn.style.color=s===seg?LIB_SEG_CLR[s]:'#555';
+  });
+  // Refresh folder dropdown for new segment
+  const sel=document.getElementById('lib-mv-folder');
+  if(sel){
+    const folders=_libGetFolders(seg).map(f=>f.name);
+    sel.innerHTML='<option value="">— select folder —</option>'+folders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  }
+}
+async function _libExecuteMove(mode){
+  const toSeg=document.getElementById('lib-mv-seg-val')?.value||'CNC';
+  const selFolder=document.getElementById('lib-mv-folder')?.value||'';
+  const newFolder=(document.getElementById('lib-mv-new-folder')?.value||'').trim();
+  const toFolder=newFolder||selFolder;
+  if(!toFolder){showToast('Please select or type a destination folder','orange',3000);return;}
+  document.getElementById('lib-move-modal').remove();
+  if(newFolder)await _libRegisterFolder(toSeg,newFolder);
+  const ids=[..._libSelected];
+  const updates={};
+  if(mode==='move'){
+    ids.forEach(id=>{
+      const e=_imageLibrary.find(x=>x._id===id);
+      if(!e)return;
+      updates['imageLibrary/'+id+'/segment']=toSeg;
+      updates['imageLibrary/'+id+'/folder']=toFolder;
+      e.segment=toSeg;e.folder=toFolder;
+    });
+    fetch('https://bangle-tracker-default-rtdb.firebaseio.com/.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)}).catch(()=>{});
+    showToast(`📂 ${ids.length} photo${ids.length!==1?'s':''} moved to ${toSeg} › ${toFolder}`,'green',4000);
+  } else {
+    // Copy: create new entries with same r2url
+    const copies=ids.map(id=>{
+      const e=_imageLibrary.find(x=>x._id===id);
+      if(!e)return null;
+      return{designCode:e.designCode||'',folder:toFolder,segment:toSeg,r2url:e.r2url,fileName:e.fileName||'',uploadedAt:Date.now()};
+    }).filter(Boolean);
+    await _batchAddLibraryEntries(copies,toSeg);
+    showToast(`📋 ${copies.length} photo${copies.length!==1?'s':''} copied to ${toSeg} › ${toFolder}`,'green',4000);
+  }
+  _libSelected=new Set();
+  renderLibrary();
+}
+async function _libDeleteSelected(){
+  const ids=[..._libSelected];
+  if(!ids.length)return;
+  if(!confirm(`Delete ${ids.length} selected photo${ids.length!==1?'s':''}?\n\nThis cannot be undone.`))return;
+  await Promise.all(ids.map(id=>fetch(FB_LIB+'/'+id+'.json',{method:'DELETE'}).catch(()=>{})));
+  _imageLibrary=_imageLibrary.filter(e=>!ids.includes(e._id));
+  _libSelected=new Set();
+  renderLibrary();
+  showToast(`🗑️ ${ids.length} photo${ids.length!==1?'s':''} deleted`,'green',3000);
+}
+
+function _libUploadMoreToFolder(folderName){
   const inp=document.createElement('input');
   inp.type='file';inp.multiple=true;inp.accept='image/*';
-  inp.onchange=()=>{
-    if(inp.files.length){
-      // Open the import modal so user sees progress
-      openLibraryImport();
-      // Wait a tick for the modal to render, then trigger the import
-      setTimeout(()=>{
-        const prog=document.getElementById('lib-import-progress');
-        if(prog)prog.style.display='flex';
-        _libImportFiles(inp,name).then(()=>{
-          _libSelectFolder(name);
-        });
-      },120);
-    }
-  };
+  inp.onchange=()=>{ if(inp.files.length) _libImportFiles(inp,folderName,_libSegment||'CNC'); };
   inp.click();
 }
 
 // ── BULK IMPORT PANEL ──────────────────────────────────────────────────────────
-function openLibraryImport(){
+function openLibraryImport(seg){
+  seg=seg||_libSegment||'';
   const old=document.getElementById('lib-import-modal');if(old)old.remove();
   const wrap=document.createElement('div');
   wrap.id='lib-import-modal';
   wrap.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:16px';
+  const segNote=seg?`<div style="display:inline-flex;align-items:center;gap:6px;background:${LIB_SEG_BG[seg]||'#f0efff'};border:1.5px solid ${LIB_SEG_BORDER[seg]||'#AFA9EC'};border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;color:${LIB_SEG_CLR[seg]||'#534AB7'};margin-bottom:10px">${LIB_SEG_ICON[seg]||''} Importing into: ${seg}</div>`:'';
   wrap.innerHTML=`
 <div style="background:#fff;border-radius:16px;width:min(640px,96vw);padding:24px;display:flex;flex-direction:column;gap:14px;max-height:90vh;overflow-y:auto">
   <div style="display:flex;align-items:flex-start;justify-content:space-between">
     <div>
       <div style="font-size:16px;font-weight:700;color:#534AB7">📁 Import Photos into Library</div>
+      ${segNote}
       <div style="font-size:12px;color:#555;margin-top:5px;line-height:1.7">
         Select your entire photos folder. The structure is preserved automatically:<br>
-        <code style="background:#f0efff;padding:2px 6px;border-radius:4px;font-size:11px">CNC / DC-001.jpg</code> → Folder: <strong>CNC</strong>, Design code: <strong>DC-001</strong><br>
+        <code style="background:#f0efff;padding:2px 6px;border-radius:4px;font-size:11px">FolderName / photo.jpg</code> → Folder: <strong>FolderName</strong>, Segment: <strong>${seg||'auto-detected'}</strong><br>
         Photos already in the library are skipped — safe to re-run anytime.
       </div>
     </div>
     <button onclick="document.getElementById('lib-import-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 12px;cursor:pointer;flex-shrink:0;margin-left:10px">✕</button>
   </div>
-
   <div style="border:2px dashed #AFA9EC;border-radius:12px;padding:22px;text-align:center;background:#f7f6ff">
     <div style="font-size:36px;margin-bottom:8px">📂</div>
     <div style="font-size:13px;color:#534AB7;font-weight:600;margin-bottom:4px">Select your design photos folder</div>
     <div style="font-size:11px;color:#888;margin-bottom:14px">Works with 2,000+ photos — uploads 8 at a time, saves progress every 50</div>
     <label style="display:inline-flex;align-items:center;gap:8px;background:#534AB7;color:#fff;border-radius:8px;padding:11px 22px;font-size:13px;font-weight:600;cursor:pointer">
       📂 Select Folder
-      <input type="file" webkitdirectory mozdirectory multiple accept="image/*" onchange="_libImportFiles(this)" style="display:none">
+      <input type="file" webkitdirectory mozdirectory multiple accept="image/*" onchange="_libImportFiles(this,null,'${esc(seg)}')" style="display:none">
     </label>
-    <div style="margin-top:10px;font-size:11px;color:#aaa">— or select individual files (no folder structure) —</div>
+    <div style="margin-top:10px;font-size:11px;color:#aaa">— or select individual files —</div>
     <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer">
       🖼️ Select Individual Files
-      <input type="file" multiple accept="image/*" onchange="_libImportFiles(this,'General')" style="display:none">
+      <input type="file" multiple accept="image/*" onchange="_libImportFiles(this,'General','${esc(seg)}')" style="display:none">
     </label>
   </div>
-
   <div id="lib-import-progress" style="display:none;flex-direction:column;gap:6px">
     <div style="font-size:13px;font-weight:600;color:#534AB7" id="lib-import-label">Preparing…</div>
     <div style="background:#E8E7E0;border-radius:20px;height:8px;overflow:hidden">
@@ -2297,7 +2542,7 @@ function openLibraryImport(){
 const _LIB_SKIP_FOLDERS=/^\.picaoriginals$|^\.picasaoriginals$|^\.picasa$|^thumbs$|^\.thumbnails$|^\.@__thumb$|^eadir$/i;
 const _LIB_SKIP_FILES=/^thumbs\.db$|^\.ds_store$|^desktop\.ini$/i;
 
-async function _libImportFiles(input, forceFolder){
+async function _libImportFiles(input, forceFolder, forceSeg){
   const allFiles=Array.from(input.files);
   if(!allFiles.length)return;
   await _ensureLibraryLoaded();
@@ -2382,7 +2627,7 @@ async function _libImportFiles(input, forceFolder){
         const compressed=await compressImageToThumb(dataUrl,1200);
         const r2url=await uploadToR2(compressed);
         if(!r2url)throw new Error('R2 returned null');
-        const entry={designCode:p.designCode,folder:p.folder,r2url,fileName:p.fileName,uploadedAt:Date.now()};
+        const entry={designCode:p.designCode,folder:p.folder,segment:forceSeg||_libSegment||'CNC',r2url,fileName:p.fileName,uploadedAt:Date.now()};
         pending.push(entry);
         folderCounts[p.folder]=(folderCounts[p.folder]||0)+1;
         done++;
