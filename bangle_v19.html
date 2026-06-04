@@ -2167,6 +2167,7 @@ function renderLibrary(){
         <button onclick="openLibraryImport('${esc(_libSegment)}')" style="background:${segClr};color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">📁 Import Folder</button>
         <button onclick="syncLibraryFromR2('${esc(_libSegment)}')" style="background:#185FA5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">🔄 Sync from R2</button>
         <button onclick="openRcloneGuide()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">📖 rclone Guide</button>
+        <button onclick="deleteAllLibraryEntries('${esc(_libSegment)}')" style="background:#fff0f0;color:#C0392B;border:1.5px solid #E88080;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">🗑️ Delete All Folders</button>
       </div>
     </div>
     <input id="lib-search" placeholder="Search folders in ${esc(_libSegment)}…" value="${esc(searchVal)}"
@@ -2388,6 +2389,20 @@ function _libDeleteFolder(seg,name){
   showToast(`🗑️ Folder "${name}" deleted`+(imgs.length?` with ${imgs.length} photos`:''),'green',3000);
 }
 
+// ── DELETE ALL LIBRARY ENTRIES FOR A SEGMENT ──────────────────────────────────
+async function deleteAllLibraryEntries(seg){
+  const count=_imageLibrary.filter(e=>(e.segment||'CNC')===seg).length;
+  if(count===0){showToast('No entries to delete in '+seg,'red',3000);return;}
+  if(!confirm(`Delete ALL ${count.toLocaleString()} library entries in ${seg}?\n\nThis only removes them from the library catalog — the actual photos in R2 are NOT deleted.\n\nYou can Sync from R2 again to re-add them correctly.`))return;
+  const toDelete=_imageLibrary.filter(e=>(e.segment||'CNC')===seg);
+  const updates={};
+  toDelete.forEach(e=>{ updates['imageLibrary/'+e._id]=null; });
+  await db.ref('/').update(updates);
+  _imageLibrary=_imageLibrary.filter(e=>(e.segment||'CNC')!==seg);
+  showToast(`🗑️ Deleted ${count.toLocaleString()} entries from ${seg} library`,'green',4000);
+  renderLibrary();
+}
+
 // ── SYNC FROM R2 (rclone-uploaded images) ─────────────────────────────────────
 // Scans the R2 bucket for objects uploaded via rclone and catalogs any that are
 // not yet in Firebase. Expected rclone path: SEGMENT/FOLDER NAME/filename.jpg
@@ -2459,7 +2474,7 @@ async function syncLibraryFromR2(forceSeg){
     const entries=toAdd.map(o=>{
       const parts=o.key.split('/');
       const segment=parts[0]||'CNC';
-      const folder=parts.slice(1,-1).join('/')||'General';
+      const folder=parts[1]||'General'; // use only top-level folder, not sub-paths
       const fileName=parts[parts.length-1]||'';
       const designCode=fileName.replace(/\.[^.]+$/,'').trim();
       const r2url=`${R2_WORKER_URL.replace('bt-image-upload.sayyamranka09.workers.dev','pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev').replace('https://bt-image-upload.sayyamranka09.workers.dev','https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev')}/${o.key}`;
