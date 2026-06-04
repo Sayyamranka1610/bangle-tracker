@@ -2419,16 +2419,23 @@ async function deleteAllLibraryEntries(seg){
     const d=document.getElementById('_da-detail');if(d)d.textContent=`${done.toLocaleString()} / ${total.toLocaleString()} deleted`;
   };
 
-  // Delete in batches of 200 to stay within Firebase limits
-  const BATCH=200;
-  let done=0;
-  for(let i=0;i<toDelete.length;i+=BATCH){
-    const slice=toDelete.slice(i,i+BATCH);
-    const updates={};
-    slice.forEach(e=>{ updates['imageLibrary/'+e._id]=null; });
-    await db.ref('/').update(updates);
-    done+=slice.length;
-    setP(done);
+  // If ALL library entries belong to this segment, wipe the entire node in one operation (instant)
+  // Otherwise batch-delete only the matching entries
+  if(toDelete.length===_imageLibrary.length){
+    setP(Math.floor(total*0.5));
+    await db.ref('imageLibrary').remove();
+    setP(total);
+  } else {
+    const BATCH=200;
+    let done=0;
+    for(let i=0;i<toDelete.length;i+=BATCH){
+      const slice=toDelete.slice(i,i+BATCH);
+      const updates={};
+      slice.forEach(e=>{ updates['imageLibrary/'+e._id]=null; });
+      await db.ref('/').update(updates);
+      done+=slice.length;
+      setP(done);
+    }
   }
 
   _imageLibrary=_imageLibrary.filter(e=>(e.segment||'CNC')!==seg);
