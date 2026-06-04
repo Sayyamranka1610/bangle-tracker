@@ -3267,6 +3267,15 @@ function renderStats(){
   if(sub)sub.textContent=`${o.length} orders · ${pc} pending · ${dc} completed`;
 }
 
+// Colored dot grid: green dot per completed order, red dot per pending order
+function _sbStatusDots(done,pending){
+  const s='width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0';
+  let html='';
+  for(let i=0;i<done;i++)html+=`<span style="${s};background:#22C55E" title="Completed"></span>`;
+  for(let i=0;i<pending;i++)html+=`<span style="${s};background:#E24B4A" title="Pending"></span>`;
+  return`<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:72px;justify-content:flex-end;align-items:center;flex-shrink:0">${html}</div>`;
+}
+
 // ── ORDERS VIEW ────────────────────────────────────────────────────────────────
 function renderOrdersView(){
   const container=document.getElementById('view-orders');
@@ -3307,12 +3316,9 @@ function renderOrdersView(){
 
   const sidebarHTML=allClients.map(c=>{
     const cd=allClientMap[c];
-    const allDone=cd.pending===0&&cd.orders.length>0;
-    const bc=allDone?'orders-sb-badge':'orders-sb-badge sb-late';
-    const bl=cd.orders.length+(allDone?' ✅':'');
     return`<div class="orders-sb-item${c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
       <span class="orders-sb-name">👤 ${esc(c)}</span>
-      <span class="${bc}">${bl}</span>
+      ${_sbStatusDots(cd.done,cd.pending)}
     </div>`;
   }).join('');
 
@@ -6557,17 +6563,12 @@ function buildVarietyGallery(varieties){
 function buildVendorStatsBar(){
   const orders=S.vendorOrders;
   const total=orders.length;
-  const active=orders.filter(o=>['pending','processing','in_progress','qa'].includes(o.status||'pending')).length;
-  const dispatched=orders.filter(o=>o.status==='dispatched').length;
-  const delivered=orders.filter(o=>o.status==='delivered').length;
-  const totalDesigns=orders.reduce((a,o)=>a+(o.designs||[]).length,0);
-  const statBg=['background:linear-gradient(135deg,#EDE9FF,#D8D3F7)','background:linear-gradient(135deg,#E8F4FD,#C8E6FA)','background:linear-gradient(135deg,#FFF9E6,#FFE9A0)','background:linear-gradient(135deg,#E6F9F1,#B8EDD8)','background:linear-gradient(135deg,#FFF0E8,#FFD4B8)'];
+  const done=orders.filter(o=>o.status==='delivered').length;
+  const pending=total-done;
   return`<div class="stats" style="margin-bottom:14px">
-    <div class="stat-card" style="${statBg[0]}"><div class="stat-val" style="color:#3C3489">${total}</div><div class="stat-lbl" style="color:#534AB7">Total Orders</div></div>
-    <div class="stat-card" style="${statBg[1]}"><div class="stat-val" style="color:#1565C0">${active}</div><div class="stat-lbl" style="color:#1976D2">Active</div></div>
-    <div class="stat-card" style="${statBg[2]}"><div class="stat-val" style="color:#7B5E00">${dispatched}</div><div class="stat-lbl" style="color:#9B7100">Dispatched</div></div>
-    <div class="stat-card" style="${statBg[3]}"><div class="stat-val" style="color:#1B5E20">${delivered}</div><div class="stat-lbl" style="color:#2E7D32">Delivered</div></div>
-    <div class="stat-card" style="${statBg[4]}"><div class="stat-val" style="color:#8B3A00">${totalDesigns}</div><div class="stat-lbl" style="color:#BF360C">Total Designs</div></div>
+    <div class="stat-card stat-total"><div class="stat-val">${total}</div><div class="stat-lbl">Total Orders</div></div>
+    <div class="stat-card stat-late"><div class="stat-val" style="color:#A32D2D">${pending}</div><div class="stat-lbl">Pending</div></div>
+    <div class="stat-card stat-done"><div class="stat-val" style="color:#0F6E56">${done}</div><div class="stat-lbl">Completed</div></div>
   </div>`;
 }
 
@@ -6614,12 +6615,9 @@ function renderVendorOrders(){
 
   const sidebarHTML=allVendors.map(v=>{
     const vd=allVendorMap[v];
-    const allVDone=vd.pending===0&&vd.orders.length>0;
-    const bc=allVDone?'orders-sb-badge':'orders-sb-badge sb-late';
-    const bl=vd.orders.length+(allVDone?' ✅':'');
     return`<div class="orders-sb-item${v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
       <span class="orders-sb-name">🏭 ${esc(v)}</span>
-      <span class="${bc}">${bl}</span>
+      ${_sbStatusDots(vd.done,vd.pending)}
     </div>`;
   }).join('');
 
