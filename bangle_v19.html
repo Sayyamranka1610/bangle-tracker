@@ -893,6 +893,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
     <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
     <div class="main-tab" onclick="switchMain('masters')">📋 Masters</div>
     <div class="main-tab" onclick="switchMain('library')">🖼️ Library</div>
+    <div class="main-tab" onclick="switchMain('dispatch')">🔗 Dispatch</div>
   </div>
   <div class="filter-bar no-print" id="filter-bar">
     <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
@@ -914,6 +915,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <div id="view-inventory" style="display:none"></div>
   <div id="view-masters" style="display:none"></div>
   <div id="view-library" style="display:none"></div>
+  <div id="view-dispatch" style="display:none"></div>
   <div id="empty-msg" class="empty-state" style="display:none">
     <div style="font-size:32px;margin-bottom:8px">○</div>
     <div style="font-size:14px;font-weight:600;color:#888">No orders yet</div>
@@ -3241,7 +3243,7 @@ function orderMatchesFilter(order){
 // ── RENDER CORE ────────────────────────────────────────────────────────────────
 function switchMain(view){
   S.mainView=view;
-  const views=['orders','design','analytics','inventory','vendor','masters','library'];
+  const views=['orders','design','analytics','inventory','vendor','masters','library','dispatch'];
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',views[i]===view);});
   document.getElementById('view-orders').style.display=view==='orders'?'':'none';
   document.getElementById('view-vendor').style.display=view==='vendor'?'':'none';
@@ -3250,16 +3252,18 @@ function switchMain(view){
   document.getElementById('view-inventory').style.display=view==='inventory'?'':'none';
   document.getElementById('view-masters').style.display=view==='masters'?'':'none';
   document.getElementById('view-library').style.display=view==='library'?'':'none';
-  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders')?'none':'';
+  document.getElementById('view-dispatch').style.display=view==='dispatch'?'':'none';
+  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders'||view==='dispatch')?'none':'';
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
-  if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library')?'none':'';
+  if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library'||view==='dispatch')?'none':'';
   if(view==='orders')renderOrdersView();
   if(view==='analytics')renderAnalytics();
   if(view==='inventory')renderInventory();
   if(view==='vendor')renderVendorOrders();
   if(view==='masters')renderMasters();
   if(view==='library')openLibraryView();
+  if(view==='dispatch')renderDispatchView();
   scheduleAutosave();
 }
 function render(){
@@ -3289,13 +3293,12 @@ function render(){
   else if(S.mainView==='inventory')renderInventory();
   else if(S.mainView==='masters')renderMasters();
   else if(S.mainView==='library')renderLibrary();
+  else if(S.mainView==='dispatch')renderDispatchView();
   else renderAnalytics();
   scheduleAutosave();
   // Sync view div visibility + tab highlights with S.mainView.
-  // render() can be called without switchMain() (e.g. on initial load / Firebase sync),
-  // which would leave the wrong view visible. This makes render() always self-consistent.
   {const _mv=S.mainView||'orders';
-  const _vn=['orders','vendor','design','analytics','inventory','masters','library'];
+  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch'];
   _vn.forEach(v=>{const el=document.getElementById('view-'+v);if(el)el.style.display=_mv===v?'':'none';});
   const _fb=document.getElementById('filter-bar');if(_fb)_fb.style.display=_mv==='design'?'':'none';
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',_vn[i]===_mv);});}
@@ -3537,6 +3540,195 @@ function markVarietyDone(oi,di,vi){
   showToast(v.done?'✅ Variety marked complete':'↩️ Variety marked pending',v.done?'green':'red',2500);
 }
 
+// ── KARIGAR / VENDOR ASSIGNMENT ──────────────────────────────────────────────
+function upDesignVendor(oi,di,val){
+  if(!S.orders[oi]||!S.orders[oi].designs[di])return;
+  S.orders[oi].designs[di].assignedVendor=val;
+  scheduleAutosave();
+  if(S.mainView==='dispatch')renderDispatchView();
+}
+function upVarietyVendor(oi,di,vi,val){
+  if(!S.orders[oi]||!S.orders[oi].designs[di]||!S.orders[oi].designs[di].varieties[vi])return;
+  S.orders[oi].designs[di].varieties[vi].assignedVendor=val;
+  scheduleAutosave();
+  if(S.mainView==='dispatch')renderDispatchView();
+}
+
+// ── DISPATCH VIEW — all assignable rows from customer orders ─────────────────
+function _dispatchRows(){
+  const rows=[];
+  S.orders.forEach((o,oi)=>{
+    (o.designs||[]).forEach((d,di)=>{
+      const isCnc=(o.bangleType==='cnc'||d.bangleType==='cnc');
+      const hasOnlyDefault=d.varieties&&d.varieties.length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';
+      if(isCnc||!d.varieties||d.varieties.length===0||hasOnlyDefault){
+        const rowSizes=hasOnlyDefault?(d.varieties[0].sizes||{}):(d.sizes||{});
+        const qty=Object.values(rowSizes).reduce((a,v)=>a+(parseInt(v)||0),0);
+        const unit=d.unit||(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'pcs';
+        rows.push({type:'design',oi,di,vi:-1,client:o.client,orderId:o.orderId,
+          startDate:o.startDate,deliveryDate:o.deliveryDate,
+          code:d.code||'',name:d.name||'',varName:'',
+          qty,unit,sizes:rowSizes,assignedVendor:d.assignedVendor||'',done:!!(d.done||(d.stages||[]).length>0&&(d.stages||[]).every(s=>s.status==='done'))});
+      } else {
+        d.varieties.forEach((v,vi)=>{
+          const qty=Object.values(v.sizes||{}).reduce((a,b)=>a+(parseInt(b)||0),0);
+          rows.push({type:'variety',oi,di,vi,client:o.client,orderId:o.orderId,
+            startDate:o.startDate,deliveryDate:o.deliveryDate,
+            code:d.code||'',name:d.name||'',varName:v.name||'',
+            qty,unit:v.unit||'pcs',sizes:v.sizes||{},assignedVendor:v.assignedVendor||'',done:!!v.done});
+        });
+      }
+    });
+  });
+  return rows;
+}
+
+function renderDispatchView(){
+  const container=document.getElementById('view-dispatch');if(!container)return;
+  const subTab=window._dispSubTab||'customer';
+  const allRows=_dispatchRows();
+  const masterVendors=S.vocabulary.vendors||[];
+  const assignedVendors=[...new Set(allRows.map(r=>r.assignedVendor).filter(Boolean))];
+  const allVendors=[...new Set([...masterVendors,...assignedVendors])].sort();
+  container.innerHTML=`
+  <div style="padding:14px 0 20px">
+    <div class="inv-sub-tabs no-print">
+      <button class="inv-sub-tab${subTab==='customer'?' active':''}" onclick="window._dispSubTab='customer';renderDispatchView()">👤 By Customer</button>
+      <button class="inv-sub-tab${subTab==='vendor'?' active':''}" onclick="window._dispSubTab='vendor';window._dispSelVendor=undefined;renderDispatchView()">🏭 By Karigar</button>
+    </div>
+    <div id="dispatch-body"></div>
+  </div>`;
+  if(subTab==='customer')_renderDispCustomer(allRows,allVendors);
+  else _renderDispVendor(allRows,allVendors);
+}
+
+function _renderDispCustomer(allRows,allVendors){
+  const cont=document.getElementById('dispatch-body');if(!cont)return;
+  const clientMap={};
+  allRows.forEach(r=>{
+    if(!clientMap[r.client])clientMap[r.client]={total:0,assigned:0};
+    clientMap[r.client].total++;
+    if(r.assignedVendor)clientMap[r.client].assigned++;
+  });
+  const clients=Object.keys(clientMap).sort();
+  if(!window._dispSelClient||!clientMap[window._dispSelClient])window._dispSelClient=clients[0]||'';
+  const sel=window._dispSelClient;
+  const sidebarHtml=clients.map(c=>{
+    const cm=clientMap[c],unass=cm.total-cm.assigned;
+    return`<div class="orders-sb-item${c===sel?' active':''}" onclick="window._dispSelClient='${esc(c)}';renderDispatchView()">
+      <span class="orders-sb-name">👤 ${esc(c)}</span>
+      <div style="display:flex;gap:3px;align-items:center;flex-shrink:0">
+        <span style="font-size:10px;background:#EEEDFE;color:#534AB7;padding:1px 6px;border-radius:99px;font-weight:700">${cm.total}</span>
+        ${unass?`<span style="font-size:10px;background:#FCEBEB;color:#C0392B;padding:1px 5px;border-radius:99px;font-weight:700" title="${unass} unassigned">⚠${unass}</span>`:'<span style="font-size:10px;background:#E1F5EE;color:#0F6E56;padding:1px 5px;border-radius:99px;font-weight:700">✓</span>'}
+      </div></div>`;
+  }).join('');
+  const clientRows=allRows.filter(r=>r.client===sel);
+  const orderMap={};
+  clientRows.forEach(r=>{if(!orderMap[r.orderId])orderMap[r.orderId]={orderId:r.orderId,deliveryDate:r.deliveryDate,rows:[]};orderMap[r.orderId].rows.push(r);});
+  const orders=Object.values(orderMap).sort((a,b)=>a.orderId.localeCompare(b.orderId));
+  const mainHtml=orders.length?orders.map(o=>{
+    const unass=o.rows.filter(r=>!r.assignedVendor).length;
+    return`<div style="background:#fff;border-radius:12px;border:1.5px solid #E4E2F8;margin-bottom:12px;overflow:hidden">
+      <div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <div><span style="font-weight:700;font-size:13px">${esc(o.orderId)}</span>
+          <span style="opacity:.75;font-size:11px;margin-left:8px">${o.rows.length} row${o.rows.length!==1?'s':''}</span>
+          ${o.deliveryDate?`<span style="opacity:.65;font-size:10px;margin-left:8px">Delivery: ${o.deliveryDate}</span>`:''}
+        </div>
+        ${unass?`<span style="background:#FCEBEB;color:#C0392B;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px">⚠ ${unass} not assigned</span>`:'<span style="background:rgba(255,255,255,.2);color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px">✓ All assigned</span>'}
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#EEEDFE">
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Design Code</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Variety / Name</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Qty</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Unit</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Karigar / Vendor</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Status</th>
+        </tr></thead>
+        <tbody>${o.rows.map(r=>_dispRowHtml(r,allVendors,false)).join('')}</tbody>
+      </table></div></div>`;
+  }).join(''):`<div style="text-align:center;padding:40px;color:#aaa;font-size:13px">No rows for ${esc(sel)}</div>`;
+  cont.innerHTML=`<div style="display:flex;gap:14px;padding-top:12px;min-height:300px">
+    <div class="orders-sidebar" style="flex-shrink:0;width:190px">${sidebarHtml||'<div style="padding:20px;color:#aaa;font-size:12px">No customers yet</div>'}</div>
+    <div style="flex:1;min-width:0">${mainHtml}</div>
+  </div>`;
+}
+
+function _renderDispVendor(allRows,allVendors){
+  const cont=document.getElementById('dispatch-body');if(!cont)return;
+  const vendorMap={};
+  allRows.forEach(r=>{
+    const vk=r.assignedVendor||'__UNASSIGNED__';
+    if(!vendorMap[vk])vendorMap[vk]={rows:[],total:0};
+    vendorMap[vk].rows.push(r);vendorMap[vk].total++;
+  });
+  const assignedKeys=Object.keys(vendorMap).filter(k=>k!=='__UNASSIGNED__').sort();
+  const hasUnass=vendorMap['__UNASSIGNED__']&&vendorMap['__UNASSIGNED__'].total>0;
+  const allKeys=[...assignedKeys,...(hasUnass?['__UNASSIGNED__']:[])];
+  if(window._dispSelVendor===undefined)window._dispSelVendor=allKeys[0]||'';
+  const sel=window._dispSelVendor;
+  const sidebarHtml=allKeys.map(vk=>{
+    const vm=vendorMap[vk],isUnass=vk==='__UNASSIGNED__';
+    const label=isUnass?'⚠ Unassigned':vk;
+    return`<div class="orders-sb-item${vk===sel?' active':''}" onclick="window._dispSelVendor='${esc(vk)}';renderDispatchView()">
+      <span class="orders-sb-name" style="${isUnass?'color:#C0392B;font-weight:700':''}">${esc(label)}</span>
+      <span style="font-size:10px;background:${isUnass?'#FCEBEB':'#EEEDFE'};color:${isUnass?'#C0392B':'#534AB7'};padding:1px 6px;border-radius:99px;font-weight:700;flex-shrink:0">${vm.total}</span>
+    </div>`;
+  }).join('');
+  const selRows=sel?(vendorMap[sel]||{rows:[]}).rows:[];
+  const orderMap={};
+  selRows.forEach(r=>{if(!orderMap[r.orderId])orderMap[r.orderId]={orderId:r.orderId,client:r.client,deliveryDate:r.deliveryDate,rows:[]};orderMap[r.orderId].rows.push(r);});
+  const orders=Object.values(orderMap).sort((a,b)=>a.orderId.localeCompare(b.orderId));
+  const selLabel=sel==='__UNASSIGNED__'?'Unassigned rows':sel;
+  const mainHtml=orders.length?orders.map(o=>{
+    return`<div style="background:#fff;border-radius:12px;border:1.5px solid #E4E2F8;margin-bottom:12px;overflow:hidden">
+      <div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-weight:700;font-size:13px">${esc(o.orderId)}</span>
+        <span style="opacity:.85;font-size:11px">👤 ${esc(o.client)}</span>
+        <span style="opacity:.7;font-size:11px">${o.rows.length} row${o.rows.length!==1?'s':''}</span>
+        ${o.deliveryDate?`<span style="opacity:.65;font-size:10px;margin-left:auto">Delivery: ${o.deliveryDate}</span>`:''}
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#EEEDFE">
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Design Code</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Variety / Name</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Qty</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Unit</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Reassign Karigar</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Status</th>
+        </tr></thead>
+        <tbody>${o.rows.map(r=>_dispRowHtml(r,allVendors,true)).join('')}</tbody>
+      </table></div></div>`;
+  }).join(''):`<div style="text-align:center;padding:40px;color:#aaa;font-size:13px">${sel?'No rows for '+esc(selLabel):'No vendors assigned yet — assign karigars from Customer Orders'}</div>`;
+  cont.innerHTML=`<div style="display:flex;gap:14px;padding-top:12px;min-height:300px">
+    <div class="orders-sidebar" style="flex-shrink:0;width:190px">${sidebarHtml||'<div style="padding:20px;color:#aaa;font-size:12px">No assignments yet</div>'}</div>
+    <div style="flex:1;min-width:0"><div style="margin-bottom:10px"><strong style="font-size:13px;color:#534AB7">${esc(selLabel)}</strong></div>${mainHtml}</div>
+  </div>`;
+}
+
+function _dispRowHtml(r,allVendors){
+  const fn=r.type==='design'?`upDesignVendor(${r.oi},${r.di},this.value)`:`upVarietyVendor(${r.oi},${r.di},${r.vi},this.value)`;
+  const opts=`<option value="">— assign karigar —</option>`+allVendors.map(v=>`<option value="${esc(v)}"${r.assignedVendor===v?' selected':''}>${esc(v)}</option>`).join('');
+  const vendorCell=r.assignedVendor
+    ?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+        <span style="background:#EEEDFE;color:#3C3489;font-size:10px;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap">${esc(r.assignedVendor)}</span>
+        <select onchange="${fn}" style="font-size:10px;padding:2px 4px;border:1px solid #AFA9EC;border-radius:4px;color:#534AB7;background:#fafaff">${opts}</select>
+      </div>`
+    :`<select onchange="${fn}" style="font-size:11px;padding:4px 7px;border:1.5px solid #F5A0A0;border-radius:5px;color:#C0392B;background:#FFF0EE">${opts}</select>`;
+  const statusBadge=r.done
+    ?`<span style="background:#E1F5EE;color:#0F6E56;font-size:10px;font-weight:700;padding:2px 9px;border-radius:99px">✓ Done</span>`
+    :`<span style="background:#FFF3CD;color:#856404;font-size:10px;font-weight:600;padding:2px 9px;border-radius:99px">Pending</span>`;
+  const sizeHint=Object.entries(r.sizes).filter(([,v])=>parseInt(v)>0).map(([sz,v])=>`${sz}:${v}`).join(' ');
+  return`<tr style="border-bottom:1px solid #F1EFE8">
+    <td style="padding:7px 10px;font-weight:700;color:#1a1916;white-space:nowrap">${esc(r.code)||'<span style="color:#aaa">—</span>'}</td>
+    <td style="padding:7px 10px;color:#534AB7;font-size:11px">${esc(r.varName||r.name||'—')}</td>
+    <td style="padding:7px 10px;text-align:center;font-weight:600" title="${sizeHint}">${r.qty}</td>
+    <td style="padding:7px 10px;text-align:center;color:#666;font-size:11px">${esc(r.unit)}</td>
+    <td style="padding:7px 10px">${vendorCell}</td>
+    <td style="padding:7px 10px;text-align:center">${statusBadge}</td>
+  </tr>`;
+}
+
 function buildDetailsPanel(order,oi){
   const fileHtml=order.attachedFile
     ? `<div style="margin-top:10px;padding:8px 12px;background:#E1F5EE;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3725,6 +3917,12 @@ function buildDesignsGroupTable(order,oi,g){
         +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
         +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
+        +'<td class="no-print" style="padding:2px 4px">'
+          +'<select style="font-size:10px;padding:3px 5px;border-radius:5px;min-width:95px;border:1.5px solid '+(d.assignedVendor?'#AFA9EC':'#F5A0A0')+';background:'+(d.assignedVendor?'#f7f6ff':'#FFF0EE')+';color:'+(d.assignedVendor?'#3C3489':'#C0392B')+'" onchange="upDesignVendor('+oi+','+di+',this.value)">'
+            +'<option value="">— karigar —</option>'
+            +(S.vocabulary.vendors||[]).map(v=>'<option value="'+esc(v)+'"'+(d.assignedVendor===v?' selected':'')+'>'+esc(v)+'</option>').join('')
+          +'</select>'
+        +'</td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
@@ -3762,6 +3960,7 @@ function buildDesignsGroupTable(order,oi,g){
         +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
         +'<td></td>'
         +'<td></td>'
+        +'<td class="no-print"></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>'
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
@@ -3798,6 +3997,12 @@ function buildDesignsGroupTable(order,oi,g){
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
             +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVarietyRate('+oi+','+di+','+vi+',this.value)"></td>'
+          +'<td class="no-print" style="padding:2px 4px">'
+            +'<select style="font-size:10px;padding:3px 5px;border-radius:5px;min-width:95px;border:1.5px solid '+(v.assignedVendor?'#AFA9EC':'#F5A0A0')+';background:'+(v.assignedVendor?'#f7f6ff':'#FFF0EE')+';color:'+(v.assignedVendor?'#3C3489':'#C0392B')+'" onchange="upVarietyVendor('+oi+','+di+','+vi+',this.value)">'
+              +'<option value="">— karigar —</option>'
+              +(S.vocabulary.vendors||[]).map(v2=>'<option value="'+esc(v2)+'"'+(v.assignedVendor===v2?' selected':'')+'>'+esc(v2)+'</option>').join('')
+            +'</select>'
+          +'</td>'
           +'<td class="no-print"><div style="display:flex;gap:3px">'
             +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as pending':'Mark variety complete')+'">✓</button>'
             +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
@@ -3814,7 +4019,7 @@ function buildDesignsGroupTable(order,oi,g){
       +'<td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
       +szKeys.map(sz=>'<td><strong>'+(grpTotals[sz]||0)+'</strong></td>').join('')
       +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
-      +'<td></td><td></td><td class="no-print"></td>'
+      +'<td></td><td></td><td class="no-print"></td><td class="no-print"></td>'
     +'</tr></tfoot>'
     :'';
 
@@ -3839,6 +4044,7 @@ function buildDesignsGroupTable(order,oi,g){
         +'<th style="min-width:55px">Total</th>'
         +'<th style="min-width:72px">Unit</th>'
         +'<th style="min-width:72px">Rate (₹)</th>'
+        +'<th style="min-width:110px" class="no-print">Karigar</th>'
         +'<th style="min-width:70px" class="no-print">Action</th>'
       +'</tr></thead>'
       +'<tbody>'+tbody+'</tbody>'
