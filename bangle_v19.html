@@ -4110,7 +4110,10 @@ function addDesignCodeToGroup(oi,groupName){
   const order=S.orders[oi];if(!order)return;
   const newStages=S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
   const newId=uid();
-  order.designs.push({id:newId,name:groupName,code:'',sizesLocked:false,sizes:Object.fromEntries(DEFAULT_SIZES.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
+  // Use sizes already in this group (or order) — do NOT reset to DEFAULT_SIZES
+  const refDesign=order.designs.find(d=>d.name===groupName&&d.sizes)||order.designs[0];
+  const useSizes=refDesign&&Object.keys(refDesign.sizes||{}).length?Object.keys(refDesign.sizes):DEFAULT_SIZES;
+  order.designs.push({id:newId,name:groupName,code:'',sizesLocked:false,sizes:Object.fromEntries(useSizes.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
   S.activeTabs[order.id]='designs';
   audit('Add design code',`${order.orderId}: new code added to group "${groupName}"`);
   render();
@@ -4427,7 +4430,10 @@ function upDesignProp(oi,di,field,val){S.orders[oi].designs[di][field]=val;rende
 function addDesign(oi){
   const newStages=S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
   const newId=uid();
-  S.orders[oi].designs.push({id:newId,name:'New design',code:'',sizesLocked:false,sizes:Object.fromEntries(DEFAULT_SIZES.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
+  // Inherit sizes from existing designs in this order — never force DEFAULT_SIZES onto an order that deleted some
+  const refDesign=(S.orders[oi].designs||[]).find(d=>d.sizes&&Object.keys(d.sizes).length);
+  const useSizes=refDesign?Object.keys(refDesign.sizes):DEFAULT_SIZES;
+  S.orders[oi].designs.push({id:newId,name:'New design',code:'',sizesLocked:false,sizes:Object.fromEntries(useSizes.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
   S.activeTabs[S.orders[oi].id]='designs';
   audit('Add design',`Order ${S.orders[oi].orderId}: new design added`);render();
   // Auto-focus the new design's code input so Tab/backspace work immediately
