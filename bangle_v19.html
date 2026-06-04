@@ -4110,9 +4110,9 @@ function addDesignCodeToGroup(oi,groupName){
   const order=S.orders[oi];if(!order)return;
   const newStages=S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
   const newId=uid();
-  // Use sizes already in this group (or order) — do NOT reset to DEFAULT_SIZES
-  const refDesign=order.designs.find(d=>d.name===groupName&&d.sizes)||order.designs[0];
-  const useSizes=refDesign&&Object.keys(refDesign.sizes||{}).length?Object.keys(refDesign.sizes):DEFAULT_SIZES;
+  // Inherit sizes from THIS GROUP ONLY — never borrow from other groups or DEFAULT_SIZES
+  const sameGroupDesign=order.designs.find(d=>d.name===groupName&&d.sizes&&Object.keys(d.sizes).length);
+  const useSizes=sameGroupDesign?Object.keys(sameGroupDesign.sizes):DEFAULT_SIZES;
   order.designs.push({id:newId,name:groupName,code:'',sizesLocked:false,sizes:Object.fromEntries(useSizes.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
   S.activeTabs[order.id]='designs';
   audit('Add design code',`${order.orderId}: new code added to group "${groupName}"`);
@@ -4430,9 +4430,14 @@ function upDesignProp(oi,di,field,val){S.orders[oi].designs[di][field]=val;rende
 function addDesign(oi){
   const newStages=S.stageTemplates.map(s=>({stageId:s.id,status:'pending',note:'',days:null,completionDate:null,vendor:'',stageNote:'',qty:null}));
   const newId=uid();
-  // Inherit sizes from existing designs in this order — never force DEFAULT_SIZES onto an order that deleted some
-  const refDesign=(S.orders[oi].designs||[]).find(d=>d.sizes&&Object.keys(d.sizes).length);
-  const useSizes=refDesign?Object.keys(refDesign.sizes):DEFAULT_SIZES;
+  // For a brand-new design group use only sizes that have real quantities anywhere in this order.
+  // This prevents deleted / zero-filler columns from re-appearing on new groups.
+  const activeSizes=new Set();
+  (S.orders[oi].designs||[]).forEach(d=>{
+    Object.entries(d.sizes||{}).forEach(([sz,v])=>{if((parseInt(v)||0)>0)activeSizes.add(sz);});
+    (d.varieties||[]).forEach(v=>Object.entries(v.sizes||{}).forEach(([sz,qty])=>{if((parseInt(qty)||0)>0)activeSizes.add(sz);}));
+  });
+  const useSizes=activeSizes.size>0?[...activeSizes]:DEFAULT_SIZES;
   S.orders[oi].designs.push({id:newId,name:'New design',code:'',sizesLocked:false,sizes:Object.fromEntries(useSizes.map(s=>[s,0])),images:[],stages:newStages,varieties:[]});
   S.activeTabs[S.orders[oi].id]='designs';
   audit('Add design',`Order ${S.orders[oi].orderId}: new design added`);render();
@@ -7410,7 +7415,14 @@ function removeVendorDesign(vi,di){histPush();S.vendorOrders[vi].designs.splice(
 function addVendorDesign(vi){
   histPush();
   const newId=uid();
-  S.vendorOrders[vi].designs.push({id:newId,name:'',code:'',sizes:Object.fromEntries(DEFAULT_SIZES.map(s=>[s,0])),varieties:[],images:[]});
+  // Use only sizes that have real quantities in this vendor order — same logic as customer orders
+  const activeSizes=new Set();
+  (S.vendorOrders[vi].designs||[]).forEach(d=>{
+    Object.entries(d.sizes||{}).forEach(([sz,v])=>{if((parseInt(v)||0)>0)activeSizes.add(sz);});
+    (d.varieties||[]).forEach(v=>Object.entries(v.sizes||{}).forEach(([sz,qty])=>{if((parseInt(qty)||0)>0)activeSizes.add(sz);}));
+  });
+  const useSizes=activeSizes.size>0?[...activeSizes]:DEFAULT_SIZES;
+  S.vendorOrders[vi].designs.push({id:newId,name:'',code:'',sizes:Object.fromEntries(useSizes.map(s=>[s,0])),varieties:[],images:[]});
   save();renderVendorOrders();
   requestAnimationFrame(()=>{
     const vo=S.vendorOrders[vi];
