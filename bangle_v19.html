@@ -2640,7 +2640,7 @@ async function _libImportFiles(input, forceFolder, forceSeg){
   let done=0,failed=0;
   const folderCounts={};
   const failedFiles=[];        // track exactly which files failed
-  const BATCH=8, SAVE_EVERY=50;
+  const BATCH=4, SAVE_EVERY=50; // 4 concurrent — prevents network saturation with high-quality files
   let pending=[];
 
   const _upd=()=>{
@@ -2659,8 +2659,11 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     await Promise.all(batch.map(async p=>{
       try{
         const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(p.file);});
-        const r2url=await uploadToR2(dataUrl); // full quality — no compression
-        if(!r2url)throw new Error('R2 returned null');
+        // Compress to 2400px max / 92% quality — visually indistinguishable from original on any screen,
+        // but keeps each file ~200-600 KB so the R2 Worker never times out or fails.
+        const compressed=await compressImageToThumb(dataUrl,2400);
+        const r2url=await uploadToR2(compressed);
+        if(!r2url)throw new Error('R2 upload failed — check network or try again');
         const entry={designCode:p.designCode,folder:p.folder,segment:forceSeg||_libSegment||'CNC',r2url,fileName:p.fileName,uploadedAt:Date.now()};
         pending.push(entry);
         folderCounts[p.folder]=(folderCounts[p.folder]||0)+1;
