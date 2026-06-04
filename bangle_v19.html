@@ -2762,6 +2762,8 @@ function _lpRender(oi,di,vi){
     if(q)return (e.designCode||'').toLowerCase().includes(q)||(e.folder||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q);
     return true;
   });
+  // Sort by design code ascending — numeric-aware so 8002 < 8010 < 8100
+  items.sort((a,b)=>(a.designCode||'').localeCompare(b.designCode||'',undefined,{numeric:true,sensitivity:'base'}));
   const shown=items.slice(0,(_lpPage+1)*LIB_PAGE);
   const grid=document.getElementById('lp-grid');
   const moreWrap=document.getElementById('lp-load-more-wrap');
