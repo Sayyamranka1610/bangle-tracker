@@ -4839,27 +4839,71 @@ function addSizeToDesign(oi,di){
   (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes['2/'+next]=0;});
   audit('Add size',`Design ${di+1} order ${S.orders[oi].orderId}: added size 2/${next}`);render();
 }
+// Styled danger-confirm modal (replaces browser confirm() for size-column deletes)
+function _sizeDelConfirm(sz, totalQty, onYes){
+  const old=document.getElementById('_szdc');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='_szdc';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10010;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px';
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:14px;padding:22px 24px;width:min(400px,96vw);box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+    <div style="font-size:15px;font-weight:700;color:#C0392B;margin-bottom:8px">This column has data!</div>
+    <div style="font-size:13px;color:#333;margin-bottom:6px;line-height:1.6">
+      Column <strong style="background:#FCEBEB;color:#C0392B;padding:1px 7px;border-radius:4px">${esc(sz)}</strong>
+      has a total of <strong>${totalQty}</strong> pcs / jotta entered across all rows.
+    </div>
+    <div style="font-size:12px;color:#888;margin-bottom:20px">Deleting it will permanently remove all those quantities. This cannot be undone.</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('_szdc').remove()"
+        style="padding:9px 22px;border:1.5px solid #ccc;border-radius:8px;font-size:13px;cursor:pointer;background:#f5f4f2;font-weight:600;color:#333">
+        No, keep it
+      </button>
+      <button id="_szdc-yes"
+        style="padding:9px 22px;border:none;border-radius:8px;font-size:13px;cursor:pointer;background:#C0392B;color:#fff;font-weight:700">
+        Yes, delete column
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  document.getElementById('_szdc-yes').onclick=()=>{wrap.remove();onYes();};
+}
+
 // Delete a size column from all designs in a group (client orders)
 function deleteOrderSizeCol(oi,sz,dids){
   const order=S.orders[oi];if(!order)return;
   const ids=(dids||'').split(',').filter(Boolean);
   const grp=order.designs.filter(d=>ids.includes(d.id));
-  const hasQty=grp.some(d=>(parseInt((d.sizes||{})[sz])||0)>0||(d.varieties||[]).some(v=>(parseInt((v.sizes||{})[sz])||0)>0));
-  if(hasQty&&!confirm(`Size "${sz}" has quantities — delete it anyway?`))return;
-  histPush();
-  grp.forEach(d=>{delete(d.sizes||{})[sz];(d.varieties||[]).forEach(v=>{delete(v.sizes||{})[sz];});});
-  render();try{fbPushNow();}catch(e){}
+  const totalQty=grp.reduce((sum,d)=>{
+    sum+=(parseInt((d.sizes||{})[sz])||0);
+    (d.varieties||[]).forEach(v=>{sum+=(parseInt((v.sizes||{})[sz])||0);});
+    return sum;
+  },0);
+  const doDelete=()=>{
+    histPush();
+    grp.forEach(d=>{delete(d.sizes||{})[sz];(d.varieties||[]).forEach(v=>{delete(v.sizes||{})[sz];});});
+    render();try{fbPushNow();}catch(e){}
+  };
+  if(totalQty>0) _sizeDelConfirm(sz,totalQty,doDelete);
+  else doDelete();
 }
 // Delete a size column from all designs in a group (vendor orders)
 function deleteVendorSizeCol(vi,sz,dids){
   const vo=S.vendorOrders[vi];if(!vo)return;
   const ids=(dids||'').split(',').filter(Boolean);
   const grp=vo.designs.filter(d=>ids.includes(d.id));
-  const hasQty=grp.some(d=>(parseInt((d.sizes||{})[sz])||0)>0||(d.varieties||[]).some(v=>(parseInt((v.sizes||{})[sz])||0)>0));
-  if(hasQty&&!confirm(`Size "${sz}" has quantities — delete it anyway?`))return;
-  histPush();
-  grp.forEach(d=>{delete(d.sizes||{})[sz];(d.varieties||[]).forEach(v=>{delete(v.sizes||{})[sz];});});
-  save();renderVendorOrders();try{fbPushNow();}catch(e){}
+  const totalQty=grp.reduce((sum,d)=>{
+    sum+=(parseInt((d.sizes||{})[sz])||0);
+    (d.varieties||[]).forEach(v=>{sum+=(parseInt((v.sizes||{})[sz])||0);});
+    return sum;
+  },0);
+  const doDelete=()=>{
+    histPush();
+    grp.forEach(d=>{delete(d.sizes||{})[sz];(d.varieties||[]).forEach(v=>{delete(v.sizes||{})[sz];});});
+    save();renderVendorOrders();try{fbPushNow();}catch(e){}
+  };
+  if(totalQty>0) _sizeDelConfirm(sz,totalQty,doDelete);
+  else doDelete();
 }
 
 // ── DIRECT DESIGN-LEVEL SIZE UPDATES (for flat rows with no varieties) ──────────
