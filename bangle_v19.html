@@ -3559,18 +3559,25 @@ function upVarietyVendor(oi,di,vi,val){
 }
 function upDesignReceived(oi,di){
   const d=S.orders[oi]&&S.orders[oi].designs[di];if(!d)return;
-  d.receivedFromKarigar=!d.receivedFromKarigar;scheduleAutosave();renderDispatchView();
+  d.receivedFromKarigar=!d.receivedFromKarigar;
+  // If received is turned OFF, dispatched must also turn off (can't dispatch unreceived stock)
+  if(!d.receivedFromKarigar)d.dispatchedToClient=false;
+  scheduleAutosave();renderDispatchView();
 }
 function upDesignDispatched(oi,di){
   const d=S.orders[oi]&&S.orders[oi].designs[di];if(!d)return;
+  if(!d.receivedFromKarigar){showToast('⚠ Mark "Received from Karigar" first before dispatching','red',3000);return;}
   d.dispatchedToClient=!d.dispatchedToClient;scheduleAutosave();renderDispatchView();
 }
 function upVarietyReceived(oi,di,vi){
   const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];if(!v)return;
-  v.receivedFromKarigar=!v.receivedFromKarigar;scheduleAutosave();renderDispatchView();
+  v.receivedFromKarigar=!v.receivedFromKarigar;
+  if(!v.receivedFromKarigar)v.dispatchedToClient=false;
+  scheduleAutosave();renderDispatchView();
 }
 function upVarietyDispatched(oi,di,vi){
   const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];if(!v)return;
+  if(!v.receivedFromKarigar){showToast('⚠ Mark "Received from Karigar" first before dispatching','red',3000);return;}
   v.dispatchedToClient=!v.dispatchedToClient;scheduleAutosave();renderDispatchView();
 }
 
@@ -3749,7 +3756,10 @@ function _dispRowHtml(r,allVendors,isKarigarView){
     ?`<button onclick="${fn}" style="background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✓ ${labelDone}</button>`
     :`<button onclick="${fn}" style="background:#FCEBEB;color:#C0392B;border:1.5px solid #F5A0A0;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap">Pending</button>`;
   const receivedBtn=_btn(r.receivedFromKarigar,rFn,'Received','Pending');
-  const dispatchedBtn=_btn(r.dispatchedToClient,dFn,'Dispatched','Pending');
+  // Dispatched button: locked (grey) when Received is not done yet
+  const dispatchedBtn=r.receivedFromKarigar
+    ?_btn(r.dispatchedToClient,dFn,'Dispatched','Pending')
+    :`<button disabled title="Mark Received from Karigar first" style="background:#f5f4f2;color:#bbb;border:1.5px solid #e0e0e0;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:not-allowed;white-space:nowrap">🔒 Locked</button>`;
   const sizeHint=Object.entries(r.sizes).filter(([,v])=>parseInt(v)>0).map(([sz,v])=>`${sz}:${v}`).join(' ');
   // Separate variety / name columns
   const varietyCell=r.varName?`<span style="color:#534AB7;font-weight:600">${esc(r.varName)}</span>`:`<span style="color:#bbb">—</span>`;
