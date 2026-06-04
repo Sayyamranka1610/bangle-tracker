@@ -3525,6 +3525,8 @@ function markDesignComplete(oi,di){
     st.status='done';
     if(!st.completionDate)st.completionDate=today;
   });
+  design.receivedFromKarigar=true;
+  design.dispatchedToClient=true;
   histPush();
   save();
   render();
@@ -3536,6 +3538,8 @@ function markVarietyDone(oi,di,vi){
   const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];
   if(!v)return;
   v.done=!v.done;
+  if(v.done){v.receivedFromKarigar=true;v.dispatchedToClient=true;}
+  else{v.receivedFromKarigar=false;v.dispatchedToClient=false;}
   save();render();
   showToast(v.done?'✅ Variety marked complete':'↩️ Variety marked pending',v.done?'green':'red',2500);
 }
@@ -3553,6 +3557,22 @@ function upVarietyVendor(oi,di,vi,val){
   scheduleAutosave();
   if(S.mainView==='dispatch')renderDispatchView();
 }
+function upDesignReceived(oi,di){
+  const d=S.orders[oi]&&S.orders[oi].designs[di];if(!d)return;
+  d.receivedFromKarigar=!d.receivedFromKarigar;scheduleAutosave();renderDispatchView();
+}
+function upDesignDispatched(oi,di){
+  const d=S.orders[oi]&&S.orders[oi].designs[di];if(!d)return;
+  d.dispatchedToClient=!d.dispatchedToClient;scheduleAutosave();renderDispatchView();
+}
+function upVarietyReceived(oi,di,vi){
+  const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];if(!v)return;
+  v.receivedFromKarigar=!v.receivedFromKarigar;scheduleAutosave();renderDispatchView();
+}
+function upVarietyDispatched(oi,di,vi){
+  const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];if(!v)return;
+  v.dispatchedToClient=!v.dispatchedToClient;scheduleAutosave();renderDispatchView();
+}
 
 // ── DISPATCH VIEW — all assignable rows from customer orders ─────────────────
 function _dispatchRows(){
@@ -3568,14 +3588,17 @@ function _dispatchRows(){
         rows.push({type:'design',oi,di,vi:-1,client:o.client,orderId:o.orderId,
           startDate:o.startDate,deliveryDate:o.deliveryDate,
           code:d.code||'',name:d.name||'',varName:'',
-          qty,unit,sizes:rowSizes,assignedVendor:d.assignedVendor||'',done:!!(d.done||(d.stages||[]).length>0&&(d.stages||[]).every(s=>s.status==='done'))});
+          qty,unit,sizes:rowSizes,assignedVendor:d.assignedVendor||'',
+          done:!!(d.done||(d.stages||[]).length>0&&(d.stages||[]).every(s=>s.status==='done')),
+          receivedFromKarigar:!!d.receivedFromKarigar,dispatchedToClient:!!d.dispatchedToClient});
       } else {
         d.varieties.forEach((v,vi)=>{
           const qty=Object.values(v.sizes||{}).reduce((a,b)=>a+(parseInt(b)||0),0);
           rows.push({type:'variety',oi,di,vi,client:o.client,orderId:o.orderId,
             startDate:o.startDate,deliveryDate:o.deliveryDate,
             code:d.code||'',name:d.name||'',varName:v.name||'',
-            qty,unit:v.unit||'pcs',sizes:v.sizes||{},assignedVendor:v.assignedVendor||'',done:!!v.done});
+            qty,unit:v.unit||'pcs',sizes:v.sizes||{},assignedVendor:v.assignedVendor||'',
+            done:!!v.done,receivedFromKarigar:!!v.receivedFromKarigar,dispatchedToClient:!!v.dispatchedToClient});
         });
       }
     });
@@ -3639,11 +3662,13 @@ function _renderDispCustomer(allRows,allVendors){
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#EEEDFE">
           <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Design Code</th>
-          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Variety / Name</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Variety</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Name</th>
           <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Qty</th>
           <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Unit</th>
           <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Karigar / Vendor</th>
-          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Status</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Received from Karigar</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Dispatched to Client</th>
         </tr></thead>
         <tbody>${o.rows.map(r=>_dispRowHtml(r,allVendors,false)).join('')}</tbody>
       </table></div></div>`;
@@ -3691,11 +3716,12 @@ function _renderDispVendor(allRows,allVendors){
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#EEEDFE">
           <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Design Code</th>
-          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Variety / Name</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Variety</th>
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Name</th>
           <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Qty</th>
           <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Unit</th>
           <th style="padding:7px 10px;text-align:left;font-weight:700;color:#534AB7">Reassign Karigar</th>
-          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Status</th>
+          <th style="padding:7px 10px;text-align:center;font-weight:700;color:#534AB7">Received from Karigar</th>
         </tr></thead>
         <tbody>${o.rows.map(r=>_dispRowHtml(r,allVendors,true)).join('')}</tbody>
       </table></div></div>`;
@@ -3706,26 +3732,37 @@ function _renderDispVendor(allRows,allVendors){
   </div>`;
 }
 
-function _dispRowHtml(r,allVendors){
-  const fn=r.type==='design'?`upDesignVendor(${r.oi},${r.di},this.value)`:`upVarietyVendor(${r.oi},${r.di},${r.vi},this.value)`;
+function _dispRowHtml(r,allVendors,isKarigarView){
+  // Vendor reassignment cell
+  const vFn=r.type==='design'?`upDesignVendor(${r.oi},${r.di},this.value)`:`upVarietyVendor(${r.oi},${r.di},${r.vi},this.value)`;
   const opts=`<option value="">— assign karigar —</option>`+allVendors.map(v=>`<option value="${esc(v)}"${r.assignedVendor===v?' selected':''}>${esc(v)}</option>`).join('');
   const vendorCell=r.assignedVendor
     ?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
         <span style="background:#EEEDFE;color:#3C3489;font-size:10px;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap">${esc(r.assignedVendor)}</span>
-        <select onchange="${fn}" style="font-size:10px;padding:2px 4px;border:1px solid #AFA9EC;border-radius:4px;color:#534AB7;background:#fafaff">${opts}</select>
+        <select onchange="${vFn}" style="font-size:10px;padding:2px 4px;border:1px solid #AFA9EC;border-radius:4px;color:#534AB7;background:#fafaff">${opts}</select>
       </div>`
-    :`<select onchange="${fn}" style="font-size:11px;padding:4px 7px;border:1.5px solid #F5A0A0;border-radius:5px;color:#C0392B;background:#FFF0EE">${opts}</select>`;
-  const statusBadge=r.done
-    ?`<span style="background:#E1F5EE;color:#0F6E56;font-size:10px;font-weight:700;padding:2px 9px;border-radius:99px">✓ Done</span>`
-    :`<span style="background:#FFF3CD;color:#856404;font-size:10px;font-weight:600;padding:2px 9px;border-radius:99px">Pending</span>`;
+    :`<select onchange="${vFn}" style="font-size:11px;padding:4px 7px;border:1.5px solid #F5A0A0;border-radius:5px;color:#C0392B;background:#FFF0EE">${opts}</select>`;
+  // Status toggle buttons
+  const rFn=r.type==='design'?`upDesignReceived(${r.oi},${r.di})`:`upVarietyReceived(${r.oi},${r.di},${r.vi})`;
+  const dFn=r.type==='design'?`upDesignDispatched(${r.oi},${r.di})`:`upVarietyDispatched(${r.oi},${r.di},${r.vi})`;
+  const _btn=(active,fn,labelDone,labelPend)=>active
+    ?`<button onclick="${fn}" style="background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✓ ${labelDone}</button>`
+    :`<button onclick="${fn}" style="background:#FCEBEB;color:#C0392B;border:1.5px solid #F5A0A0;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap">Pending</button>`;
+  const receivedBtn=_btn(r.receivedFromKarigar,rFn,'Received','Pending');
+  const dispatchedBtn=_btn(r.dispatchedToClient,dFn,'Dispatched','Pending');
   const sizeHint=Object.entries(r.sizes).filter(([,v])=>parseInt(v)>0).map(([sz,v])=>`${sz}:${v}`).join(' ');
+  // Separate variety / name columns
+  const varietyCell=r.varName?`<span style="color:#534AB7;font-weight:600">${esc(r.varName)}</span>`:`<span style="color:#bbb">—</span>`;
+  const nameCell=r.name?`<span style="color:#555;font-size:11px">${esc(r.name)}</span>`:`<span style="color:#bbb">—</span>`;
   return`<tr style="border-bottom:1px solid #F1EFE8">
     <td style="padding:7px 10px;font-weight:700;color:#1a1916;white-space:nowrap">${esc(r.code)||'<span style="color:#aaa">—</span>'}</td>
-    <td style="padding:7px 10px;color:#534AB7;font-size:11px">${esc(r.varName||r.name||'—')}</td>
+    <td style="padding:7px 10px">${varietyCell}</td>
+    <td style="padding:7px 10px">${nameCell}</td>
     <td style="padding:7px 10px;text-align:center;font-weight:600" title="${sizeHint}">${r.qty}</td>
     <td style="padding:7px 10px;text-align:center;color:#666;font-size:11px">${esc(r.unit)}</td>
     <td style="padding:7px 10px">${vendorCell}</td>
-    <td style="padding:7px 10px;text-align:center">${statusBadge}</td>
+    <td style="padding:7px 10px;text-align:center">${receivedBtn}</td>
+    ${isKarigarView?'':`<td style="padding:7px 10px;text-align:center">${dispatchedBtn}</td>`}
   </tr>`;
 }
 
