@@ -2520,7 +2520,7 @@ function openLibraryImport(seg){
       <div style="font-size:12px;color:#555;margin-top:5px;line-height:1.7">
         Select your entire photos folder. The structure is preserved automatically:<br>
         <code style="background:#f0efff;padding:2px 6px;border-radius:4px;font-size:11px">FolderName / photo.jpg</code> → Folder: <strong>FolderName</strong>, Segment: <strong>${seg||'auto-detected'}</strong><br>
-        Picasa backup folders (.picasaoriginals) are automatically skipped — all real photos are uploaded.
+        Every file you select is uploaded — nothing is skipped or filtered.
       </div>
     </div>
     <button onclick="document.getElementById('lib-import-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 12px;cursor:pointer;flex-shrink:0;margin-left:10px">✕</button>
@@ -2596,20 +2596,9 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     statsEl=document.getElementById('_lib-fp-stats');
   }
 
-  // Filter out system/backup folders (.picasaoriginals, .picasa, Thumbs, etc.)
-  // Split on both / and \ to handle Windows paths correctly
-  let systemSkipped=0;
-  const files=allFiles.filter(f=>{
-    const rel=f.webkitRelativePath||f.name;
-    const parts=rel.split(/[/\\]/);
-    // Skip if any folder segment matches system patterns OR if file itself is a system file
-    const inSystemFolder=parts.slice(0,-1).some(seg=>_LIB_SKIP_FOLDERS.test(seg.trim()));
-    // Also skip if the full path contains a system folder name anywhere (catches edge cases)
-    const pathHasSystem=_LIB_SKIP_FOLDERS.test(rel);
-    const isSystemFile=_LIB_SKIP_FILES.test(f.name);
-    if(inSystemFolder||pathHasSystem||isSystemFile){systemSkipped++;return false;}
-    return true;
-  });
+  // No filtering — upload every file the user selected, exactly as chosen
+  const systemSkipped=0;
+  const files=allFiles;
 
   // Parse folder + design code from webkitRelativePath
   const plan=files.map(f=>{
@@ -2647,7 +2636,6 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     const pct=Math.round((done/total)*100);
     if(fill)fill.style.width=pct+'%';
     let topLine=`Uploading ${done.toLocaleString()} / ${total.toLocaleString()} photos (${pct}%)…`;
-    if(systemSkipped)topLine+=` · ${systemSkipped} Picasa/backup files skipped`;
     if(label)label.textContent=topLine;
     if(sub)sub.textContent=failed?`${failed} failed — will show list at end`:'All uploads successful so far ✓';
     if(statsEl)statsEl.innerHTML=Object.entries(folderCounts).map(([f,n])=>`<span style="background:#f0efff;border-radius:5px;padding:2px 8px">${esc(f)}: ${n}</span>`).join('');
