@@ -3301,27 +3301,39 @@ function renderOrdersView(){
   // Auto-select first client if none chosen or chosen client no longer exists
   if(!S.selectedClient||!allClientMap[S.selectedClient])S.selectedClient=allClients[0]||'';
 
-  const ci=allClientMap[S.selectedClient]||{orders:[],done:0,pending:0};
-  const totalOrds=ci.orders.length,doneOrds=ci.done,pendingOrds=ci.pending;
-
-  // Apply search + status chip filter to the selected client's orders
   const q=(S.orderSearchQ||'').toLowerCase().trim();
   const sf=S.orderStatusFilter||'';
-  let clientOrders=[...ci.orders];
-  if(q)clientOrders=clientOrders.filter(o=>
-    (o.orderId||'').toLowerCase().includes(q)||
-    (o.client||'').toLowerCase().includes(q)||
-    (o.notes||'').toLowerCase().includes(q)||
-    (o.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
-  );
-  if(sf)clientOrders=clientOrders.filter(o=>orderAlert(o)===sf);
-  clientOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
-
   const chipA=v=>(S.orderStatusFilter||'')===v?' active':'';
+
+  // ── Search mode: when query is typed, search ACROSS ALL CLIENTS ──────────
+  // Normal mode: show only the selected client's orders
+  let clientOrders,isGlobalSearch=false,sectionIcon='👤',sectionName='',sectionMeta='';
+  if(q){
+    isGlobalSearch=true;
+    clientOrders=S.orders.filter(o=>
+      (o.orderId||'').toLowerCase().includes(q)||
+      (o.client||'').toLowerCase().includes(q)||
+      (o.notes||'').toLowerCase().includes(q)||
+      (o.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
+    );
+    if(sf)clientOrders=clientOrders.filter(o=>orderAlert(o)===sf);
+    clientOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+    sectionIcon='🔍';
+    sectionName=`Results for "${S.orderSearchQ}"`;
+    sectionMeta=`${clientOrders.length} order${clientOrders.length!==1?'s':''} across all clients`;
+  } else {
+    const ci=allClientMap[S.selectedClient]||{orders:[],done:0,pending:0};
+    clientOrders=[...ci.orders];
+    if(sf)clientOrders=clientOrders.filter(o=>orderAlert(o)===sf);
+    clientOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+    const totalOrds=ci.orders.length,doneOrds=ci.done,pendingOrds=ci.pending;
+    sectionIcon='👤';sectionName=S.selectedClient;
+    sectionMeta=`${totalOrds} order${totalOrds!==1?'s':''} · ${pendingOrds} pending · ${doneOrds} completed`;
+  }
 
   const sidebarHTML=allClients.map(c=>{
     const cd=allClientMap[c];
-    return`<div class="orders-sb-item${c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
+    return`<div class="orders-sb-item${!isGlobalSearch&&c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
       <span class="orders-sb-name">👤 ${esc(c)}</span>
       ${_sbStatusDots(cd.done,cd.pending)}
     </div>`;
@@ -3329,7 +3341,7 @@ function renderOrdersView(){
 
   const cardsHTML=clientOrders.length
     ?clientOrders.map(o=>buildOrderCard(o,S.orders.indexOf(o))).join('')
-    :`<div class="empty-state" style="margin:0">No orders match the current filter.</div>`;
+    :`<div class="empty-state" style="margin:0">${q?`No orders found for "${esc(q)}"`:isGlobalSearch?'No matching orders':'No orders for this client'}</div>`;
 
   container.innerHTML=`
   <div class="orders-split">
@@ -3339,25 +3351,25 @@ function renderOrdersView(){
     </div>
     <div class="orders-main-wrap">
       <div class="orders-top-bar">
-        <input id="ord-search-inp" class="orders-search" placeholder="Search order ID, design code…"
+        <input id="ord-search-inp" class="orders-search" placeholder="Search client, order ID, design code…"
           value="${esc(S.orderSearchQ||'')}"
           oninput="S.orderSearchQ=this.value;renderOrdersView()">
         <button class="orders-chip${chipA('')}" onclick="S.orderStatusFilter='';renderOrdersView()">All</button>
-        <button class="orders-chip${chipA('pending')}" onclick="S.orderStatusFilter='pending';renderOrdersView()" style="${chipA('pending')?'':''}">🔴 Pending</button>
+        <button class="orders-chip${chipA('pending')}" onclick="S.orderStatusFilter='pending';renderOrdersView()">🔴 Pending</button>
         <button class="orders-chip${chipA('done')}" onclick="S.orderStatusFilter='done';renderOrdersView()">✅ Completed</button>
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
-          <span style="font-size:18px">👤</span>
+          <span style="font-size:18px">${sectionIcon}</span>
           <div style="min-width:0">
-            <div class="orders-section-name">${esc(S.selectedClient)}</div>
-            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${pendingOrds} pending · ${doneOrds} completed</div>
+            <div class="orders-section-name">${esc(sectionName)}</div>
+            <div class="orders-section-meta">${sectionMeta}</div>
           </div>
         </div>
-        <div class="orders-section-acts">
+        ${!isGlobalSearch?`<div class="orders-section-acts">
           <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="askClientExport('${esc(S.selectedClient)}')">📥 Export</button>
           <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="askClientPrint('${esc(S.selectedClient)}')">🖨️ Print</button>
-        </div>
+        </div>`:''}
       </div>
       <div class="orders-cards-list">${cardsHTML}</div>
     </div>
@@ -3938,10 +3950,14 @@ function toggleAllDesignStages(orderId,openIt){
 function renderDesignView(){
   const container=document.getElementById('view-design');
   const filtered=S.orders.filter(orderMatchesFilter);
+  const f=S.filters;
   const codeMap={};
   filtered.forEach(order=>{
     (order.designs||[]).forEach(d=>{
       const code=d.code||'(no code)';
+      // When a specific code or name filter is active, skip designs that don't match exactly
+      if(f.dcode && code !== f.dcode) return;
+      if(f.dname && (d.name||'') !== f.dname) return;
       if(!codeMap[code])codeMap[code]=[];
       codeMap[code].push({order,design:d,oi:S.orders.indexOf(order)});
     });
@@ -6605,27 +6621,36 @@ function renderVendorOrders(){
   // Auto-select first vendor if none chosen or chosen vendor no longer exists
   if(!S.selectedVendor||!allVendorMap[S.selectedVendor])S.selectedVendor=allVendors[0]||'';
 
-  const vi=allVendorMap[S.selectedVendor]||{orders:[],done:0,pending:0};
-  const totalOrds=vi.orders.length,doneVOrds=vi.done,pendingVOrds=vi.pending;
-
-  // Apply search + status chip filter
   const q=(S.vendorSearchQ||'').toLowerCase().trim();
   const sf=S.vendorStatusFilter||'';
-  let vendOrders=[...vi.orders];
-  if(q)vendOrders=vendOrders.filter(vo=>
-    (vo.orderId||'').toLowerCase().includes(q)||
-    (vo.vendor||'').toLowerCase().includes(q)||
-    (vo.notes||'').toLowerCase().includes(q)||
-    (vo.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
-  );
-  if(sf)vendOrders=vendOrders.filter(vo=>vendorOrderAlert(vo)===sf);
-  vendOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
-
   const chipA=v=>(S.vendorStatusFilter||'')===v?' active':'';
+
+  // Global search across all vendors when query is typed
+  let vendOrders,isVGlobal=false,vSecIcon='🏭',vSecName='',vSecMeta='';
+  if(q){
+    isVGlobal=true;
+    vendOrders=S.vendorOrders.filter(vo=>
+      (vo.orderId||'').toLowerCase().includes(q)||
+      (vo.vendor||'').toLowerCase().includes(q)||
+      (vo.notes||'').toLowerCase().includes(q)||
+      (vo.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
+    );
+    if(sf)vendOrders=vendOrders.filter(vo=>vendorOrderAlert(vo)===sf);
+    vendOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+    vSecIcon='🔍';vSecName=`Results for "${S.vendorSearchQ}"`;
+    vSecMeta=`${vendOrders.length} order${vendOrders.length!==1?'s':''} across all vendors`;
+  } else {
+    const vi=allVendorMap[S.selectedVendor]||{orders:[],done:0,pending:0};
+    vendOrders=[...vi.orders];
+    if(sf)vendOrders=vendOrders.filter(vo=>vendorOrderAlert(vo)===sf);
+    vendOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+    vSecIcon='🏭';vSecName=S.selectedVendor;
+    vSecMeta=`${vi.orders.length} order${vi.orders.length!==1?'s':''} · ${vi.pending} pending · ${vi.done} completed`;
+  }
 
   const sidebarHTML=allVendors.map(v=>{
     const vd=allVendorMap[v];
-    return`<div class="orders-sb-item${v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
+    return`<div class="orders-sb-item${!isVGlobal&&v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
       <span class="orders-sb-name">🏭 ${esc(v)}</span>
       ${_sbStatusDots(vd.done,vd.pending)}
     </div>`;
@@ -6633,7 +6658,7 @@ function renderVendorOrders(){
 
   const cardsHTML=vendOrders.length
     ?vendOrders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo))).join('')
-    :`<div class="empty-state" style="margin:0">No orders match the current filter.</div>`;
+    :`<div class="empty-state" style="margin:0">${q?`No vendor orders found for "${esc(q)}"`:isVGlobal?'No matching orders':'No orders for this vendor'}</div>`;
 
   container.innerHTML=`
   ${buildVendorStatsBar()}
@@ -6648,7 +6673,7 @@ function renderVendorOrders(){
     </div>
     <div class="orders-main-wrap">
       <div class="orders-top-bar">
-        <input id="vord-search-inp" class="orders-search" placeholder="Search order ID, design code…"
+        <input id="vord-search-inp" class="orders-search" placeholder="Search vendor, order ID, design code…"
           value="${esc(S.vendorSearchQ||'')}"
           oninput="S.vendorSearchQ=this.value;renderVendorOrders()">
         <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
@@ -6657,16 +6682,16 @@ function renderVendorOrders(){
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
-          <span style="font-size:18px">🏭</span>
+          <span style="font-size:18px">${vSecIcon}</span>
           <div style="min-width:0">
-            <div class="orders-section-name">${esc(S.selectedVendor)}</div>
-            <div class="orders-section-meta">${totalOrds} order${totalOrds!==1?'s':''} · ${pendingVOrds} pending · ${doneVOrds} completed</div>
+            <div class="orders-section-name">${esc(vSecName)}</div>
+            <div class="orders-section-meta">${vSecMeta}</div>
           </div>
         </div>
-        <div class="orders-section-acts">
+        ${!isVGlobal?`<div class="orders-section-acts">
           <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="exportVendorSectionCSV('${esc(S.selectedVendor)}')">📥 Export</button>
           <button class="sm no-print" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="printVendorSection('${esc(S.selectedVendor)}')">🖨️ Print</button>
-        </div>
+        </div>`:''}
       </div>
       <div class="orders-cards-list">${cardsHTML}</div>
     </div>
