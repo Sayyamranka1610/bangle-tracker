@@ -9423,11 +9423,7 @@ function renderStockView(container){
       designMap.set(e.designName,{name:e.designName,code:e.designCode||'',varieties:new Map()});
   });
 
-  // ── 3. Compute live ledger balances for each design ───────────────────────
-  designMap.forEach((dm,dName)=>{
-    const bal=invBalance(dName,'designName',todayStr);
-    dm.ledgerFin=bal.fin; dm.ledgerRaw=bal.raw; dm.ledgerSemi=bal.semi;
-  });
+  // ledger balances not shown in Physical Stock view
 
   // ── 4. Attach manual opening-balance entries (S.stockItems) ──────────────
   const manualByDesign={};
@@ -9441,7 +9437,8 @@ function renderStockView(container){
     }
   });
 
-  // ── 5. Sort ───────────────────────────────────────────────────────────────
+  // ── 5. Sort / filter ─────────────────────────────────────────────────────
+  const textQ=(window._stockTextSearch||'').trim().toLowerCase();
   let designs=[...designMap.values()];
   if(searchActive){
     designs=designs.map(dm=>{
@@ -9455,13 +9452,9 @@ function renderStockView(container){
       return{...dm,_sim:bestSim};
     }).sort((a,b)=>b._sim-a._sim);
   } else {
+    if(textQ) designs=designs.filter(dm=>dm.name.toLowerCase().includes(textQ)||(dm.code||'').toLowerCase().includes(textQ));
     designs.sort((a,b)=>a.name.localeCompare(b.name));
   }
-
-  // ── 6. Summary stats ──────────────────────────────────────────────────────
-  const totalFin=designs.reduce((a,d)=>a+(d.ledgerFin||0),0);
-  const totalRaw=designs.reduce((a,d)=>a+(d.ledgerRaw||0),0);
-  const totalSemi=designs.reduce((a,d)=>a+(d.ledgerSemi||0),0);
 
   // ── 7. Render design cards ────────────────────────────────────────────────
   const galleryHtml=designs.length?designs.map(dm=>{
@@ -9509,12 +9502,6 @@ function renderStockView(container){
       </div>`;
     }).join('');
 
-    // Ledger stock indicator badges
-    const ledgerBadges=[
-      dm.ledgerRaw?`<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:#FFF8E1;color:#E65100;border:1px solid #FFD54F">📦 Raw: ${dm.ledgerRaw}</span>`:'',
-      dm.ledgerSemi?`<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9">🔧 Semi: ${dm.ledgerSemi}</span>`:'',
-      `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7">✅ Finished: ${dm.ledgerFin}</span>`
-    ].filter(Boolean).join('');
 
     return`<div class="stock-card" style="position:relative">
       ${simBadge?`<div style="position:absolute;top:8px;right:8px;z-index:2">${simBadge}</div>`:''}
@@ -9522,20 +9509,15 @@ function renderStockView(container){
         ${firstImg?`<img src="${firstImg}" alt="${esc(dm.name)}">`:`<span style="font-size:32px;color:#D3D1C7">🖼️</span>`}
       </div>
       <div class="stock-card-body">
-        <div class="stock-card-title">${esc(dm.name)} <span style="font-size:11px;font-weight:400;color:#888">[${esc(dm.code||'—')}]</span></div>
-        <!-- Live ledger balances — auto-synced from Production Ledger -->
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 8px">${ledgerBadges}</div>
+        <div class="stock-card-title">${esc(dm.code||dm.name)}</div>
+        ${dm.code?`<div style="font-size:11px;color:#888;font-weight:400;margin-bottom:6px">${esc(dm.name)}</div>`:''}
         <!-- Variety breakdown from orders -->
         ${varieties.length?`<div style="border:1.5px solid #D0CCF5;border-radius:10px;overflow:hidden;margin-bottom:8px">
           <div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;font-size:10px;font-weight:700;padding:5px 10px;text-transform:uppercase;letter-spacing:.04em">📋 Variety Breakdown — from Orders</div>
           ${varRowsHtml}
         </div>`:''}
         ${manualHtml?`<div style="border:1.5px solid #FFD54F;border-radius:10px;overflow:hidden;margin-bottom:8px">${manualHtml}</div>`:''}
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-          <span class="stock-card-total" style="background:linear-gradient(135deg,#E8F5E9,#D4EDDA);color:#1B5E20">✅ ${dm.ledgerFin} pcs Finished</span>
-          <button class="icon-btn sm" onclick="openInvDetail('${esc(dm.name)}','designName')" style="font-size:10px">📊 View Ledger</button>
-        </div>
-        <div class="stock-card-actions" style="margin-top:8px">
+        <div class="stock-card-actions" style="margin-top:4px">
           <button class="icon-btn" onclick="openAddStockModal(true)" style="font-size:11px">📋 Add Opening Balance</button>
         </div>
       </div>
@@ -9547,8 +9529,7 @@ function renderStockView(container){
   container.innerHTML+=`
   <div class="stock-toolbar">
     <div>
-      <strong style="color:#534AB7;font-size:13px">📦 Physical Stock — Live from Production Ledger</strong>
-      <div style="font-size:11px;color:#888;margin-top:2px">Automatically syncs with Production Ledger closing stock</div>
+      <strong style="color:#534AB7;font-size:13px">📦 Physical Stock</strong>
     </div>
     <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="openAddStockModal(true)" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer">📋 Add Opening Balance</button>
@@ -9556,24 +9537,22 @@ function renderStockView(container){
     </div>
   </div>
 
-  <!-- Live ledger summary -->
+  <!-- Designs count -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-    <div style="background:linear-gradient(135deg,#FFF8E1,#FFF3CD);border:1.5px solid #FFD54F;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
-      <div style="font-size:22px;font-weight:800;color:#E65100">${totalRaw.toLocaleString()}</div>
-      <div style="font-size:10px;font-weight:700;color:#F57F17;text-transform:uppercase;letter-spacing:.04em">📦 Raw Stock</div>
-    </div>
-    <div style="background:linear-gradient(135deg,#E3F2FD,#CDEAFC);border:1.5px solid #90CAF9;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
-      <div style="font-size:22px;font-weight:800;color:#0D47A1">${totalSemi.toLocaleString()}</div>
-      <div style="font-size:10px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:.04em">🔧 Semi-Finished</div>
-    </div>
-    <div style="background:linear-gradient(135deg,#E8F5E9,#D4EDDA);border:1.5px solid #A5D6A7;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
-      <div style="font-size:22px;font-weight:800;color:#1B5E20">${totalFin.toLocaleString()}</div>
-      <div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;letter-spacing:.04em">✅ Finished Stock</div>
-    </div>
-    <div style="background:linear-gradient(135deg,#EEEDFE,#E4E2F8);border:1.5px solid #AFA9EC;border-radius:12px;padding:11px 18px;text-align:center;flex:1;min-width:100px">
+    <div style="background:linear-gradient(135deg,#EEEDFE,#E4E2F8);border:1.5px solid #AFA9EC;border-radius:12px;padding:11px 18px;text-align:center;min-width:100px">
       <div style="font-size:22px;font-weight:800;color:#3C3489">${designs.length}</div>
       <div style="font-size:10px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.04em">🎨 Designs</div>
     </div>
+  </div>
+
+  <!-- Text search by code or name -->
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <input type="text" id="stock-text-search"
+      placeholder="🔎 Search by design code or name..."
+      value="${esc(window._stockTextSearch||'')}"
+      oninput="window._stockTextSearch=this.value;renderInventory()"
+      style="flex:1;padding:9px 14px;border:1.5px solid #AFA9EC;border-radius:10px;font-size:13px;outline:none;color:#1a1916;background:#fff">
+    ${(window._stockTextSearch||'').trim()?`<button class="icon-btn" onclick="window._stockTextSearch='';renderInventory()">✕ Clear</button>`:''}
   </div>
 
   <div class="stock-img-search" id="stock-search-zone"
@@ -9589,6 +9568,9 @@ function renderStockView(container){
 
   ${searchResultLabel}
   <div class="stock-gallery">${galleryHtml}</div>`;
+  if((window._stockTextSearch||'').trim()){
+    setTimeout(()=>{const el=document.getElementById('stock-text-search');if(el){const v=el.value.length;el.focus();el.setSelectionRange(v,v);}},0);
+  }
 }
 
 function clearStockSearch(){window._stockSearchHash=null;renderInventory();}
