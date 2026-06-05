@@ -22,3 +22,10 @@ bangle-search-worker/.wrangler/
 # Indexer temp files
 indexer_checkpoint.json
 embeddings.json
+desc_checkpoint.json
+descriptions.json
+indexer_output.txt
+desc_indexer_output.txt
+
+# Context/handoff files (contain credentials — never commit)
+BANGLE_SEARCH_CONTEXT.md
