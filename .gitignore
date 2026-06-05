@@ -14,3 +14,11 @@ v2/.env.local
 # OS
 .DS_Store
 Thumbs.db
+
+# Wrangler cache
+.wrangler/
+bangle-search-worker/.wrangler/
+
+# Indexer temp files
+indexer_checkpoint.json
+embeddings.json
