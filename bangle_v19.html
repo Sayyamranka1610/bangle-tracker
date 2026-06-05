@@ -218,7 +218,7 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .variety-table th.sz-head{min-width:64px}
 .variety-name-inp{font-size:11px;padding:4px 6px;border-color:#AFA9EC;min-width:100px}
 .variety-thumb{width:36px;height:36px;object-fit:cover;border-radius:5px;border:1px solid #AFA9EC;cursor:zoom-in;vertical-align:middle}
-.variety-img-cell{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:80px}
+.variety-img-cell{display:flex;align-items:center;gap:4px;flex-wrap:nowrap;min-width:80px;overflow:hidden}
 .variety-img-add{width:28px;height:28px;border-radius:5px;border:1.5px dashed #AFA9EC;background:#f7f6ff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#534AB7;font-size:14px;flex-shrink:0;border:1.5px dashed #AFA9EC}
 .variety-img-add:hover{background:#EEEDFE;border-color:#534AB7}
 /* Stages */
@@ -4193,7 +4193,11 @@ function buildDesignsGroupTable(order,oi,g){
     if(!d.sizes||!Object.keys(d.sizes).length){d.sizes={};DEFAULT_SIZES.forEach(s=>d.sizes[s]=0);}
     Object.keys(d.sizes).forEach(s=>szSet.add(s));
   });
-  const szKeys=[...szSet];
+  // Sort size keys numerically (2/2 < 2/4 < 2/6 < 2/8 < 2/10 < 2/12...)
+  const szKeys=[...szSet].sort((a,b)=>{
+    const na=parseInt((a||'').split('/')[1])||0, nb=parseInt((b||'').split('/')[1])||0;
+    return na!==nb ? na-nb : a.localeCompare(b);
+  });
 
   let tbody='';
   const grpTotals={};
@@ -4367,11 +4371,8 @@ function buildDesignsGroupTable(order,oi,g){
     +'</tr></tfoot>'
     :'';
 
-  const locked=g.items.length>0&&g.items[0].d.sizesLocked===true;
-  const sizeCtrl=locked
-    ?'<span style="font-size:10px;color:#AFA9EC">Sizes locked at creation</span>'
-    :'<button class="icon-btn sm no-print" onclick="addSizeToDesign('+g.items[0].di+')">+ Add size</button>';
   const grpDids=g.items.map(({d})=>d.id).join(',');
+  const sizeCtrl='<button class="icon-btn sm no-print" onclick="openAddSizeModal('+oi+',\''+grpDids+'\')">+ Add size</button>';
 
   return '<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
     +'<table class="variety-table">'
@@ -5126,6 +5127,64 @@ function handleVarietyImg(oi,di,vi,input){
   input.value='';
 }
 function delVarietyImg(oi,di,vi,ii){S.orders[oi].designs[di].varieties[vi].images.splice(ii,1);save();render();}
+// ── ADD SIZE MODAL — lets user type any size (e.g. 2/2, 2/14) and adds it ────
+// Applies to ALL design codes in the group, always at 0 qty, sorted in place.
+function openAddSizeModal(oi,grpDids){
+  const order=S.orders[oi];if(!order)return;
+  const ids=(grpDids||'').split(',').filter(Boolean);
+  const grp=order.designs.filter(d=>ids.includes(d.id));
+  if(!grp.length)return;
+  const existing=new Set(Object.keys(grp[0].sizes||{}));
+  const old=document.getElementById('_addsz-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='_addsz-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10010;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px';
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:14px;padding:22px 24px;width:min(360px,96vw);display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:700;color:#534AB7">➕ Add Size Column</div>
+    <div style="font-size:12px;color:#555;line-height:1.7">
+      Type the size you want to add — e.g. <strong>2/2</strong>, <strong>2/12</strong>, <strong>2/14</strong>.<br>
+      It will be placed in the correct position automatically. All design codes in this group will get it with quantity <strong>0</strong>.
+    </div>
+    <input id="_addsz-inp" placeholder="e.g. 2/12" autocomplete="off"
+      style="padding:10px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:15px;width:100%;box-sizing:border-box;outline:none"
+      oninput="document.getElementById('_addsz-err').textContent=''">
+    <div id="_addsz-err" style="font-size:11px;color:#C0392B;min-height:16px;margin-top:-8px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('_addsz-modal').remove()"
+        style="padding:9px 20px;border:1.5px solid #ccc;border-radius:8px;font-size:13px;cursor:pointer;background:#f5f4f2;font-weight:600;color:#333">Cancel</button>
+      <button onclick="_doAddSize(${oi},'${grpDids}')"
+        style="padding:9px 20px;border:none;border-radius:8px;font-size:13px;cursor:pointer;background:#534AB7;color:#fff;font-weight:700">Add Column</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  setTimeout(()=>{const i=document.getElementById('_addsz-inp');if(i)i.focus();},60);
+  document.getElementById('_addsz-inp').addEventListener('keydown',e=>{if(e.key==='Enter')_doAddSize(oi,grpDids);if(e.key==='Escape')wrap.remove();});
+}
+
+function _doAddSize(oi,grpDids){
+  const order=S.orders[oi];if(!order)return;
+  const ids=(grpDids||'').split(',').filter(Boolean);
+  const grp=order.designs.filter(d=>ids.includes(d.id));
+  const inp=document.getElementById('_addsz-inp');
+  const err=document.getElementById('_addsz-err');
+  if(!inp)return;
+  const sz=inp.value.trim();
+  if(!sz){if(err)err.textContent='Please enter a size (e.g. 2/12).';return;}
+  const existing=new Set(Object.keys(grp[0]?.sizes||{}));
+  if(existing.has(sz)){if(err)err.textContent=`Size "${sz}" already exists in this group.`;inp.select();return;}
+  histPush();
+  // Add size=0 to every design code and its varieties in the group
+  grp.forEach(d=>{
+    if(!d.sizes)d.sizes={};
+    d.sizes[sz]=0;
+    (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes[sz]=0;});
+  });
+  document.getElementById('_addsz-modal')?.remove();
+  audit('Add size',`${order.orderId}: added size "${sz}" to group`);
+  render();try{fbPushNow();}catch(e){}
+}
+
 function addSizeToDesign(oi,di){
   const d=S.orders[oi].designs[di];
   const denoms=Object.keys(d.sizes||{}).map(s=>parseInt(s.split('/')[1])).filter(n=>!isNaN(n));
