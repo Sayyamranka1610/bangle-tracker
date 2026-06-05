@@ -6496,7 +6496,8 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   // ── 4. Data validation XML (the actual dropdown arrows) ───────────────────
   // sqref = the cell(s) that get the dropdown arrow
   // formula1 = range in the Lists sheet that provides the options
-  const pEnd=pLen+1, dEnd=dLen+1, cEnd=cLen+1, uEnd=uLen+1;
+  // Ensure formula ranges are always valid (at least 1 row of data)
+  const pEnd=Math.max(pLen,1)+1, dEnd=Math.max(dLen,1)+1, cEnd=Math.max(cLen,1)+1, uEnd=Math.max(uLen,1)+1;
   const partyCell=isVendor?'B1':'B2';
   const dvs=[
     // Party name
