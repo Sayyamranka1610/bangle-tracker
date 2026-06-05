@@ -6432,13 +6432,60 @@ function createOrder(){
   try{ fbPushNow(); }catch(e){} // push the new order to Firebase right away
 }
 
-// ── EXCEL TEMPLATE DOWNLOAD ───────────────────────────────────────────────────
+// ── EXCEL TEMPLATE DOWNLOAD — Customer Orders (dynamic, pulls live DB data) ───
 function downloadOrderTemplate(){
-  // Download the exact template file hosted on GitHub Pages
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please check your internet connection.');return;}
+  // ── Live data from database ──────────────────────────────────────────────────
+  const clients=(S.vocabulary.clients||[]).slice();
+  const dnames=(S.vocabulary.dnames||[]).slice();
+  const dcodes=(S.vocabulary.dcodes||[]).slice();
+  const units=(S.vocabulary.units||['pcs','pairs','jotta']).slice();
+  const sizeSet=new Set(DEFAULT_SIZES);
+  S.orders.forEach(o=>(o.designs||[]).forEach(d=>Object.keys(d.sizes||{}).forEach(s=>sizeSet.add(s))));
+  const sizes=[...sizeSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na-nb;});
+
+  const B=(n)=>Array(n).fill('');
+  // ── Sheet 1: Order Template (exact format the parser understands) ────────────
+  const data=[
+    ['Order ID','',...B(14),'pcs'],
+    ['Client Name','',...B(14),'pairs'],
+    ['Start Date','',...B(14),'jotta'],
+    ['Bangle Type (cnc / dye_gold / both)','',...B(14)],
+    ['Notes (Optional)','',...B(15)],
+    B(17),
+    ['CNC DESIGNS & QUANTITIES',...B(16)],
+    ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit',...B(8)],
+    ...Array(13).fill(null).map(()=>B(17)),
+    ['DYE GOLD DESIGNS & VARIETIES',...B(16)],
+    ['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit',...B(6)],
+    ...Array(30).fill(null).map(()=>B(17)),
+  ];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws,'Order Template');
+
+  // ── Sheet 2: Valid Names reference (use exact names from here to avoid errors) ─
+  const maxLen=Math.max(clients.length,dnames.length,dcodes.length,units.length,sizes.length,1);
+  const refRows=[
+    ['✅ CUSTOMER NAMES','✅ DESIGN NAMES','✅ DESIGN CODES','✅ UNITS','✅ SIZES'],
+    ['← Copy exact names from here','← Copy exact names','← Copy exact codes','← Choose unit','← Copy size'],
+  ];
+  for(let i=0;i<maxLen;i++) refRows.push([clients[i]||'',dnames[i]||'',dcodes[i]||'',units[i]||'',sizes[i]||'']);
+  const wsRef=XLSX.utils.aoa_to_sheet(refRows);
+  wsRef['!cols']=[{wch:30},{wch:30},{wch:20},{wch:12},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,wsRef,'📋 Valid Names');
+
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'binary'});
+  const buf=new ArrayBuffer(wbout.length);
+  const view=new Uint8Array(buf);
+  for(let i=0;i<wbout.length;i++)view[i]=wbout.charCodeAt(i)&0xFF;
+  const blob=new Blob([buf],{type:'application/octet-stream'});
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href='https://sayyamranka1610.github.io/bangle-tracker/Bangle_Order_Template.xlsx';
-  a.download='Bangle_Order_Template.xlsx';
+  a.href=url;a.download='Customer_Order_Template.xlsx';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 // ── FILE IMPORT (Mock / hookable) ──────────────────────────────────────────────
@@ -6519,7 +6566,7 @@ function processOrderFile(file){
       const vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
       status.textContent=`✅ CSV parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
       status.style.display='block';
-      closeModal();openNewOrderModal({orderId,client,startDate,notes,designs:designs.length>0?designs:undefined,_keepFile:true});
+      _openOrderWithNameCheck({orderId,client,startDate,notes,designs:designs.length>0?designs:undefined},false);
     };reader.readAsText(file);
 
   } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
@@ -6641,7 +6688,7 @@ function processOrderFile(file){
             const btLabel=detectedBT==='both'?'CNC + Dye Gold':detectedBT==='cnc'?'CNC':'Dye Gold';
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded (${btLabel}).`;
             status.style.display='block';
-            closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:allDesigns.length?allDesigns:undefined,bangleType:detectedBT||'dye_gold',_keepFile:true});
+            _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:allDesigns.length?allDesigns:undefined,bangleType:detectedBT||'dye_gold'},false);
             return;
           }
 
@@ -6659,7 +6706,7 @@ function processOrderFile(file){
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
             status.style.display='block';
-            closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined,_keepFile:true});
+            _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined},false);
             return;
           }
 
@@ -6687,7 +6734,7 @@ function processOrderFile(file){
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
             status.style.display='block';
-            closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined,_keepFile:true});
+            _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined},false);
             return;
           }
         }
@@ -6695,7 +6742,7 @@ function processOrderFile(file){
         // ── Minimal fallback: no table found, prefill order fields only ─────
         status.textContent='✅ Excel read — fill designs manually below.';
         status.style.display='block';
-        closeModal();openNewOrderModal({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,_keepFile:true});
+        _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes},false);
       } catch(err){
         status.textContent='⚠️ Could not read Excel file: '+err.message;status.style.display='block';
       }
@@ -8182,45 +8229,51 @@ function createVendorOrder(){
   rebuildVocab();save();closeModal();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 
-// ── Vendor Order Excel Template & File Import ─────────────────────────────────
+// ── Vendor Order Excel Template (dynamic, pulls live DB data) ─────────────────
 function downloadVendorOrderTemplate(){
   if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please check your internet connection.');return;}
-  // Build AOA matching Vendor_Order_Template.xlsx structure exactly
-  const B=(n)=>Array(n).fill(''); // blank cells
+  // ── Live data from database ──────────────────────────────────────────────────
+  const vendors=(S.vocabulary.vendors||[]).slice();
+  const dnames=(S.vocabulary.dnames||[]).slice();
+  const dcodes=(S.vocabulary.dcodes||[]).slice();
+  const units=(S.vocabulary.units||['pcs','pairs','jotta']).slice();
+  const sizeSet=new Set(DEFAULT_SIZES);
+  S.orders.forEach(o=>(o.designs||[]).forEach(d=>Object.keys(d.sizes||{}).forEach(s=>sizeSet.add(s))));
+  S.vendorOrders.forEach(o=>(o.designs||[]).forEach(d=>Object.keys(d.sizes||{}).forEach(s=>sizeSet.add(s))));
+  const sizes=[...sizeSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na-nb;});
+
+  const B=(n)=>Array(n).fill('');
+  // ── Sheet 1: Vendor Order Template ──────────────────────────────────────────
   const data=[
-    // Row 1 — Q1 holds unit dropdown source values
-    [...B(16),'pcs'],
-    // Row 2 — Q2
-    [...B(16),'pairs'],
-    // Row 3 — Vendor Name label (Q3)
-    ['Vendor Name','',...B(14),'jotta'],
-    // Row 4 — Start Date label
-    ['Start Date','',...B(15)],
-    // Row 5 — Notes label
+    ['Vendor Name','',...B(14),'pcs'],
+    ['Order Date','',...B(14),'pairs'],
+    ['Expected Delivery','',...B(14),'jotta'],
+    ['Bangle Type (cnc / dye_gold / both)','',...B(14)],
     ['Notes (Optional)','',...B(15)],
-    // Row 6 — blank separator
     B(17),
-    // Row 7 — CNC section header
     ['CNC DESIGNS & QUANTITIES',...B(16)],
-    // Row 8 — CNC column headers
     ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit',...B(8)],
-    // Rows 9-21 — 13 blank CNC data rows
     ...Array(13).fill(null).map(()=>B(17)),
-    // Row 22 — Dye Gold section header
     ['DYE GOLD DESIGNS & VARIETIES',...B(16)],
-    // Row 23 — Dye Gold column headers
     ['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit',...B(6)],
-    // Rows 24-53 — 30 blank Dye Gold data rows
     ...Array(30).fill(null).map(()=>B(17)),
   ];
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(data);
-  // Column widths
-  ws['!cols']=[
-    {wch:22},{wch:16},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},
-    {wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8}
-  ];
+  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8}];
   XLSX.utils.book_append_sheet(wb,ws,'Vendor Order');
+
+  // ── Sheet 2: Valid Names reference ──────────────────────────────────────────
+  const maxLen=Math.max(vendors.length,dnames.length,dcodes.length,units.length,sizes.length,1);
+  const refRows=[
+    ['✅ VENDOR NAMES','✅ DESIGN NAMES','✅ DESIGN CODES','✅ UNITS','✅ SIZES'],
+    ['← Copy exact names from here','← Copy exact names','← Copy exact codes','← Choose unit','← Copy size'],
+  ];
+  for(let i=0;i<maxLen;i++) refRows.push([vendors[i]||'',dnames[i]||'',dcodes[i]||'',units[i]||'',sizes[i]||'']);
+  const wsRef=XLSX.utils.aoa_to_sheet(refRows);
+  wsRef['!cols']=[{wch:30},{wch:30},{wch:20},{wch:12},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,wsRef,'📋 Valid Names');
+
   const wbout=XLSX.write(wb,{bookType:'xlsx',type:'binary'});
   const buf=new ArrayBuffer(wbout.length);
   const view=new Uint8Array(buf);
@@ -8231,6 +8284,104 @@ function downloadVendorOrderTemplate(){
   a.href=url;a.download='Vendor_Order_Template.xlsx';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+// ── NEW NAME CHECK — runs after any Excel upload, before opening the order modal ─
+// 1. Auto-fixes case differences silently (e.g. "rajesh" → "RAJESH BANGLES")
+// 2. Shows owner an approval modal for genuinely new names
+// 3. On confirm: adds new names to masters, then opens the order modal
+function _openOrderWithNameCheck(fields, isVendor){
+  if(!fields)return;
+  // Both customer and vendor prefill objects use 'client' as the party name key
+  const partyKey='client';
+  const existingParty=isVendor?(S.vocabulary.vendors||[]):(S.vocabulary.clients||[]);
+  const existingDnames=S.vocabulary.dnames||[];
+
+  // ── Step 1: Auto-fix case differences (silent, no prompt) ─────────────────
+  let fixed={...fields};
+  if(fixed[partyKey]){
+    const m=existingParty.find(n=>n.toLowerCase()===fixed[partyKey].toLowerCase());
+    if(m)fixed={...fixed,[partyKey]:m};
+  }
+  if(fixed.designs){
+    fixed={...fixed,designs:fixed.designs.map(d=>{
+      const m=existingDnames.find(n=>n.toLowerCase()===(d.name||'').toLowerCase());
+      return m?{...d,name:m}:d;
+    })};
+  }
+
+  // ── Step 2: Find names that are genuinely new even after case-fix ──────────
+  const newParty=[];
+  if(fixed[partyKey]&&!existingParty.some(n=>n.toLowerCase()===fixed[partyKey].toLowerCase()))
+    newParty.push(fixed[partyKey]);
+
+  const newDnames=[];
+  (fixed.designs||[]).forEach(d=>{
+    if(d.name&&!existingDnames.some(n=>n.toLowerCase()===(d.name||'').toLowerCase())&&!newDnames.includes(d.name))
+      newDnames.push(d.name);
+  });
+
+  const allNew=[
+    ...newParty.map(n=>({type:isVendor?'Vendor Name':'Customer Name',name:n})),
+    ...newDnames.map(n=>({type:'Design Name',name:n}))
+  ];
+
+  // ── Step 3: Open modal (immediately if no new names, else after approval) ──
+  const proceed=()=>{
+    closeModal();
+    if(isVendor)openNewVendorOrderModal({...fixed,_keepFile:true});
+    else openNewOrderModal({...fixed,_keepFile:true});
+  };
+
+  if(!allNew.length){proceed();return;}
+
+  // Show owner approval modal
+  const old=document.getElementById('_namecheck-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='_namecheck-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10020;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:12px';
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:16px;padding:24px 26px;width:min(520px,97vw);display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:800;color:#C0392B">⚠️ New Names Found in Upload</div>
+    <div style="font-size:13px;color:#444;line-height:1.6">
+      The following names from the Excel file are <strong>not in the database yet</strong>.<br>
+      <span style="color:#1D9E75;font-weight:600">✓ Case differences were auto-fixed silently.</span>
+      These are the remaining genuinely new names:
+    </div>
+    <div style="background:#FFF8F0;border:1.5px solid #EF9F27;border-radius:10px;padding:12px 16px;max-height:220px;overflow-y:auto">
+      ${allNew.map(n=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+          <span style="background:#EF9F27;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0">${n.type}</span>
+          <span style="font-size:13px;font-weight:700;color:#1a1916">${esc(n.name)}</span>
+        </div>`).join('')}
+    </div>
+    <div style="font-size:12px;color:#666;background:#f7f6ff;border-radius:8px;padding:10px 12px;line-height:1.7">
+      <strong>Confirm &amp; Add</strong> — these names will be added to masters and the order will open.<br>
+      <strong>Cancel</strong> — go back, fix the names in Excel to match existing ones, then re-upload.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('_namecheck-modal').remove()"
+        style="padding:10px 22px;border:1.5px solid #ccc;border-radius:8px;font-size:13px;cursor:pointer;background:#f5f4f2;font-weight:600;color:#333">
+        ✕ Cancel — fix Excel
+      </button>
+      <button id="_nc-confirm-btn"
+        style="padding:10px 22px;border:none;border-radius:8px;font-size:13px;cursor:pointer;background:#1D9E75;color:#fff;font-weight:700">
+        ✅ Confirm &amp; Add to Database
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  document.getElementById('_nc-confirm-btn').onclick=()=>{
+    if(!S.vocabularyManual)S.vocabularyManual={clients:[],vendors:[],dnames:[],dcodes:[]};
+    const pk=isVendor?'vendors':'clients';
+    if(!S.vocabularyManual[pk])S.vocabularyManual[pk]=[];
+    newParty.forEach(n=>{if(!S.vocabularyManual[pk].includes(n))S.vocabularyManual[pk].push(n);});
+    if(!S.vocabularyManual.dnames)S.vocabularyManual.dnames=[];
+    newDnames.forEach(n=>{if(!S.vocabularyManual.dnames.includes(n))S.vocabularyManual.dnames.push(n);});
+    rebuildVocab();save();
+    document.getElementById('_namecheck-modal')?.remove();
+    proceed();
+  };
 }
 
 function handleVendorOrderDrop(e){
@@ -8248,7 +8399,7 @@ function processVendorOrderFile(file){
   fileReader.onload=ev=>{window._uploadedOrderFile={name:file.name,type:file.type,data:ev.target.result};};
   fileReader.readAsDataURL(file);
 
-  const openPrefilled=(fields)=>{closeModal();openNewVendorOrderModal({...fields,_keepFile:true});};
+  const openPrefilled=(fields)=>{_openOrderWithNameCheck({...fields},true);};
 
   if(name.endsWith('.csv')){
     const reader=new FileReader();
