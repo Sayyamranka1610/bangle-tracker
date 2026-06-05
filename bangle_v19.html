@@ -6469,10 +6469,8 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   s1.push(`<row r="4">${sc(0,4,'Bangle Type (cnc / dye_gold / both)')}</row>`);
   s1.push(`<row r="5">${sc(0,5,'Notes (Optional)')}</row>`);
   s1.push(`<row r="7">${sc(0,7,'CNC DESIGNS & QUANTITIES')}</row>`);
-  ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit']
-    .forEach((h,i)=>{ s1.push(`<row r="8">`);});  // built below
   const cncHdr=['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit'];
-  s1[s1.length-1]=`<row r="8">${cncHdr.map((h,i)=>sc(i,8,h)).join('')}</row>`;
+  s1.push(`<row r="8">${cncHdr.map((h,i)=>sc(i,8,h)).join('')}</row>`);
   s1.push(`<row r="22">${sc(0,22,'DYE GOLD DESIGNS & VARIETIES')}</row>`);
   const dyeHdr=['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit'];
   s1.push(`<row r="23">${dyeHdr.map((h,i)=>sc(i,23,h)).join('')}</row>`);
