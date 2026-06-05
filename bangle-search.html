@@ -19,11 +19,13 @@
 
   .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
 
-  /* Setup banner */
+  /* Setup banner — only shown during first-time download */
   .setup-banner {
     background: #15132a; border: 1px solid #3d3880;
     border-radius: 14px; padding: 28px 24px; text-align: center; margin-bottom: 24px;
+    display: none;
   }
+  .setup-banner.visible { display: block; }
   .setup-banner h2 { color: #a89cff; margin-bottom: 12px; font-size: 1rem; }
   .setup-banner p  { color: #7b72c9; font-size: 0.85rem; margin-bottom: 16px; }
 
@@ -37,6 +39,14 @@
     border-radius: 8px;
   }
   .progress-label { font-size: 0.8rem; color: #7b72c9; margin-top: 6px; }
+
+  /* Small top bar shown while loading from cache */
+  .init-bar {
+    display: none; align-items: center; gap: 10px;
+    padding: 10px 16px; background: #15132a; border: 1px solid #2d2a5e;
+    border-radius: 10px; margin-bottom: 16px; font-size: 0.85rem; color: #7b72c9;
+  }
+  .init-bar.visible { display: flex; }
 
   /* Upload Zone */
   .upload-zone {
@@ -159,10 +169,16 @@
 
 <div class="container">
 
-  <!-- First-time setup banner -->
+  <!-- Small bar for cached loads -->
+  <div class="init-bar" id="initBar">
+    <div class="spinner"></div>
+    <span id="initLabel">Initialising AI model...</span>
+  </div>
+
+  <!-- Big banner only shown during first-time 80MB download -->
   <div class="setup-banner" id="setupBanner">
-    <h2 id="setupTitle">Loading AI Model...</h2>
-    <p id="setupDesc">First time only — downloading CLIP visual AI model (~80MB). This will be cached and never downloaded again.</p>
+    <h2>Downloading AI Model — First Time Only</h2>
+    <p>This ~80MB download happens once and is then cached in your browser permanently.</p>
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="progressBar"></div>
     </div>
@@ -237,48 +253,63 @@ let selectedCode  = null;
 // ── Boot sequence ─────────────────────────────────────────────────────────────
 async function boot() {
   try {
-    // Step 1: Load transformers.js
-    setProgress(5, "Loading AI framework...");
     const { pipeline, env } = await import(
       "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.2/dist/transformers.min.js"
     );
     env.allowLocalModels = false;
 
-    // Step 2: Load CLIP model (cached by browser after first download)
-    setProgress(10, "Loading CLIP vision model (first time: ~80MB download, then always instant)...");
+    // Track whether a real download happens
+    let isDownloading = false;
+
+    document.getElementById("initBar").classList.add("visible");
+    document.getElementById("initLabel").textContent = "Initialising AI model...";
+
     clipExtractor = await pipeline(
       "image-feature-extraction",
       "Xenova/clip-vit-base-patch32",
       {
         dtype: "q8",
         progress_callback: (p) => {
-          if (p.status === "downloading" && p.total) {
-            const pct = Math.round((p.loaded / p.total) * 70) + 10;
-            setProgress(pct, `Downloading model: ${Math.round(p.loaded/1024/1024)}MB / ${Math.round(p.total/1024/1024)}MB`);
+          if (p.status === "downloading" && p.total && p.total > 1000000) {
+            // Real download happening — show the big banner
+            if (!isDownloading) {
+              isDownloading = true;
+              document.getElementById("initBar").classList.remove("visible");
+              document.getElementById("setupBanner").classList.add("visible");
+            }
+            const pct = Math.round((p.loaded / p.total) * 85) + 5;
+            setProgress(pct, `Downloading: ${Math.round(p.loaded/1024/1024)}MB of ${Math.round(p.total/1024/1024)}MB`);
           } else if (p.status === "loading") {
-            setProgress(85, "Loading model into memory...");
+            if (isDownloading) setProgress(92, "Loading model into memory...");
+            else document.getElementById("initLabel").textContent = "Loading AI model into memory...";
           }
         },
       }
     );
-    setProgress(88, "Model ready. Loading design database...");
 
-    // Step 3: Load embeddings (cached)
+    // Load design database
+    if (isDownloading) {
+      setProgress(95, "Loading design database...");
+    } else {
+      document.getElementById("initLabel").textContent = "Loading design database...";
+    }
+
     embeddings = await loadEmbeddingsCached();
     const count = Object.keys(embeddings).length;
-    setProgress(100, `Ready — ${count.toLocaleString()} designs indexed`);
 
-    // Step 4: Enable UI
-    setTimeout(() => {
-      document.getElementById("setupBanner").style.display = "none";
-    }, 1500);
-    const zone = document.getElementById("uploadZone");
-    zone.classList.remove("disabled");
-    const fi = document.getElementById("fileInput");
-    fi.disabled = false;
+    // Hide all loading UI immediately
+    document.getElementById("setupBanner").classList.remove("visible");
+    document.getElementById("initBar").classList.remove("visible");
+
+    // Enable upload
+    document.getElementById("uploadZone").classList.remove("disabled");
+    document.getElementById("fileInput").disabled = false;
 
   } catch (err) {
-    setError("Setup failed: " + err.message);
+    document.getElementById("initBar").classList.remove("visible");
+    document.getElementById("setupBanner").classList.add("visible");
+    document.getElementById("progressLabel").textContent = "Setup failed: " + err.message;
+    document.getElementById("progressLabel").style.color = "#ff8080";
     console.error(err);
   }
 }
@@ -558,11 +589,6 @@ window.resetAll = function() {
 function setProgress(pct, label) {
   document.getElementById("progressBar").style.width = pct + "%";
   document.getElementById("progressLabel").textContent = label;
-}
-function setError(msg) {
-  document.getElementById("setupTitle").textContent = "Setup Error";
-  document.getElementById("progressLabel").textContent = msg;
-  document.getElementById("progressLabel").style.color = "#ff8080";
 }
 function showStatus(msg) {
   const b = document.getElementById("statusBox");
