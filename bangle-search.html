@@ -222,7 +222,7 @@
 <script type="module">
 // ── Config ────────────────────────────────────────────────────────────────────
 const WORKER_URL      = "https://bangle-search.sayyamranka09.workers.dev";
-const EMBEDDINGS_CACHE_KEY = "bangle-embeddings-v1";
+const EMBEDDINGS_CACHE_KEY = "bangle-embeddings-v2-grayscale";
 const TOP_K = 8;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -438,6 +438,16 @@ window.doSearch = async function(useCrop) {
     off.width = originalImage.width; off.height = originalImage.height;
     off.getContext("2d").drawImage(originalImage, 0, 0);
   }
+
+  // Convert to grayscale so CLIP focuses on shape/pattern/texture, not gold colour
+  const ctx2 = off.getContext("2d");
+  const imgData = ctx2.getImageData(0, 0, off.width, off.height);
+  const px = imgData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const g = Math.round(0.299 * px[i] + 0.587 * px[i+1] + 0.114 * px[i+2]);
+    px[i] = px[i+1] = px[i+2] = g;
+  }
+  ctx2.putImageData(imgData, 0, 0);
 
   const dataURL = off.toDataURL("image/jpeg", 0.92);
 

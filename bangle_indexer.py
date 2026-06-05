@@ -101,7 +101,9 @@ for i, key in enumerate(all_keys):
         # Download image from R2
         resp  = s3.get_object(Bucket=R2_BUCKET, Key=key)
         data  = resp["Body"].read()
-        image = Image.open(BytesIO(data)).convert("RGB")
+        # Convert to grayscale then back to RGB so CLIP focuses on
+        # shape/pattern/texture and ignores gold colour (rose gold vs yellow gold etc.)
+        image = Image.open(BytesIO(data)).convert("L").convert("RGB")
 
         # Get CLIP embedding (512 floats)
         embedding = model.encode(image).tolist()
