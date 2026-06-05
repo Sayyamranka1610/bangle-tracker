@@ -2419,11 +2419,12 @@ async function deleteAllLibraryEntries(seg){
     const d=document.getElementById('_da-detail');if(d)d.textContent=`${done.toLocaleString()} / ${total.toLocaleString()} deleted`;
   };
 
-  // If ALL library entries belong to this segment, wipe the entire node in one operation (instant)
-  // Otherwise batch-delete only the matching entries
+  const FB_ROOT='https://bangle-tracker-default-rtdb.firebaseio.com';
+  // If ALL library entries belong to this segment, wipe the entire node in one REST call (instant)
+  // Otherwise batch-delete only the matching entries via PATCH with null values
   if(toDelete.length===_imageLibrary.length){
     setP(Math.floor(total*0.5));
-    await db.ref('imageLibrary').remove();
+    await fetch(FB_ROOT+'/imageLibrary.json',{method:'DELETE'});
     setP(total);
   } else {
     const BATCH=200;
@@ -2432,7 +2433,7 @@ async function deleteAllLibraryEntries(seg){
       const slice=toDelete.slice(i,i+BATCH);
       const updates={};
       slice.forEach(e=>{ updates['imageLibrary/'+e._id]=null; });
-      await db.ref('/').update(updates);
+      await fetch(FB_ROOT+'/.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)});
       done+=slice.length;
       setP(done);
     }
@@ -11959,6 +11960,18 @@ async function _releaseLock(){
   }catch(e){}
   _hasLock=false;
 }
+
+// ── AUTO-RELEASE LOCK WHEN TAB IS CLOSED ──────────────────────────────────────
+// Uses fetch with keepalive:true — specifically designed to send a request even
+// as the page is unloading (tab close, browser close, navigation away).
+// This means Person A closing the tab immediately frees the lock for Person B.
+window.addEventListener('beforeunload', function(){
+  if(!_hasLock) return; // only act if we hold the lock
+  try{
+    // keepalive:true guarantees the request completes even after page unload
+    fetch(FB_LOCK, { method:'DELETE', keepalive:true });
+  }catch(e){}
+});
 
 function _setReadOnlyUI(readonly, lockUser){
   _readOnly=readonly;
