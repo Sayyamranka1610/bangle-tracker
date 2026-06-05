@@ -6,20 +6,12 @@
 <title>Bangle Design Search — Siddhi Bangles</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0f0e1a;
-    color: #e2e0f0;
-    min-height: 100vh;
+    background: #0f0e1a; color: #e2e0f0; min-height: 100vh;
   }
-
   header {
-    background: #1a1750;
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    background: #1a1750; padding: 16px 24px;
     border-bottom: 1px solid #2d2a5e;
   }
   header h1 { font-size: 1.2rem; color: #a89cff; }
@@ -27,302 +19,199 @@
 
   .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
 
-  /* ── Upload Zone ── */
+  /* Setup banner */
+  .setup-banner {
+    background: #15132a; border: 1px solid #3d3880;
+    border-radius: 14px; padding: 28px 24px; text-align: center; margin-bottom: 24px;
+  }
+  .setup-banner h2 { color: #a89cff; margin-bottom: 12px; font-size: 1rem; }
+  .setup-banner p  { color: #7b72c9; font-size: 0.85rem; margin-bottom: 16px; }
+
+  .progress-bar-wrap {
+    background: #0f0e1a; border-radius: 8px; height: 10px;
+    overflow: hidden; margin: 12px 0;
+  }
+  .progress-bar {
+    background: linear-gradient(90deg, #534AB7, #a89cff);
+    height: 100%; width: 0%; transition: width 0.3s ease;
+    border-radius: 8px;
+  }
+  .progress-label { font-size: 0.8rem; color: #7b72c9; margin-top: 6px; }
+
+  /* Upload Zone */
   .upload-zone {
-    border: 2px dashed #3d3880;
-    border-radius: 16px;
-    padding: 40px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    background: #15132a;
-    position: relative;
+    border: 2px dashed #3d3880; border-radius: 16px;
+    padding: 40px 20px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: #15132a; position: relative;
   }
-  .upload-zone:hover, .upload-zone.drag-over {
-    border-color: #7c6fff;
-    background: #1e1b3a;
-  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: #7c6fff; background: #1e1b3a; }
   .upload-zone input[type=file] {
     position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
   }
+  .upload-zone.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
   .upload-icon { font-size: 3rem; margin-bottom: 12px; }
   .upload-zone h2 { font-size: 1.1rem; color: #c4beff; margin-bottom: 8px; }
   .upload-zone p  { color: #7b72c9; font-size: 0.9rem; }
 
-  /* ── Preview & Crop ── */
+  /* Preview */
   .preview-section { display: none; margin-top: 24px; }
   .preview-section.visible { display: block; }
-
-  .preview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-  }
+  .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .preview-header h3 { color: #a89cff; font-size: 1rem; }
 
   .canvas-wrapper {
-    position: relative;
-    display: inline-block;
-    max-width: 100%;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 1px solid #2d2a5e;
-    cursor: crosshair;
+    position: relative; display: inline-block; max-width: 100%;
+    border-radius: 12px; overflow: hidden; border: 1px solid #2d2a5e; cursor: crosshair;
   }
   #previewCanvas { display: block; max-width: 100%; max-height: 400px; }
-
-  /* crop selection overlay */
   #cropOverlay {
-    position: absolute;
-    border: 2px solid #7c6fff;
-    background: rgba(124,111,255,0.15);
-    pointer-events: none;
-    display: none;
+    position: absolute; border: 2px solid #7c6fff;
+    background: rgba(124,111,255,0.15); pointer-events: none; display: none;
   }
+  .crop-hint { margin-top: 8px; font-size: 0.82rem; color: #6b64a0; text-align: center; }
 
-  .crop-hint {
-    margin-top: 8px;
-    font-size: 0.82rem;
-    color: #6b64a0;
-    text-align: center;
-  }
-
-  /* ── Buttons ── */
-  .btn-row {
-    display: flex;
-    gap: 10px;
-    margin-top: 16px;
-    flex-wrap: wrap;
-  }
+  /* Buttons */
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   .btn {
-    padding: 10px 22px;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s;
+    padding: 10px 22px; border: none; border-radius: 8px;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
   }
   .btn:hover { opacity: 0.85; }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
   .btn-primary   { background: #534AB7; color: #fff; }
   .btn-secondary { background: #2a274d; color: #a89cff; }
   .btn-danger    { background: #3d1f1f; color: #ff8080; }
 
-  /* ── Status ── */
-  .status {
-    margin-top: 16px;
-    padding: 12px 16px;
-    border-radius: 10px;
-    font-size: 0.9rem;
-    display: none;
-  }
+  /* Status */
+  .status { margin-top: 16px; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; display: none; }
   .status.visible { display: flex; align-items: center; gap: 10px; }
   .status.loading { background: #1e1b3a; color: #a89cff; }
   .status.error   { background: #2a1515; color: #ff8080; }
-
   .spinner {
-    width: 18px; height: 18px;
-    border: 2px solid #3d3880;
-    border-top-color: #7c6fff;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    flex-shrink: 0;
+    width: 18px; height: 18px; border: 2px solid #3d3880;
+    border-top-color: #7c6fff; border-radius: 50%;
+    animation: spin 0.7s linear infinite; flex-shrink: 0;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Results ── */
+  /* Results */
   .results-section { margin-top: 28px; }
   .results-section h3 { color: #a89cff; margin-bottom: 16px; font-size: 1rem; }
-
-  .results-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 14px;
-  }
-
+  .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
   .result-card {
-    background: #15132a;
-    border: 1px solid #2d2a5e;
-    border-radius: 12px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
+    background: #15132a; border: 1px solid #2d2a5e; border-radius: 12px;
+    overflow: hidden; cursor: pointer; transition: all 0.2s; position: relative;
   }
   .result-card:hover { border-color: #7c6fff; transform: translateY(-2px); }
-  .result-card.selected {
-    border-color: #7c6fff;
-    box-shadow: 0 0 0 2px #7c6fff44;
-  }
-
-  .result-card img {
-    width: 100%; aspect-ratio: 1;
-    object-fit: cover;
-    display: block;
-    background: #0f0e1a;
-  }
-
-  .result-info {
-    padding: 10px;
-  }
-  .result-code {
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: #e2e0f0;
-    margin-bottom: 4px;
-  }
-  .result-path {
-    font-size: 0.72rem;
-    color: #6b64a0;
-    line-height: 1.3;
-    word-break: break-all;
-  }
+  .result-card.selected { border-color: #7c6fff; box-shadow: 0 0 0 2px #7c6fff44; }
+  .result-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #0f0e1a; }
+  .result-info { padding: 10px; }
+  .result-code { font-weight: 700; font-size: 0.95rem; color: #e2e0f0; margin-bottom: 4px; }
+  .result-path { font-size: 0.72rem; color: #6b64a0; line-height: 1.3; word-break: break-all; }
   .result-score {
-    display: inline-block;
-    margin-top: 6px;
-    padding: 2px 8px;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background: #2a274d;
-    color: #a89cff;
+    display: inline-block; margin-top: 6px; padding: 2px 8px;
+    border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+    background: #2a274d; color: #a89cff;
   }
   .result-score.high   { background: #1a3020; color: #6dffaa; }
   .result-score.medium { background: #2a2415; color: #ffd06d; }
   .result-score.low    { background: #2a1b1b; color: #ff9a6d; }
-
   .match-badge {
-    position: absolute;
-    top: 8px; left: 8px;
-    background: #7c6fff;
-    color: #fff;
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 20px;
+    position: absolute; top: 8px; left: 8px;
+    background: #7c6fff; color: #fff; font-size: 0.7rem;
+    font-weight: 700; padding: 2px 8px; border-radius: 20px;
   }
 
-  /* ── Copy Toast ── */
+  /* Selected banner */
+  .selected-banner {
+    display: none; margin-top: 20px; padding: 16px 20px;
+    background: #1a3020; border: 1px solid #2d5a3a; border-radius: 12px;
+    align-items: center; gap: 16px;
+  }
+  .selected-banner.visible { display: flex; }
+  .selected-banner .code { font-size: 1.4rem; font-weight: 800; color: #6dffaa; letter-spacing: 1px; }
+  .selected-banner .label { font-size: 0.8rem; color: #4a8a5e; margin-bottom: 4px; }
+  .selected-banner .copy-btn {
+    margin-left: auto; padding: 8px 18px;
+    background: #2d5a3a; border: 1px solid #3d7a4e; border-radius: 8px;
+    color: #6dffaa; font-weight: 600; cursor: pointer; font-size: 0.9rem;
+  }
+  .selected-banner .copy-btn:hover { background: #3d6a4e; }
+
+  /* Toast */
   .toast {
-    position: fixed;
-    bottom: 24px; left: 50%;
+    position: fixed; bottom: 24px; left: 50%;
     transform: translateX(-50%) translateY(80px);
-    background: #534AB7;
-    color: #fff;
-    padding: 12px 24px;
-    border-radius: 12px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    transition: transform 0.3s ease;
-    z-index: 999;
-    white-space: nowrap;
+    background: #534AB7; color: #fff; padding: 12px 24px;
+    border-radius: 12px; font-weight: 600; font-size: 0.95rem;
+    transition: transform 0.3s ease; z-index: 999;
     box-shadow: 0 4px 20px rgba(83,74,183,0.5);
   }
   .toast.show { transform: translateX(-50%) translateY(0); }
-
-  /* ── Selected Design Banner ── */
-  .selected-banner {
-    display: none;
-    margin-top: 20px;
-    padding: 16px 20px;
-    background: #1a3020;
-    border: 1px solid #2d5a3a;
-    border-radius: 12px;
-    align-items: center;
-    gap: 16px;
-  }
-  .selected-banner.visible { display: flex; }
-  .selected-banner .code {
-    font-size: 1.4rem;
-    font-weight: 800;
-    color: #6dffaa;
-    letter-spacing: 1px;
-  }
-  .selected-banner .label { font-size: 0.8rem; color: #4a8a5e; margin-bottom: 4px; }
-  .selected-banner .copy-btn {
-    margin-left: auto;
-    padding: 8px 18px;
-    background: #2d5a3a;
-    border: 1px solid #3d7a4e;
-    border-radius: 8px;
-    color: #6dffaa;
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-  .selected-banner .copy-btn:hover { background: #3d6a4e; }
 </style>
 </head>
 <body>
 
 <header>
-  <div>
-    <h1>🔍 Bangle Design Search</h1>
-    <p>Upload a client photo to find matching design codes</p>
-  </div>
+  <h1>Bangle Design Search</h1>
+  <p>Upload a client photo to find matching design codes</p>
 </header>
 
 <div class="container">
 
+  <!-- First-time setup banner -->
+  <div class="setup-banner" id="setupBanner">
+    <h2 id="setupTitle">Loading AI Model...</h2>
+    <p id="setupDesc">First time only — downloading CLIP visual AI model (~80MB). This will be cached and never downloaded again.</p>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-label" id="progressLabel">Starting...</div>
+  </div>
+
   <!-- Upload Zone -->
-  <div class="upload-zone" id="uploadZone">
-    <input type="file" id="fileInput" accept="image/*" />
+  <div class="upload-zone disabled" id="uploadZone">
+    <input type="file" id="fileInput" accept="image/*" disabled />
     <div class="upload-icon">📸</div>
     <h2>Drop client photo here or tap to select</h2>
     <p>Works with WhatsApp photos &nbsp;·&nbsp; JPG, PNG, WebP supported</p>
   </div>
 
-  <!-- Image Preview + optional crop -->
+  <!-- Image Preview + crop -->
   <div class="preview-section" id="previewSection">
     <div class="preview-header">
-      <h3>📷 Uploaded photo</h3>
-      <button class="btn btn-danger" onclick="resetAll()">✕ Clear</button>
+      <h3>Uploaded photo</h3>
+      <button class="btn btn-danger" onclick="resetAll()">X Clear</button>
     </div>
-
     <div class="canvas-wrapper" id="canvasWrapper">
       <canvas id="previewCanvas"></canvas>
       <div id="cropOverlay"></div>
     </div>
-
     <p class="crop-hint" id="cropHint">
-      💡 If the photo has <strong>multiple bangles</strong>, drag to select just one before searching.
-      Or search the whole photo directly.
+      If the photo has <strong>multiple bangles</strong>, drag to select just one before searching.
     </p>
-
     <div class="btn-row">
-      <button class="btn btn-primary" id="searchBtn" onclick="doSearch()">
-        🔍 Search Full Photo
-      </button>
-      <button class="btn btn-secondary" id="searchCropBtn" onclick="searchCrop()" style="display:none">
-        ✂️ Search Selected Area
-      </button>
-      <button class="btn btn-secondary" id="clearCropBtn" onclick="clearCrop()" style="display:none">
-        Clear Selection
-      </button>
+      <button class="btn btn-primary" onclick="doSearch(false)">Search Full Photo</button>
+      <button class="btn btn-secondary" id="searchCropBtn" onclick="doSearch(true)" style="display:none">Search Selected Area</button>
+      <button class="btn btn-secondary" id="clearCropBtn" onclick="clearCrop()" style="display:none">Clear Selection</button>
     </div>
   </div>
 
   <!-- Status -->
-  <div class="status loading" id="statusBox">
-    <div class="spinner"></div>
-    <span id="statusText">Searching...</span>
-  </div>
+  <div class="status" id="statusBox"></div>
 
-  <!-- Selected Design Banner -->
+  <!-- Selected banner -->
   <div class="selected-banner" id="selectedBanner">
     <div>
       <div class="label">Selected Design Code</div>
-      <div class="code" id="selectedCode">—</div>
+      <div class="code" id="selectedCode">-</div>
     </div>
-    <button class="copy-btn" onclick="copyCode()">📋 Copy Code</button>
+    <button class="copy-btn" onclick="copyCode()">Copy Code</button>
   </div>
 
   <!-- Results -->
   <div class="results-section" id="resultsSection" style="display:none">
-    <h3 id="resultsTitle">Top matches</h3>
+    <h3 id="resultsTitle"></h3>
     <div class="results-grid" id="resultsGrid"></div>
   </div>
 
@@ -330,47 +219,115 @@
 
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
 // ── Config ────────────────────────────────────────────────────────────────────
-// UPDATE THIS after deploying the Worker!
-const WORKER_URL = "https://bangle-search.sayyamranka09.workers.dev";
+const WORKER_URL      = "https://bangle-search.sayyamranka09.workers.dev";
+const EMBEDDINGS_CACHE_KEY = "bangle-embeddings-v1";
+const TOP_K = 8;
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let originalImage = null;   // HTMLImageElement
-let cropRect      = null;   // {x, y, w, h} in canvas coords
+let clipExtractor = null;
+let embeddings    = null;
+let originalImage = null;
+let cropRect      = null;
 let isDragging    = false;
 let dragStart     = null;
 let selectedCode  = null;
 
+// ── Boot sequence ─────────────────────────────────────────────────────────────
+async function boot() {
+  try {
+    // Step 1: Load transformers.js
+    setProgress(5, "Loading AI framework...");
+    const { pipeline, env } = await import(
+      "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.2/dist/transformers.min.js"
+    );
+    env.allowLocalModels = false;
+
+    // Step 2: Load CLIP model (cached by browser after first download)
+    setProgress(10, "Loading CLIP vision model (first time: ~80MB download, then always instant)...");
+    clipExtractor = await pipeline(
+      "image-feature-extraction",
+      "Xenova/clip-vit-base-patch32",
+      {
+        dtype: "q8",
+        progress_callback: (p) => {
+          if (p.status === "downloading" && p.total) {
+            const pct = Math.round((p.loaded / p.total) * 70) + 10;
+            setProgress(pct, `Downloading model: ${Math.round(p.loaded/1024/1024)}MB / ${Math.round(p.total/1024/1024)}MB`);
+          } else if (p.status === "loading") {
+            setProgress(85, "Loading model into memory...");
+          }
+        },
+      }
+    );
+    setProgress(88, "Model ready. Loading design database...");
+
+    // Step 3: Load embeddings (cached)
+    embeddings = await loadEmbeddingsCached();
+    const count = Object.keys(embeddings).length;
+    setProgress(100, `Ready — ${count.toLocaleString()} designs indexed`);
+
+    // Step 4: Enable UI
+    setTimeout(() => {
+      document.getElementById("setupBanner").style.display = "none";
+    }, 1500);
+    const zone = document.getElementById("uploadZone");
+    zone.classList.remove("disabled");
+    const fi = document.getElementById("fileInput");
+    fi.disabled = false;
+
+  } catch (err) {
+    setError("Setup failed: " + err.message);
+    console.error(err);
+  }
+}
+
+async function loadEmbeddingsCached() {
+  // Try browser Cache API first
+  try {
+    const cache = await caches.open(EMBEDDINGS_CACHE_KEY);
+    const cached = await cache.match(WORKER_URL + "/embeddings");
+    if (cached) {
+      setProgress(95, "Loading design database from cache...");
+      return await cached.json();
+    }
+  } catch(_) {}
+
+  // Fetch fresh from Worker
+  setProgress(90, "Downloading design database (33MB, one-time)...");
+  const resp = await fetch(WORKER_URL + "/embeddings");
+  if (!resp.ok) throw new Error("Could not load design database: " + resp.status);
+
+  // Cache it
+  try {
+    const cache = await caches.open(EMBEDDINGS_CACHE_KEY);
+    await cache.put(WORKER_URL + "/embeddings", resp.clone());
+  } catch(_) {}
+
+  return await resp.json();
+}
+
 // ── File input ────────────────────────────────────────────────────────────────
 document.getElementById("fileInput").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (file) loadImage(file);
+  if (e.target.files[0]) loadImageFile(e.target.files[0]);
 });
 
-// Drag & drop
 const zone = document.getElementById("uploadZone");
 zone.addEventListener("dragover",  (e) => { e.preventDefault(); zone.classList.add("drag-over"); });
 zone.addEventListener("dragleave", ()  => zone.classList.remove("drag-over"));
 zone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  zone.classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith("image/")) loadImage(file);
+  e.preventDefault(); zone.classList.remove("drag-over");
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith("image/")) loadImageFile(f);
 });
-
-// Paste from clipboard (for WhatsApp web copy-paste)
 document.addEventListener("paste", (e) => {
-  const items = e.clipboardData.items;
-  for (const item of items) {
-    if (item.type.startsWith("image/")) {
-      loadImage(item.getAsFile());
-      break;
-    }
+  for (const item of e.clipboardData.items) {
+    if (item.type.startsWith("image/")) { loadImageFile(item.getAsFile()); break; }
   }
 });
 
-function loadImage(file) {
+function loadImageFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
@@ -380,7 +337,7 @@ function loadImage(file) {
       document.getElementById("previewSection").classList.add("visible");
       document.getElementById("resultsSection").style.display = "none";
       document.getElementById("selectedBanner").classList.remove("visible");
-      document.getElementById("statusBox").classList.remove("visible");
+      document.getElementById("statusBox").className = "status";
       clearCrop();
     };
     img.src = e.target.result;
@@ -388,21 +345,16 @@ function loadImage(file) {
   reader.readAsDataURL(file);
 }
 
-// ── Canvas drawing ────────────────────────────────────────────────────────────
+// ── Canvas + crop ─────────────────────────────────────────────────────────────
 function drawCanvas(img) {
-  const canvas  = document.getElementById("previewCanvas");
-  const wrapper = document.getElementById("canvasWrapper");
-  const maxW = Math.min(wrapper.clientWidth || 700, 700);
-  const maxH = 400;
-  const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-  canvas.width  = img.width  * scale;
-  canvas.height = img.height * scale;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const canvas = document.getElementById("previewCanvas");
+  const maxW = Math.min(document.getElementById("canvasWrapper").clientWidth || 700, 700);
+  const scale = Math.min(maxW / img.width, 400 / img.height, 1);
+  canvas.width = img.width * scale; canvas.height = img.height * scale;
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
 }
 
-// ── Crop drawing ──────────────────────────────────────────────────────────────
-const canvas   = document.getElementById("previewCanvas");
+const canvas = document.getElementById("previewCanvas");
 const cropOverlay = document.getElementById("cropOverlay");
 
 canvas.addEventListener("mousedown", (e) => {
@@ -411,40 +363,21 @@ canvas.addEventListener("mousedown", (e) => {
   const r = canvas.getBoundingClientRect();
   dragStart = { x: e.clientX - r.left, y: e.clientY - r.top };
   cropOverlay.style.display = "block";
-  updateOverlay(dragStart, dragStart);
 });
-
 canvas.addEventListener("mousemove", (e) => {
   if (!isDragging) return;
   const r = canvas.getBoundingClientRect();
-  const cur = { x: e.clientX - r.left, y: e.clientY - r.top };
-  updateOverlay(dragStart, cur);
+  updateOverlay(dragStart, { x: e.clientX - r.left, y: e.clientY - r.top });
 });
-
 canvas.addEventListener("mouseup", (e) => {
-  if (!isDragging) return;
-  isDragging = false;
+  if (!isDragging) return; isDragging = false;
   const r = canvas.getBoundingClientRect();
   const cur = { x: e.clientX - r.left, y: e.clientY - r.top };
-  const x = Math.min(dragStart.x, cur.x);
-  const y = Math.min(dragStart.y, cur.y);
-  const w = Math.abs(cur.x - dragStart.x);
-  const h = Math.abs(cur.y - dragStart.y);
-  if (w > 10 && h > 10) {
-    cropRect = { x, y, w, h };
-    document.getElementById("searchCropBtn").style.display = "";
-    document.getElementById("clearCropBtn").style.display  = "";
-    document.getElementById("cropHint").style.display = "none";
-  } else {
-    clearCrop();
-  }
+  finishCrop(cur);
 });
-
-// Touch support for mobile
 canvas.addEventListener("touchstart", (e) => {
   e.preventDefault();
-  const t = e.touches[0];
-  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
   isDragging = true;
   dragStart = { x: t.clientX - r.left, y: t.clientY - r.top };
   cropOverlay.style.display = "block";
@@ -452,207 +385,198 @@ canvas.addEventListener("touchstart", (e) => {
 canvas.addEventListener("touchmove", (e) => {
   e.preventDefault();
   if (!isDragging) return;
-  const t = e.touches[0];
-  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
   updateOverlay(dragStart, { x: t.clientX - r.left, y: t.clientY - r.top });
 });
 canvas.addEventListener("touchend", (e) => {
-  if (!isDragging) return;
-  isDragging = false;
-  const t = e.changedTouches[0];
-  const r = canvas.getBoundingClientRect();
-  const cur = { x: t.clientX - r.left, y: t.clientY - r.top };
-  const x = Math.min(dragStart.x, cur.x);
-  const y = Math.min(dragStart.y, cur.y);
-  const w = Math.abs(cur.x - dragStart.x);
-  const h = Math.abs(cur.y - dragStart.y);
+  if (!isDragging) return; isDragging = false;
+  const t = e.changedTouches[0], r = canvas.getBoundingClientRect();
+  finishCrop({ x: t.clientX - r.left, y: t.clientY - r.top });
+});
+
+function updateOverlay(a, b) {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  cropOverlay.style.cssText = `display:block;position:absolute;border:2px solid #7c6fff;background:rgba(124,111,255,0.15);pointer-events:none;left:${x}px;top:${y}px;width:${Math.abs(a.x-b.x)}px;height:${Math.abs(a.y-b.y)}px`;
+}
+function finishCrop(cur) {
+  const x = Math.min(dragStart.x, cur.x), y = Math.min(dragStart.y, cur.y);
+  const w = Math.abs(cur.x - dragStart.x), h = Math.abs(cur.y - dragStart.y);
   if (w > 10 && h > 10) {
     cropRect = { x, y, w, h };
     document.getElementById("searchCropBtn").style.display = "";
     document.getElementById("clearCropBtn").style.display  = "";
-    document.getElementById("cropHint").style.display = "none";
-  } else {
-    clearCrop();
-  }
-});
-
-function updateOverlay(a, b) {
-  const r = canvas.getBoundingClientRect();
-  const x = Math.min(a.x, b.x);
-  const y = Math.min(a.y, b.y);
-  const w = Math.abs(a.x - b.x);
-  const h = Math.abs(a.y - b.y);
-  cropOverlay.style.left   = x + "px";
-  cropOverlay.style.top    = y + "px";
-  cropOverlay.style.width  = w + "px";
-  cropOverlay.style.height = h + "px";
+  } else clearCrop();
 }
-
-function clearCrop() {
+window.clearCrop = function() {
   cropRect = null;
   cropOverlay.style.display = "none";
   document.getElementById("searchCropBtn").style.display = "none";
   document.getElementById("clearCropBtn").style.display  = "none";
-  document.getElementById("cropHint").style.display = "";
-}
+};
 
 // ── Search ────────────────────────────────────────────────────────────────────
-async function doSearch(useCrop) {
-  if (!originalImage) return;
+window.doSearch = async function(useCrop) {
+  if (!originalImage || !clipExtractor || !embeddings) return;
 
-  showStatus("Analysing image...");
+  showStatus("Analysing photo...");
   document.getElementById("resultsSection").style.display = "none";
   document.getElementById("selectedBanner").classList.remove("visible");
-  selectedCode = null;
 
-  // Build the image blob to send
-  const offscreen = document.createElement("canvas");
+  // Draw the (possibly cropped) image to an offscreen canvas → data URL
+  const off = document.createElement("canvas");
   if (useCrop && cropRect) {
-    // Scale cropRect from canvas display coords back to original image coords
-    const scaleX = originalImage.width  / canvas.width;
-    const scaleY = originalImage.height / canvas.height;
-    offscreen.width  = cropRect.w * scaleX;
-    offscreen.height = cropRect.h * scaleY;
-    offscreen.getContext("2d").drawImage(
+    const sx = originalImage.width  / canvas.width;
+    const sy = originalImage.height / canvas.height;
+    off.width  = Math.round(cropRect.w * sx);
+    off.height = Math.round(cropRect.h * sy);
+    off.getContext("2d").drawImage(
       originalImage,
-      cropRect.x * scaleX, cropRect.y * scaleY,
-      offscreen.width, offscreen.height,
-      0, 0, offscreen.width, offscreen.height
+      cropRect.x * sx, cropRect.y * sy, off.width, off.height,
+      0, 0, off.width, off.height
     );
   } else {
-    offscreen.width  = originalImage.width;
-    offscreen.height = originalImage.height;
-    offscreen.getContext("2d").drawImage(originalImage, 0, 0);
+    off.width = originalImage.width; off.height = originalImage.height;
+    off.getContext("2d").drawImage(originalImage, 0, 0);
   }
 
-  offscreen.toBlob(async (blob) => {
-    try {
-      showStatus("Searching through 3000+ designs...");
-      const form = new FormData();
-      form.append("image", blob, "query.jpg");
+  const dataURL = off.toDataURL("image/jpeg", 0.92);
 
-      const resp = await fetch(WORKER_URL + "/search", {
-        method: "POST",
-        body: form,
-      });
+  try {
+    showStatus("Generating visual fingerprint...");
+    const output = await clipExtractor(dataURL, { pooling: "mean", normalize: true });
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: "Unknown error" }));
-        showError(err.error || "Search failed");
-        return;
-      }
-
-      const { results } = await resp.json();
-      hideStatus();
-      showResults(results);
-
-    } catch (e) {
-      showError("Could not reach search server. Check your internet connection.");
+    // Flatten in case of nested tensor
+    let queryVec = Array.from(output.data || output[0]?.data || output);
+    if (!queryVec || queryVec.length < 100) {
+      // Try alternate extraction
+      if (output?.data) queryVec = Array.from(output.data);
     }
-  }, "image/jpeg", 0.92);
+
+    showStatus("Searching " + Object.keys(embeddings).length.toLocaleString() + " designs...");
+    const results = findTopK(queryVec, embeddings, TOP_K);
+    hideStatus();
+    showResults(results);
+
+  } catch (e) {
+    showError("Search failed: " + e.message);
+    console.error(e);
+  }
+};
+
+// ── Cosine similarity + top-K ─────────────────────────────────────────────────
+function cosine(a, b) {
+  let dot = 0, ma = 0, mb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; ma += a[i]*a[i]; mb += b[i]*b[i]; }
+  return dot / (Math.sqrt(ma) * Math.sqrt(mb));
 }
 
-function searchCrop() { doSearch(true); }
+function findTopK(query, db, k) {
+  const scores = [];
+  for (const [path, data] of Object.entries(db)) {
+    scores.push({
+      design_code: data.design_code,
+      path:        data.path,
+      url:         data.url,
+      similarity:  Math.round(cosine(query, data.embedding) * 100),
+    });
+  }
+  scores.sort((a, b) => b.similarity - a.similarity);
+  return scores.slice(0, k);
+}
 
-// ── Display results ───────────────────────────────────────────────────────────
+// ── Show results ──────────────────────────────────────────────────────────────
 function showResults(results) {
   const section = document.getElementById("resultsSection");
   const grid    = document.getElementById("resultsGrid");
-  const title   = document.getElementById("resultsTitle");
-
   section.style.display = "block";
-  title.textContent = `Top ${results.length} matching designs — tap a card to select`;
+  document.getElementById("resultsTitle").textContent =
+    `Top ${results.length} matches — tap to select`;
   grid.innerHTML = "";
 
   results.forEach((r, i) => {
     const card = document.createElement("div");
     card.className = "result-card";
     card.onclick = () => selectResult(r, card);
-
-    const scoreClass = r.similarity >= 70 ? "high" : r.similarity >= 50 ? "medium" : "low";
-
-    // Extract a clean folder name for display
-    const pathParts = r.path.split("/");
-    const folder = pathParts.length >= 2 ? pathParts.slice(0, -1).join(" › ") : "";
-
+    const sc = r.similarity >= 70 ? "high" : r.similarity >= 50 ? "medium" : "low";
+    const folder = r.path.split("/").slice(0, -1).join(" / ");
     card.innerHTML = `
-      ${i === 0 ? '<div class="match-badge">Best Match</div>' : ""}
-      <img src="${r.url}" alt="${r.design_code}" loading="lazy" onerror="this.style.background='#1a1750';this.alt='Image unavailable'">
+      ${i===0 ? '<div class="match-badge">Best Match</div>' : ""}
+      <img src="${r.url}" alt="${r.design_code}" loading="lazy"
+           onerror="this.style.background='#1a1750'">
       <div class="result-info">
         <div class="result-code">${r.design_code}</div>
         <div class="result-path">${folder}</div>
-        <span class="result-score ${scoreClass}">${r.similarity}% match</span>
+        <span class="result-score ${sc}">${r.similarity}% match</span>
       </div>`;
-
     grid.appendChild(card);
   });
+  section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function selectResult(result, card) {
-  // Deselect all
+function selectResult(r, card) {
   document.querySelectorAll(".result-card").forEach(c => c.classList.remove("selected"));
   card.classList.add("selected");
-
-  selectedCode = result.design_code;
+  selectedCode = r.design_code;
   document.getElementById("selectedCode").textContent = selectedCode;
   document.getElementById("selectedBanner").classList.add("visible");
-  document.getElementById("selectedBanner").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-function copyCode() {
+window.copyCode = function() {
   if (!selectedCode) return;
-  navigator.clipboard.writeText(selectedCode).then(() => {
-    showToast("✓ Design code " + selectedCode + " copied!");
-  }).catch(() => {
-    // Fallback
-    const ta = document.createElement("textarea");
-    ta.value = selectedCode;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    showToast("✓ Design code " + selectedCode + " copied!");
-  });
-}
+  navigator.clipboard.writeText(selectedCode).then(() => showToast("Copied: " + selectedCode))
+    .catch(() => {
+      const t = document.createElement("textarea");
+      t.value = selectedCode;
+      document.body.appendChild(t); t.select();
+      document.execCommand("copy"); document.body.removeChild(t);
+      showToast("Copied: " + selectedCode);
+    });
+};
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
-function resetAll() {
-  originalImage = null;
-  cropRect = null;
+window.resetAll = function() {
+  originalImage = null; cropRect = null;
   document.getElementById("previewSection").classList.remove("visible");
   document.getElementById("resultsSection").style.display = "none";
   document.getElementById("selectedBanner").classList.remove("visible");
-  document.getElementById("statusBox").classList.remove("visible");
+  document.getElementById("statusBox").className = "status";
   document.getElementById("fileInput").value = "";
   clearCrop();
-  const canvas = document.getElementById("previewCanvas");
   canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
-}
+};
 
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function setProgress(pct, label) {
+  document.getElementById("progressBar").style.width = pct + "%";
+  document.getElementById("progressLabel").textContent = label;
+}
+function setError(msg) {
+  document.getElementById("setupTitle").textContent = "Setup Error";
+  document.getElementById("progressLabel").textContent = msg;
+  document.getElementById("progressLabel").style.color = "#ff8080";
+}
 function showStatus(msg) {
-  const box = document.getElementById("statusBox");
-  box.className = "status loading visible";
-  box.innerHTML = `<div class="spinner"></div><span>${msg}</span>`;
+  const b = document.getElementById("statusBox");
+  b.className = "status loading visible";
+  b.innerHTML = `<div class="spinner"></div><span>${msg}</span>`;
 }
-
 function showError(msg) {
-  const box = document.getElementById("statusBox");
-  box.className = "status error visible";
-  box.innerHTML = `<span>⚠️ ${msg}</span>`;
+  const b = document.getElementById("statusBox");
+  b.className = "status error visible";
+  b.innerHTML = `<span>Error: ${msg}</span>`;
 }
-
 function hideStatus() {
-  document.getElementById("statusBox").classList.remove("visible");
+  document.getElementById("statusBox").className = "status";
 }
-
 let toastTimer;
-function showToast(msg) {
+window.showToast = function(msg) {
   const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.add("show");
+  t.textContent = msg; t.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), 2500);
-}
+};
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+boot();
 </script>
 </body>
 </html>
