@@ -186,7 +186,7 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .design-name-group{margin-bottom:16px;border:1.5px solid #C7C2F0;border-radius:14px;overflow:hidden;background:#fbfaff}
 .design-name-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
   padding:11px 16px;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff}
-.design-name-group-head .dng-title{font-size:14px;font-weight:700;letter-spacing:.01em}
+.design-name-group-head .dng-title{font-size:16px;font-weight:800;letter-spacing:.01em}
 .design-name-group-head .dng-meta{font-size:11px;font-weight:600;opacity:.9;background:rgba(255,255,255,.16);padding:3px 10px;border-radius:20px}
 .design-name-group-body{padding:12px 12px 4px}
 .design-name-group-body .design-card{margin-bottom:10px}
@@ -205,7 +205,7 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .gallery-img-label{position:absolute;top:4px;left:4px;background:rgba(83,74,183,.8);color:#fff;font-size:9px;padding:2px 5px;border-radius:4px;font-weight:500}
 /* Variety table */
 .variety-table-wrap{overflow-x:auto;margin:10px 0;border-radius:10px;border:1.5px solid #AFA9EC}
-.variety-table{width:100%;border-collapse:collapse;font-size:11px;min-width:500px}
+.variety-table{width:100%;border-collapse:collapse;font-size:13px;min-width:500px}
 .variety-table th{background:#534AB7;color:#fff;padding:7px 10px;text-align:center;font-weight:600;white-space:nowrap;border-right:1px solid rgba(255,255,255,.2)}
 .variety-table th:first-child{text-align:left}
 .variety-table th:last-child{border-right:none}
@@ -214,9 +214,9 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .variety-table td.total-col{border-right:none;font-weight:700;color:#534AB7;background:#EEEDFE}
 .variety-table tfoot td{border-bottom:none;font-weight:700;background:#f0efff;color:#3C3489;border-top:2px solid #534AB7}
 .variety-table tfoot td.grand-total{background:#534AB7;color:#fff;font-size:12px}
-.variety-table input.qty-inp{width:52px;text-align:center;padding:4px 3px;font-size:11px;border-color:#AFA9EC;border-radius:5px}
+.variety-table input.qty-inp{width:56px;text-align:center;padding:4px 3px;font-size:13px;border-color:#AFA9EC;border-radius:5px}
 .variety-table th.sz-head{min-width:64px}
-.variety-name-inp{font-size:11px;padding:4px 6px;border-color:#AFA9EC;min-width:100px}
+.variety-name-inp{font-size:13px;padding:4px 6px;border-color:#AFA9EC;min-width:100px}
 .variety-thumb{width:36px;height:36px;object-fit:cover;border-radius:5px;border:1px solid #AFA9EC;cursor:zoom-in;vertical-align:middle}
 .variety-img-cell{display:flex;align-items:center;gap:4px;flex-wrap:nowrap;min-width:80px;overflow:hidden}
 .variety-img-add{width:28px;height:28px;border-radius:5px;border:1.5px dashed #AFA9EC;background:#f7f6ff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#534AB7;font-size:14px;flex-shrink:0;border:1.5px dashed #AFA9EC}
@@ -477,6 +477,12 @@ img,table,pre{max-width:100%}
 }
 
 @media print{
+  .design-name-group-head{background:#f0efff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .design-name-group-head .dng-title{font-size:18px!important;color:#000!important;font-weight:800!important}
+  .design-name-group-head .dng-meta{color:#333!important;background:rgba(83,74,183,.1)!important;border:1px solid #AFA9EC}
+  .variety-table{font-size:13px!important}
+  .variety-table input.qty-inp{font-size:13px!important}
+  .variety-name-inp{font-size:13px!important}
   .header-actions,.filter-bar,.main-tabs,.no-print{display:none!important}
   .client-body{display:block!important}
   .order-body{display:block!important}
@@ -1995,7 +2001,7 @@ function closeRecovery(){
 // Each entry: { designCode, folder, r2url, fileName, uploadedAt, _id }
 // Photos are permanent in R2. The library is just a searchable index of URLs.
 
-let _imageLibrary=[], _libLoaded=false, _libPage=0, _lpPage=0;
+let _imageLibrary=[], _libLoaded=false, _libPage=0, _lpPage=0, _lpLastFolder='';
 let _libFolder='';   // '' = folder tiles | 'FolderName' = inside folder
 let _libSegment='';  // '' = root | 'CNC' | 'Dye Gold'
 let _libFolders=[];  // folder registry [{name,segment,_id}] — tracks empty folders too
@@ -2171,7 +2177,7 @@ function renderLibrary(){
       </div>
     </div>
     <input id="lib-search" placeholder="Search folders in ${esc(_libSegment)}…" value="${esc(searchVal)}"
-      oninput="_libPage=0;renderLibrary()"
+      oninput="_libSearchKeyed(this)"
       style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:14px">
     ${filtered.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">${q?`No folders match "${esc(searchVal)}"`:`No folders yet — click ➕ New Folder to create one`}</div>`:`
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px">
@@ -2220,7 +2226,7 @@ function renderLibrary(){
       <button onclick="_libUploadMoreToFolder('${esc(_libFolder)}')" style="background:#1D9E75;color:#fff;border:none;border-radius:7px;padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer">+ Upload More Here</button>
     </div>
     <input id="lib-search" placeholder="Search in ${esc(_libFolder)}…" value="${esc(searchVal)}"
-      oninput="_libPage=0;renderLibrary()"
+      oninput="_libSearchKeyed(this)"
       style="width:100%;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px;margin-bottom:12px">
     ${shown.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">No photos${q?' matching "'+esc(searchVal)+'"':''} in this folder.</div>`:`
     <div style="font-size:11px;color:#888;margin-bottom:8px">Showing ${shown.length.toLocaleString()} of ${filtered.length.toLocaleString()} photos</div>
@@ -2262,6 +2268,17 @@ function renderLibrary(){
 }
 
 // ── LIBRARY NAVIGATION ─────────────────────────────────────────────────────────
+// Fixes cursor-jumping bug: saves cursor position before re-render and restores after
+function _libSearchKeyed(el){
+  const val=el.value, pos=el.selectionStart;
+  _libPage=0;
+  renderLibrary();
+  // After renderLibrary() recreates the DOM, find the new input and restore focus+cursor
+  requestAnimationFrame(()=>{
+    const inp=document.getElementById('lib-search');
+    if(inp){inp.focus();try{inp.setSelectionRange(pos,pos);}catch(e){}}
+  });
+}
 function _libGoRoot(){_libSegment='';_libFolder='';_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
 function _libGoSegment(){_libFolder='';_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
 function _libSelectSegment(seg){_libSegment=seg;_libFolder='';_libPage=0;_libSelected=new Set();const s=document.getElementById('lib-search');if(s)s.value='';renderLibrary();}
@@ -2969,14 +2986,18 @@ async function openLibraryPicker(oi,di,vi){
 
   const lib=_imageLibrary;
   const suggested=designCode?lib.filter(e=>(e.designCode||'').toLowerCase()===designCode.toLowerCase()):[];
-  const folders=[...new Set(lib.map(e=>e.folder||'').filter(Boolean))].sort();
+  // Build folders grouped by segment for clear CNC / Dye Gold distinction
+  const cncFolders=[...new Set(lib.filter(e=>(e.segment||'CNC')==='CNC').map(e=>e.folder||'').filter(Boolean))].sort();
+  const dyeFolders=[...new Set(lib.filter(e=>(e.segment||'CNC')==='Dye Gold').map(e=>e.folder||'').filter(Boolean))].sort();
 
   const old=document.getElementById('lib-picker-modal');if(old)old.remove();
   const wrap=document.createElement('div');
   wrap.id='lib-picker-modal';
   wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:8px';
 
-  const folderOpts=folders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  // Grouped options: CNC first, then Dye Gold — so same-named folders are never confused
+  const folderOpts=(cncFolders.length?`<optgroup label="📦 CNC">${cncFolders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</optgroup>`:'')
+    +(dyeFolders.length?`<optgroup label="✨ Dye Gold">${dyeFolders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</optgroup>`:'');
   const suggestedHtml=suggested.length?`
     <div style="flex-shrink:0">
       <div style="font-size:11px;font-weight:700;color:#1D9E75;margin-bottom:6px;letter-spacing:.03em">✅ SUGGESTED FOR "${esc(designCode)}" — ${suggested.length} match${suggested.length!==1?'es':''}</div>
@@ -3001,15 +3022,22 @@ async function openLibraryPicker(oi,di,vi){
     <button onclick="document.getElementById('lib-picker-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;flex-shrink:0;margin-left:10px">✕ Close</button>
   </div>
 
-  <div style="display:flex;gap:8px;flex-shrink:0">
-    <input id="lp-search" placeholder="Search design code or filename…" value="${esc(designCode)}"
-      oninput="_lpPage=0;_lpRender(${oi},${di},${vi})"
-      style="flex:1;padding:8px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:13px">
-    <select id="lp-folder" onchange="_lpPage=0;document.getElementById('lp-search').value='';_lpRender(${oi},${di},${vi})"
-      style="padding:8px 10px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:12px;min-width:120px">
-      <option value="">All folders</option>
-      ${folderOpts}
-    </select>
+  <div style="display:flex;gap:8px;flex-shrink:0;align-items:flex-end">
+    <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:10px;font-weight:700;color:#534AB7;letter-spacing:.05em;text-transform:uppercase">🔍 Search by design code</label>
+      <input id="lp-search" placeholder="Type design code (e.g. 8001, DD-1)…" value="${esc(designCode)}"
+        oninput="_lpPage=0;_lpRender(${oi},${di},${vi})"
+        style="width:100%;padding:10px 14px;border:2px solid #AFA9EC;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none"
+        onfocus="this.style.borderColor='#534AB7'" onblur="this.style.borderColor='#AFA9EC'">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;min-width:180px">
+      <label style="font-size:10px;font-weight:700;color:#534AB7;letter-spacing:.05em;text-transform:uppercase">📁 Filter by folder</label>
+      <select id="lp-folder" onchange="_lpPage=0;document.getElementById('lp-search').value='';_lpRender(${oi},${di},${vi})"
+        style="padding:10px;border:2px solid #AFA9EC;border-radius:8px;font-size:13px;width:100%;background:#fff">
+        <option value="">All folders</option>
+        ${folderOpts}
+      </select>
+    </div>
   </div>
 
   ${suggestedHtml}
@@ -3103,7 +3131,7 @@ function _lpPickFolder(existingFolders, suggestedName){
     const wrap=document.createElement('div');
     wrap.id='lp-folder-picker';
     wrap.style.cssText='position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:8px';
-    const folderOpts=existingFolders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    const folderOpts=existingFolders.map(f=>`<option value="${esc(f)}"${f===suggestedName?' selected':''}>${esc(f)}</option>`).join('');
     wrap.innerHTML=`
     <div style="background:#fff;border-radius:14px;padding:20px 22px;width:min(420px,96vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.22)">
       <div style="font-size:14px;font-weight:700;color:#534AB7">📁 Save to which folder?</div>
@@ -3143,9 +3171,10 @@ async function _lpUploadNew(input,oi,di,vi){
   const designCode=design?(design.code||design.name||''):'';
   // Pre-suggest current folder selection if active, else design code
   const curFolderSel=(document.getElementById('lp-folder')||{}).value||'';
-  const suggested=curFolderSel||designCode||'';
+  const suggested=curFolderSel||_lpLastFolder||designCode||'';
   const targetFolder=await _lpPickFolder(existingFolders,suggested);
   if(targetFolder===null){input.value='';return;} // user cancelled
+  _lpLastFolder=targetFolder; // remember for next upload
 
   const btn=input.closest('label');
   if(btn)btn.style.opacity='0.6';
