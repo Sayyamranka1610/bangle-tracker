@@ -6432,58 +6432,213 @@ function createOrder(){
   try{ fbPushNow(); }catch(e){} // push the new order to Firebase right away
 }
 
-// ── EXCEL TEMPLATE DOWNLOAD — Customer Orders (dynamic, pulls live DB data) ───
+// ══════════════════════════════════════════════════════════════════════════════
+// CUSTOM XLSX BUILDER WITH DROPDOWN DATA VALIDATION
+// SheetJS CE cannot write Excel dropdown cells — so we build the XLSX file from
+// scratch (it is just XML inside a ZIP). This gives us full control over
+// <dataValidations> which powers the dropdown arrows in each cell.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// XML-escape a string for embedding inside XML element values
+function _xlEsc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// Build a minimal but valid XLSX Uint8Array with real Excel dropdown cells.
+// partyNames : array of customer OR vendor names
+// dnames     : design names
+// dcodes     : design codes
+// units      : unit values (pcs, pairs, jotta…)
+// isVendor   : true → sheet labelled Vendor Name in row 1; false → Client Name in row 2
+function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
+  // ── 1. Build shared strings (avoids inline strings Excel may reject) ──────
+  const ss=[], idx={};
+  const si=s=>{s=String(s||'');if(idx[s]!==undefined)return idx[s];idx[s]=ss.length;ss.push(s);return ss.length-1;};
+  // Helper: string cell XML
+  const sc=(col,row,str)=>`<c r="${_xlCol(col)}${row}" t="s"><v>${si(str)}</v></c>`;
+
+  // ── 2. Sheet 1 rows (label column A, value column B — parser-compatible) ──
+  const s1=[];
+  if(isVendor){
+    s1.push(`<row r="1">${sc(0,1,'Vendor Name')}</row>`);
+    s1.push(`<row r="2">${sc(0,2,'Order Date')}</row>`);
+    s1.push(`<row r="3">${sc(0,3,'Expected Delivery')}</row>`);
+  } else {
+    s1.push(`<row r="1">${sc(0,1,'Order ID')}</row>`);
+    s1.push(`<row r="2">${sc(0,2,'Client Name')}</row>`);
+    s1.push(`<row r="3">${sc(0,3,'Start Date')}</row>`);
+  }
+  s1.push(`<row r="4">${sc(0,4,'Bangle Type (cnc / dye_gold / both)')}</row>`);
+  s1.push(`<row r="5">${sc(0,5,'Notes (Optional)')}</row>`);
+  s1.push(`<row r="7">${sc(0,7,'CNC DESIGNS & QUANTITIES')}</row>`);
+  ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit']
+    .forEach((h,i)=>{ s1.push(`<row r="8">`);});  // built below
+  const cncHdr=['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit'];
+  s1[s1.length-1]=`<row r="8">${cncHdr.map((h,i)=>sc(i,8,h)).join('')}</row>`;
+  s1.push(`<row r="22">${sc(0,22,'DYE GOLD DESIGNS & VARIETIES')}</row>`);
+  const dyeHdr=['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit'];
+  s1.push(`<row r="23">${dyeHdr.map((h,i)=>sc(i,23,h)).join('')}</row>`);
+
+  // ── 3. Lists sheet (sheet2, hidden) — dropdown source data ───────────────
+  const s2=[];
+  const lstHdr=isVendor
+    ?['VENDOR NAMES','DESIGN NAMES','DESIGN CODES','UNITS']
+    :['CUSTOMER NAMES','DESIGN NAMES','DESIGN CODES','UNITS'];
+  s2.push(`<row r="1">${lstHdr.map((h,i)=>sc(i,1,h)).join('')}</row>`);
+  const pLen=partyNames.length, dLen=dnames.length, cLen=dcodes.length, uLen=units.length;
+  const lMax=Math.max(pLen,dLen,cLen,uLen,1);
+  for(let i=0;i<lMax;i++){
+    const r=i+2; // data starts at row 2 in Lists sheet
+    const cells=[];
+    if(partyNames[i])cells.push(sc(0,r,partyNames[i]));
+    if(dnames[i])    cells.push(sc(1,r,dnames[i]));
+    if(dcodes[i])    cells.push(sc(2,r,dcodes[i]));
+    if(units[i])     cells.push(sc(3,r,units[i]));
+    if(cells.length) s2.push(`<row r="${r}">${cells.join('')}</row>`);
+  }
+
+  // ── 4. Data validation XML (the actual dropdown arrows) ───────────────────
+  // sqref = the cell(s) that get the dropdown arrow
+  // formula1 = range in the Lists sheet that provides the options
+  const pEnd=pLen+1, dEnd=dLen+1, cEnd=cLen+1, uEnd=uLen+1;
+  const partyCell=isVendor?'B1':'B2';
+  const dvs=[
+    // Party name
+    {sqref:partyCell, f:`Lists!$A$2:$A$${pEnd}`},
+    // Design name — CNC rows 9-21 and Dye Gold rows 24-53
+    {sqref:'A9:A21',  f:`Lists!$B$2:$B$${dEnd}`},
+    {sqref:'A24:A53', f:`Lists!$B$2:$B$${dEnd}`},
+    // Design code — CNC and Dye Gold
+    {sqref:'B9:B21',  f:`Lists!$C$2:$C$${cEnd}`},
+    {sqref:'B24:B53', f:`Lists!$C$2:$C$${cEnd}`},
+    // Unit — CNC col I (idx 8), Dye Gold col K (idx 10)
+    {sqref:'I9:I21',  f:`Lists!$D$2:$D$${uEnd}`},
+    {sqref:'K24:K53', f:`Lists!$D$2:$D$${uEnd}`},
+  ];
+  const dvXml=`<dataValidations count="${dvs.length}">${dvs.map(v=>
+    `<dataValidation type="list" allowBlank="1" showDropDown="0" showInputMessage="1" showErrorMessage="1" `+
+    `errorTitle="Invalid value" error="Please choose from the dropdown list or type a new name" sqref="${v.sqref}">`+
+    `<formula1>${v.f}</formula1></dataValidation>`).join('')}</dataValidations>`;
+
+  // ── 5. Shared strings XML ─────────────────────────────────────────────────
+  const ssXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${ss.length}" uniqueCount="${ss.length}">`+
+    ss.map(s=>`<si><t xml:space="preserve">${_xlEsc(s)}</t></si>`).join('')+`</sst>`;
+
+  // ── 6. Worksheet XMLs ─────────────────────────────────────────────────────
+  const colsMain=`<cols><col min="1" max="1" width="24" customWidth="1"/><col min="2" max="2" width="16" customWidth="1"/>`+
+    `<col min="3" max="12" width="8" customWidth="1"/></cols>`;
+  const sheet1Xml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`+
+    colsMain+`<sheetData>${s1.join('')}</sheetData>${dvXml}</worksheet>`;
+
+  const colsLst=`<cols><col min="1" max="1" width="30" customWidth="1"/><col min="2" max="2" width="30" customWidth="1"/>`+
+    `<col min="3" max="3" width="22" customWidth="1"/><col min="4" max="4" width="12" customWidth="1"/></cols>`;
+  const sheet2Xml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`+
+    colsLst+`<sheetData>${s2.join('')}</sheetData></worksheet>`;
+
+  // ── 7. Standard XLSX package files ───────────────────────────────────────
+  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`+
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`+
+    `<Default Extension="xml" ContentType="application/xml"/>`+
+    `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>`+
+    `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`+
+    `<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`+
+    `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>`+
+    `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+
+  const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+
+  const wbXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`+
+    `<sheets><sheet name="Order Template" sheetId="1" r:id="rId1"/>`+
+    `<sheet name="Lists" sheetId="2" r:id="rId2" state="hidden"/></sheets></workbook>`;
+
+  const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>`+
+    `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>`+
+    `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>`+
+    `<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+
+  const stylesXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`+
+    `<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>`+
+    `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>`+
+    `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`+
+    `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`+
+    `<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>`;
+
+  // ── 8. Build the ZIP (XLSX = ZIP of XML files) ────────────────────────────
+  return _makeXlsxZip([
+    {n:'[Content_Types].xml',          d:ct},
+    {n:'_rels/.rels',                  d:rootRels},
+    {n:'xl/workbook.xml',              d:wbXml},
+    {n:'xl/_rels/workbook.xml.rels',   d:wbRels},
+    {n:'xl/worksheets/sheet1.xml',     d:sheet1Xml},
+    {n:'xl/worksheets/sheet2.xml',     d:sheet2Xml},
+    {n:'xl/sharedStrings.xml',         d:ssXml},
+    {n:'xl/styles.xml',                d:stylesXml},
+  ]);
+}
+
+// Convert 0-based column index to Excel letter(s): 0→A, 25→Z, 26→AA …
+function _xlCol(n){let s='';n++;while(n>0){s=String.fromCharCode(64+((n-1)%26+1))+s;n=Math.floor((n-1)/26);}return s;}
+
+// Build a ZIP archive (Deflate method 0 = stored, no compression).
+// Returns a Uint8Array that is a valid .xlsx file.
+function _makeXlsxZip(files){
+  const enc=new TextEncoder();
+  // CRC-32 lookup table
+  const T=new Uint32Array(256);
+  for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);T[i]=c;}
+  const crc32=d=>{let c=0xFFFFFFFF;for(let i=0;i<d.length;i++)c=(c>>>8)^T[(c^d[i])&0xFF];return(c^0xFFFFFFFF)>>>0;};
+
+  const entries=files.map(f=>({nm:enc.encode(f.n),dat:enc.encode(f.d)}));
+  const localParts=[]; const cdParts=[]; let off=0;
+  entries.forEach(e=>{
+    const crc=crc32(e.dat);
+    const lh=new Uint8Array(30+e.nm.length);
+    const lv=new DataView(lh.buffer);
+    lv.setUint32(0,0x04034b50,true);lv.setUint16(4,20,true);lv.setUint16(6,0,true);
+    lv.setUint16(8,0,true);lv.setUint16(10,0,true);lv.setUint16(12,0x4B26,true);
+    lv.setUint32(14,crc,true);lv.setUint32(18,e.dat.length,true);lv.setUint32(22,e.dat.length,true);
+    lv.setUint16(26,e.nm.length,true);lv.setUint16(28,0,true);lh.set(e.nm,30);
+    localParts.push(lh,e.dat);
+    const cd=new Uint8Array(46+e.nm.length);
+    const cv=new DataView(cd.buffer);
+    cv.setUint32(0,0x02014b50,true);cv.setUint16(4,20,true);cv.setUint16(6,20,true);
+    cv.setUint16(8,0,true);cv.setUint16(10,0,true);cv.setUint16(12,0,true);cv.setUint16(14,0x4B26,true);
+    cv.setUint32(16,crc,true);cv.setUint32(20,e.dat.length,true);cv.setUint32(24,e.dat.length,true);
+    cv.setUint16(28,e.nm.length,true);cv.setUint16(30,0,true);cv.setUint16(32,0,true);
+    cv.setUint16(34,0,true);cv.setUint16(36,0,true);cv.setUint32(38,0,true);cv.setUint32(42,off,true);
+    cd.set(e.nm,46);cdParts.push(cd);
+    off+=30+e.nm.length+e.dat.length;
+  });
+  const cdSize=cdParts.reduce((s,c)=>s+c.length,0);
+  const eocd=new Uint8Array(22);const ev=new DataView(eocd.buffer);
+  ev.setUint32(0,0x06054b50,true);ev.setUint16(4,0,true);ev.setUint16(6,0,true);
+  ev.setUint16(8,entries.length,true);ev.setUint16(10,entries.length,true);
+  ev.setUint32(12,cdSize,true);ev.setUint32(16,off,true);ev.setUint16(20,0,true);
+  const all=[...localParts,...cdParts,eocd];
+  const total=all.reduce((s,p)=>s+p.length,0);
+  const out=new Uint8Array(total);let p=0;
+  for(const a of all){out.set(a,p);p+=a.length;}
+  return out;
+}
+
+// ── EXCEL TEMPLATE DOWNLOAD — Customer Orders ─────────────────────────────────
 function downloadOrderTemplate(){
-  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please check your internet connection.');return;}
-  // ── Live data from database ──────────────────────────────────────────────────
   const clients=(S.vocabulary.clients||[]).slice();
   const dnames=(S.vocabulary.dnames||[]).slice();
   const dcodes=(S.vocabulary.dcodes||[]).slice();
   const units=(S.vocabulary.units||['pcs','pairs','jotta']).slice();
-  const sizeSet=new Set(DEFAULT_SIZES);
-  S.orders.forEach(o=>(o.designs||[]).forEach(d=>Object.keys(d.sizes||{}).forEach(s=>sizeSet.add(s))));
-  const sizes=[...sizeSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na-nb;});
-
-  const B=(n)=>Array(n).fill('');
-  // ── Sheet 1: Order Template (exact format the parser understands) ────────────
-  const data=[
-    ['Order ID','',...B(14),'pcs'],
-    ['Client Name','',...B(14),'pairs'],
-    ['Start Date','',...B(14),'jotta'],
-    ['Bangle Type (cnc / dye_gold / both)','',...B(14)],
-    ['Notes (Optional)','',...B(15)],
-    B(17),
-    ['CNC DESIGNS & QUANTITIES',...B(16)],
-    ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit',...B(8)],
-    ...Array(13).fill(null).map(()=>B(17)),
-    ['DYE GOLD DESIGNS & VARIETIES',...B(16)],
-    ['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit',...B(6)],
-    ...Array(30).fill(null).map(()=>B(17)),
-  ];
-  const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet(data);
-  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8}];
-  XLSX.utils.book_append_sheet(wb,ws,'Order Template');
-
-  // ── Sheet 2: Valid Names reference (use exact names from here to avoid errors) ─
-  const maxLen=Math.max(clients.length,dnames.length,dcodes.length,units.length,sizes.length,1);
-  const refRows=[
-    ['✅ CUSTOMER NAMES','✅ DESIGN NAMES','✅ DESIGN CODES','✅ UNITS','✅ SIZES'],
-    ['← Copy exact names from here','← Copy exact names','← Copy exact codes','← Choose unit','← Copy size'],
-  ];
-  for(let i=0;i<maxLen;i++) refRows.push([clients[i]||'',dnames[i]||'',dcodes[i]||'',units[i]||'',sizes[i]||'']);
-  const wsRef=XLSX.utils.aoa_to_sheet(refRows);
-  wsRef['!cols']=[{wch:30},{wch:30},{wch:20},{wch:12},{wch:10}];
-  XLSX.utils.book_append_sheet(wb,wsRef,'📋 Valid Names');
-
-  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'binary'});
-  const buf=new ArrayBuffer(wbout.length);
-  const view=new Uint8Array(buf);
-  for(let i=0;i<wbout.length;i++)view[i]=wbout.charCodeAt(i)&0xFF;
-  const blob=new Blob([buf],{type:'application/octet-stream'});
+  const buf=_buildDropdownXLSX(clients,dnames,dcodes,units,false);
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download='Customer_Order_Template.xlsx';
+  const a=document.createElement('a');a.href=url;a.download='Customer_Order_Template.xlsx';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -8229,59 +8384,16 @@ function createVendorOrder(){
   rebuildVocab();save();closeModal();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 
-// ── Vendor Order Excel Template (dynamic, pulls live DB data) ─────────────────
+// ── Vendor Order Excel Template ───────────────────────────────────────────────
 function downloadVendorOrderTemplate(){
-  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please check your internet connection.');return;}
-  // ── Live data from database ──────────────────────────────────────────────────
   const vendors=(S.vocabulary.vendors||[]).slice();
   const dnames=(S.vocabulary.dnames||[]).slice();
   const dcodes=(S.vocabulary.dcodes||[]).slice();
   const units=(S.vocabulary.units||['pcs','pairs','jotta']).slice();
-  const sizeSet=new Set(DEFAULT_SIZES);
-  S.orders.forEach(o=>(o.designs||[]).forEach(d=>Object.keys(d.sizes||{}).forEach(s=>sizeSet.add(s))));
-  S.vendorOrders.forEach(o=>(o.designs||[]).forEach(d=>Object.keys(d.sizes||{}).forEach(s=>sizeSet.add(s))));
-  const sizes=[...sizeSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na-nb;});
-
-  const B=(n)=>Array(n).fill('');
-  // ── Sheet 1: Vendor Order Template ──────────────────────────────────────────
-  const data=[
-    ['Vendor Name','',...B(14),'pcs'],
-    ['Order Date','',...B(14),'pairs'],
-    ['Expected Delivery','',...B(14),'jotta'],
-    ['Bangle Type (cnc / dye_gold / both)','',...B(14)],
-    ['Notes (Optional)','',...B(15)],
-    B(17),
-    ['CNC DESIGNS & QUANTITIES',...B(16)],
-    ['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit',...B(8)],
-    ...Array(13).fill(null).map(()=>B(17)),
-    ['DYE GOLD DESIGNS & VARIETIES',...B(16)],
-    ['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit',...B(6)],
-    ...Array(30).fill(null).map(()=>B(17)),
-  ];
-  const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet(data);
-  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8}];
-  XLSX.utils.book_append_sheet(wb,ws,'Vendor Order');
-
-  // ── Sheet 2: Valid Names reference ──────────────────────────────────────────
-  const maxLen=Math.max(vendors.length,dnames.length,dcodes.length,units.length,sizes.length,1);
-  const refRows=[
-    ['✅ VENDOR NAMES','✅ DESIGN NAMES','✅ DESIGN CODES','✅ UNITS','✅ SIZES'],
-    ['← Copy exact names from here','← Copy exact names','← Copy exact codes','← Choose unit','← Copy size'],
-  ];
-  for(let i=0;i<maxLen;i++) refRows.push([vendors[i]||'',dnames[i]||'',dcodes[i]||'',units[i]||'',sizes[i]||'']);
-  const wsRef=XLSX.utils.aoa_to_sheet(refRows);
-  wsRef['!cols']=[{wch:30},{wch:30},{wch:20},{wch:12},{wch:10}];
-  XLSX.utils.book_append_sheet(wb,wsRef,'📋 Valid Names');
-
-  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'binary'});
-  const buf=new ArrayBuffer(wbout.length);
-  const view=new Uint8Array(buf);
-  for(let i=0;i<wbout.length;i++)view[i]=wbout.charCodeAt(i)&0xFF;
-  const blob=new Blob([buf],{type:'application/octet-stream'});
+  const buf=_buildDropdownXLSX(vendors,dnames,dcodes,units,true);
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download='Vendor_Order_Template.xlsx';
+  const a=document.createElement('a');a.href=url;a.download='Vendor_Order_Template.xlsx';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
