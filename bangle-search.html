@@ -178,7 +178,7 @@
   <!-- Big banner only shown during first-time 80MB download -->
   <div class="setup-banner" id="setupBanner">
     <h2>Downloading AI Model — First Time Only</h2>
-    <p>This ~80MB download happens once and is then cached in your browser permanently.</p>
+    <p>This ~100MB download happens once and is then cached in your browser permanently. DINOv2 is far better than CLIP at matching design shape and pattern.</p>
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="progressBar"></div>
     </div>
@@ -238,7 +238,7 @@
 <script type="module">
 // ── Config ────────────────────────────────────────────────────────────────────
 const WORKER_URL      = "https://bangle-search.sayyamranka09.workers.dev";
-const EMBEDDINGS_CACHE_KEY = "bangle-embeddings-v2-grayscale";
+const EMBEDDINGS_CACHE_KEY = "bangle-embeddings-v3-dinov2";
 const TOP_K = 8;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ async function boot() {
 
     clipExtractor = await pipeline(
       "image-feature-extraction",
-      "Xenova/clip-vit-base-patch32",
+      "Xenova/dinov2-small",
       {
         dtype: "q8",
         progress_callback: (p) => {
@@ -484,14 +484,24 @@ window.doSearch = async function(useCrop) {
 
   try {
     showStatus("Generating visual fingerprint...");
-    const output = await clipExtractor(dataURL, { pooling: "mean", normalize: true });
+    const output = await clipExtractor(dataURL);
 
-    // Flatten in case of nested tensor
-    let queryVec = Array.from(output.data || output[0]?.data || output);
-    if (!queryVec || queryVec.length < 100) {
-      // Try alternate extraction
-      if (output?.data) queryVec = Array.from(output.data);
+    // DINOv2 output shape: [1, 257, 768]  (257 = 256 patches + 1 CLS token)
+    // We want the CLS token (index 0 in sequence dim) = global structural embedding
+    let queryVec;
+    if (output.dims && output.dims.length === 3) {
+      // [batch, seq_len, hidden] — extract CLS token (first token)
+      const hiddenSize = output.dims[2];
+      queryVec = Array.from(output.data.slice(0, hiddenSize));
+    } else if (output.dims && output.dims.length === 2) {
+      queryVec = Array.from(output.data);
+    } else {
+      queryVec = Array.from(output.data || output);
     }
+
+    // L2 normalise to match how the indexer stored embeddings
+    const norm = Math.sqrt(queryVec.reduce((s, x) => s + x * x, 0));
+    queryVec = queryVec.map(x => x / norm);
 
     showStatus("Searching " + Object.keys(embeddings).length.toLocaleString() + " designs...");
     const results = findTopK(queryVec, embeddings, TOP_K);
