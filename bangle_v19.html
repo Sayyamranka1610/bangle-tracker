@@ -6502,6 +6502,8 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   const dvs=[
     // Party name
     {sqref:partyCell, f:`Lists!$A$2:$A$${pEnd}`},
+    // Bangle Type — fixed 3-option list
+    {sqref:'B4', f:'"cnc,dye_gold,both"'},
     // Design name — CNC rows 9-21 and Dye Gold rows 24-53
     {sqref:'A9:A21',  f:`Lists!$B$2:$B$${dEnd}`},
     {sqref:'A24:A53', f:`Lists!$B$2:$B$${dEnd}`},
@@ -6512,9 +6514,11 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
     {sqref:'I9:I21',  f:`Lists!$D$2:$D$${uEnd}`},
     {sqref:'K24:K53', f:`Lists!$D$2:$D$${uEnd}`},
   ];
+  // errorStyle="warning" = shows a yellow warning but ALLOWS typing new values.
+  // errorStyle="stop" (default) would block any value not in the list — we don't want that.
   const dvXml=`<dataValidations count="${dvs.length}">${dvs.map(v=>
-    `<dataValidation type="list" allowBlank="1" showDropDown="0" showInputMessage="1" showErrorMessage="1" `+
-    `errorTitle="Invalid value" error="Please choose from the dropdown list or type a new name" sqref="${v.sqref}">`+
+    `<dataValidation type="list" allowBlank="1" showDropDown="0" showInputMessage="0" showErrorMessage="1" `+
+    `errorStyle="warning" errorTitle="Not in list" error="This value is not in the dropdown list. You can still save it — it will be added as a new name when uploaded." sqref="${v.sqref}">`+
     `<formula1>${v.f}</formula1></dataValidation>`).join('')}</dataValidations>`;
 
   // ── 5. Shared strings XML ─────────────────────────────────────────────────
