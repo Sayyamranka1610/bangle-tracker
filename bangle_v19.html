@@ -8034,7 +8034,10 @@ function buildVendorDesignsPanel(vo,vi){
             +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
         const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
           +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
-        const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'" oninput="upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')" onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
+        const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'"'
+          +' oninput="upVendorFlatSizeSilent('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+');this._dirty=true"'
+          +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')}"'
+          +' onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
         tbody+='<tr style="background:#fff">'
           +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onkeydown="handleCodeTabKey(event)" onblur="rebuildVocab()" tabindex="0" style="max-width:88px"></td>'
           +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
@@ -8075,7 +8078,10 @@ function buildVendorDesignsPanel(vo,vi){
           const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
             +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
           const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
-          const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'" oninput="upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)" onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
+          const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'"'
+            +' oninput="upVendorVarietySizeSilent('+vi+','+di+','+vri+',\''+sz+'\',this.value);this._dirty=true"'
+            +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)}"'
+            +' onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
           tbody+='<tr style="background:#FAFAFF">'
             +'<td style="padding-left:16px"><span style="color:#AFA9EC;margin-right:3px;font-size:11px">└</span>'
               +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:84px"></td>'
@@ -8263,6 +8269,14 @@ function upVendorVarietySize(vi,di,vri,sz,val){
   Object.keys(d.sizes||{}).forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
   save();renderVendorOrders();
 }
+// Silent variant — updates memory only, no re-render; used on oninput to avoid cursor loss
+function upVendorVarietySizeSilent(vi,di,vri,sz,val){
+  if(!S.vendorOrders[vi]||!S.vendorOrders[vi].designs[di])return;
+  S.vendorOrders[vi].designs[di].varieties[vri].sizes[sz]=parseInt(val)||0;
+  const d=S.vendorOrders[vi].designs[di];
+  Object.keys(d.sizes||{}).forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
+  scheduleAutosave();
+}
 function addVendorSizeColumn(vi,di){
   const sz=prompt('Enter size label (e.g. 2/16):');
   if(!sz||!sz.trim())return;
@@ -8294,12 +8308,23 @@ function upVendorFlatSize(vi,di,sz,val,isVar){
   const d=S.vendorOrders[vi].designs[di];
   if(isVar&&d.varieties&&d.varieties[0]){
     d.varieties[0].sizes[sz]=parseInt(val)||0;
-    // Keep design-level aggregate in sync
     Object.keys(d.sizes||{}).forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
   } else {
     d.sizes[sz]=parseInt(val)||0;
   }
   save();renderVendorOrders();
+}
+// Silent variant — updates memory only, no re-render; used on oninput to avoid cursor loss
+function upVendorFlatSizeSilent(vi,di,sz,val,isVar){
+  if(!S.vendorOrders[vi]||!S.vendorOrders[vi].designs[di])return;
+  const d=S.vendorOrders[vi].designs[di];
+  if(isVar&&d.varieties&&d.varieties[0]){
+    d.varieties[0].sizes[sz]=parseInt(val)||0;
+    Object.keys(d.sizes||{}).forEach(s=>{d.sizes[s]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);});
+  } else {
+    d.sizes[sz]=parseInt(val)||0;
+  }
+  scheduleAutosave();
 }
 function upVendorFlatUnit(vi,di,val,isVar){
   const d=S.vendorOrders[vi].designs[di];
