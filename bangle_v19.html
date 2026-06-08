@@ -9437,7 +9437,7 @@ function openVendorPrintWindow(title,orders,imgMode){
       // Union size keys
       const szSet=new Set();
       g.items.forEach(d=>{Object.keys(d.sizes||{}).forEach(s=>szSet.add(s));(d.varieties||[]).forEach(v=>Object.keys(v.sizes||{}).forEach(s=>szSet.add(s)));});
-      const szKeys=[...szSet];
+      const szKeys=[...szSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);});
       const grpTotals={};szKeys.forEach(s=>grpTotals[s]=0);
 
       // Gather all images for the group (for 'top' mode)
@@ -9844,7 +9844,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
         const src=(_hasOnlyDefault(d)&&d.varieties[0])?(d.varieties[0].sizes||d.sizes||{}):(d.sizes||{});
         Object.keys(src).forEach(s=>szSet.add(s));
       });
-      const szKeys=[...szSet];
+      const szKeys=[...szSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);});
 
       // Accumulate group totals
       const grpTotals={};szKeys.forEach(sz=>grpTotals[sz]=0);
