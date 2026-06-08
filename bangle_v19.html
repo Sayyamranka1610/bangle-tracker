@@ -13291,7 +13291,14 @@ async function fbInit(){
           });
         });
       });
-      if(_sizesSorted>0){save();console.log('Bangle Tracker: re-sorted sizes in',_sizesSorted,'design(s)/variety(ies)');}
+      // Also fix vendor order design/variety sizes
+      (S.vendorOrders||[]).forEach(vo=>{
+        (vo.designs||[]).forEach(d=>{
+          if(d.sizes){const s=_sortedSizes(d.sizes);if(JSON.stringify(Object.keys(d.sizes))!==JSON.stringify(Object.keys(s))){d.sizes=s;_sizesSorted++;}}
+          (d.varieties||[]).forEach(v=>{if(v.sizes){const s=_sortedSizes(v.sizes);if(JSON.stringify(Object.keys(v.sizes))!==JSON.stringify(Object.keys(s))){v.sizes=s;_sizesSorted++;}}});
+        });
+      });
+      if(_sizesSorted>0){save();console.log('Bangle Tracker: re-sorted sizes in',_sizesSorted,'design(s)/variety(ies) across orders & vendor orders');}
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();

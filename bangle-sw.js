@@ -2,7 +2,7 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v83';
+const CACHE_NAME = 'bangle-tracker-v84';
 const APP_SHELL = [
   './bangle_v19.html',
   './',               // cache index.html (the entry redirect page)
@@ -36,33 +36,51 @@ self.addEventListener('activate', (event) => {
 
 // Fetch strategy:
 // - Firebase RTDB calls → network only (live data, never cache)
-// - App shell (HTML, JS libs, fonts, icons) → stale-while-revalidate:
-//     serve from cache immediately for instant loads, update cache in background
 // - R2 image URLs → cache-first (images never change once uploaded)
+// - bangle_v19.html → NETWORK-FIRST: always fetch latest code; fall back to cache only if offline
+// - CDN assets (fonts, xlsx) → cache-first (they never change)
+// - Everything else → network with cache fallback
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
   if (url.includes('firebaseio.com')) return;  // Firebase: always live
   if (url.includes('r2.dev')) return;           // R2 images: handled by browser cache
   if (event.request.method !== 'GET') return;
 
-  const isAppShell = url.startsWith(self.location.origin)
-    || url.includes('cdnjs.cloudflare.com')
+  // Main HTML file — always fetch fresh so users never see stale code
+  const isMainHtml = url.includes('bangle_v19.html') || url.endsWith('/') || url.endsWith('/index.html');
+  if (isMainHtml) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response.ok) {
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+        }
+        return response;
+      }).catch(() => caches.match(event.request)) // offline fallback
+    );
+    return;
+  }
+
+  // CDN assets (fonts, xlsx lib) — cache-first, they never change
+  const isCDN = url.includes('cdnjs.cloudflare.com')
     || url.includes('fonts.googleapis.com')
     || url.includes('fonts.gstatic.com');
-
-  if (isAppShell) {
-    // Stale-while-revalidate: serve cache instantly, fetch fresh in background
+  if (isCDN) {
     event.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
-        cache.match(event.request).then(cached => {
-          const networkFetch = fetch(event.request).then(response => {
-            if (response.ok) cache.put(event.request, response.clone());
-            return response;
-          }).catch(() => cached);
-          // Serve cached version immediately if available; otherwise wait for network
-          return cached || networkFetch;
-        })
-      )
+      caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
+        if (response.ok) caches.open(CACHE_NAME).then(c => c.put(event.request, response.clone()));
+        return response;
+      }))
+    );
+    return;
+  }
+
+  // Other same-origin assets (icons, manifest, logo) — network with cache fallback
+  if (url.startsWith(self.location.origin)) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response.ok) caches.open(CACHE_NAME).then(c => c.put(event.request, response.clone()));
+        return response;
+      }).catch(() => caches.match(event.request))
     );
   }
 });
