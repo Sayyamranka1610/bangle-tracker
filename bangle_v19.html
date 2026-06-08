@@ -7261,7 +7261,7 @@ function buildVendorDesignsPanel(vo, voi){
     } else {
       Object.keys(d.sizes||{}).forEach(s=>szSet.add(s));
     }
-    const szKeys = [...szSet];
+    const szKeys = [...szSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);});
     const total = vendorDesignQty(d);
 
     const imgHtml = varieties.map((v,vi)=>{
