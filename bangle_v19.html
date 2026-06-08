@@ -6646,6 +6646,8 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   const si=s=>{s=String(s||'');if(idx[s]!==undefined)return idx[s];idx[s]=ss.length;ss.push(s);return ss.length-1;};
   // Helper: string cell XML
   const sc=(col,row,str)=>`<c r="${_xlCol(col)}${row}" t="s"><v>${si(str)}</v></c>`;
+  // Helper: formula cell XML (no t="s"; cached value 0 so Excel recalculates on open)
+  const fc=(col,row,formula)=>`<c r="${_xlCol(col)}${row}"><f>${formula}</f><v>0</v></c>`;
 
   // ── 2. Sheet 1 rows (label column A, value column B — parser-compatible) ──
   const s1=[];
@@ -6663,9 +6665,13 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   s1.push(`<row r="7">${sc(0,7,'CNC DESIGNS & QUANTITIES')}</row>`);
   const cncHdr=['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit'];
   s1.push(`<row r="8">${cncHdr.map((h,i)=>sc(i,8,h)).join('')}</row>`);
+  // CNC data rows 9-21: Total column H = SUM of sizes C:G (2/2 thru 2/10)
+  for(let r=9;r<=21;r++) s1.push(`<row r="${r}">${fc(7,r,`SUM(C${r}:G${r})`)}</row>`);
   s1.push(`<row r="22">${sc(0,22,'DYE GOLD DESIGNS & VARIETIES')}</row>`);
   const dyeHdr=['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit'];
   s1.push(`<row r="23">${dyeHdr.map((h,i)=>sc(i,23,h)).join('')}</row>`);
+  // Dye Gold data rows 24-53: Row Total column J = SUM of sizes D:I (2/2 thru 2/12)
+  for(let r=24;r<=53;r++) s1.push(`<row r="${r}">${fc(9,r,`SUM(D${r}:I${r})`)}</row>`);
 
   // ── 3. Lists sheet (sheet2, hidden) — dropdown source data ───────────────
   const s2=[];
