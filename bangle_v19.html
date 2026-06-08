@@ -4361,11 +4361,12 @@ function buildDesignsGroupTable(order,oi,g){
           +' onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')"'
           +' tabindex="0"></td>'
         ).join('');
-        tbody+='<tr style="background:#FAFAFF">'
+        tbody+='<tr style="background:#FAFAFF" data-di="'+di+'" data-vi="'+vi+'">'
           +'<td style="padding-left:22px">'
             +'<span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
             +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'"'
             +' oninput="upVarietyName('+oi+','+di+','+vi+',this.value)"'
+            +' onkeydown="handleVarietyNameTabKey(event,'+oi+','+di+','+vi+')"'
             +' placeholder="e.g. Classic" tabindex="0" style="max-width:100px">'
           +'</td>'
           +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
@@ -5419,6 +5420,17 @@ function handleFlatTabKey(e, oi, di, szI) {
   }
   setTimeout(() => { e.target._skipBlur = false; }, 50);
 }
+// Tab from the variety NAME cell → first qty cell in the same row.
+// Shift+Tab: let browser handle (moves backwards naturally).
+function handleVarietyNameTabKey(e, oi, di, vi) {
+  if (e.key !== 'Tab' || e.shiftKey) return;
+  e.preventDefault();
+  const row = e.target.closest('tr');
+  if (!row) return;
+  const firstQty = row.querySelector('input.qty-inp');
+  if (firstQty) { firstQty.focus(); firstQty.select(); }
+}
+
 function handleQtyTabKey(e, oi, di, vi, szI) {
   if (e.key !== 'Tab' && e.key !== 'Enter') return;
   e.preventDefault();
@@ -5436,35 +5448,44 @@ function handleQtyTabKey(e, oi, di, vi, szI) {
   e.target._skipBlur = true;
   scheduleAutosave();
   // Update totals in DOM without full render
-  const dcard = document.getElementById('dcard-' + d.id);
-  if (dcard) {
-    const rows = dcard.querySelectorAll('tbody tr');
+  // Use data-di attribute to find this design's variety rows (avoids stale id reference)
+  const _tbl = e.target.closest('table');
+  const _vRows = _tbl ? Array.from(_tbl.querySelectorAll('tr[data-di="'+di+'"]')) : [];
+  if (_vRows.length) {
     // Update current row total
-    if (rows[vi]) {
+    if (_vRows[vi]) {
       const rowTotal = szKeys.reduce((a,sz) => a + (parseInt((d.varieties[vi].sizes||{})[sz])||0), 0);
-      const totalCell = rows[vi].querySelector('.total-col');
+      const totalCell = _vRows[vi].querySelector('.total-col');
       if (totalCell) totalCell.textContent = rowTotal;
     }
-    // Update footer column total for current size
-    const footerCells = dcard.querySelectorAll('tfoot tr td');
-    if (footerCells.length > szI + 2) {
-      const colTotal = varieties.reduce((a,v) => a + (parseInt((v.sizes||{})[szKeys[szI]])||0), 0);
-      footerCells[szI + 2].innerHTML = '<strong>' + colTotal + '</strong>';
+    // Update footer column total for this size
+    if (_tbl) {
+      const footerCells = _tbl.querySelectorAll('tfoot tr td');
+      if (footerCells.length > szI + 2) {
+        const colTotal = varieties.reduce((a,v) => a + (parseInt((v.sizes||{})[szKeys[szI]])||0), 0);
+        footerCells[szI + 2].innerHTML = '<strong>' + colTotal + '</strong>';
+      }
+      // Update grand total
+      const grandTotal = szKeys.reduce((a,sz) => a + d.varieties.reduce((b,v) => b + (parseInt((v.sizes||{})[sz])||0), 0), 0);
+      const grandCell = _tbl.querySelector('tfoot .grand-total');
+      if (grandCell) grandCell.innerHTML = '<strong>' + grandTotal + '</strong>';
     }
-    // Update grand total
-    const grandTotal = szKeys.reduce((a,sz) => a + d.varieties.reduce((b,v) => b + (parseInt((v.sizes||{})[sz])||0), 0), 0);
-    const grandCell = dcard.querySelector('tfoot .grand-total');
-    if (grandCell) grandCell.innerHTML = '<strong>' + grandTotal + '</strong>';
-    const sizeTotal = dcard.querySelector('.size-total');
-    if (sizeTotal) sizeTotal.innerHTML = 'Design total: <strong>' + grandTotal + '</strong> pcs';
   }
   // Determine next focus target
   let nextVi = vi, nextSzI = szI;
   if (e.key === 'Tab') {
     if (!e.shiftKey) {
       nextSzI++;
-      if (nextSzI >= szKeys.length) { nextSzI = 0; nextVi++; }
-      if (nextVi >= varieties.length) { nextVi = 0; }
+      if (nextSzI >= szKeys.length) {
+        // End of qty cells → jump to variety NAME of next row
+        const nextRow = _vRows[vi + 1];
+        if (nextRow) {
+          const nameInp = nextRow.querySelector('input.variety-name-inp');
+          if (nameInp) { nameInp.focus(); nameInp.select(); }
+        }
+        setTimeout(() => { e.target._skipBlur = false; }, 50);
+        return; // handled — don't fall through to qty focus
+      }
     } else {
       nextSzI--;
       if (nextSzI < 0) { nextSzI = szKeys.length - 1; nextVi--; }
@@ -5474,19 +5495,17 @@ function handleQtyTabKey(e, oi, di, vi, szI) {
     nextVi = (vi + 1) % varieties.length;
     nextSzI = szI;
   }
-  // Move focus
-  if (dcard) {
-    const rows = dcard.querySelectorAll('tbody tr');
-    const targetRow = rows[nextVi];
-    if (targetRow) {
-      const inp = targetRow.querySelectorAll('input.qty-inp')[nextSzI];
-      if (inp) {
-        inp._skipBlur = false; // ready for next blur
-        inp.focus();
-        inp.select();
-      }
+  // Move focus to qty cell
+  const targetRow = _vRows[nextVi];
+  if (targetRow) {
+    const inp = targetRow.querySelectorAll('input.qty-inp')[nextSzI];
+    if (inp) {
+      inp._skipBlur = false;
+      inp.focus();
+      inp.select();
     }
   }
+  setTimeout(() => { e.target._skipBlur = false; }, 50);
 }
 
 // ── Vendor qty-input Tab / Enter handler ─────────────────────────────────────
@@ -6514,11 +6533,11 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
     {sqref:'I9:I21',  f:`Lists!$D$2:$D$${uEnd}`},
     {sqref:'K24:K53', f:`Lists!$D$2:$D$${uEnd}`},
   ];
-  // errorStyle="warning" = shows a yellow warning but ALLOWS typing new values.
-  // errorStyle="stop" (default) would block any value not in the list — we don't want that.
+  // showErrorMessage="0" = no popup at all — type anything freely, accepted silently.
+  // The dropdown arrow still appears for browsing. New names go through the app's
+  // upload approval flow as normal. No Excel dialog blocks the user.
   const dvXml=`<dataValidations count="${dvs.length}">${dvs.map(v=>
-    `<dataValidation type="list" allowBlank="1" showDropDown="0" showInputMessage="0" showErrorMessage="1" `+
-    `errorStyle="warning" errorTitle="Not in list" error="This value is not in the dropdown list. You can still save it — it will be added as a new name when uploaded." sqref="${v.sqref}">`+
+    `<dataValidation type="list" allowBlank="1" showDropDown="0" showInputMessage="0" showErrorMessage="0" sqref="${v.sqref}">`+
     `<formula1>${v.f}</formula1></dataValidation>`).join('')}</dataValidations>`;
 
   // ── 5. Shared strings XML ─────────────────────────────────────────────────
