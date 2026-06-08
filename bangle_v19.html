@@ -8028,7 +8028,7 @@ function buildVendorDesignsPanel(vo,vi){
       Object.keys(d.sizes||{}).forEach(s=>szSet.add(s));
       (d.varieties||[]).forEach(v=>Object.keys(v.sizes||{}).forEach(s=>szSet.add(s)));
     });
-    const szKeys=[...szSet];
+    const szKeys=[...szSet].sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);});
 
     // Build combined tbody for all design codes in this group
     const grpTotals={};szKeys.forEach(sz=>grpTotals[sz]=0);
