@@ -4559,8 +4559,8 @@ function buildDesignsGroupTable(order,oi,g){
   return '<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
     +'<table class="variety-table">'
       +'<thead><tr>'
-        +'<th style="min-width:90px;text-align:left" title="Click the code cell below to type a design code (e.g. DC-001)">Code</th>'
-        +'<th style="min-width:54px;width:60px">Imgs</th>'
+        +'<th style="min-width:90px;text-align:left" title="Click the code cell below to type a design code (e.g. DC-001)">Design code</th>'
+        +'<th style="min-width:54px;width:60px">Images</th>'
         +szKeys.map(sz=>'<th class="sz-head">'
           +esc(sz)
           +'<button class="no-print" onclick="event.stopPropagation();deleteOrderSizeCol('+oi+',this.dataset.sz,this.dataset.dids)" data-sz="'+esc(sz)+'" data-dids="'+grpDids+'"'
@@ -4568,11 +4568,11 @@ function buildDesignsGroupTable(order,oi,g){
             +'onmouseover="this.style.background=\'rgba(180,0,0,.6)\';this.style.color=\'#fff\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'rgba(255,255,255,.7)\'"'
             +' title="Delete this size column">✕</button>'
         +'</th>').join('')
-        +'<th style="min-width:42px;width:46px">Tot</th>'
+        +'<th style="min-width:42px;width:46px">Total</th>'
         +'<th style="min-width:50px;width:56px">Unit</th>'
-        +'<th style="min-width:52px;width:58px">₹</th>'
+        +'<th style="min-width:52px;width:58px">Rate (₹)</th>'
         +'<th style="min-width:88px" class="no-print">Karigar</th>'
-        +'<th style="min-width:54px" class="no-print">Act</th>'
+        +'<th style="min-width:54px" class="no-print">Action</th>'
       +'</tr></thead>'
       +'<tbody>'+tbody+'</tbody>'
       +footerHtml
@@ -8106,8 +8106,8 @@ function buildVendorDesignsPanel(vo,vi){
     const tableHtml='<div class="variety-table-wrap" style="border-radius:0;border-left:none;border-right:none;border-top:1px dashed #AFA9EC;margin:0">'
       +'<table class="variety-table">'
         +'<thead><tr>'
-          +'<th style="min-width:90px;text-align:left">Code</th>'
-          +'<th style="min-width:54px;width:60px">Imgs</th>'
+          +'<th style="min-width:90px;text-align:left">Design code</th>'
+          +'<th style="min-width:54px;width:60px">Images</th>'
           +szKeys.map(sz=>'<th class="sz-head">'
             +esc(sz)
             +'<button class="no-print" onclick="event.stopPropagation();deleteVendorSizeCol('+vi+',this.dataset.sz,this.dataset.dids)" data-sz="'+esc(sz)+'" data-dids="'+dids+'"'
@@ -8115,10 +8115,10 @@ function buildVendorDesignsPanel(vo,vi){
               +'onmouseover="this.style.background=\'rgba(180,0,0,.6)\';this.style.color=\'#fff\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'rgba(255,255,255,.7)\'"'
               +' title="Delete this size column">✕</button>'
           +'</th>').join('')
-          +'<th style="min-width:42px;width:46px">Tot</th>'
+          +'<th style="min-width:42px;width:46px">Total</th>'
           +'<th style="min-width:50px;width:56px">Unit</th>'
-          +'<th style="min-width:52px;width:58px">₹</th>'
-          +'<th style="min-width:54px" class="no-print">Act</th>'
+          +'<th style="min-width:52px;width:58px">Rate (₹)</th>'
+          +'<th style="min-width:54px" class="no-print">Action</th>'
         +'</tr></thead>'
         +'<tbody>'+tbody+'</tbody>'
         +footerHtml
