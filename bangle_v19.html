@@ -3929,7 +3929,7 @@ function buildVendorSummaryPanel(order, oi){
             :'<span style="color:#aaa;font-size:10px">—</span>';
           const label=r.varName?`${esc(r.designName||'—')} <span style="color:#888">·</span> <em>${esc(r.varName)}</em>`
             :`${esc(r.designName||'—')}${r.designCode?' <span style="background:#F5F4FF;color:#534AB7;border-radius:4px;padding:0 5px;font-size:10px">'+esc(r.designCode)+'</span>':''}`;
-          const voTag=r.importedToVOId?(()=>{const vo=(S.vendorOrders||[]).find(x=>x.id===r.importedToVOId);return vo?`<span class="co-src-badge">→ ${esc(vo.orderId)}</span>`:''})():'<span style="color:#aaa;font-size:10px">not yet added to vendor order</span>';
+          const voTag=(()=>{const vo=_liveVO(r.importedToVOId,r.designCode||'');return vo?`<span class="co-src-badge">→ ${esc(vo.orderId)}</span>`:'<span style="color:#aaa;font-size:10px">not yet added to vendor order</span>';})();
           return `<div style="border-bottom:1px solid #F0EFFF;padding:5px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px">
             <span style="font-size:12px;font-weight:600;color:#222;min-width:140px">${label}</span>
             <span style="display:flex;flex-wrap:wrap;gap:2px;flex:1">${sizeHtml}</span>
@@ -4430,7 +4430,8 @@ function buildDesignsGroupTable(order,oi,g){
           +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
             +(codeEmpty?'<span style="font-size:9px;font-weight:700;color:#BA7517;letter-spacing:.04em">ADD CODE ↓</span>':'')
-            +(d.importedToVOId?(()=>{const _vo=(S.vendorOrders||[]).find(v=>v.id===d.importedToVOId);return'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc((_vo&&_vo.orderId)||'vendor order')+'</span>';})():'')
+            +(()=>{const _vo=_liveVO(d.importedToVOId,d.code||'');return _vo?'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc(_vo.orderId)+'</span>':'';})()
+
             +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="e.g. DC-001"'
             +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
             +' onkeydown="handleCodeTabKey(event)"'
@@ -4519,7 +4520,8 @@ function buildDesignsGroupTable(order,oi,g){
             +' oninput="upVarietyName('+oi+','+di+','+vi+',this.value)"'
             +' onkeydown="handleVarietyNameTabKey(event,'+oi+','+di+','+vi+')"'
             +' placeholder="e.g. Classic" tabindex="0" style="max-width:100px">'
-            +(v.importedToVOId?(()=>{const _vo=(S.vendorOrders||[]).find(x=>x.id===v.importedToVOId);return'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc((_vo&&_vo.orderId)||'vendor order')+'</span>';})():'')
+            +(()=>{const _vo=_liveVO(v.importedToVOId,d.code||'');return _vo?'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc(_vo.orderId)+'</span>':'';})()
+
           +'</td>'
           +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
           +szCells2
@@ -8408,6 +8410,18 @@ function addVDImg(vi,di,inp){
 
 let _voImportAllRows = []; // rows loaded into current picker session
 
+// Live check: is a customer order row GENUINELY still imported into a vendor order?
+// Returns the vendor order object if yes, null if the row is free to use again.
+// A row is free if: (a) no voId stored, (b) vendor order was deleted,
+// or (c) the design code was removed from that vendor order.
+function _liveVO(voId, designCode){
+  if(!voId) return null;
+  const vo=(S.vendorOrders||[]).find(v=>v.id===voId);
+  if(!vo) return null; // vendor order deleted — row is free
+  if(!(vo.designs||[]).some(d=>(d.code||'')===(designCode||''))) return null; // design removed — free
+  return vo;
+}
+
 // ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
 // Scans ALL customer order rows and clears any importedToVOId that points to a
 // vendor order that no longer exists in S.vendorOrders.
@@ -8626,8 +8640,8 @@ function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">`;
       og.rows.forEach(({r,idx})=>{
-        const isBlocked=!!r.importedToVOId;
-        const blockedVO=isBlocked?(S.vendorOrders||[]).find(v=>v.id===r.importedToVOId):null;
+        const blockedVO=_liveVO(r.importedToVOId, r.designCode||'');
+        const isBlocked=!!blockedVO;
         const blockedLabel=blockedVO?`Already in ${esc(blockedVO.orderId)}`:'Already imported';
         // Pick best available thumbnail
         const thumb=r.isFlat
