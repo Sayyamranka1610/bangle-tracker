@@ -12798,14 +12798,6 @@ function _applyRemoteState(parsed, savedAt){
   // Preserve LOCAL UI state — panel expansion is per-device, not shared data
   const keepDesignStages = S.openDesignStages;
   Object.assign(S, merged);
-  // Re-sort all design/variety sizes after every Firebase sync —
-  // Firebase may return keys in insertion order (2/6,2/8,2/10,2/4) not numeric order.
-  (S.orders||[]).forEach(order=>{
-    (order.designs||[]).forEach(d=>{
-      if(d.sizes)d.sizes=_sortedSizes(d.sizes);
-      (d.varieties||[]).forEach(v=>{if(v.sizes)v.sizes=_sortedSizes(v.sizes);});
-    });
-  });
   S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from remote
   S.openOrders  = new Set(merged.openOrders  || []);
   S.openClients = new Set(merged.openClients || []);
