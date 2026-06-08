@@ -5357,10 +5357,12 @@ function _doAddSize(oi,grpDids){
   if(existing.has(sz)){if(err)err.textContent=`Size "${sz}" already exists in this group.`;inp.select();return;}
   histPush();
   // Add size=0 to every design code and its varieties in the group
+  // and rebuild sizes in correct numeric order so Firebase stores them sorted
   grp.forEach(d=>{
     if(!d.sizes)d.sizes={};
     d.sizes[sz]=0;
-    (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes[sz]=0;});
+    d.sizes=_sortedSizes(d.sizes);
+    (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes[sz]=0;v.sizes=_sortedSizes(v.sizes);});
   });
   document.getElementById('_addsz-modal')?.remove();
   audit('Add size',`${order.orderId}: added size "${sz}" to group`);
@@ -5371,8 +5373,8 @@ function addSizeToDesign(oi,di){
   const d=S.orders[oi].designs[di];
   const denoms=Object.keys(d.sizes||{}).map(s=>parseInt(s.split('/')[1])).filter(n=>!isNaN(n));
   const next=(denoms.length?Math.max(...denoms):12)+2;
-  if(!d.sizes)d.sizes={};d.sizes['2/'+next]=0;
-  (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes['2/'+next]=0;});
+  if(!d.sizes)d.sizes={};d.sizes['2/'+next]=0;d.sizes=_sortedSizes(d.sizes);
+  (d.varieties||[]).forEach(v=>{if(!v.sizes)v.sizes={};v.sizes['2/'+next]=0;v.sizes=_sortedSizes(v.sizes);});
   audit('Add size',`Design ${di+1} order ${S.orders[oi].orderId}: added size 2/${next}`);render();
 }
 // Styled danger-confirm modal (replaces browser confirm() for size-column deletes)
@@ -5444,6 +5446,16 @@ function deleteVendorSizeCol(vi,sz,dids){
 
 // ── DIRECT DESIGN-LEVEL SIZE UPDATES (for flat rows with no varieties) ──────────
 function _hasOnlyDefault(d){return (d.varieties||[]).length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';}
+
+// Rebuild a sizes object with keys in the correct numeric order (2/2 < 2/4 < 2/6 ...)
+function _sortedSizes(obj){
+  const sorted={};
+  Object.keys(obj||{}).sort((a,b)=>{
+    const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;
+    return na!==nb?na-nb:a.localeCompare(b);
+  }).forEach(k=>sorted[k]=(obj[k]||0));
+  return sorted;
+}
 function upDesignDirectSize(oi,di,sz,val){
   const d=S.orders[oi].designs[di];
   if(!d.sizes)d.sizes={};
@@ -5587,7 +5599,7 @@ function handleQtyTabKey(e, oi, di, vi, szI) {
   if (e.key !== 'Tab' && e.key !== 'Enter') return;
   e.preventDefault();
   const d = S.orders[oi].designs[di];
-  const szKeys = Object.keys(d.sizes || {});
+  const szKeys = Object.keys(d.sizes || {}).sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);});
   const varieties = d.varieties || [];
   // Save current value to state
   const curVal = parseInt(e.target.value) || 0;
@@ -13229,6 +13241,21 @@ async function fbInit(){
       // Fix any frozen rows whose vendor order was deleted on another device
       const _prunedOnLoad=_pruneOrphanedVOLinks();
       if(_prunedOnLoad>0) console.log('Bangle Tracker: un-froze',_prunedOnLoad,'customer order row(s) with stale vendor order links');
+      // One-time: re-sort d.sizes keys so sizes always display in correct order (2/4 before 2/10)
+      let _sizesSorted=0;
+      (S.orders||[]).forEach(order=>{
+        (order.designs||[]).forEach(d=>{
+          const sorted=_sortedSizes(d.sizes||{});
+          if(JSON.stringify(Object.keys(d.sizes||{}))!==JSON.stringify(Object.keys(sorted))){
+            d.sizes=sorted;_sizesSorted++;
+          }
+          (d.varieties||[]).forEach(v=>{
+            const vs=_sortedSizes(v.sizes||{});
+            if(JSON.stringify(Object.keys(v.sizes||{}))!==JSON.stringify(Object.keys(vs))){v.sizes=vs;_sizesSorted++;}
+          });
+        });
+      });
+      if(_sizesSorted>0){save();console.log('Bangle Tracker: re-sorted sizes in',_sizesSorted,'design(s)/variety(ies)');}
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();
