@@ -2249,6 +2249,7 @@ function renderLibrary(){
           <div style="padding:5px 6px">
             <div style="font-size:10px;font-weight:700;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.designCode||e.fileName)}">${esc(e.designCode||e.fileName||'—')}</div>
             <div style="display:flex;gap:3px;margin-top:3px">
+              <button onclick="event.stopPropagation();_libRenameFile('${esc(e._id)}')" style="flex:1;font-size:9px;padding:2px 0;background:#f0efff;border:1px solid #AFA9EC;border-radius:3px;cursor:pointer;color:#534AB7">✏️</button>
               <button onclick="event.stopPropagation();_libMoveOne('${esc(e._id)}','move')" style="flex:1;font-size:9px;padding:2px 0;background:#E1F5EE;border:1px solid #9FE1CB;border-radius:3px;cursor:pointer;color:#0F6E56">Move</button>
               <button onclick="event.stopPropagation();_libMoveOne('${esc(e._id)}','copy')" style="flex:1;font-size:9px;padding:2px 0;background:#E6F1FB;border:1px solid #85B7EB;border-radius:3px;cursor:pointer;color:#185FA5">Copy</button>
               <button onclick="event.stopPropagation();deleteLibraryEntry('${esc(e._id)}')" style="flex:1;font-size:9px;padding:2px 0;background:#FDE8E8;border:1px solid #F09595;border-radius:3px;cursor:pointer;color:#A32D2D">Del</button>
@@ -2393,6 +2394,21 @@ function _libRenameFolder(seg,oldName){
   if(_libFolder===oldName)_libFolder=trimmed;
   renderLibrary();
   showToast(`📁 Renamed to "${trimmed}"`,'green',2500);
+}
+function _libRenameFile(id){
+  const entry=_imageLibrary.find(e=>e._id===id);
+  if(!entry)return;
+  const currentName=entry.designCode||entry.fileName||'';
+  const newName=prompt('Rename this photo:',currentName);
+  if(!newName||newName.trim()===currentName)return;
+  const trimmed=newName.trim();
+  entry.designCode=trimmed;
+  fetch(FB_LIB+'/'+id+'/designCode.json',{
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(trimmed)
+  }).catch(()=>{});
+  renderLibrary();
+  showToast(`✏️ Renamed to "${trimmed}"`,'green',2500);
 }
 function _libDeleteFolder(seg,name){
   const imgs=_imageLibrary.filter(e=>(e.segment||'CNC')===seg&&(e.folder||'General')===name);
@@ -3803,6 +3819,7 @@ function buildOrderCard(order,oi){
         <div class="tab${at==='details'?' active':''}" onclick="setTab('${order.id}','details')">📋 Order details</div>
         <div class="tab${at==='designs'?' active':''}" onclick="setTab('${order.id}','designs')">🎨 Designs &amp; Varieties</div>
         <div class="tab${at==='stages'?' active':''}" onclick="setTab('${order.id}','stages')">⚙️ Production stages</div>
+        <div class="tab${at==='vendor_summary'?' active':''}" onclick="setTab('${order.id}','vendor_summary')">🏭 Vendor Summary</div>
       </div>
       <div class="tab-panel${at==='details'?' active':''}" data-tab="details">
         ${buildDetailsPanel(order,oi)}
@@ -3813,6 +3830,9 @@ function buildOrderCard(order,oi){
       <div class="tab-panel${at==='stages'?' active':''}" data-tab="stages">
         ${buildStagesPanel(order,oi)}
       </div>
+      <div class="tab-panel${at==='vendor_summary'?' active':''}" data-tab="vendor_summary">
+        ${buildVendorSummaryPanel(order,oi)}
+      </div>
       <!-- Mobile-only action bar (hidden on desktop via CSS) -->
       <div class="mobile-action-bar no-print" style="display:none">
         <button onclick="markOrderComplete(${oi})" style="background:#E1F5EE;color:#0F6E56;border:1px solid #9FE1CB">✓ Complete</button>
@@ -3820,6 +3840,131 @@ function buildOrderCard(order,oi){
         <button onclick="askOrderPrint('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
         <button onclick="delOrder(${oi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
       </div>
+    </div>
+  </div>`;
+}
+
+// ── NAVIGATE TO A VENDOR ORDER ────────────────────────────────────────────────
+// Switches to Vendor Orders view, opens and scrolls to the specified vendor order.
+function _goToVendorOrder(voId){
+  switchMain('vendor');
+  S.openVendorOrders=S.openVendorOrders||[];
+  const openKey='open_'+voId;
+  if(!S.openVendorOrders.includes(openKey)) S.openVendorOrders.push(openKey);
+  save();
+  renderVendorOrders();
+  setTimeout(()=>{
+    const el=document.getElementById('voc-'+voId);
+    if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+  },150);
+}
+
+// ── VENDOR SUMMARY PANEL (inside each customer order) ─────────────────────────
+// Shows which designs/varieties are assigned to which vendor, what quantities,
+// and which vendor order they've been imported into (with a link to navigate there).
+function buildVendorSummaryPanel(order, oi){
+  // Build row descriptors grouped by vendor
+  const vendorGroups={};  // vendorName → [{designName, designCode, varName, sizes, importedToVOId}]
+  const unassigned=[];
+
+  (order.designs||[]).forEach((d,di)=>{
+    const hod=_hasOnlyDefault(d);
+    const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+    const isFlat=isCnc||!(d.varieties||[]).length||hod;
+
+    if(isFlat){
+      const vendor=d.assignedVendor||'';
+      const rowSizes=hod?(d.varieties[0]?.sizes||{}):(d.sizes||{});
+      const row={designName:d.name||'',designCode:d.code||'',varName:null,sizes:rowSizes,importedToVOId:d.importedToVOId||null};
+      if(vendor){
+        if(!vendorGroups[vendor])vendorGroups[vendor]=[];
+        vendorGroups[vendor].push(row);
+      } else { unassigned.push(row); }
+    } else {
+      (d.varieties||[]).forEach((v,vi)=>{
+        const vendor=v.assignedVendor||'';
+        const row={designName:d.name||'',designCode:d.code||'',varName:v.name||('Variety '+(vi+1)),sizes:v.sizes||{},importedToVOId:v.importedToVOId||null};
+        if(vendor){
+          if(!vendorGroups[vendor])vendorGroups[vendor]=[];
+          vendorGroups[vendor].push(row);
+        } else { unassigned.push(row); }
+      });
+    }
+  });
+
+  const vendors=Object.keys(vendorGroups).sort();
+
+  if(!vendors.length&&!unassigned.length){
+    return '<div style="padding:1.5rem;text-align:center;color:#aaa;font-size:13px">No designs in this order yet.</div>';
+  }
+  if(!vendors.length){
+    return `<div style="padding:1rem;background:#FFF8E1;border-radius:8px;color:#7B5800;font-size:13px;margin:8px 0">
+      ℹ️ <strong>No vendor assigned yet.</strong> Open the <em>Designs &amp; Varieties</em> tab and use the vendor dropdown on each row to assign it.
+    </div>${_buildUnassignedVendorRows(unassigned)}`;
+  }
+
+  let html='<div style="font-size:11px;color:#888;margin-bottom:10px">Showing vendor assignment for all rows in this order. Click <strong>📋 vendor order</strong> button to navigate directly to that vendor order.</div>';
+
+  vendors.forEach(vendor=>{
+    const rows=vendorGroups[vendor];
+    // Unique vendor order IDs linked from these rows
+    const linkedVOIds=[...new Set(rows.map(r=>r.importedToVOId).filter(Boolean))];
+    const hasUnimported=rows.some(r=>!r.importedToVOId);
+
+    html+=`<div style="margin-bottom:10px;border:1.5px solid #AFA9EC;border-radius:10px;overflow:hidden">
+      <div style="background:#F0EFFF;padding:8px 12px;display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+        <span style="font-weight:700;color:#3C3489;font-size:13px">🏭 ${esc(vendor)}</span>
+        <span style="background:#E8E7F8;color:#534AB7;border-radius:99px;padding:1px 7px;font-size:10px;font-weight:600">${rows.length} row${rows.length!==1?'s':''}</span>
+        ${linkedVOIds.map(voId=>{
+          const vo=(S.vendorOrders||[]).find(x=>x.id===voId);
+          return vo?`<button onclick="_goToVendorOrder('${esc(voId)}')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer">📋 ${esc(vo.orderId)} ↗</button>`:'';
+        }).join('')}
+        ${hasUnimported?'<span style="background:#FFF8E1;color:#7B5800;border:1px solid #FFD580;border-radius:6px;padding:2px 8px;font-size:10px;font-weight:600">⏳ Some rows not yet in vendor order</span>':''}
+      </div>
+      <div style="padding:6px 12px 10px">
+        ${rows.map(r=>{
+          const nonZeroSizes=Object.entries(r.sizes||{}).filter(([,v])=>(parseInt(v)||0)>0);
+          const sizeHtml=nonZeroSizes.length
+            ?nonZeroSizes.map(([sz,qty])=>`<span style="background:#F0EFFF;color:#3C3489;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin:1px">${esc(sz)}: ${qty}</span>`).join('')
+            :'<span style="color:#aaa;font-size:10px">—</span>';
+          const label=r.varName?`${esc(r.designName||'—')} <span style="color:#888">·</span> <em>${esc(r.varName)}</em>`
+            :`${esc(r.designName||'—')}${r.designCode?' <span style="background:#F5F4FF;color:#534AB7;border-radius:4px;padding:0 5px;font-size:10px">'+esc(r.designCode)+'</span>':''}`;
+          const voTag=r.importedToVOId?(()=>{const vo=(S.vendorOrders||[]).find(x=>x.id===r.importedToVOId);return vo?`<span class="co-src-badge">→ ${esc(vo.orderId)}</span>`:''})():'<span style="color:#aaa;font-size:10px">not yet added to vendor order</span>';
+          return `<div style="border-bottom:1px solid #F0EFFF;padding:5px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px">
+            <span style="font-size:12px;font-weight:600;color:#222;min-width:140px">${label}</span>
+            <span style="display:flex;flex-wrap:wrap;gap:2px;flex:1">${sizeHtml}</span>
+            <span>${voTag}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+
+  if(unassigned.length){
+    html+=_buildUnassignedVendorRows(unassigned);
+  }
+
+  return html;
+}
+
+function _buildUnassignedVendorRows(rows){
+  if(!rows.length)return'';
+  return`<div style="margin-bottom:10px;border:1.5px solid #F5A0A0;border-radius:10px;overflow:hidden">
+    <div style="background:#FFF0EE;padding:8px 12px;font-weight:700;color:#A32D2D;font-size:12px">
+      ⚠️ Not assigned to any vendor (${rows.length} row${rows.length!==1?'s':''})
+    </div>
+    <div style="padding:6px 12px 10px">
+      ${rows.map(r=>{
+        const nonZeroSizes=Object.entries(r.sizes||{}).filter(([,v])=>(parseInt(v)||0)>0);
+        const sizeHtml=nonZeroSizes.length
+          ?nonZeroSizes.map(([sz,qty])=>`<span style="background:#FFF0EE;color:#C0392B;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin:1px">${esc(sz)}: ${qty}</span>`).join('')
+          :'<span style="color:#aaa;font-size:10px">—</span>';
+        const label=r.varName?`${esc(r.designName||'—')} · <em>${esc(r.varName)}</em>`:`${esc(r.designName||'—')}${r.designCode?' ['+esc(r.designCode)+']':''}`;
+        return`<div style="border-bottom:1px solid #FFF0EE;padding:5px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px">
+          <span style="font-size:12px;font-weight:600;color:#222;min-width:140px">${label}</span>
+          <span style="display:flex;flex-wrap:wrap;gap:2px;flex:1">${sizeHtml}</span>
+        </div>`;
+      }).join('')}
     </div>
   </div>`;
 }
@@ -7824,9 +7969,9 @@ function buildVendorDesignsPanel(vo,vi){
   });
 
   let html='<div class="section-head" style="margin-top:0;justify-content:space-between"><span style="text-align:left">Designs &amp; Varieties ('+vo.designs.length+') — Order total: <strong>'+formatQtyByUnit(vendorOrderQtyByUnit(vo))+'</strong></span>'
-    +'<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">'
-    +'<button class="icon-btn" onclick="_openVOImportPicker(true,'+vi+')" title="Add rows from customer orders assigned to this vendor">📥 Import from CO</button>'
-    +'<button class="icon-btn primary" onclick="addVendorDesign('+vi+')">+ Add design</button>'
+    +'<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    +'<button class="icon-btn" onclick="_openVOImportPicker(true,'+vi+')" title="Copy rows from customer orders assigned to this vendor into this vendor order" style="background:#E8F5E9;color:#1B5E20;border-color:#A5D6A7;font-weight:700">📥 Import from Customer Orders</button>'
+    +'<button class="icon-btn primary" onclick="addVendorDesign('+vi+')">+ Add manually</button>'
     +'</div></div>';
 
   if(!vo.designs.length) return html+'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>';
@@ -8068,6 +8213,7 @@ function delVendorOrder(vi){
   S.vendorOrders.splice(vi,1);
   S.openVendorOrders=(S.openVendorOrders||[]).filter(k=>!k.includes(id));
   delete S.vendorActiveTabs[id];
+  _pruneOrphanedVOLinks(); // immediately unfreeze any customer order rows that were in this vendor order
   audit('VendorOrder','Deleted vendor order '+id);
   save();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
@@ -8209,6 +8355,32 @@ function addVDImg(vi,di,inp){
 
 let _voImportAllRows = []; // rows loaded into current picker session
 
+// ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
+// Scans ALL customer order rows and clears any importedToVOId that points to a
+// vendor order that no longer exists in S.vendorOrders.
+// Called: (1) when a vendor order is deleted — rows immediately unfreeze,
+//         (2) on startup after Firebase loads — fixes retroactive frozen rows,
+//         (3) when the import picker opens — last-resort safety net.
+// Returns the number of rows that were un-frozen.
+function _pruneOrphanedVOLinks(){
+  const validVOIds=new Set((S.vendorOrders||[]).map(v=>v.id));
+  let pruned=0;
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      if(d.importedToVOId && !validVOIds.has(d.importedToVOId)){
+        d.importedToVOId=null; pruned++;
+      }
+      (d.varieties||[]).forEach(v=>{
+        if(v.importedToVOId && !validVOIds.has(v.importedToVOId)){
+          v.importedToVOId=null; pruned++;
+        }
+      });
+    });
+  });
+  if(pruned>0) save();
+  return pruned;
+}
+
 // Collect every row across ALL customer orders assigned to vendorName.
 // Returns an array of row-descriptor objects (one per flat-design or variety).
 function _getVOImportRows(vendorName){
@@ -8333,6 +8505,7 @@ function _openVOImportPicker(isExisting, targetVOI){
     vendorName=el?el.value.trim():'';
   }
   if(!vendorName){showToast('Please enter a vendor name first.','warn');return;}
+  _pruneOrphanedVOLinks(); // clear any stale frozen-row links before showing picker
   _voImportAllRows=_getVOImportRows(vendorName);
   const overlay=document.createElement('div');
   overlay.id='vo-import-overlay';
@@ -13021,6 +13194,9 @@ async function fbInit(){
       _origSave();
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
       await migrateImagesToThumbs();
+      // Fix any frozen rows whose vendor order was deleted on another device
+      const _prunedOnLoad=_pruneOrphanedVOLinks();
+      if(_prunedOnLoad>0) console.log('Bangle Tracker: un-froze',_prunedOnLoad,'customer order row(s) with stale vendor order links');
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();
