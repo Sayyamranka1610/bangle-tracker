@@ -151,6 +151,11 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .order-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.09);transform:translateY(-1px)}
 .order-card.al-late{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}.order-card.al-warn{border-color:#FAC775;box-shadow:0 2px 8px rgba(186,117,23,.08)}.order-card.al-done{border-color:#C0DD97;box-shadow:0 2px 8px rgba(59,109,17,.06)}.order-card.al-ok{border-color:#9FE1CB;box-shadow:0 2px 8px rgba(15,110,86,.06)}
 .order-card.al-pending{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}
+/* ── Vendor Order: Import-from-Customer-Orders picker ── */
+.vo-import-overlay{position:fixed;inset:0;background:rgba(0,0,0,.52);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px}
+.vo-import-modal{background:#fff;border-radius:14px;width:min(680px,96vw);max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.3)}
+.vo-import-row label:hover{background:#F5F4FF}
+.co-src-badge{display:inline-block;font-size:9px;background:#E1F5EE;color:#0F6E56;border-radius:99px;padding:1px 7px;font-weight:700;white-space:nowrap}
 .order-header{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none;transition:background .12s}
 .al-late .order-header{background:#FFF5F5}.al-warn .order-header{background:#FFFBF0}.al-done .order-header{background:#F7FAF2}.al-ok .order-header{background:#F2FBF7}
 .al-pending .order-header{background:#FFF5F5}
@@ -4280,6 +4285,7 @@ function buildDesignsGroupTable(order,oi,g){
           +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
             +(codeEmpty?'<span style="font-size:9px;font-weight:700;color:#BA7517;letter-spacing:.04em">ADD CODE ↓</span>':'')
+            +(d.importedToVOId?(()=>{const _vo=(S.vendorOrders||[]).find(v=>v.id===d.importedToVOId);return'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc((_vo&&_vo.orderId)||'vendor order')+'</span>';})():'')
             +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="e.g. DC-001"'
             +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
             +' onkeydown="handleCodeTabKey(event)"'
@@ -4368,6 +4374,7 @@ function buildDesignsGroupTable(order,oi,g){
             +' oninput="upVarietyName('+oi+','+di+','+vi+',this.value)"'
             +' onkeydown="handleVarietyNameTabKey(event,'+oi+','+di+','+vi+')"'
             +' placeholder="e.g. Classic" tabindex="0" style="max-width:100px">'
+            +(v.importedToVOId?(()=>{const _vo=(S.vendorOrders||[]).find(x=>x.id===v.importedToVOId);return'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc((_vo&&_vo.orderId)||'vendor order')+'</span>';})():'')
           +'</td>'
           +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
           +szCells2
@@ -7817,7 +7824,10 @@ function buildVendorDesignsPanel(vo,vi){
   });
 
   let html='<div class="section-head" style="margin-top:0;justify-content:space-between"><span style="text-align:left">Designs &amp; Varieties ('+vo.designs.length+') — Order total: <strong>'+formatQtyByUnit(vendorOrderQtyByUnit(vo))+'</strong></span>'
-    +'<button class="icon-btn primary no-print" onclick="addVendorDesign('+vi+')">+ Add design</button></div>';
+    +'<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">'
+    +'<button class="icon-btn" onclick="_openVOImportPicker(true,'+vi+')" title="Add rows from customer orders assigned to this vendor">📥 Import from CO</button>'
+    +'<button class="icon-btn primary" onclick="addVendorDesign('+vi+')">+ Add design</button>'
+    +'</div></div>';
 
   if(!vo.designs.length) return html+'<div style="font-size:12px;color:#aaa;text-align:center;padding:1rem">No designs yet.</div>';
 
@@ -8193,9 +8203,276 @@ function addVDImg(vi,di,inp){
 }
 
 // ── New Vendor Order Modal ────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// IMPORT ROWS FROM CUSTOMER ORDERS → VENDOR ORDER
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _voImportAllRows = []; // rows loaded into current picker session
+
+// Collect every row across ALL customer orders assigned to vendorName.
+// Returns an array of row-descriptor objects (one per flat-design or variety).
+function _getVOImportRows(vendorName){
+  const rows=[];
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      const hod=_hasOnlyDefault(d);
+      const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+      const isFlat=isCnc||!(d.varieties||[]).length||hod;
+      if(isFlat){
+        if((d.assignedVendor||'')===vendorName){
+          const rowSizes=hod?(d.varieties[0]?.sizes||{}):(d.sizes||{});
+          rows.push({
+            sourceCoId:order.id, sourceCoNum:order.orderId,
+            clientName:order.client||'(no client)',
+            sourceDId:d.id, sourceVId:null, isFlat:true,
+            name:d.name||'', code:d.code||'',
+            unit:d.unit||(d.varieties[0]?.unit)||'pcs',
+            sizes:Object.assign({},rowSizes),
+            images:(d.images||[]).map(i=>Object.assign({},i)),
+            importedToVOId:d.importedToVOId||null,
+          });
+        }
+      } else {
+        (d.varieties||[]).forEach(v=>{
+          if((v.assignedVendor||'')===vendorName){
+            rows.push({
+              sourceCoId:order.id, sourceCoNum:order.orderId,
+              clientName:order.client||'(no client)',
+              sourceDId:d.id, sourceVId:v.id, isFlat:false,
+              name:d.name||'', code:d.code||'',
+              unit:v.unit||'pcs',
+              varName:v.name||'',
+              varSizes:Object.assign({},v.sizes||{}),
+              varImages:(v.images||[]).map(i=>Object.assign({},i)),
+              designImages:(d.images||[]).map(i=>Object.assign({},i)),
+              rate:v.rate||'',
+              importedToVOId:v.importedToVOId||null,
+            });
+          }
+        });
+      }
+    });
+  });
+  return rows;
+}
+
+// Convert selected row-descriptors into vendor order design objects.
+// Multiple varieties from the SAME design (same name+code+order) are grouped
+// under one design entry, exactly as they appear in the customer order.
+function _buildImportedDesigns(rows){
+  const groups={}, keyOrder=[];
+  rows.forEach(r=>{
+    const key=r.name+'|'+r.code+'|'+r.sourceCoId;
+    if(!groups[key]){
+      groups[key]={name:r.name,code:r.code,sourceCoId:r.sourceCoId,
+        sourceCoNum:r.sourceCoNum,varieties:[],isFlat:r.isFlat,
+        sizes:{},images:[]};
+      keyOrder.push(key);
+    }
+    const g=groups[key];
+    if(r.isFlat){
+      g.sizes=Object.assign({},r.sizes);
+      g.images=r.images.slice();
+      g.unit=r.unit;
+    } else {
+      // Merge design-level images without duplicates
+      r.designImages.forEach(img=>{
+        if(!g.images.some(x=>x.data===img.data))g.images.push(Object.assign({},img));
+      });
+      g.varieties.push({
+        id:uid(),name:r.varName,
+        sizes:Object.assign({},r.varSizes),
+        images:r.varImages.map(i=>Object.assign({},i)),
+        unit:r.unit,rate:r.rate||'',
+      });
+    }
+  });
+  return keyOrder.map(key=>{
+    const g=groups[key];
+    // Aggregate sizes for variety designs
+    const szObj=g.isFlat?g.sizes:(()=>{
+      const o={};
+      g.varieties.forEach(v=>Object.keys(v.sizes||{}).forEach(sz=>{
+        o[sz]=(o[sz]||0)+(parseInt(v.sizes[sz])||0);
+      }));
+      return o;
+    })();
+    return{
+      id:uid(),name:g.name,code:g.code,sizesLocked:false,
+      sizes:szObj,images:g.images,varieties:g.varieties,stages:[],
+      unit:g.unit||(g.varieties[0]&&g.varieties[0].unit)||'pcs',
+      sourceCoId:g.sourceCoId,sourceCoNum:g.sourceCoNum,
+    };
+  });
+}
+
+// Mark customer-order rows as imported (does NOT call save — caller must).
+function _markVOImportRows(rows, vendorOrderId){
+  rows.forEach(r=>{
+    const order=S.orders.find(o=>o.id===r.sourceCoId);if(!order)return;
+    const d=(order.designs||[]).find(x=>x.id===r.sourceDId);if(!d)return;
+    if(r.isFlat){
+      d.importedToVOId=vendorOrderId;
+    } else {
+      const v=(d.varieties||[]).find(x=>x.id===r.sourceVId);
+      if(v)v.importedToVOId=vendorOrderId;
+    }
+  });
+}
+
+// Open the import picker overlay.
+// isExisting=false → new vendor order modal (rows stored in window._importedRows)
+// isExisting=true  → existing vendor order index targetVOI (rows added directly)
+function _openVOImportPicker(isExisting, targetVOI){
+  let vendorName='';
+  if(isExisting){
+    const vo=S.vendorOrders[targetVOI];
+    vendorName=vo?vo.vendor:'';
+  } else {
+    const el=document.getElementById('no-client');
+    vendorName=el?el.value.trim():'';
+  }
+  if(!vendorName){showToast('Please enter a vendor name first.','warn');return;}
+  _voImportAllRows=_getVOImportRows(vendorName);
+  const overlay=document.createElement('div');
+  overlay.id='vo-import-overlay';
+  overlay.className='vo-import-overlay';
+  overlay.innerHTML=_renderVOImportPickerHTML(vendorName,isExisting,targetVOI);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)_closeVOImportPicker();});
+}
+
+function _closeVOImportPicker(){
+  const el=document.getElementById('vo-import-overlay');
+  if(el)el.remove();
+}
+
+function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
+  const rows=_voImportAllRows;
+  let body='';
+  if(!rows.length){
+    body=`<div style="text-align:center;padding:2.5rem;color:#888">
+      <div style="font-size:36px;margin-bottom:10px">📋</div>
+      <div style="font-size:14px;font-weight:600;color:#444">No rows assigned to <strong>${esc(vendorName)}</strong></div>
+      <div style="font-size:12px;margin-top:6px;color:#aaa;max-width:340px;margin-left:auto;margin-right:auto">
+        Open a customer order → set the karigar/vendor dropdown to
+        <strong>${esc(vendorName)}</strong> on each row you want to assign → come back here.
+      </div>
+    </div>`;
+  } else {
+    // Group by customer order
+    const byOrder={};
+    rows.forEach((r,idx)=>{
+      if(!byOrder[r.sourceCoId])byOrder[r.sourceCoId]={orderId:r.sourceCoNum,clientName:r.clientName,rows:[]};
+      byOrder[r.sourceCoId].rows.push({r,idx});
+    });
+    let freeCount=0;
+    Object.values(byOrder).forEach(og=>{
+      body+=`<div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:#534AB7;padding:5px 0 5px;border-bottom:1.5px solid #E8E6FF;margin-bottom:6px">
+          📋 ${esc(og.orderId)} — ${esc(og.clientName)}
+        </div>`;
+      og.rows.forEach(({r,idx})=>{
+        const isBlocked=!!r.importedToVOId;
+        const blockedVO=isBlocked?(S.vendorOrders||[]).find(v=>v.id===r.importedToVOId):null;
+        const blockedLabel=blockedVO?`Already in ${esc(blockedVO.orderId)}`:'Already imported';
+        const sizesObj=r.isFlat?r.sizes:r.varSizes;
+        const sizesStr=Object.entries(sizesObj).filter(([,v])=>parseInt(v)>0).map(([k,v])=>`${k}:${v}`).join('  ')||'(no qty)';
+        if(!isBlocked)freeCount++;
+        body+=`<div class="vo-import-row"><label style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border-radius:7px;
+          background:${isBlocked?'#F5F5F5':'transparent'};opacity:${isBlocked?'.5':'1'};
+          cursor:${isBlocked?'not-allowed':'pointer'}">
+          <input type="checkbox" class="vo-import-cb" data-idx="${idx}"
+            ${isBlocked?'disabled':'checked'} style="margin-top:3px;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:#2D2D5F;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+              ${esc(r.name||'(no name)')}
+              <span style="color:#888;font-weight:400;font-size:11px">[${esc(r.code||'—')}]</span>
+              ${!r.isFlat?`<span style="color:#534AB7;font-size:11px">· ${esc(r.varName)}</span>`:''}
+              ${isBlocked?`<span style="font-size:10px;color:#C0392B;background:#FCEBEB;border-radius:99px;padding:1px 7px;font-weight:600">${blockedLabel}</span>`:''}
+            </div>
+            <div style="font-size:11px;color:#888;margin-top:2px">${sizesStr}</div>
+          </div>
+        </label></div>`;
+      });
+      body+='</div>';
+    });
+    body=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #EEE">
+      <input type="checkbox" id="vo-import-selall" checked
+        onchange="document.querySelectorAll('#vo-import-overlay .vo-import-cb:not(:disabled)').forEach(c=>c.checked=this.checked)">
+      <label for="vo-import-selall" style="font-size:12px;font-weight:600;cursor:pointer;user-select:none">
+        Select all — ${freeCount} available row${freeCount!==1?'s':''}
+      </label>
+    </div>`+body;
+  }
+
+  const hasRows=rows.some(r=>!r.importedToVOId);
+  return `<div class="vo-import-modal">
+    <div style="padding:16px 20px;border-bottom:1px solid #EEE;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#2D2D5F">📥 Import rows for <strong>${esc(vendorName)}</strong></div>
+        <div style="font-size:11px;color:#888;margin-top:2px">Rows assigned to this vendor across all customer orders</div>
+      </div>
+      <button onclick="_closeVOImportPicker()" style="background:none;border:none;cursor:pointer;font-size:20px;color:#aaa;line-height:1;padding:4px">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px 20px">${body}</div>
+    <div style="padding:12px 20px;border-top:1px solid #EEE;display:flex;align-items:center;justify-content:flex-end;gap:10px">
+      <button onclick="_closeVOImportPicker()"
+        style="padding:8px 18px;border:1.5px solid #AFA9EC;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+      ${hasRows?`<button onclick="_confirmVOImport(${isExisting},${targetVOI})"
+        style="padding:8px 18px;background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
+        ✓ Import selected rows</button>`:''}
+    </div>
+  </div>`;
+}
+
+function _confirmVOImport(isExisting, targetVOI){
+  const checked=[...document.querySelectorAll('#vo-import-overlay .vo-import-cb:checked')];
+  const selectedRows=checked.map(cb=>_voImportAllRows[parseInt(cb.dataset.idx)]).filter(Boolean);
+  if(!selectedRows.length){showToast('No rows selected.','warn');return;}
+
+  if(isExisting){
+    // Add directly to an existing vendor order
+    const vo=S.vendorOrders[targetVOI];if(!vo)return;
+    const newDesigns=_buildImportedDesigns(selectedRows);
+    histPush();
+    vo.designs.push(...newDesigns);
+    _markVOImportRows(selectedRows,vo.id);
+    audit('VendorOrder',`Imported ${newDesigns.length} design(s) from customer orders into ${vo.orderId}`);
+    save();
+    _closeVOImportPicker();
+    renderVendorOrders();
+    showToast(`✓ ${newDesigns.length} design${newDesigns.length>1?'s':''} imported into ${vo.orderId}`,'success');
+  } else {
+    // Store for use when creating the new vendor order
+    window._importedRows=selectedRows;
+    _closeVOImportPicker();
+    // Update summary banner in the modal
+    const summary=document.getElementById('vo-import-summary');
+    if(summary){
+      const coNums=[...new Set(selectedRows.map(r=>r.sourceCoNum))];
+      summary.style.display='block';
+      summary.innerHTML=`<div style="background:#E1F5EE;border:1.5px solid #5DCAA5;border-radius:8px;padding:8px 12px;font-size:11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:16px">📥</span>
+        <div style="flex:1">
+          <strong style="color:#0F6E56">${selectedRows.length} row${selectedRows.length>1?'s':''} selected</strong>
+          <span style="color:#555"> from ${coNums.join(', ')}</span>
+          — will be added when you click Create Vendor Order
+        </div>
+        <button onclick="window._importedRows=[];document.getElementById('vo-import-summary').style.display='none'"
+          style="background:none;border:none;color:#C0392B;cursor:pointer;font-size:11px;padding:0;font-weight:600">✕ Clear</button>
+      </div>`;
+      // Make the Design 1 section label show as optional
+      const dh=document.getElementById('vo-design-section-head');
+      if(dh)dh.innerHTML='Design <span style="font-weight:400;color:#888;font-size:10px">(optional — you already have imported rows above)</span>';
+    }
+  }
+}
+
 function openNewVendorOrderModal(prefill){
   prefill=prefill||{};
   if(!prefill._keepFile)window._uploadedOrderFile=null;
+  if(!prefill._keepImport)window._importedRows=[];
 
   // Resolve first design + extra designs
   let firstDesign={};
@@ -8287,14 +8564,24 @@ function openNewVendorOrderModal(prefill){
         </div>
       </div>
 
-      <div class="section-head"><span>Design 1 <span style="color:#A32D2D;font-size:10px">* required</span>${extraDesigns.length>0?` <span style="font-weight:400;color:#888;font-size:10px">— ${extraDesigns.length+1} designs total from file</span>`:''}</span></div>
+      <!-- ── Import from Customer Orders ── -->
+      <div style="margin-bottom:10px">
+        <button type="button" onclick="_openVOImportPicker(false,-1)"
+          style="width:100%;padding:9px 14px;background:#F0EFFF;border:1.5px dashed #AFA9EC;border-radius:9px;cursor:pointer;font-size:12px;font-weight:600;color:#534AB7;display:flex;align-items:center;justify-content:center;gap:7px">
+          📥 Import rows from Customer Orders
+          <span style="font-size:10px;font-weight:400;color:#888">(optional — pulls rows assigned to this vendor)</span>
+        </button>
+        <div id="vo-import-summary" style="margin-top:6px;display:none"></div>
+      </div>
+
+      <div class="section-head"><span id="vo-design-section-head">Design 1 <span style="color:#A32D2D;font-size:10px">* required</span>${extraDesigns.length>0?` <span style="font-weight:400;color:#888;font-size:10px">— ${extraDesigns.length+1} designs total from file</span>`:''}</span></div>
       <div class="field-row">
         <div class="field-group ac-wrap">
           <label>Design name <span style="color:#A32D2D">*</span></label>
           <input id="no-dname" placeholder="e.g. Mogra Twist" autocomplete="off" value="${esc(firstDesign.name||'')}"
             oninput="showACModal(this,'dnames')" onblur="hideACModal('no-ac-dname')">
           <div class="ac-list" id="no-ac-dname" style="display:none"></div>
-          <div class="err-msg" id="err-no-dname" style="display:none">Design name is required</div>
+          <div class="err-msg" id="err-no-dname" style="display:none">Design name is required (or import rows above)</div>
         </div>
         <div class="field-group ac-wrap">
           <label>Design code</label>
@@ -8357,52 +8644,74 @@ function createVendorOrder(){
   const notes=(document.getElementById('no-notes').value||'').trim();
   const dname=(document.getElementById('no-dname').value||'').trim();
   const dcode=(document.getElementById('no-dcode').value||'').trim();
-
   const bangleType=(document.getElementById('no-btype')?.value)||'dye_gold';
+
+  const importedRows=window._importedRows||[];
+  const hasImported=importedRows.length>0;
 
   let hasErr=false;
   if(!vendor){showFieldError('no-client','Vendor name is required');hasErr=true;}
   if(!startDate){showFieldError('no-date','Order date is required');hasErr=true;}
-  if(!dname){showFieldError('no-dname','Design name is required');hasErr=true;}
+  // Design name only required when NOT using the import path
+  if(!dname&&!hasImported){showFieldError('no-dname','Design name is required (or import rows above)');hasErr=true;}
 
-  if(bangleType==='cnc'){
-    const cncTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt(((window._modalVarieties||[])[0]?.sizes||{})[sz])||0),0);
-    if(!cncTotal){
-      if(errV){errV.textContent='Please enter at least one quantity for this CNC design.';errV.style.display='block';}
-      hasErr=true;
-    }
-  } else {
-    const validVarieties=(window._modalVarieties||[]).filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
-    if(!(window._modalVarieties||[]).length||!validVarieties.length){
-      if(errV){errV.textContent='At least one variety with non-zero quantity is required';errV.style.display='block';}
-      hasErr=true;
+  // Only validate manual design quantities if a design name was filled in
+  if(dname){
+    if(bangleType==='cnc'){
+      const cncTotal=window._modalSizes.reduce((a,sz)=>a+(parseInt(((window._modalVarieties||[])[0]?.sizes||{})[sz])||0),0);
+      if(!cncTotal){
+        if(errV){errV.textContent='Please enter at least one quantity for this CNC design.';errV.style.display='block';}
+        hasErr=true;
+      }
+    } else {
+      const validVarieties=(window._modalVarieties||[]).filter(v=>Object.values(v.sizes||{}).reduce((a,x)=>a+(parseInt(x)||0),0)>0);
+      if(!(window._modalVarieties||[]).length||!validVarieties.length){
+        if(errV){errV.textContent='At least one variety with non-zero quantity is required';errV.style.display='block';}
+        hasErr=true;
+      }
     }
   }
   if(hasErr)return;
 
-  // Build vendor design objects (no stages)
+  // Build manual design if a name was entered
   const buildVDesign=(dName,dCode,szKeys,vList)=>{
     const szObj=Object.fromEntries(szKeys.map(sz=>[sz,0]));
     vList.forEach(v=>szKeys.forEach(sz=>{szObj[sz]=(szObj[sz]||0)+(parseInt((v.sizes||{})[sz])||0);}));
     return{id:uid(),name:dName,code:dCode,sizesLocked:true,sizes:szObj,images:[],varieties:JSON.parse(JSON.stringify(vList))};
   };
 
-  const firstDesign=buildVDesign(dname,dcode,window._modalSizes,window._modalVarieties);
-  const extraDesignObjects=(window._modalExtraDesigns||[]).map(ed=>{
-    const szKeys=ed.sizes&&ed.sizes.length?ed.sizes:window._modalSizes;
-    return buildVDesign(ed.name||'Design',ed.code||'',szKeys,ed.varieties||[]);
-  });
+  let allDesigns=[];
+  if(dname){
+    const firstDesign=buildVDesign(dname,dcode,window._modalSizes,window._modalVarieties);
+    const extraDesignObjects=(window._modalExtraDesigns||[]).map(ed=>{
+      const szKeys=ed.sizes&&ed.sizes.length?ed.sizes:window._modalSizes;
+      return buildVDesign(ed.name||'Design',ed.code||'',szKeys,ed.varieties||[]);
+    });
+    allDesigns=[firstDesign,...extraDesignObjects];
+  }
+
+  // Append imported designs (from customer orders)
+  if(hasImported){
+    allDesigns=[...allDesigns,..._buildImportedDesigns(importedRows)];
+  }
 
   histPush();
   const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,bangleType,
-    designs:[firstDesign,...extraDesignObjects],attachedFile:window._uploadedOrderFile||null};
+    designs:allDesigns,attachedFile:window._uploadedOrderFile||null};
   window._uploadedOrderFile=null;
   window._modalExtraDesigns=[];
+
+  // Mark source customer-order rows as imported BEFORE save() so both changes go in one write
+  if(hasImported){
+    _markVOImportRows(importedRows,newVO.id);
+    window._importedRows=[];
+  }
+
   S.vendorOrders.push(newVO);
   S.openVendorOrders=(S.openVendorOrders||[]);
   S.openVendorOrders.push('open_'+newVO.id);
   S.vendorActiveTabs[newVO.id]='designs';
-  audit('VendorOrder',`Created ${orderId} for ${vendor}`);
+  audit('VendorOrder',`Created ${orderId} for ${vendor}`+(hasImported?` (${importedRows.length} rows from customer orders)`:''));
   rebuildVocab();save();closeModal();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 
