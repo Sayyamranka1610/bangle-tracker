@@ -8383,7 +8383,7 @@ function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
           background:${isBlocked?'#F5F5F5':'transparent'};opacity:${isBlocked?'.5':'1'};
           cursor:${isBlocked?'not-allowed':'pointer'}">
           <input type="checkbox" class="vo-import-cb" data-idx="${idx}"
-            ${isBlocked?'disabled':'checked'} style="margin-top:3px;flex-shrink:0">
+            ${isBlocked?'disabled':''} style="margin-top:3px;flex-shrink:0">
           <div style="flex:1;min-width:0">
             <div style="font-size:12px;font-weight:600;color:#2D2D5F;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
               ${esc(r.name||'(no name)')}
@@ -8398,7 +8398,7 @@ function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
       body+='</div>';
     });
     body=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #EEE">
-      <input type="checkbox" id="vo-import-selall" checked
+      <input type="checkbox" id="vo-import-selall"
         onchange="document.querySelectorAll('#vo-import-overlay .vo-import-cb:not(:disabled)').forEach(c=>c.checked=this.checked)">
       <label for="vo-import-selall" style="font-size:12px;font-weight:600;cursor:pointer;user-select:none">
         Select all — ${freeCount} available row${freeCount!==1?'s':''}
