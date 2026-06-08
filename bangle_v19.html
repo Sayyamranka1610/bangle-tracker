@@ -8243,7 +8243,16 @@ function delVendorOrder(vi){
   save();renderVendorOrders();try{fbPushNow();}catch(e){}
 }
 function upVendorDesign(vi,di,key,val){histPush();S.vendorOrders[vi].designs[di][key]=val;save();renderVendorOrders();}
-function removeVendorDesign(vi,di){histPush();S.vendorOrders[vi].designs.splice(di,1);save();renderVendorOrders();}
+function removeVendorDesign(vi,di){
+  histPush();
+  const vo=S.vendorOrders[vi];
+  const deletedCode=(vo&&vo.designs[di])?vo.designs[di].code||'':'';
+  const voId=vo?vo.id:'';
+  vo.designs.splice(di,1);
+  // Unfreeze any customer order rows whose design code is gone from this vendor order
+  _pruneVODesignLinks(voId, deletedCode);
+  save();renderVendorOrders();
+}
 function addVendorDesign(vi){
   histPush();
   const newId=uid();
@@ -8423,6 +8432,33 @@ function _pruneOrphanedVOLinks(){
   });
   if(pruned>0) save();
   return pruned;
+}
+
+// When a single DESIGN is removed from a vendor order (not the whole order),
+// unfreeze any customer order rows that were pointing to that vendor order
+// AND whose design code no longer appears in the vendor order's remaining designs.
+// voId = the vendor order's id; deletedCode = the code of the just-deleted design.
+function _pruneVODesignLinks(voId, deletedCode){
+  const vo=(S.vendorOrders||[]).find(v=>v.id===voId);
+  // Build the set of codes that STILL remain in this vendor order after the delete
+  const remaining=(vo?vo.designs||[]:[]);
+  const remainingCodes=new Set(remaining.map(d=>d.code||'').filter(Boolean));
+  // If the same code still exists in another vendor design in this order, don't unfreeze
+  if(remainingCodes.has(deletedCode||'')) return;
+  let pruned=0;
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      if(d.importedToVOId===voId && (d.code||'')===(deletedCode||'')){
+        d.importedToVOId=null; pruned++;
+      }
+      (d.varieties||[]).forEach(v=>{
+        if(v.importedToVOId===voId && (d.code||'')===(deletedCode||'')){
+          v.importedToVOId=null; pruned++;
+        }
+      });
+    });
+  });
+  if(pruned>0) save();
 }
 
 // Collect every row across ALL customer orders assigned to vendorName.
@@ -12762,6 +12798,14 @@ function _applyRemoteState(parsed, savedAt){
   // Preserve LOCAL UI state — panel expansion is per-device, not shared data
   const keepDesignStages = S.openDesignStages;
   Object.assign(S, merged);
+  // Re-sort all design/variety sizes after every Firebase sync —
+  // Firebase may return keys in insertion order (2/6,2/8,2/10,2/4) not numeric order.
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      if(d.sizes)d.sizes=_sortedSizes(d.sizes);
+      (d.varieties||[]).forEach(v=>{if(v.sizes)v.sizes=_sortedSizes(v.sizes);});
+    });
+  });
   S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from remote
   S.openOrders  = new Set(merged.openOrders  || []);
   S.openClients = new Set(merged.openClients || []);
