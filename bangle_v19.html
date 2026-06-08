@@ -5667,30 +5667,37 @@ function handleQtyTabKey(e, oi, di, vi, szI) {
 function handleVendorQtyTab(e,el){
   if(e.key!=='Tab'&&e.key!=='Enter')return;
   e.preventDefault();
-  const tr=el.closest('tr');if(!tr)return;
+  // Tell the onblur handler on the CURRENT input to stay quiet —
+  // otherwise it fires upVendorFlatSize/upVendorVarietySize → full re-render → focus lost.
+  el._skipBlur=true;
+  el._dirty=false;
+  scheduleAutosave(); // save the value silently, no DOM rebuild
+  const tr=el.closest('tr');
+  if(!tr){setTimeout(()=>{el._skipBlur=false;},50);return;}
   const allInRow=Array.from(tr.querySelectorAll('input.qty-inp'));
   const idx=allInRow.indexOf(el);
+  const moveTo=inp=>{inp._skipBlur=false;inp.focus();inp.select();setTimeout(()=>{el._skipBlur=false;},50);};
   if(!e.shiftKey){
     const next=allInRow[idx+1];
-    if(next){next.focus();next.select();return;}
+    if(next){moveTo(next);return;}
     // Move to first qty-inp of next sibling row
     let nextTr=tr.nextElementSibling;
     while(nextTr){
       const inp=nextTr.querySelector('input.qty-inp');
-      if(inp){inp.focus();inp.select();return;}
+      if(inp){moveTo(inp);return;}
       nextTr=nextTr.nextElementSibling;
     }
-    // Fall through to browser default if no next row
   } else {
     const prev=allInRow[idx-1];
-    if(prev){prev.focus();prev.select();return;}
+    if(prev){moveTo(prev);return;}
     let prevTr=tr.previousElementSibling;
     while(prevTr){
       const qInps=prevTr.querySelectorAll('input.qty-inp');
-      if(qInps.length){qInps[qInps.length-1].focus();qInps[qInps.length-1].select();return;}
+      if(qInps.length){moveTo(qInps[qInps.length-1]);return;}
       prevTr=prevTr.previousElementSibling;
     }
   }
+  setTimeout(()=>{el._skipBlur=false;},50);
 }
 
 // ── IMAGE HANDLING ─────────────────────────────────────────────────────────────
