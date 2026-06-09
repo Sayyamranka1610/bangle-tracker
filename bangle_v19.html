@@ -8131,10 +8131,7 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'+varieties.length+' variet'+(varieties.length===1?'y':'ies')+' — see rows below</td>'
           +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
           +'<td></td><td></td>'
-          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">'
-            +(d.sourceCoId
-              ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
-              :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
+          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
             +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
             +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
           +'</div></td></tr>';
@@ -8157,7 +8154,12 @@ function buildVendorDesignsPanel(vo,vi){
             +'<td class="total-col">'+rowTotal+'</td>'
             +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety('+vi+','+di+','+vri+',\'unit\',this.value)">'+unitOpts+'</select></td>'
             +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:2px 4px;border:1px solid #AFA9EC;border-radius:5px;width:50px;text-align:right" value="'+(v.rate||'')+'" onchange="upVendorVarietyRate('+vi+','+di+','+vri+',this.value)"></td>'
-            +'<td class="no-print"><button class="icon-btn danger sm" onclick="removeVendorVariety('+vi+','+di+','+vri+')">✕</button></td>'
+            +'<td class="no-print"><div style="display:flex;gap:3px;align-items:center">'
+              +(v.sourceCoId
+                ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+','+vri+')" title="Linked — click to change or remove">🔗 '+esc(v.sourceCoNum||'CO')+'</span>'
+                :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+','+vri+')" title="Link to customer order">🔗 Link</button>':'')
+              +'<button class="icon-btn danger sm" onclick="removeVendorVariety('+vi+','+di+','+vri+')">✕</button>'
+            +'</div></td>'
           +'</tr>';
         });
       }
@@ -8480,19 +8482,27 @@ function _liveVO(voId, designCode){
 // buildDesignsGroupTable() so badges reflect live vendor order state, not a stale flag.
 function _buildVOPresenceMap(){
   const map={}; // key → [vo.orderId, ...]
+  const add=(coId,code,vName,voOrderId)=>{
+    const k=coId+'|'+code+'|'+vName;
+    if(!map[k])map[k]=[];
+    if(!map[k].includes(voOrderId))map[k].push(voOrderId);
+  };
   (S.vendorOrders||[]).forEach(vo=>{
     (vo.designs||[]).forEach(vd=>{
-      if(!vd.sourceCoId) return; // can't link without CO reference (manually-created VO)
-      const coId=vd.sourceCoId, code=vd.code||'';
-      const addEntry=(vName)=>{
-        const k=coId+'|'+code+'|'+vName;
-        if(!map[k])map[k]=[];
-        if(!map[k].includes(vo.orderId))map[k].push(vo.orderId);
-      };
-      if((vd.varieties||[]).length){
-        vd.varieties.forEach(v=>addEntry(v.name||''));
+      const code=vd.code||'';
+      const vars=vd.varieties||[];
+      if(!vars.length){
+        // ── Flat / CNC design: link lives on the design object itself ──────────
+        if(vd.sourceCoId) add(vd.sourceCoId,code,'__flat__',vo.orderId);
       } else {
-        addEntry('__flat__'); // flat/CNC design — no variety name
+        // ── Multi-variety design: link is per variety row ─────────────────────
+        // v.sourceCoId = new per-variety link (row-wise)
+        // vd.sourceCoId = old design-level link — kept as fallback so existing
+        //                 badges don't disappear before the user re-links by row
+        vars.forEach(v=>{
+          const coId=v.sourceCoId||(vd.sourceCoId||'');
+          if(coId) add(coId,code,v.name||'',vo.orderId);
+        });
       }
     });
   });
@@ -8505,11 +8515,20 @@ function _buildVOPresenceMap(){
 //   • sourceCoId + sourceCoNum are saved on the vendor order design
 //   • the badge on the customer order side appears automatically (via _buildVOPresenceMap)
 // The popup also lets the user change an existing link or remove it entirely.
-function _openVOLinkPicker(vi, di){
+// vri = variety row index (0-based) for multi-variety designs
+// vri = undefined / -1 for flat designs (link lives on the design object itself)
+function _openVOLinkPicker(vi, di, vri){
+  const _vri=(vri===undefined||vri===null||vri<0)?-1:vri;
   const vo=S.vendorOrders[vi]; if(!vo)return;
   const vd=vo.designs[di]; if(!vd)return;
+  // For variety rows the design code comes from the parent design
   const code=(vd.code||'').trim();
   if(!code){showToast('Please enter a design code first','amber');return;}
+  // The object that holds the link (design for flat, variety for multi-variety)
+  const holder=_vri>=0?((vd.varieties||[])[_vri]||null):vd;
+  if(!holder)return;
+  // Label shown in the popup header to identify which row is being linked
+  const rowLabel=_vri>=0?(' — variety <strong>'+esc((vd.varieties[_vri].name)||('row '+(_vri+1)))+'</strong>'):'';
 
   // Find all customer orders that contain a design with this exact code
   const matches=[];
@@ -8540,8 +8559,8 @@ function _openVOLinkPicker(vi, di){
   const old=document.getElementById('_vo-link-overlay');
   if(old) old.remove();
 
-  const alreadyLinked=!!(vd.sourceCoId);
-  const alreadyLinkedNum=alreadyLinked?esc(vd.sourceCoNum||'CO'):'';
+  const alreadyLinked=!!(holder.sourceCoId);
+  const alreadyLinkedNum=alreadyLinked?esc(holder.sourceCoNum||'CO'):'';
 
   const overlay=document.createElement('div');
   overlay.id='_vo-link-overlay';
@@ -8550,16 +8569,16 @@ function _openVOLinkPicker(vi, di){
     <div style="background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(83,74,183,.35);padding:22px;max-width:440px;width:100%;max-height:80vh;overflow-y:auto;box-sizing:border-box">
       <div style="font-size:15px;font-weight:700;color:#3C3489;margin-bottom:4px">🔗 Link to customer order</div>
       <div style="font-size:12px;color:#777;margin-bottom:${alreadyLinked?'8':'14'}px">
-        Which customer order is design <strong>${esc(code)}</strong> in <strong>VORD-${esc(vo.orderId||'')}</strong> meant for?
+        Design <strong>${esc(code)}</strong>${rowLabel} in <strong>VORD-${esc(vo.orderId||'')}</strong> — which customer order is it for?
       </div>
       ${alreadyLinked?`
       <div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:8px;padding:8px 12px;font-size:11px;color:#795548;margin-bottom:12px;display:flex;align-items:center;gap:8px">
         <span>Currently linked to <strong>${alreadyLinkedNum}</strong></span>
-        <button onclick="_unlinkVO(${vi},${di})" style="margin-left:auto;background:#FFECB3;color:#E65100;border:1px solid #FFB74D;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer">✕ Remove link</button>
+        <button onclick="_unlinkVO(${vi},${di},${_vri})" style="margin-left:auto;background:#FFECB3;color:#E65100;border:1px solid #FFB74D;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer">✕ Remove link</button>
       </div>`:''}
       <div style="font-size:11px;color:#AAA;margin-bottom:10px">Select a customer order to link to:</div>
       ${matches.map(m=>`
-        <div onclick="_applyVOLink(${vi},${di},'${m.coId}','${esc(m.coNum)}')"
+        <div onclick="_applyVOLink(${vi},${di},'${m.coId}','${esc(m.coNum)}',${_vri})"
           style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:9px;border:1.5px solid #D0CCF5;margin-bottom:8px;cursor:pointer;background:#fafafd;transition:background .12s"
           onmouseover="this.style.background='#EEEDFE';this.style.borderColor='#534AB7'"
           onmouseout="this.style.background='#fafafd';this.style.borderColor='#D0CCF5'">
@@ -8580,11 +8599,14 @@ function _openVOLinkPicker(vi, di){
   document.body.appendChild(overlay);
 }
 
-function _applyVOLink(vi, di, coId, coNum){
+// vri = -1 for flat design (write to design object); ≥ 0 for variety row (write to variety object)
+function _applyVOLink(vi, di, coId, coNum, vri){
   const vo=S.vendorOrders[vi]; if(!vo)return;
   const vd=vo.designs[di]; if(!vd)return;
-  vd.sourceCoId=coId;
-  vd.sourceCoNum=coNum;
+  const holder=(vri>=0)?((vd.varieties||[])[vri]||null):vd;
+  if(!holder)return;
+  holder.sourceCoId=coId;
+  holder.sourceCoNum=coNum;
   const old=document.getElementById('_vo-link-overlay');
   if(old) old.remove();
   save();
@@ -8592,12 +8614,14 @@ function _applyVOLink(vi, di, coId, coNum){
   showToast('✅ Linked to '+coNum+' — badge will now appear on that customer order');
 }
 
-function _unlinkVO(vi, di){
+function _unlinkVO(vi, di, vri){
   const vo=S.vendorOrders[vi]; if(!vo)return;
   const vd=vo.designs[di]; if(!vd)return;
-  const prevNum=vd.sourceCoNum||'CO';
-  delete vd.sourceCoId;
-  delete vd.sourceCoNum;
+  const holder=(vri>=0)?((vd.varieties||[])[vri]||null):vd;
+  if(!holder)return;
+  const prevNum=holder.sourceCoNum||'CO';
+  delete holder.sourceCoId;
+  delete holder.sourceCoNum;
   const old=document.getElementById('_vo-link-overlay');
   if(old) old.remove();
   save();
