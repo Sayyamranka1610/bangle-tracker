@@ -8613,11 +8613,27 @@ function _applyVOLink(vi, di, coId, coNum, vri){
   if(!holder)return;
   holder.sourceCoId=coId;
   holder.sourceCoNum=coNum;
+  // ── Auto-fill karigar on the matching customer order design ──────────────────
+  // If the CO design has no karigar assigned yet, fill it with the vendor name
+  // from this vendor order. Skips silently if already assigned (user chose it).
+  let karigarFilled=false;
+  if(vo.vendor){
+    const code=(vd.code||'').trim();
+    const targetOrder=(S.orders||[]).find(o=>o.id===coId);
+    if(targetOrder){
+      (targetOrder.designs||[]).forEach(td=>{
+        if((td.code||'').trim()===code && !td.assignedVendor){
+          td.assignedVendor=vo.vendor;
+          karigarFilled=true;
+        }
+      });
+    }
+  }
   const old=document.getElementById('_vo-link-overlay');
   if(old) old.remove();
   save();
   render();
-  showToast('✅ Linked to '+coNum+' — badge will now appear on that customer order');
+  showToast('✅ Linked to '+coNum+(karigarFilled?' · "'+vo.vendor+'" set as karigar in '+coNum:''));
 }
 
 function _unlinkVO(vi, di, vri){
