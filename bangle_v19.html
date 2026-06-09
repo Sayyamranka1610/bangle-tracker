@@ -4315,7 +4315,7 @@ function buildDesignsPanel(order,oi){
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'
         +allGroupImgs.map(({img,label})=>
           '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
-            +'<img src="'+(img.data||'')+'" onclick="openLbDirect(\''+(img.data||'')+'\')" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
+            +'<img loading="lazy" src="'+(img.data||'')+'" onclick="openLbDirect(\''+(img.data||'')+'\')" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
             +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
           +'</div>'
         ).join('')
@@ -4501,7 +4501,7 @@ function buildDesignsGroupTable(order,oi,g){
       d.varieties.forEach((v,vi)=>{
         const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
         const varImgs=(v.images||[]).map((img,ii)=>
-          '<img class="variety-thumb" src="'+(img.data||'')+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
+          '<img loading="lazy" class="variety-thumb" src="'+(img.data||'')+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
           +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
         ).join('');
         const addVarImg='<button class="variety-img-add no-print" onclick="openLibraryPicker('+oi+','+di+','+vi+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
@@ -4785,7 +4785,7 @@ function renderDesignView(){
     const imgGalleryHtml = allImgs.length
       ? '<div style="font-size:11px;font-weight:600;color:#534AB7;margin-bottom:6px">All images for '+esc(dname)+'</div>'
         +'<div class="design-imgs-gallery" style="margin-bottom:12px">'
-        +allImgs.map((img,ii)=>'<div class="gallery-img-card"><img src="'+(img.data||'')+'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+(img.data||'')+'\')">'+'<div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>').join('')
+        +allImgs.map((img,ii)=>'<div class="gallery-img-card"><img loading="lazy" src="'+(img.data||'')+'" alt="'+esc(dname)+' '+(ii+1)+'" onclick="openLbDirect(\''+(img.data||'')+'\')">'+'<div class="img-footer"><span class="img-num">#'+(ii+1)+'</span></div></div>').join('')
         +'</div>'
       : '';
 
@@ -7320,7 +7320,7 @@ function buildVendorDesignsPanel(vo, voi){
           ${vImgs.map((img,ii)=>{
             const src=_resolveImgSrc(img);
             return src?`<div style="position:relative;display:inline-block">
-              <img src="${src}" onclick="openLbDirect('${src}')" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1.5px solid #FFB74D;cursor:pointer">
+              <img loading="lazy" src="${src}" onclick="openLbDirect('${src}')" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1.5px solid #FFB74D;cursor:pointer">
             </div>`:'';
           }).filter(Boolean).join('')}
           <label style="cursor:pointer;font-size:11px;color:#E65100;padding:4px 8px;border:1px dashed #FFB74D;border-radius:6px">
@@ -7766,7 +7766,7 @@ function buildVarietyGallery(varieties){
   const imgs=(varieties||[]).flatMap(v=>(v.images||[]).map(img=>{const src=_resolveImgSrc(img);return src?{src,name:v.name||''}:null;}).filter(Boolean));
   if(!imgs.length)return '';
   return '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px">'
-    +imgs.map(({src,name})=>'<img src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\')" title="'+esc(name)+'" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1.5px solid #FFB74D;cursor:zoom-in">').join('')
+    +imgs.map(({src,name})=>'<img loading="lazy" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\')" title="'+esc(name)+'" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1.5px solid #FFB74D;cursor:zoom-in">').join('')
   +'</div>';
 }
 
@@ -8045,7 +8045,7 @@ function buildVendorDesignsPanel(vo,vi){
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'+allGroupImgs.map(({img,label})=>{
           const src=_resolveImgSrc(img)||'';return src
             ?'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
-              +'<img src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
+              +'<img loading="lazy" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
               +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
             +'</div>':'';
         }).filter(Boolean).join('')+'</div>'
@@ -8078,7 +8078,7 @@ function buildVendorDesignsPanel(vo,vi){
         const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
         const flatImgs=hasOnlyDefault?(varieties[0].images||[]):(d.images||[]);
         const imgCells=flatImgs.map((img,ii)=>{const src=_resolveImgSrc(img);return src
-          ?'<img class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
+          ?'<img loading="lazy" class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
             +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
         const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
           +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
@@ -8106,7 +8106,7 @@ function buildVendorDesignsPanel(vo,vi){
         const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
         const dImages=d.images||[];
         const dImgCells=dImages.map((img,ii)=>{const src=_resolveImgSrc(img);return src
-          ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+          ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
         const addDImgBtn='<label class="variety-img-add no-print" for="vdimg-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
           +'<input type="file" id="vdimg-'+d.id+'" accept="image/*" style="display:none" onchange="addVDImg('+vi+','+di+',this)">';
         tbody+='<tr style="background:#EEEDFE">'
@@ -8122,7 +8122,7 @@ function buildVendorDesignsPanel(vo,vi){
         varieties.forEach((v,vri)=>{
           const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
           const varImgs=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src
-            ?'<img class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+            ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
           const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
             +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
           const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
@@ -8678,7 +8678,7 @@ function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
           ?(r.images[0]?.data||'')
           :(r.varImages[0]?.data||r.designImages[0]?.data||'');
         const thumbHtml=thumb
-          ?`<img src="${thumb}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1.5px solid #E0DFFF">`
+          ?`<img loading="lazy" src="${thumb}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1.5px solid #E0DFFF">`
           :`<div style="width:60px;height:60px;border-radius:8px;background:#F0EFFF;border:1.5px dashed #AFA9EC;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px;color:#AFA9EC">🖼️</div>`;
         // Size pills — only non-zero
         const sizesObj=r.isFlat?r.sizes:r.varSizes;
@@ -11160,7 +11160,7 @@ function renderStockView(container){
       const imgSrc=(v.images&&v.images.length)?v.images[0].data:'';
       return`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-bottom:1px solid #EEEDFE;background:#fafafd">
         <div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;border:1.5px solid #D0CCF5;background:#f4f3ef;display:flex;align-items:center;justify-content:center">
-          ${imgSrc?`<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openLbDirect('${imgSrc}')">`:`<span style="font-size:16px;color:#ccc">🖼️</span>`}
+          ${imgSrc?`<img loading="lazy" src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openLbDirect('${imgSrc}')">`:`<span style="font-size:16px;color:#ccc">🖼️</span>`}
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600;color:#3C3489;margin-bottom:3px">🧵 ${esc(v.name)}</div>
@@ -11191,7 +11191,7 @@ function renderStockView(container){
     return`<div class="stock-card" style="position:relative">
       ${simBadge?`<div style="position:absolute;top:8px;right:8px;z-index:2">${simBadge}</div>`:''}
       <div class="stock-card-img" style="${firstImg?'cursor:zoom-in':''}" ${firstImg?`onclick="openLbDirect('${firstImg}')"`:''}>
-        ${firstImg?`<img src="${firstImg}" alt="${esc(dm.name)}">`:`<span style="font-size:32px;color:#D3D1C7">🖼️</span>`}
+        ${firstImg?`<img loading="lazy" src="${firstImg}" alt="${esc(dm.name)}">`:`<span style="font-size:32px;color:#D3D1C7">🖼️</span>`}
       </div>
       <div class="stock-card-body">
         <div class="stock-card-title">${esc(dm.code||dm.name)}</div>
@@ -11339,7 +11339,7 @@ function openAddStockModal(isOpening,editId){
       <div style="font-size:11px;color:#3C3489;font-weight:600;margin-bottom:6px">📷 Images of this variety</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px" id="stk-img-preview">
         ${window._stockModalImages.map((im,i)=>`<div style="position:relative">
-          <img src="${im.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:pointer" onclick="openLbDirect('${im.data}')">
+          <img loading="lazy" src="${im.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:pointer" onclick="openLbDirect('${im.data}')">
           <button style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;border:none;background:#E24B4A;color:#fff;font-size:10px;cursor:pointer;padding:0;line-height:1" onclick="removeStockImg(${i})">✕</button>
         </div>`).join('')}
         <label style="width:72px;height:72px;border:2px dashed #AFA9EC;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#888;gap:4px" for="stk-img-inp">
@@ -11395,7 +11395,7 @@ async function handleStockImgUpload(inp){
   // refresh preview
   const prev=document.getElementById('stk-img-preview');
   if(prev)prev.innerHTML=window._stockModalImages.map((im,i)=>`<div style="position:relative">
-    <img src="${im.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:pointer" onclick="openLbDirect('${im.data}')">
+    <img loading="lazy" src="${im.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:pointer" onclick="openLbDirect('${im.data}')">
     <button style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;border:none;background:#E24B4A;color:#fff;font-size:10px;cursor:pointer;padding:0;line-height:1" onclick="removeStockImg(${i})">✕</button>
   </div>`).join('')+`<label style="width:72px;height:72px;border:2px dashed #AFA9EC;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#888;gap:4px" for="stk-img-inp">
     <span style="font-size:22px">📷</span>Add
@@ -11729,7 +11729,7 @@ function openInvDetail(designKey,byField){
             <tbody>
               ${varietyRows.map((r,ri)=>{
                 const imgSrc=varImgMap[r.variety]||'';
-                const imgHtml=imgSrc?`<img src="${imgSrc}" onclick="openLbDirect('${imgSrc}')" style="width:32px;height:32px;border-radius:6px;object-fit:cover;border:1.5px solid #D0CCF5;cursor:zoom-in;vertical-align:middle;margin-right:5px">`
+                const imgHtml=imgSrc?`<img loading="lazy" src="${imgSrc}" onclick="openLbDirect('${imgSrc}')" style="width:32px;height:32px;border-radius:6px;object-fit:cover;border:1.5px solid #D0CCF5;cursor:zoom-in;vertical-align:middle;margin-right:5px">`
                   :`<span style="display:inline-block;width:32px;height:32px;border-radius:6px;border:1.5px dashed #D0CCF5;background:#f7f6ff;text-align:center;line-height:32px;font-size:14px;vertical-align:middle;margin-right:5px;color:#ccc">🖼️</span>`;
                 return`<tr style="border-bottom:1px solid #EEEDFE;background:${ri%2?'#fafafd':'#fff'}">
                   <td style="padding:6px 10px;font-size:10px;color:#888;white-space:nowrap">${esc(r.orderLabel)}</td>
