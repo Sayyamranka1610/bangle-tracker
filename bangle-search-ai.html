@@ -11,16 +11,20 @@
   header { background: #1a1750; padding: 16px 24px; border-bottom: 1px solid #2d2a5e; display: flex; align-items: center; gap: 16px; }
   header h1 { font-size: 1.2rem; color: #a89cff; }
   header p  { font-size: 0.8rem; color: #7b72c9; margin-top: 2px; }
-  .ai-badge { background: #2d4a2d; color: #6dffaa; font-size: 0.7rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; border: 1px solid #3d6a3d; }
+  .ai-badge { background: #2d4a2d; color: #6dffaa; font-size: 0.7rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; border: 1px solid #3d6a3d; white-space: nowrap; }
 
   .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
 
+  /* Init bar */
+  .init-bar { display: none; align-items: center; gap: 10px; padding: 12px 16px; background: #15132a; border: 1px solid #2d2a5e; border-radius: 10px; margin-bottom: 16px; font-size: 0.85rem; color: #7b72c9; }
+  .init-bar.visible { display: flex; }
+  .init-progress { flex: 1; height: 6px; background: #0f0e1a; border-radius: 3px; overflow: hidden; }
+  .init-progress-bar { height: 100%; background: linear-gradient(90deg, #534AB7, #a89cff); border-radius: 3px; width: 0%; transition: width 0.3s; }
+
   /* Upload zone */
-  .upload-zone {
-    border: 2px dashed #3d3880; border-radius: 16px; padding: 40px 20px;
-    text-align: center; cursor: pointer; transition: all 0.2s; background: #15132a; position: relative;
-  }
+  .upload-zone { border: 2px dashed #3d3880; border-radius: 16px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #15132a; position: relative; }
   .upload-zone:hover, .upload-zone.drag-over { border-color: #7c6fff; background: #1e1b3a; }
+  .upload-zone.disabled { opacity: 0.5; pointer-events: none; }
   .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
   .upload-icon { font-size: 3rem; margin-bottom: 12px; }
   .upload-zone h2 { font-size: 1.1rem; color: #c4beff; margin-bottom: 8px; }
@@ -37,8 +41,9 @@
   .btn-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   .btn { padding: 10px 22px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
   .btn:hover { opacity: 0.85; }
-  .btn-primary   { background: #534AB7; color: #fff; }
-  .btn-danger    { background: #3d1f1f; color: #ff8080; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: #534AB7; color: #fff; }
+  .btn-danger  { background: #3d1f1f; color: #ff8080; }
 
   /* Status */
   .status { margin-top: 16px; padding: 14px 18px; border-radius: 10px; font-size: 0.9rem; display: none; }
@@ -48,16 +53,15 @@
   .spinner { width: 18px; height: 18px; border: 2px solid #3d3880; border-top-color: #7c6fff; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; margin-top: 2px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Claude description box */
+  /* Description box */
   .description-box { margin-top: 20px; padding: 16px; background: #15132a; border: 1px solid #2d2a5e; border-radius: 12px; display: none; }
   .description-box.visible { display: block; }
   .description-box h4 { color: #7b72c9; font-size: 0.8rem; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
   .description-box p  { color: #a89cff; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; }
 
-  /* Results grouped by bangle */
+  /* Results */
   .bangle-group { margin-top: 28px; }
   .bangle-group-title { color: #a89cff; font-size: 1rem; font-weight: 700; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #2d2a5e; }
-
   .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 12px; }
 
   .result-card { background: #15132a; border: 1px solid #2d2a5e; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.2s; position: relative; }
@@ -85,7 +89,6 @@
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: #534AB7; color: #fff; padding: 12px 24px; border-radius: 12px; font-weight: 600; transition: transform 0.3s; z-index: 999; box-shadow: 0 4px 20px rgba(83,74,183,0.5); }
   .toast.show { transform: translateX(-50%) translateY(0); }
 
-  /* Switch to free version link */
   .version-switch { text-align: center; margin-top: 32px; padding-top: 20px; border-top: 1px solid #2d2a5e; font-size: 0.82rem; color: #6b64a0; }
   .version-switch a { color: #7b72c9; text-decoration: none; }
   .version-switch a:hover { color: #a89cff; }
@@ -96,16 +99,25 @@
 <header>
   <div>
     <h1>Bangle AI Search</h1>
-    <p>Claude Vision identifies designs from client photos</p>
+    <p>Claude Vision + Semantic matching — finds designs by meaning, not just words</p>
   </div>
   <span class="ai-badge">AI Powered</span>
 </header>
 
 <div class="container">
 
+  <!-- Init bar -->
+  <div class="init-bar" id="initBar">
+    <div class="spinner"></div>
+    <div style="flex:1">
+      <div id="initLabel" style="margin-bottom:6px">Loading search model...</div>
+      <div class="init-progress"><div class="init-progress-bar" id="initPBar"></div></div>
+    </div>
+  </div>
+
   <!-- Upload -->
-  <div class="upload-zone" id="uploadZone">
-    <input type="file" id="fileInput" accept="image/*" />
+  <div class="upload-zone disabled" id="uploadZone">
+    <input type="file" id="fileInput" accept="image/*" disabled />
     <div class="upload-icon">📸</div>
     <h2>Drop client photo here or tap to select</h2>
     <p>Works with WhatsApp photos — multiple bangles in one photo is fine</p>
@@ -115,11 +127,11 @@
   <div class="preview-section" id="previewSection">
     <div class="preview-header">
       <h3>Uploaded photo</h3>
-      <button class="btn btn-danger" onclick="resetAll()">X Clear</button>
+      <button class="btn btn-danger" onclick="resetAll()">✕ Clear</button>
     </div>
     <img id="previewImg" class="preview-img" src="" alt="preview" />
     <div class="btn-row">
-      <button class="btn btn-primary" onclick="doSearch()">Search with AI</button>
+      <button class="btn btn-primary" id="searchBtn" onclick="doSearch()">Search with AI</button>
     </div>
   </div>
 
@@ -145,24 +157,85 @@
   <div id="resultsContainer"></div>
 
   <div class="version-switch">
-    <a href="bangle-search.html">Switch to free version (DINOv2)</a>
+    <a href="bangle-search.html">Switch to free version (DINOv2 visual search)</a>
   </div>
 
 </div>
 
 <div class="toast" id="toast"></div>
 
-<script>
-const WORKER_URL = "https://bangle-search-ai.sayyamranka09.workers.dev";
+<script type="module">
+const WORKER_URL    = "https://bangle-search-ai.sayyamranka09.workers.dev";
+const EMB_CACHE_KEY = "bangle-desc-embeddings-v1";
+const TOP_K = 8;
 
+let embedder     = null;
+let catalogEmbs  = null;
 let currentFile  = null;
 let selectedCode = null;
 
-// File handling
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function boot() {
+  document.getElementById("initBar").classList.add("visible");
+  setInit("Loading AI matching model...", 5);
+
+  try {
+    const { pipeline, env } = await import(
+      "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.2/dist/transformers.min.js"
+    );
+    env.allowLocalModels = false;
+
+    embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
+      dtype: "q8",
+      progress_callback: p => {
+        if (p.status === "downloading" && p.total) {
+          const pct = Math.round((p.loaded / p.total) * 50) + 5;
+          setInit(`Downloading model: ${Math.round(p.loaded/1024/1024)}MB / ${Math.round(p.total/1024/1024)}MB`, pct);
+        } else if (p.status === "loading") {
+          setInit("Loading model into memory...", 58);
+        }
+      }
+    });
+
+    setInit("Loading design catalog...", 65);
+    catalogEmbs = await loadCatalogCached();
+    const n = Object.keys(catalogEmbs).length;
+
+    setInit(`Ready — ${n.toLocaleString()} designs indexed`, 100);
+    setTimeout(() => document.getElementById("initBar").classList.remove("visible"), 1200);
+
+    document.getElementById("uploadZone").classList.remove("disabled");
+    document.getElementById("fileInput").disabled = false;
+
+  } catch (err) {
+    setInit("Error: " + err.message, 0);
+    console.error(err);
+  }
+}
+
+async function loadCatalogCached() {
+  try {
+    const cache  = await caches.open(EMB_CACHE_KEY);
+    const cached = await cache.match(WORKER_URL + "/desc-embeddings");
+    if (cached) { setInit("Loading catalog from cache...", 70); return await cached.json(); }
+  } catch (_) {}
+
+  setInit("Downloading design catalog (~10 MB, one-time)...", 65);
+  const resp = await fetch(WORKER_URL + "/desc-embeddings");
+  if (!resp.ok) throw new Error("Could not load catalog: " + resp.status);
+
+  try {
+    const cache = await caches.open(EMB_CACHE_KEY);
+    await cache.put(WORKER_URL + "/desc-embeddings", resp.clone());
+  } catch (_) {}
+
+  return await resp.json();
+}
+
+// ── File input ────────────────────────────────────────────────────────────────
 document.getElementById("fileInput").addEventListener("change", e => {
   if (e.target.files[0]) loadFile(e.target.files[0]);
 });
-
 const zone = document.getElementById("uploadZone");
 zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
 zone.addEventListener("dragleave", ()  => zone.classList.remove("drag-over"));
@@ -178,8 +251,7 @@ document.addEventListener("paste", e => {
 
 function loadFile(file) {
   currentFile = file;
-  const url = URL.createObjectURL(file);
-  document.getElementById("previewImg").src = url;
+  document.getElementById("previewImg").src = URL.createObjectURL(file);
   document.getElementById("previewSection").classList.add("visible");
   document.getElementById("statusBox").className = "status";
   document.getElementById("descBox").classList.remove("visible");
@@ -187,10 +259,13 @@ function loadFile(file) {
   document.getElementById("resultsContainer").innerHTML = "";
 }
 
-async function doSearch() {
-  if (!currentFile) return;
+// ── Search ────────────────────────────────────────────────────────────────────
+window.doSearch = async function() {
+  if (!currentFile || !embedder || !catalogEmbs) return;
+  const btn = document.getElementById("searchBtn");
+  btn.disabled = true;
 
-  showStatus("Claude is reading the photo...");
+  showStatus("Step 1/3 — Claude is reading the photo...");
   document.getElementById("descBox").classList.remove("visible");
   document.getElementById("resultsContainer").innerHTML = "";
   document.getElementById("selectedBanner").classList.remove("visible");
@@ -199,66 +274,87 @@ async function doSearch() {
   try {
     const form = new FormData();
     form.append("image", currentFile);
-
     const resp = await fetch(WORKER_URL + "/search", { method: "POST", body: form });
 
     if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: "Unknown error" }));
-      showError(err.error || "Search failed");
-      return;
+      showError((await resp.json().catch(() => ({error:"Unknown error"}))).error || "Search failed");
+      btn.disabled = false; return;
     }
 
     const data = await resp.json();
-    hideStatus();
-
-    // Show Claude's description
     document.getElementById("descText").textContent = data.raw_description;
     document.getElementById("descBox").classList.add("visible");
 
-    // Show results grouped by bangle
-    const container = document.getElementById("resultsContainer");
-    container.innerHTML = "";
+    const allResults = [];
+    for (const bangle of data.bangles) {
+      showStatus(`Step 2/3 — Generating semantic fingerprint for ${bangle.label}...`);
+      const out = await embedder(bangle.description, { pooling: "mean", normalize: true });
+      const qVec = Array.from(out.data);
 
-    for (const group of data.results) {
-      const div = document.createElement("div");
-      div.className = "bangle-group";
-
-      const title = document.createElement("div");
-      title.className = "bangle-group-title";
-      title.textContent = data.results.length > 1
-        ? `${group.label} — Top Matches`
-        : "Top Matches — tap to select";
-      div.appendChild(title);
-
-      const grid = document.createElement("div");
-      grid.className = "results-grid";
-
-      group.matches.forEach((m, i) => {
-        const card = document.createElement("div");
-        card.className = "result-card";
-        card.onclick = () => selectResult(m.design_code, card);
-
-        const sc = m.pct >= 30 ? "score-high" : m.pct >= 20 ? "score-medium" : "score-low";
-        const folder = m.path.split("/").slice(0, -1).join(" / ");
-        const encodedUrl = m.url.split('/').map((part, idx) => idx > 2 ? encodeURIComponent(part) : part).join('/');
-
-        card.innerHTML = `
-          ${i === 0 ? '<div class="best-badge">Best Match</div>' : ""}
-          <img src="${encodedUrl}" alt="${m.design_code}" loading="lazy" onerror="this.style.background='#1a1750'">
-          <div class="result-info">
-            <div class="result-code">${m.design_code}</div>
-            <div class="result-folder">${folder}</div>
-            <span class="result-score ${sc}">${m.pct}% match</span>
-          </div>`;
-        grid.appendChild(card);
-      });
-
-      div.appendChild(grid);
-      container.appendChild(div);
+      showStatus(`Step 3/3 — Searching ${Object.keys(catalogEmbs).length.toLocaleString()} designs...`);
+      const matches = findTopK(qVec, catalogEmbs, TOP_K);
+      allResults.push({ label: bangle.label, matches });
     }
 
+    hideStatus();
+    renderResults(allResults, data.bangles.length > 1);
+
   } catch (e) {
-    showError("Could not connect: " + e.message);
+    showError("Search failed: " + e.message);
+    console.error(e);
+  }
+  btn.disabled = false;
+};
+
+function cosine(a, b) {
+  let dot = 0, ma = 0, mb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; ma += a[i]*a[i]; mb += b[i]*b[i]; }
+  const d = Math.sqrt(ma) * Math.sqrt(mb);
+  return d > 0 ? dot / d : 0;
+}
+
+function findTopK(query, catalog, k) {
+  const best = {};
+  for (const [, entry] of Object.entries(catalog)) {
+    const score = cosine(query, entry.embedding);
+    const code  = entry.design_code;
+    if (!best[code] || score > best[code].score)
+      best[code] = { design_code: code, path: entry.path, url: entry.url, score, pct: Math.round(score * 100) };
+  }
+  return Object.values(best).sort((a, b) => b.score - a.score).slice(0, k);
+}
+
+function renderResults(allResults, multi) {
+  const container = document.getElementById("resultsContainer");
+  container.innerHTML = "";
+  for (const { label, matches } of allResults) {
+    const group = document.createElement("div");
+    group.className = "bangle-group";
+    const title = document.createElement("div");
+    title.className = "bangle-group-title";
+    title.textContent = multi ? `${label} — Top Matches` : "Top Matches — tap to select";
+    group.appendChild(title);
+    const grid = document.createElement("div");
+    grid.className = "results-grid";
+    matches.forEach((m, i) => {
+      const card = document.createElement("div");
+      card.className = "result-card";
+      card.onclick = () => selectResult(m.design_code, card);
+      const sc = m.pct >= 55 ? "score-high" : m.pct >= 40 ? "score-medium" : "score-low";
+      const folder = m.path.split("/").slice(0, -1).join(" / ");
+      const eUrl = m.url.split("/").map((p,idx) => idx > 2 ? encodeURIComponent(p) : p).join("/");
+      card.innerHTML = `
+        ${i===0?'<div class="best-badge">Best Match</div>':""}
+        <img src="${eUrl}" alt="${m.design_code}" loading="lazy" onerror="this.style.background='#1a1750'">
+        <div class="result-info">
+          <div class="result-code">${m.design_code}</div>
+          <div class="result-folder">${folder}</div>
+          <span class="result-score ${sc}">${m.pct}% match</span>
+        </div>`;
+      grid.appendChild(card);
+    });
+    group.appendChild(grid);
+    container.appendChild(group);
   }
 }
 
@@ -268,17 +364,14 @@ function selectResult(code, card) {
   selectedCode = code;
   document.getElementById("selectedCode").textContent = code;
   document.getElementById("selectedBanner").classList.add("visible");
-  document.getElementById("selectedBanner").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  document.getElementById("selectedBanner").scrollIntoView({ behavior:"smooth", block:"nearest" });
 }
 
-function copyCode() {
+window.copyCode = function() {
   if (!selectedCode) return;
-  navigator.clipboard.writeText(selectedCode)
-    .then(() => showToast("Copied: " + selectedCode))
-    .catch(() => { showToast("Copied: " + selectedCode); });
-}
-
-function resetAll() {
+  navigator.clipboard.writeText(selectedCode).then(() => showToast("Copied: " + selectedCode));
+};
+window.resetAll = function() {
   currentFile = null;
   document.getElementById("previewSection").classList.remove("visible");
   document.getElementById("statusBox").className = "status";
@@ -287,8 +380,12 @@ function resetAll() {
   document.getElementById("resultsContainer").innerHTML = "";
   document.getElementById("fileInput").value = "";
   document.getElementById("previewImg").src = "";
-}
+};
 
+function setInit(text, pct) {
+  document.getElementById("initLabel").textContent = text;
+  document.getElementById("initPBar").style.width = pct + "%";
+}
 function showStatus(msg) {
   const b = document.getElementById("statusBox");
   b.className = "status loading visible";
@@ -297,7 +394,7 @@ function showStatus(msg) {
 function showError(msg) {
   const b = document.getElementById("statusBox");
   b.className = "status error visible";
-  b.innerHTML = `<span>Error: ${msg}</span>`;
+  b.innerHTML = `<span>⚠ ${msg}</span>`;
 }
 function hideStatus() { document.getElementById("statusBox").className = "status"; }
 
@@ -308,6 +405,8 @@ function showToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), 2500);
 }
+
+boot();
 </script>
 </body>
 </html>

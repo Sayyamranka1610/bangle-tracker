@@ -1,7 +1,10 @@
 /**
- * Bangle Search AI Worker — Claude Vision
- * Accepts a client photo, asks Claude to describe the bangles,
- * then matches descriptions against the catalog using text similarity.
+ * Bangle Search AI Worker — Claude Vision + Semantic Embeddings
+ *
+ * Step 1: Accepts client photo → Claude describes the bangle(s) in words
+ * Step 2: Browser handles embedding + cosine similarity search
+ *
+ * Also serves /desc-embeddings endpoint so browser can download the catalog index.
  */
 
 const CORS = {
@@ -24,19 +27,8 @@ Completely IGNORE color (gold/silver tones do not matter for matching).
 If multiple bangles are visible, number them: "Bangle 1: ...", "Bangle 2: ..." etc.
 Focus on what makes each design structurally unique.`;
 
-// Stopwords to ignore in similarity scoring
-const STOPWORDS = new Set([
-  "a","an","the","with","and","or","in","on","of","at","by","for","from",
-  "is","has","have","are","be","it","this","that","these","those","its",
-  "to","as","into","also","each","both","very","more","most","some",
-  "bangle","bracelet","design","pattern","overall","features","section",
-  "band","featuring","creating","composed","various","throughout","across",
-  "between","within","around","along","using","through","different","multiple",
-  "segment","item","number","structure","aesthetic","overall","effect",
-]);
-
-// Cache descriptions in memory (reloaded hourly)
-let cachedDescriptions = null;
+// Cache desc-embeddings in memory (reload hourly)
+let cachedEmbeddings = null;
 let cacheTime = 0;
 const CACHE_TTL = 60 * 60 * 1000;
 
@@ -46,10 +38,33 @@ export default {
 
     const url = new URL(request.url);
 
+    // Health check
     if (url.pathname === "/health") {
-      return json({ status: "ok", model: "claude-haiku-4-5" });
+      return json({ status: "ok", mode: "semantic-embeddings" });
     }
 
+    // Serve desc-embeddings index from R2 (browser downloads this for search)
+    if (url.pathname === "/desc-embeddings") {
+      try {
+        if (cachedEmbeddings && Date.now() - cacheTime < CACHE_TTL) {
+          return new Response(cachedEmbeddings, {
+            headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }
+          });
+        }
+        const obj = await env.BUCKET.get("_search_index/desc_embeddings.json");
+        if (!obj) return json({ error: "Embedding index not ready. Run generate_desc_embeddings.py first." }, 503);
+        const text = await obj.text();
+        cachedEmbeddings = text;
+        cacheTime = Date.now();
+        return new Response(text, {
+          headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }
+        });
+      } catch (e) {
+        return json({ error: "Failed to load embedding index: " + e.message }, 500);
+      }
+    }
+
+    // Main search: photo → Claude description → return descriptions for browser to match
     if (request.method === "POST" && url.pathname === "/search") {
       try {
         const form = await request.formData();
@@ -60,7 +75,7 @@ export default {
         const imgB64    = arrayBufferToBase64(imgBytes);
         const mediaType = file.type || "image/jpeg";
 
-        // Step 1: Ask Claude to describe the bangle(s) in the photo
+        // Ask Claude to describe the bangle(s)
         const claudeResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -86,24 +101,14 @@ export default {
           return json({ error: "Claude API error: " + err.slice(0, 200) }, 500);
         }
 
-        const claudeData  = await claudeResp.json();
-        const queryText   = claudeData.content[0].text;
+        const claudeData = await claudeResp.json();
+        const rawDesc    = claudeData.content[0].text;
 
-        // Step 2: Load catalog descriptions from R2
-        const catalog = await loadCatalog(env.BUCKET);
-        if (!catalog) return json({ error: "Catalog not ready. Run the description indexer first." }, 503);
+        // Parse multi-bangle descriptions
+        const bangles = parseBangleDescriptions(rawDesc);
 
-        // Step 3: Parse individual bangles from Claude's response
-        const bangleDescriptions = parseBangleDescriptions(queryText);
-
-        // Step 4: Search for each bangle
-        const allResults = [];
-        for (const { label, description } of bangleDescriptions) {
-          const matches = findTopMatches(description, catalog, 8);
-          allResults.push({ label, query_description: description, matches });
-        }
-
-        return json({ results: allResults, raw_description: queryText });
+        // Return descriptions to browser — browser handles embedding + search
+        return json({ bangles, raw_description: rawDesc });
 
       } catch (e) {
         return json({ error: "Search failed: " + e.message }, 500);
@@ -114,92 +119,15 @@ export default {
   }
 };
 
-// ── Parse Claude's response into individual bangle descriptions ───────────────
 function parseBangleDescriptions(text) {
-  // Check if multiple bangles described
   const hasBangle1 = /bangle\s*1[:\-]/i.test(text);
-
   if (!hasBangle1) {
     return [{ label: "Bangle", description: text }];
   }
-
-  // Split by "Bangle N:" markers
   const parts = text.split(/bangle\s*\d+\s*[:\-]/gi).filter(p => p.trim().length > 20);
   return parts.map((p, i) => ({ label: `Bangle ${i + 1}`, description: p.trim() }));
 }
 
-// ── Text similarity (Jaccard on meaningful tokens) ────────────────────────────
-function tokenize(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s\-]/g, " ")
-    .split(/\s+/)
-    .filter(w => w.length >= 3 && !STOPWORDS.has(w));
-}
-
-function similarity(queryTokens, catalogText) {
-  const catTokens = new Set(tokenize(catalogText));
-  let matches = 0;
-  let total   = catTokens.size;
-
-  for (const t of queryTokens) {
-    if (catTokens.has(t)) {
-      matches++;
-    } else {
-      // Partial match bonus: "flower" matches "flower-medallion"
-      for (const ct of catTokens) {
-        if (ct.includes(t) || t.includes(ct)) { matches += 0.5; break; }
-      }
-    }
-    total++;
-  }
-
-  return total > 0 ? matches / total : 0;
-}
-
-function findTopMatches(queryDescription, catalog, k) {
-  const queryTokens = tokenize(queryDescription);
-  const scores = [];
-
-  // Group by design_code — take best score per design
-  const bestPerCode = {};
-
-  for (const [path, entry] of Object.entries(catalog)) {
-    const score = similarity(queryTokens, entry.description);
-    const code  = entry.design_code;
-
-    if (!bestPerCode[code] || score > bestPerCode[code].score) {
-      bestPerCode[code] = {
-        design_code: code,
-        path:        entry.path,
-        url:         entry.url,
-        score:       score,
-        pct:         Math.round(score * 100),
-      };
-    }
-  }
-
-  return Object.values(bestPerCode)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k);
-}
-
-// ── Load catalog from R2 (with memory cache) ──────────────────────────────────
-async function loadCatalog(bucket) {
-  if (cachedDescriptions && Date.now() - cacheTime < CACHE_TTL) return cachedDescriptions;
-  try {
-    const obj = await bucket.get("_search_index/descriptions.json");
-    if (!obj) return null;
-    cachedDescriptions = JSON.parse(await obj.text());
-    cacheTime = Date.now();
-    return cachedDescriptions;
-  } catch (e) {
-    console.error("Failed to load catalog:", e);
-    return null;
-  }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
