@@ -7932,13 +7932,17 @@ function buildVendorOrderCard(vo,vi){
   const isOverdue=vo.deliveryDate&&new Date(vo.deliveryDate)<new Date()&&st!=='delivered';
   const cardAlert=st==='delivered'?'al-done':'al-pending';
 
+  const _prog=_voRowsProgress(vo);
+  const _rcvdBadge=_prog.total>0
+    ?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:4px;${_prog.received===_prog.total?'background:#E1F5EE;color:#0F6E56;border:1px solid #A9DFBF':'background:#F3F3F3;color:#888;border:1px solid #DDD'}">${_prog.received}/${_prog.total} received</span>`
+    :'';
   return`<div class="order-card ${cardAlert}" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
       <div class="oh-icon" style="color:${stColor};background:${stColor}18;font-size:10px;border:2px solid ${stColor}44">●</div>
       <div class="oh-left">
         <div class="oh-title">${esc(vo.orderId)} · <span style="color:${stColor}">${esc(vo.vendor)}</span></div>
         <div class="oh-sub">
-          ${qtyStr} · ${vo.designs.length} design${vo.designs.length!==1?'s':''}
+          ${qtyStr} · ${vo.designs.length} design${vo.designs.length!==1?'s':''}${_rcvdBadge}
           · Started ${fmtDate(vo.startDate)}
           ${vo.deliveryDate?'· Delivery: <strong style="color:'+(isOverdue?'#A32D2D':stColor)+'">'+fmtDate(vo.deliveryDate)+'</strong>':''}
         </div>
@@ -8099,7 +8103,7 @@ function buildVendorDesignsPanel(vo,vi){
           +' oninput="upVendorFlatSizeSilent('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+');this._dirty=true"'
           +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')}"'
           +' onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
-        tbody+='<tr style="background:#fff">'
+        tbody+='<tr style="background:'+(d.received?'#F0FFF4':'#fff')+'">'
           +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onkeydown="handleCodeTabKey(event)" onblur="rebuildVocab()" tabindex="0" style="max-width:110px"></td>'
           +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
           +sizeCells
@@ -8107,6 +8111,7 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorFlatUnit('+vi+','+di+',this.value,'+hasOnlyDefault+')">'+unitOpts+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
           +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">'
+            +'<button class="icon-btn sm" style="'+(d.received?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56':'background:#F8F9FA;color:#ADB5BD;border-color:#DEE2E6')+';font-weight:700" onclick="toggleVORowReceived('+vi+','+di+',-1)" title="'+(d.received?'Received ✓ — click to undo':'Mark as received from vendor')+'">✓</button>'
             +(d.sourceCoId
               ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
               :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
@@ -8146,7 +8151,7 @@ function buildVendorDesignsPanel(vo,vi){
             +' oninput="upVendorVarietySizeSilent('+vi+','+di+','+vri+',\''+sz+'\',this.value);this._dirty=true"'
             +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)}"'
             +' onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
-          tbody+='<tr style="background:#FAFAFF">'
+          tbody+='<tr style="background:'+(v.received?'#F0FFF4':'#FAFAFF')+'">'
             +'<td style="padding-left:22px"><span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
               +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px"></td>'
             +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
@@ -8155,6 +8160,7 @@ function buildVendorDesignsPanel(vo,vi){
             +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorVariety('+vi+','+di+','+vri+',\'unit\',this.value)">'+unitOpts+'</select></td>'
             +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:2px 4px;border:1px solid #AFA9EC;border-radius:5px;width:50px;text-align:right" value="'+(v.rate||'')+'" onchange="upVendorVarietyRate('+vi+','+di+','+vri+',this.value)"></td>'
             +'<td class="no-print"><div style="display:flex;gap:3px;align-items:center">'
+              +'<button class="icon-btn sm" style="'+(v.received?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56':'background:#F8F9FA;color:#ADB5BD;border-color:#DEE2E6')+';font-weight:700" onclick="toggleVORowReceived('+vi+','+di+','+vri+')" title="'+(v.received?'Received ✓ — click to undo':'Mark as received from vendor')+'">✓</button>'
               +(v.sourceCoId
                 ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+','+vri+')" title="Linked — click to change or remove">🔗 '+esc(v.sourceCoNum||'CO')+'</span>'
                 :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+','+vri+')" title="Link to customer order">🔗 Link</button>':'')
@@ -8627,6 +8633,41 @@ function _unlinkVO(vi, di, vri){
   save();
   render();
   showToast('Link to '+prevNum+' removed');
+}
+
+// ── ROW-LEVEL RECEIVED TOGGLE ────────────────────────────────────────────────
+// vri = -1 for flat/CNC design rows (write to design object)
+// vri ≥ 0  for variety sub-rows      (write to variety object)
+function toggleVORowReceived(vi, di, vri){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const holder=(vri>=0)?((vd.varieties||[])[vri]||null):vd;
+  if(!holder)return;
+  holder.received=!holder.received;
+  if(holder.received) holder.receivedAt=Date.now();
+  else delete holder.receivedAt;
+  // If all rows in this VORD are now received, prompt to mark the whole order delivered
+  const prog=_voRowsProgress(vo);
+  save();render();
+  if(holder.received&&prog.received===prog.total&&prog.total>0){
+    showToast('✅ All '+prog.total+' row'+(prog.total!==1?'s':'')+' received! Consider marking the order Delivered.','green',4500);
+  } else {
+    showToast(holder.received?'✅ Marked received':'↩️ Marked pending',holder.received?'green':'red',2000);
+  }
+}
+
+// Returns {received: n, total: n} counting every design/variety row in the vendor order
+function _voRowsProgress(vo){
+  let received=0, total=0;
+  (vo.designs||[]).forEach(vd=>{
+    const vars=vd.varieties&&vd.varieties.length?vd.varieties:null;
+    if(vars){
+      vars.forEach(v=>{ total++; if(v.received)received++; });
+    } else {
+      total++; if(vd.received)received++;
+    }
+  });
+  return {received,total};
 }
 
 // ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
