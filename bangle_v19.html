@@ -1492,6 +1492,7 @@ async function loadImagesFromIDB(){
 // injects IDB data — no user action needed. Safe to call multiple times.
 async function _autoMigrateToR2(){
   if(!R2_WORKER_URL||!R2_UPLOAD_KEY) return;
+  if(_readOnly) return; // never write from a read-only device
   // Block Firebase FIRST — prevents _applyRemoteState from overwriting
   // IDB-injected data:... images back to __IDB__ refs before we collect them
   try{ _fb.pendingLocal=true; }catch(e){}
@@ -6934,7 +6935,7 @@ function processOrderFile(file){
 
         const sizes={};
         allSizes.forEach(sz=>{sizes[sz]=parseInt(row[sizeIdxMap[sz]])||0;});
-        curDesign.varieties.push({name:vName,sizes,images:[]});
+        curDesign.varieties.push({id:uid(),name:vName,sizes,images:[]});
       });
 
       const designs=designMap.filter(d=>d.varieties.length>0);
@@ -7014,7 +7015,7 @@ function processOrderFile(file){
             const sizes={};
             allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
             const unit=uIdx>=0?String(row[uIdx]||'').trim()||'pcs':'pcs';
-            design.varieties.push({name:finalVName,sizes,images:[],unit});
+            design.varieties.push({id:uid(),name:finalVName,sizes,images:[],unit});
           });
           return designMap.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -8606,7 +8607,10 @@ function _markVOImportRows(rows, vendorOrderId){
     if(r.isFlat){
       d.importedToVOId=vendorOrderId;
     } else {
-      const v=(d.varieties||[]).find(x=>x.id===r.sourceVId);
+      // Match by ID first (reliable). If sourceVId is missing (old data / Excel import),
+      // fall back to matching by variety name — avoids stamping the wrong row.
+      let v=r.sourceVId?(d.varieties||[]).find(x=>x.id===r.sourceVId):null;
+      if(!v&&r.varName)(v=(d.varieties||[]).find(x=>(x.name||'')===(r.varName||'')&&!x.importedToVOId)||null);
       if(v)v.importedToVOId=vendorOrderId;
     }
   });
@@ -12456,6 +12460,19 @@ function closeModal(){
     document.body.prepend(banner);
   }
 })();
+// Backfill missing variety IDs — varieties imported from Excel/CSV templates before this
+// fix had no id field, which caused the vendor-order import badge to land on the wrong row.
+// Safe to run repeatedly; only fills in missing IDs and never changes existing ones.
+(function _backfillVarietyIds(){
+  let fixed=0;
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    (d.varieties||[]).forEach(v=>{ if(!v.id){v.id=uid();fixed++;} });
+  }));
+  (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    (d.varieties||[]).forEach(v=>{ if(!v.id){v.id=uid();fixed++;} });
+  }));
+  if(fixed>0) console.log('[backfill] gave IDs to',fixed,'varieties that had none');
+})();
 // Re-sync auto inventory entries for all orders on load
 S.orders.forEach((o,oi)=>o.designs.forEach((_,di)=>autoSyncInventoryFromStages(oi,di)));
 // Normalize order IDs to ORD-001, ORD-002, ... based on start-date sequence
@@ -12841,6 +12858,9 @@ function _applyRemoteState(parsed, savedAt){
   // Preserve LOCAL UI state — panel expansion is per-device, not shared data
   const keepDesignStages = S.openDesignStages;
   Object.assign(S, merged);
+  // Backfill missing variety IDs in the just-applied remote state (same as startup backfill)
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>(d.varieties||[]).forEach(v=>{if(!v.id)v.id=uid();})));
+  (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>(d.varieties||[]).forEach(v=>{if(!v.id)v.id=uid();})));
   S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from remote
   S.openOrders  = new Set(merged.openOrders  || []);
   S.openClients = new Set(merged.openClients || []);
@@ -12851,6 +12871,21 @@ function _applyRemoteState(parsed, savedAt){
   // Re-inject IDB images after every Firebase sync — without this, Firebase
   // __IDB__ placeholders overwrite locally-loaded image data on every sync.
   _injectIDBImages().then(()=>render());
+  // If Firebase had inline base64 images, migrate them to R2 now.
+  // This shrinks the Firebase payload so old/low-RAM devices stop crashing (OOM fix).
+  // Guard: only run once per page load, only on the owner (non-read-only) device.
+  if(!window._r2MigPending && !_readOnly){
+    const _hasBase64=(arr)=>(arr||[]).some(img=>img&&typeof img.data==='string'&&img.data.startsWith('data:'));
+    const _stateHasBase64=()=>(parsed.orders||[]).some(o=>(o.designs||[]).some(d=>
+      _hasBase64(d.images)||(d.varieties||[]).some(v=>_hasBase64(v.images))
+    ))||(parsed.vendorOrders||[]).some(o=>(o.designs||[]).some(d=>
+      _hasBase64(d.images)||(d.varieties||[]).some(v=>_hasBase64(v.images))
+    ));
+    if(_stateHasBase64()){
+      window._r2MigPending=true;
+      setTimeout(()=>{ window._r2MigPending=false; _autoMigrateToR2(); }, 4000);
+    }
+  }
   if(needsPush){
     // Push cleaned/merged state back so all other devices also get the correction
     fbSchedulePush();
