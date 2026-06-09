@@ -4290,6 +4290,10 @@ function buildDetailsPanel(order,oi){
 }
 
 function buildDesignsPanel(order,oi){
+  // Build the VO presence map once per panel render (covers all groups in this order).
+  // This maps "coId|code|varietyName" → [VORD-XX, ...] so badges reflect live state.
+  const _voMap=_buildVOPresenceMap();
+
   // Group designs by Design Name. All codes sharing a name appear in ONE
   // combined table under that name's header — matching the Excel layout.
   const groups=[];
@@ -4321,7 +4325,7 @@ function buildDesignsPanel(order,oi){
         ).join('')
         +'</div>'
       :'';
-    const tableHtml=buildDesignsGroupTable(order,oi,g);
+    const tableHtml=buildDesignsGroupTable(order,oi,g,_voMap);
     const gId='dng-'+g.items[0].d.id;
     return `<div class="design-name-group">
       <div class="design-name-group-head">
@@ -4361,7 +4365,18 @@ function buildDesignsPanel(order,oi){
 // Each design code is ONE row. For Dye Gold designs that have varieties, the
 // code row shows aggregated images + total; variety sub-rows (indented) hold
 // the per-size quantities. CNC / no-variety designs use a single flat row.
-function buildDesignsGroupTable(order,oi,g){
+function buildDesignsGroupTable(order,oi,g,_voMap){
+  // Helper: given a design code + variety name (or '__flat__' for CNC/flat),
+  // return an HTML string of badge(s) showing which vendor orders contain this row.
+  // Uses the presence map built in buildDesignsPanel — precise match by order ID,
+  // so design codes reused across different client orders never get mixed up.
+  const _voBadgeHtml=(code,varName)=>{
+    if(!_voMap)return'';
+    const k=(order.id||'')+'|'+(code||'')+'|'+(varName||'');
+    const ids=_voMap[k];
+    if(!ids||!ids.length)return'';
+    return ids.map(vid=>'<span class="co-src-badge" title="Currently in this vendor order">→ '+esc(vid)+'</span>').join('');
+  };
   // Union of all size keys across every design in the group.
   // For legacy designs that have only a single "Default" variety, sizes live
   // inside that variety — pull them out into d.sizes so the table renders correctly.
@@ -4431,8 +4446,7 @@ function buildDesignsGroupTable(order,oi,g){
           +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
             +(codeEmpty?'<span style="font-size:9px;font-weight:700;color:#BA7517;letter-spacing:.04em">ADD CODE ↓</span>':'')
-            +(()=>{const _vo=_liveVO(d.importedToVOId,d.code||'');return _vo?'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc(_vo.orderId)+'</span>':'';})()
-
+            +_voBadgeHtml(d.code||'','__flat__')
             +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="e.g. DC-001"'
             +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
             +' onkeydown="handleCodeTabKey(event)"'
@@ -4521,8 +4535,7 @@ function buildDesignsGroupTable(order,oi,g){
             +' oninput="upVarietyName('+oi+','+di+','+vi+',this.value)"'
             +' onkeydown="handleVarietyNameTabKey(event,'+oi+','+di+','+vi+')"'
             +' placeholder="e.g. Classic" tabindex="0" style="max-width:100px">'
-            +(()=>{const _vo=_liveVO(v.importedToVOId,d.code||'');return _vo?'<span class="co-src-badge" title="Row imported into vendor order">→ '+esc(_vo.orderId)+'</span>':'';})()
-
+            +_voBadgeHtml(d.code||'',v.name||'')
           +'</td>'
           +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
           +szCells2
@@ -8447,6 +8460,37 @@ function _liveVO(voId, designCode){
   if(!vo) return null; // vendor order deleted — row is free
   if(!(vo.designs||[]).some(d=>(d.code||'')===(designCode||''))) return null; // design removed — free
   return vo;
+}
+
+// ── VENDOR ORDER PRESENCE MAP ────────────────────────────────────────────────
+// Builds a reverse lookup: given a customer order ID + design code + variety name,
+// returns which vendor order IDs currently contain that combination.
+//
+// Key format: "coId|designCode|varietyName"  (flat designs use "__flat__" as varName)
+// Only vendor order designs that have sourceCoId set are included — without it we
+// cannot reliably identify the source customer order (design codes repeat across orders).
+//
+// Called once per buildDesignsPanel() render; result is passed down to
+// buildDesignsGroupTable() so badges reflect live vendor order state, not a stale flag.
+function _buildVOPresenceMap(){
+  const map={}; // key → [vo.orderId, ...]
+  (S.vendorOrders||[]).forEach(vo=>{
+    (vo.designs||[]).forEach(vd=>{
+      if(!vd.sourceCoId) return; // can't link without CO reference (manually-created VO)
+      const coId=vd.sourceCoId, code=vd.code||'';
+      const addEntry=(vName)=>{
+        const k=coId+'|'+code+'|'+vName;
+        if(!map[k])map[k]=[];
+        if(!map[k].includes(vo.orderId))map[k].push(vo.orderId);
+      };
+      if((vd.varieties||[]).length){
+        vd.varieties.forEach(v=>addEntry(v.name||''));
+      } else {
+        addEntry('__flat__'); // flat/CNC design — no variety name
+      }
+    });
+  });
+  return map;
 }
 
 // ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
