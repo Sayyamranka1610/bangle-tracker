@@ -8106,7 +8106,10 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td class="total-col">'+rowTotal+'</td>'
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%" onchange="upVendorFlatUnit('+vi+','+di+',this.value,'+hasOnlyDefault+')">'+unitOpts+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
-          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">'
+            +(d.sourceCoId
+              ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
+              :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
             +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
             +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
           +'</div></td>'
@@ -8128,7 +8131,10 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'+varieties.length+' variet'+(varieties.length===1?'y':'ies')+' — see rows below</td>'
           +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
           +'<td></td><td></td>'
-          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">'
+            +(d.sourceCoId
+              ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
+              :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
             +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
             +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
           +'</div></td></tr>';
@@ -8491,6 +8497,112 @@ function _buildVOPresenceMap(){
     });
   });
   return map;
+}
+
+// ── VENDOR ORDER ↔ CUSTOMER ORDER LINK PICKER ─────────────────────────────────
+// Opens a popup so the user can manually link a vendor order design row
+// (typed by hand, not imported) to a customer order.  Once linked:
+//   • sourceCoId + sourceCoNum are saved on the vendor order design
+//   • the badge on the customer order side appears automatically (via _buildVOPresenceMap)
+// The popup also lets the user change an existing link or remove it entirely.
+function _openVOLinkPicker(vi, di){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const code=(vd.code||'').trim();
+  if(!code){showToast('Please enter a design code first','amber');return;}
+
+  // Find all customer orders that contain a design with this exact code
+  const matches=[];
+  (S.orders||[]).forEach(order=>{
+    const matchDesign=(order.designs||[]).find(d=>(d.code||'').trim()===code);
+    if(!matchDesign) return;
+    if(matches.find(m=>m.coId===order.id)) return; // deduplicate per order
+    const varList=(matchDesign.varieties||[]).filter(v=>v.name&&v.name!=='Default').map(v=>v.name);
+    const totalQty=varList.length
+      ?(matchDesign.varieties||[]).reduce((a,v)=>a+Object.values(v.sizes||{}).reduce((b,q)=>b+(parseInt(q)||0),0),0)
+      :Object.values(matchDesign.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+    matches.push({
+      coId:order.id,
+      coNum:order.orderId||'ORD-?',
+      client:order.client||'(no client)',
+      designName:matchDesign.name||'',
+      varSummary:varList.slice(0,4).join(', ')+(varList.length>4?'…':''),
+      totalQty
+    });
+  });
+
+  if(!matches.length){
+    showToast('No customer orders found with design code "'+code+'"','amber');
+    return;
+  }
+
+  // Remove any existing picker overlay
+  const old=document.getElementById('_vo-link-overlay');
+  if(old) old.remove();
+
+  const alreadyLinked=!!(vd.sourceCoId);
+  const alreadyLinkedNum=alreadyLinked?esc(vd.sourceCoNum||'CO'):'';
+
+  const overlay=document.createElement('div');
+  overlay.id='_vo-link-overlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  overlay.innerHTML=`
+    <div style="background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(83,74,183,.35);padding:22px;max-width:440px;width:100%;max-height:80vh;overflow-y:auto;box-sizing:border-box">
+      <div style="font-size:15px;font-weight:700;color:#3C3489;margin-bottom:4px">🔗 Link to customer order</div>
+      <div style="font-size:12px;color:#777;margin-bottom:${alreadyLinked?'8':'14'}px">
+        Which customer order is design <strong>${esc(code)}</strong> in <strong>VORD-${esc(vo.orderId||'')}</strong> meant for?
+      </div>
+      ${alreadyLinked?`
+      <div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:8px;padding:8px 12px;font-size:11px;color:#795548;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <span>Currently linked to <strong>${alreadyLinkedNum}</strong></span>
+        <button onclick="_unlinkVO(${vi},${di})" style="margin-left:auto;background:#FFECB3;color:#E65100;border:1px solid #FFB74D;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer">✕ Remove link</button>
+      </div>`:''}
+      <div style="font-size:11px;color:#AAA;margin-bottom:10px">Select a customer order to link to:</div>
+      ${matches.map(m=>`
+        <div onclick="_applyVOLink(${vi},${di},'${m.coId}','${esc(m.coNum)}')"
+          style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:9px;border:1.5px solid #D0CCF5;margin-bottom:8px;cursor:pointer;background:#fafafd;transition:background .12s"
+          onmouseover="this.style.background='#EEEDFE';this.style.borderColor='#534AB7'"
+          onmouseout="this.style.background='#fafafd';this.style.borderColor='#D0CCF5'">
+          <span style="background:#534AB7;color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap;flex-shrink:0">${esc(m.coNum)}</span>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#3C3489">${esc(m.client)}</div>
+            <div style="font-size:10px;color:#888;margin-top:3px">
+              ${m.designName?esc(m.designName)+' · ':''}${m.varSummary?'Varieties: '+esc(m.varSummary)+' · ':''}${m.totalQty} pcs total
+            </div>
+          </div>
+        </div>`).join('')}
+      <div style="text-align:right;margin-top:6px">
+        <button onclick="document.getElementById('_vo-link-overlay').remove()"
+          style="background:#f0eff8;color:#534AB7;border:none;padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.body.appendChild(overlay);
+}
+
+function _applyVOLink(vi, di, coId, coNum){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  vd.sourceCoId=coId;
+  vd.sourceCoNum=coNum;
+  const old=document.getElementById('_vo-link-overlay');
+  if(old) old.remove();
+  save();
+  render();
+  showToast('✅ Linked to '+coNum+' — badge will now appear on that customer order');
+}
+
+function _unlinkVO(vi, di){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const prevNum=vd.sourceCoNum||'CO';
+  delete vd.sourceCoId;
+  delete vd.sourceCoNum;
+  const old=document.getElementById('_vo-link-overlay');
+  if(old) old.remove();
+  save();
+  render();
+  showToast('Link to '+prevNum+' removed');
 }
 
 // ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
