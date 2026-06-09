@@ -8611,38 +8611,53 @@ function _applyVOLink(vi, di, coId, coNum, vri){
   const vd=vo.designs[di]; if(!vd)return;
   const holder=(vri>=0)?((vd.varieties||[])[vri]||null):vd;
   if(!holder)return;
-  holder.sourceCoId=coId;
-  holder.sourceCoNum=coNum;
+
   // Close picker first so any confirm dialog appears cleanly on top
   const old=document.getElementById('_vo-link-overlay');
   if(old) old.remove();
-  // ── Auto-fill karigar on the matching customer order design ──────────────────
-  let karigarFilled=false;
-  if(vo.vendor){
-    const code=(vd.code||'').trim();
-    const targetOrder=(S.orders||[]).find(o=>o.id===coId);
-    if(targetOrder){
-      (targetOrder.designs||[]).forEach(td=>{
-        if((td.code||'').trim()!==code) return;
-        if(!td.assignedVendor){
-          // Empty → auto-fill without asking
-          td.assignedVendor=vo.vendor;
-          karigarFilled=true;
-        } else if(td.assignedVendor!==vo.vendor){
-          // Already has a DIFFERENT karigar → warn and ask
-          if(confirm(
-            'Design "'+code+'" in '+coNum+' already has "'+td.assignedVendor+'" as karigar.\n\n'+
-            'Replace with "'+vo.vendor+'"?'
-          )){
-            td.assignedVendor=vo.vendor;
-            karigarFilled=true;
-          }
-          // If user clicks Cancel, karigar stays as-is but link is still saved
+
+  // ── Karigar conflict check BEFORE saving the link ───────────────────────────
+  // Determine what action is needed, and if there is a conflict ask the user.
+  // If the user cancels, abort entirely — link is NOT saved.
+  const code=(vd.code||'').trim();
+  const targetOrder=(S.orders||[]).find(o=>o.id===coId);
+  let karigarAction='none'; // 'fill' | 'overwrite' | 'same' | 'none'
+
+  if(vo.vendor && targetOrder){
+    const matchDesign=(targetOrder.designs||[]).find(td=>(td.code||'').trim()===code);
+    if(matchDesign){
+      if(!matchDesign.assignedVendor){
+        karigarAction='fill';          // empty → auto-fill, no question asked
+      } else if(matchDesign.assignedVendor===vo.vendor){
+        karigarAction='same';          // already correct → nothing to do
+      } else {
+        // Different vendor already assigned → ask; Cancel = abort the whole link
+        const confirmed=confirm(
+          'Design "'+code+'" in '+coNum+' already has "'+matchDesign.assignedVendor+'" assigned as karigar.\n\n'+
+          'To link this row, karigar must be changed to "'+vo.vendor+'".\n\n'+
+          'Replace "'+matchDesign.assignedVendor+'" with "'+vo.vendor+'"?\n\n'+
+          '(Click Cancel to abort — first update the karigar in '+coNum+' then link again.)'
+        );
+        if(!confirmed){
+          showToast('Link cancelled — change karigar in '+coNum+' to "'+vo.vendor+'" first','amber',4500);
+          return; // ← abort: link NOT saved, sourceCoId/sourceCoNum untouched
         }
-        // If already same vendor, nothing to do — already correct
-      });
+        karigarAction='overwrite';
+      }
     }
   }
+
+  // ── All checks passed — now save the link ───────────────────────────────────
+  holder.sourceCoId=coId;
+  holder.sourceCoNum=coNum;
+
+  // ── Apply karigar change ─────────────────────────────────────────────────────
+  let karigarFilled=false;
+  if((karigarAction==='fill'||karigarAction==='overwrite') && targetOrder){
+    const matchDesign=(targetOrder.designs||[]).find(td=>(td.code||'').trim()===code);
+    if(matchDesign){ matchDesign.assignedVendor=vo.vendor; karigarFilled=true; }
+  }
+
   save();
   render();
   showToast('✅ Linked to '+coNum+(karigarFilled?' · "'+vo.vendor+'" set as karigar in '+coNum:''));
