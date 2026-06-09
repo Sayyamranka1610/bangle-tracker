@@ -9491,9 +9491,9 @@ function openVendorPrintWindow(title,orders,imgMode){
       });
 
       const imgTopHtml=(imgMode==='top'&&groupImgs.length)
-        ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;padding:4mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
+        ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;padding:3mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
           +groupImgs.map(({src,label})=>'<div style="text-align:center;break-inside:avoid">'
-            +'<img src="'+src+'" style="width:100%;height:82mm;object-fit:cover;border-radius:6px;border:1.5px solid #AFA9EC;display:block">'
+            +'<img src="'+src+'" style="width:100%;height:55mm;object-fit:cover;border-radius:6px;border:1.5px solid #AFA9EC;display:block">'
             +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
           +'</div>').join('')
           +'</div>'
@@ -9513,11 +9513,11 @@ function openVendorPrintWindow(title,orders,imgMode){
           let inlineImg='';
           if(imgMode==='inline'){const imgs=hod?varieties[0].images||[]:d.images||[];const src=imgs.length?_resolveImgSrc(imgs[0]):'';inlineImg=src?`<td style="padding:4px;text-align:center"><img src="${src}" style="width:36px;height:36px;object-fit:cover;border-radius:4px"></td>`:`<td></td>`;}
           trows+=`<tr style="border-bottom:1px solid #E8E7E0;background:#fff">`
-            +`<td style="padding:5px 8px;font-weight:700;color:#3C3489">${esc(d.code||'—')}</td>`
+            +`<td style="padding:6px 10px;font-weight:700;color:#3C3489">${esc(d.code||'—')}</td>`
             +(imgMode==='inline'?inlineImg:'')
-            +szKeys.map(s=>`<td style="padding:5px 7px;text-align:center">${parseInt(rs[s])||0}</td>`).join('')
-            +`<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>`
-            +`<td style="padding:5px 7px;text-align:center;font-size:11px;color:#777">${esc(unit)}</td>`
+            +szKeys.map(s=>`<td style="padding:6px 8px;text-align:center">${parseInt(rs[s])||0}</td>`).join('')
+            +`<td style="padding:6px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>`
+            +`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#777">${esc(unit)}</td>`
           +`</tr>`;
         } else {
           const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
@@ -9525,19 +9525,19 @@ function openVendorPrintWindow(title,orders,imgMode){
           let inlineImg='';
           if(imgMode==='inline'){const src=d.images&&d.images.length?_resolveImgSrc(d.images[0]):'';inlineImg=src?`<td rowspan="${varieties.length+1}" style="padding:4px;text-align:center;vertical-align:top"><img src="${src}" style="width:36px;height:36px;object-fit:cover;border-radius:4px"></td>`:`<td rowspan="${varieties.length+1}"></td>`;}
           trows+=`<tr style="background:#EEEDFE;border-bottom:1px solid #D0CCF5">`
-            +`<td style="padding:5px 8px;font-weight:700;color:#3C3489">${esc(d.code||'—')}</td>`
+            +`<td style="padding:6px 10px;font-weight:700;color:#3C3489">${esc(d.code||'—')}</td>`
             +(imgMode==='inline'?inlineImg:'')
-            +`<td colspan="${szKeys.length}" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">${varieties.length} variet${varieties.length===1?'y':'ies'} below</td>`
-            +`<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">${dTotal}</td>`
+            +`<td colspan="${szKeys.length}" style="padding:6px 10px;font-size:12px;color:#6C64CC;font-style:italic">${varieties.length} variet${varieties.length===1?'y':'ies'} below</td>`
+            +`<td style="padding:6px 8px;text-align:center;font-weight:700;color:#534AB7">${dTotal}</td>`
             +`<td></td>`
           +`</tr>`;
           varieties.forEach(v=>{
             const rt=szKeys.reduce((a,s)=>a+(parseInt((v.sizes||{})[s])||0),0);
             trows+=`<tr style="border-bottom:1px solid #F1EFE8;background:#fff">`
-              +`<td style="padding:4px 8px;padding-left:18px;color:#555">└ ${esc(v.name||'Variety')}</td>`
-              +szKeys.map(s=>`<td style="padding:4px 7px;text-align:center">${parseInt((v.sizes||{})[s])||0}</td>`).join('')
-              +`<td style="padding:4px 7px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>`
-              +`<td style="padding:4px 7px;text-align:center;font-size:11px;color:#777">${esc(v.unit||'pcs')}</td>`
+              +`<td style="padding:5px 10px;padding-left:20px;color:#555">└ ${esc(v.name||'Variety')}</td>`
+              +szKeys.map(s=>`<td style="padding:5px 8px;text-align:center">${parseInt((v.sizes||{})[s])||0}</td>`).join('')
+              +`<td style="padding:5px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>`
+              +`<td style="padding:5px 8px;text-align:center;font-size:12px;color:#777">${esc(v.unit||'pcs')}</td>`
             +`</tr>`;
           });
         }
@@ -9545,24 +9545,24 @@ function openVendorPrintWindow(title,orders,imgMode){
       const footTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
       const grpUnit=(g.items[0]&&(g.items[0].unit||(g.items[0].varieties&&g.items[0].varieties[0]&&g.items[0].varieties[0].unit)))||'pcs';
       const footer=footTotal>0?'<tfoot><tr style="background:#3C3489;color:#fff;font-weight:700">'
-        +'<td style="padding:6px 8px;text-align:right;font-size:11px">Group total →</td>'
+        +'<td style="padding:7px 10px;text-align:right;font-size:12px">Group total →</td>'
         +(imgMode==='inline'?'<td></td>':'')
-        +szKeys.map(s=>'<td style="padding:6px 7px;text-align:center">'+(grpTotals[s]||0)+'</td>').join('')
-        +'<td style="padding:6px 7px;text-align:center;background:#fff;color:#3C3489">'+footTotal+'</td><td></td>'
+        +szKeys.map(s=>'<td style="padding:7px 8px;text-align:center">'+(grpTotals[s]||0)+'</td>').join('')
+        +'<td style="padding:7px 8px;text-align:center;background:#fff;color:#3C3489">'+footTotal+'</td><td></td>'
         +'</tr></tfoot>':'';
-      const grpHdr='<div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:9px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">'
-        +'<span style="font-size:14px;font-weight:700">🎨 '+esc(g.name)+'</span>'
-        +'<span style="font-size:11px;background:rgba(255,255,255,.2);padding:3px 11px;border-radius:20px">'+g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+footTotal+' '+grpUnit+'</span>'
+      const grpHdr='<div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:10px 16px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">'
+        +'<span style="font-size:16px;font-weight:700">🎨 '+esc(g.name)+'</span>'
+        +'<span style="font-size:12px;background:rgba(255,255,255,.2);padding:3px 12px;border-radius:20px">'+g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+footTotal+' '+grpUnit+'</span>'
         +'</div>';
-      return '<div class="design-block" style="margin-bottom:18px">'
+      return '<div class="design-block" style="margin-bottom:14px">'
         +grpHdr+imgTopHtml
-        +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5;border-top:none">'
+        +'<table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #D0CCF5;border-top:none">'
           +'<thead><tr style="background:#534AB7;color:#fff">'
-            +'<th style="padding:6px 8px;text-align:left">Code</th>'
-            +(imgMode==='inline'?'<th style="padding:6px 7px;text-align:center">Image</th>':'')
-            +szKeys.map(s=>'<th style="padding:6px 7px;text-align:center;white-space:nowrap">'+esc(s)+'</th>').join('')
-            +'<th style="padding:6px 7px;text-align:center">Total</th>'
-            +'<th style="padding:6px 7px;text-align:center">Unit</th>'
+            +'<th style="padding:7px 10px;text-align:left">Code</th>'
+            +(imgMode==='inline'?'<th style="padding:7px 8px;text-align:center">Image</th>':'')
+            +szKeys.map(s=>'<th style="padding:7px 8px;text-align:center;white-space:nowrap">'+esc(s)+'</th>').join('')
+            +'<th style="padding:7px 8px;text-align:center">Total</th>'
+            +'<th style="padding:7px 8px;text-align:center">Unit</th>'
           +'</tr></thead>'
           +'<tbody>'+trows+'</tbody>'
           +footer
@@ -9588,10 +9588,10 @@ function openVendorPrintWindow(title,orders,imgMode){
     <style>
       @page{margin:5mm;size:A4 portrait}
       html{zoom:0.85}
-      body{font-family:system-ui;padding:4mm 6mm;margin:0;color:#1a1916;font-size:12px;line-height:1.4}
+      body{font-family:system-ui;padding:4mm 6mm;margin:0;color:#1a1916;font-size:13px;line-height:1.4}
       table{border-collapse:collapse}img{max-width:100%}
-      .design-block{break-inside:avoid-page;page-break-inside:avoid}
-      .order-block{break-inside:auto;page-break-inside:auto}
+      .design-block{page-break-inside:avoid}
+      .order-block{page-break-inside:auto}
       @media print{button{display:none!important}.print-toolbar{display:none!important}}
     </style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
