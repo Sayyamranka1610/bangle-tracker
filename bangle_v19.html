@@ -8613,24 +8613,36 @@ function _applyVOLink(vi, di, coId, coNum, vri){
   if(!holder)return;
   holder.sourceCoId=coId;
   holder.sourceCoNum=coNum;
+  // Close picker first so any confirm dialog appears cleanly on top
+  const old=document.getElementById('_vo-link-overlay');
+  if(old) old.remove();
   // ── Auto-fill karigar on the matching customer order design ──────────────────
-  // If the CO design has no karigar assigned yet, fill it with the vendor name
-  // from this vendor order. Skips silently if already assigned (user chose it).
   let karigarFilled=false;
   if(vo.vendor){
     const code=(vd.code||'').trim();
     const targetOrder=(S.orders||[]).find(o=>o.id===coId);
     if(targetOrder){
       (targetOrder.designs||[]).forEach(td=>{
-        if((td.code||'').trim()===code && !td.assignedVendor){
+        if((td.code||'').trim()!==code) return;
+        if(!td.assignedVendor){
+          // Empty → auto-fill without asking
           td.assignedVendor=vo.vendor;
           karigarFilled=true;
+        } else if(td.assignedVendor!==vo.vendor){
+          // Already has a DIFFERENT karigar → warn and ask
+          if(confirm(
+            'Design "'+code+'" in '+coNum+' already has "'+td.assignedVendor+'" as karigar.\n\n'+
+            'Replace with "'+vo.vendor+'"?'
+          )){
+            td.assignedVendor=vo.vendor;
+            karigarFilled=true;
+          }
+          // If user clicks Cancel, karigar stays as-is but link is still saved
         }
+        // If already same vendor, nothing to do — already correct
       });
     }
   }
-  const old=document.getElementById('_vo-link-overlay');
-  if(old) old.remove();
   save();
   render();
   showToast('✅ Linked to '+coNum+(karigarFilled?' · "'+vo.vendor+'" set as karigar in '+coNum:''));
@@ -8641,14 +8653,31 @@ function _unlinkVO(vi, di, vri){
   const vd=vo.designs[di]; if(!vd)return;
   const holder=(vri>=0)?((vd.varieties||[])[vri]||null):vd;
   if(!holder)return;
+  // Capture link details before deleting
+  const prevCoId=holder.sourceCoId;
   const prevNum=holder.sourceCoNum||'CO';
   delete holder.sourceCoId;
   delete holder.sourceCoNum;
+  // ── Clear karigar on the CO design, but ONLY if it still matches this vendor ─
+  // (Protects against clearing a karigar the user manually changed after linking)
+  let karigarCleared=false;
+  if(prevCoId && vo.vendor){
+    const code=(vd.code||'').trim();
+    const targetOrder=(S.orders||[]).find(o=>o.id===prevCoId);
+    if(targetOrder){
+      (targetOrder.designs||[]).forEach(td=>{
+        if((td.code||'').trim()===code && td.assignedVendor===vo.vendor){
+          td.assignedVendor='';
+          karigarCleared=true;
+        }
+      });
+    }
+  }
   const old=document.getElementById('_vo-link-overlay');
   if(old) old.remove();
   save();
   render();
-  showToast('Link to '+prevNum+' removed');
+  showToast('Link to '+prevNum+' removed'+(karigarCleared?' · karigar cleared in '+prevNum:''));
 }
 
 // ── ROW-LEVEL RECEIVED TOGGLE ────────────────────────────────────────────────
