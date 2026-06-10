@@ -8029,6 +8029,7 @@ function renderVendorOrders(){
   }
 
   // Build vendor map — filtered by type if a type tab is active
+  const tf=S.vendorTypeFilter||'';  // declared here so it's available inside forEach below
   const allVendorMap={};
   S.vendorOrders.forEach(vo=>{
     if(tf && (vo.type||'karigar')!==tf) return; // skip if type filter active and doesn't match
@@ -8046,7 +8047,6 @@ function renderVendorOrders(){
   const q=(S.vendorSearchQ||'').toLowerCase().trim();
   const sf=S.vendorStatusFilter||'';
   const chipA=v=>(S.vendorStatusFilter||'')===v?' active':'';
-  const tf=S.vendorTypeFilter||'';  // type filter: '' | 'pipe' | 'karigar' | 'plating'
   const typeA=v=>(S.vendorTypeFilter||'')===v?' active':'';
 
   // Global search across all vendors when query is typed
