@@ -1028,7 +1028,8 @@ let S = {
   orderSearchQ:'',        // search text in orders view
   orderStatusFilter:'',   // '' | 'late' | 'warn' | 'done'
   vendorSearchQ:'',       // search text in vendor view
-  vendorStatusFilter:''   // '' | 'late' | 'warn'
+  vendorStatusFilter:'',  // '' | 'late' | 'warn'
+  vendorTypeFilter:''     // '' = All | 'pipe' | 'karigar'
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -4394,6 +4395,57 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
     return na!==nb ? na-nb : a.localeCompare(b);
   });
 
+  // ── STAGE SUB-ROW BUILDER ─────────────────────────────────────────────────
+  // Renders a no-print sub-row beneath each design/variety row showing:
+  //   🔩 Pipe vendor section  (dropdown picking from pipe-type vendor orders + ✓ received)
+  //   🛠️ Karigar section      (shows existing assignedVendor + linked VO number + ✓ received)
+  // vri = -1 for flat/CNC designs; vri ≥ 0 for variety sub-rows.
+  // Closes over: order, oi, _voMap (from buildDesignsGroupTable scope)
+  const _coStageSubRow=(d,di,vri,szKeys)=>{
+    const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
+    if(!holder)return'';
+    const colSpan=szKeys.length+7; // Design code + Images + sizes + Total + Unit + Rate + Karigar + Action
+    // ── Pipe section ────────────────────────────────────────
+    const pipeVos=(S.vendorOrders||[]).filter(vo=>(vo.type||'karigar')==='pipe');
+    const pipeOpts=pipeVos.map(vo=>'<option value="'+esc(vo.id||'')+'"'+(holder.pipeVoId===vo.id?' selected':'')+'>'+esc((vo.vendor||'?')+' — '+(vo.orderId||'?'))+'</option>').join('');
+    const pipeRcvd=!!holder.pipeReceived;
+    const pipeRcvdSty=pipeRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#9E9E9E;border:1px solid #90CAF9';
+    const pipeHtml='<div style="flex:1;min-width:160px;background:#EDF4FF;border-radius:7px;padding:5px 8px;border:1px solid #90CAF9">'
+      +'<div style="font-size:9px;font-weight:800;color:#1565C0;letter-spacing:.05em;margin-bottom:3px">🔩 PIPE VENDOR</div>'
+      +'<div style="display:flex;align-items:center;gap:5px">'
+      +'<select style="font-size:10px;padding:2px 5px;border-radius:5px;border:1px solid #90CAF9;background:#fff;color:#1565C0;flex:1;min-width:90px" onchange="setCOPipeVo('+oi+','+di+','+vri+',this.value)">'
+      +'<option value="">— pipe order —</option>'+pipeOpts
+      +'</select>'
+      +'<button class="icon-btn sm" style="'+pipeRcvdSty+';font-weight:700;min-width:26px;padding:2px 5px" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pipeRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
+      +'</div>'
+    +'</div>';
+    // ── Karigar section ──────────────────────────────────────
+    const karigarName=holder.assignedVendor||'';
+    const karigarRcvd=!!holder.karigarReceived;
+    const karigarRcvdSty=karigarRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#9E9E9E;border:1px solid #CE93D8';
+    // Show which vendor order this karigar row is linked to (from the VO presence map)
+    const varName=vri>=0?(((d.varieties||[])[vri]||{}).name||''):'__flat__';
+    const voKey=(order.id||'')+'|'+(d.code||'')+'|'+varName;
+    const linkedVoIds=_voMap?(_voMap[voKey]||[]):[];
+    const voBadgeStr=linkedVoIds.map(vid=>'<span class="co-src-badge" style="font-size:9px">→ '+esc(vid)+'</span>').join('');
+    const karigarHtml='<div style="flex:1;min-width:160px;background:#F6EEFF;border-radius:7px;padding:5px 8px;border:1px solid #CE93D8">'
+      +'<div style="font-size:9px;font-weight:800;color:#4A148C;letter-spacing:.05em;margin-bottom:3px">🛠️ KARIGAR</div>'
+      +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+      +'<span style="font-size:11px;font-weight:600;color:'+(karigarName?'#4A148C':'#BDBDBD')+';flex:1;min-width:70px">'+(karigarName?esc(karigarName):'— not assigned —')+'</span>'
+      +voBadgeStr
+      +'<button class="icon-btn sm" style="'+karigarRcvdSty+';font-weight:700;min-width:26px;padding:2px 5px" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(karigarRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
+      +'</div>'
+    +'</div>';
+    return '<tr class="no-print" style="background:#F5F5FF">'
+      +'<td colspan="'+colSpan+'" style="padding:2px 8px 5px '+(vri>=0?'30px':'8px')+';border-top:none">'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +pipeHtml+karigarHtml
+      +'</div>'
+      +'</td>'
+    +'</tr>';
+  };
+  // ─────────────────────────────────────────────────────────────────────────────
+
   let tbody='';
   const grpTotals={};
   szKeys.forEach(sz=>grpTotals[sz]=0);
@@ -4472,7 +4524,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
-      +'</tr>';
+      +'</tr>'
+      +_coStageSubRow(d,di,-1,szKeys);
 
     } else {
       // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS ───────────────────────────
@@ -4553,7 +4606,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
             +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as pending':'Mark variety complete')+'">✓</button>'
             +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
           +'</div></td>'
-        +'</tr>';
+        +'</tr>'
+        +_coStageSubRow(d,di,vi,szKeys);
       });
     }
   });
@@ -7442,6 +7496,12 @@ function openNewVendorOrderModal(){
       <div class="modal-body">
         <div class="field-row">
           <div class="field-group"><label>Vendor name</label><input id="nvo-vendor" placeholder="Vendor name" autocomplete="off"></div>
+          <div class="field-group" style="max-width:140px"><label>Type</label>
+            <select id="nvo-type" style="font-size:12px;padding:5px 8px;border-radius:7px;border:1.5px solid #AFA9EC;background:#f7f6ff;color:#3C3489">
+              <option value="karigar">🛠️ Karigar</option>
+              <option value="pipe">🔩 Pipe</option>
+            </select>
+          </div>
         </div>
         <div class="field-row">
           <div class="field-group" style="max-width:150px"><label>Start date</label><input id="nvo-start" type="date" value="${today}"></div>
@@ -7475,6 +7535,7 @@ function saveNewVendorOrder(){
     id: 'vo_'+Date.now(),
     orderId: genVendorOrderId(),
     vendor,
+    type: document.getElementById('nvo-type').value||'karigar',
     startDate: document.getElementById('nvo-start').value||'',
     deliveryDate: document.getElementById('nvo-delivery').value||'',
     priority: document.getElementById('nvo-priority').value||'normal',
@@ -7808,9 +7869,10 @@ function renderVendorOrders(){
     return;
   }
 
-  // Build full vendor map from ALL vendor orders
+  // Build vendor map — filtered by type if a type tab is active
   const allVendorMap={};
   S.vendorOrders.forEach(vo=>{
+    if(tf && (vo.type||'karigar')!==tf) return; // skip if type filter active and doesn't match
     const v=vo.vendor||'(No vendor)';
     if(!allVendorMap[v])allVendorMap[v]={orders:[],done:0,pending:0};
     allVendorMap[v].orders.push(vo);
@@ -7819,12 +7881,14 @@ function renderVendorOrders(){
   });
   const allVendors=Object.keys(allVendorMap).sort();
 
-  // Auto-select first vendor if none chosen or chosen vendor no longer exists
+  // Auto-select first vendor if none chosen or chosen vendor no longer exists in filtered list
   if(!S.selectedVendor||!allVendorMap[S.selectedVendor])S.selectedVendor=allVendors[0]||'';
 
   const q=(S.vendorSearchQ||'').toLowerCase().trim();
   const sf=S.vendorStatusFilter||'';
   const chipA=v=>(S.vendorStatusFilter||'')===v?' active':'';
+  const tf=S.vendorTypeFilter||'';  // type filter: '' | 'pipe' | 'karigar'
+  const typeA=v=>(S.vendorTypeFilter||'')===v?' active':'';
 
   // Global search across all vendors when query is typed
   let vendOrders,isVGlobal=false,vSecIcon='🏭',vSecName='',vSecMeta='';
@@ -7880,6 +7944,10 @@ function renderVendorOrders(){
         <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
         <button class="orders-chip${chipA('pending')}" onclick="S.vendorStatusFilter='pending';renderVendorOrders()">🔴 Pending</button>
         <button class="orders-chip${chipA('done')}" onclick="S.vendorStatusFilter='done';renderVendorOrders()">✅ Completed</button>
+        <span style="color:#D0CCF5;margin:0 4px">│</span>
+        <button class="orders-chip${typeA('')}" onclick="S.vendorTypeFilter='';renderVendorOrders()">All types</button>
+        <button class="orders-chip${typeA('pipe')}" onclick="S.vendorTypeFilter='pipe';renderVendorOrders()" style="${tf==='pipe'?'background:#E3F2FD;color:#1565C0;border-color:#90CAF9':''}">🔩 Pipe</button>
+        <button class="orders-chip${typeA('karigar')}" onclick="S.vendorTypeFilter='karigar';renderVendorOrders()" style="${tf==='karigar'?'background:#F3E5F5;color:#4A148C;border-color:#CE93D8':''}">🛠️ Karigar</button>
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
@@ -7900,7 +7968,7 @@ function renderVendorOrders(){
   if(_vfWas){const el=document.getElementById('vord-search-inp');if(el){el.focus({preventScroll:true});try{el.setSelectionRange(_vfSel[0],_vfSel[1]);}catch(e){}}}
 }
 function selectVendorSection(name){
-  S.selectedVendor=name;S.vendorSearchQ='';S.vendorStatusFilter='';
+  S.selectedVendor=name;S.vendorSearchQ='';S.vendorStatusFilter='';S.vendorTypeFilter='';
   renderVendorOrders();
 }
 
@@ -7936,11 +8004,15 @@ function buildVendorOrderCard(vo,vi){
   const _rcvdBadge=_prog.total>0
     ?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:4px;${_prog.received===_prog.total?'background:#E1F5EE;color:#0F6E56;border:1px solid #A9DFBF':'background:#FDECEC;color:#C0392B;border:1px solid #F5A0A0'}">${_prog.received}/${_prog.total} received</span>`
     :'';
+  const _voType=vo.type||'karigar';
+  const _typeBadge=_voType==='pipe'
+    ?'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;margin-left:6px">🔩 PIPE</span>'
+    :'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#F3E5F5;color:#4A148C;border:1px solid #CE93D8;margin-left:6px">🛠️ KARIGAR</span>';
   return`<div class="order-card ${cardAlert}" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
       <div class="oh-icon" style="color:${stColor};background:${stColor}18;font-size:10px;border:2px solid ${stColor}44">●</div>
       <div class="oh-left">
-        <div class="oh-title">${esc(vo.orderId)} · <span style="color:${stColor}">${esc(vo.vendor)}</span></div>
+        <div class="oh-title">${esc(vo.orderId)} · <span style="color:${stColor}">${esc(vo.vendor)}</span>${_typeBadge}</div>
         <div class="oh-sub">
           ${qtyStr} · ${vo.designs.length} design${vo.designs.length!==1?'s':''}${_rcvdBadge}
           · Started ${fmtDate(vo.startDate)}
@@ -8728,6 +8800,39 @@ function _voRowsProgress(vo){
     }
   });
   return {received,total};
+}
+
+// ── CO STAGE TRACKER — PIPE & KARIGAR ────────────────────────────────────────
+// setCOPipeVo: links a customer-order design/variety row to a pipe-type vendor order.
+//   vri = -1 for flat/CNC designs; vri ≥ 0 for variety sub-rows.
+function setCOPipeVo(oi,di,vri,voId){
+  const order=S.orders[oi]; if(!order)return;
+  const d=order.designs[di]; if(!d)return;
+  const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
+  if(!holder)return;
+  const pipeVo=(S.vendorOrders||[]).find(vo=>vo.id===voId);
+  if(voId&&pipeVo){
+    holder.pipeVoId=voId;
+    holder.pipeVoLabel=(pipeVo.vendor||'?')+' — '+(pipeVo.orderId||'?');
+  } else {
+    delete holder.pipeVoId;
+    delete holder.pipeVoLabel;
+  }
+  save(); render();
+  showToast(voId?'🔩 Pipe order linked: '+(holder.pipeVoLabel||''):'Pipe link cleared');
+}
+
+// toggleCOStageRcvd: marks pipe material or karigar finished piece as received/pending.
+//   stage = 'pipe' | 'karigar'
+function toggleCOStageRcvd(oi,di,vri,stage){
+  const order=S.orders[oi]; if(!order)return;
+  const d=order.designs[di]; if(!d)return;
+  const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
+  if(!holder)return;
+  const field=(stage==='pipe')?'pipeReceived':'karigarReceived';
+  holder[field]=!holder[field];
+  save(); render();
+  showToast(holder[field]?'✅ Marked received':'↩️ Marked pending',holder[field]?'green':'red',2000);
 }
 
 // ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
@@ -12754,6 +12859,18 @@ function closeModal(){
   }));
   if(fixed>0) console.log('[backfill] gave IDs to',fixed,'varieties that had none');
 })();
+// Backfill vendor order types — Ajimbhai = 'pipe', everyone else = 'karigar'
+// Safe to re-run: only fills if type is missing, never overwrites an existing type.
+(function _backfillVOTypes(){
+  let fixed=0;
+  (S.vendorOrders||[]).forEach(vo=>{
+    if(!vo.type){
+      vo.type=(vo.vendor||'').trim().toLowerCase()==='ajimbhai'?'pipe':'karigar';
+      fixed++;
+    }
+  });
+  if(fixed>0) console.log('[backfill] assigned types to',fixed,'vendor orders');
+})();
 // Re-sync auto inventory entries for all orders on load
 S.orders.forEach((o,oi)=>o.designs.forEach((_,di)=>autoSyncInventoryFromStages(oi,di)));
 // Normalize order IDs to ORD-001, ORD-002, ... based on start-date sequence
@@ -13142,6 +13259,8 @@ function _applyRemoteState(parsed, savedAt){
   // Backfill missing variety IDs in the just-applied remote state (same as startup backfill)
   (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>(d.varieties||[]).forEach(v=>{if(!v.id)v.id=uid();})));
   (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>(d.varieties||[]).forEach(v=>{if(!v.id)v.id=uid();})));
+  // Backfill vendor order types (same as startup backfill)
+  (S.vendorOrders||[]).forEach(vo=>{if(!vo.type)vo.type=(vo.vendor||'').trim().toLowerCase()==='ajimbhai'?'pipe':'karigar';});
   S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from remote
   S.openOrders  = new Set(merged.openOrders  || []);
   S.openClients = new Set(merged.openClients || []);
