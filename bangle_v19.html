@@ -1032,7 +1032,8 @@ let S = {
   orderStatusFilter:'',   // '' | 'late' | 'warn' | 'done'
   vendorSearchQ:'',       // search text in vendor view
   vendorStatusFilter:'',  // '' | 'late' | 'warn'
-  vendorTypeFilter:''     // '' = All | 'pipe' | 'karigar' | 'plating'
+  vendorTypeFilter:'',    // '' = All | 'pipe' | 'karigar' | 'plating'
+  vendorTypes:{}          // {vendorName: 'pipe'|'karigar'|'plating'} — vendor master category
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -1066,6 +1067,7 @@ try{
     S.openVendorOrders=sv.openVendorOrders||[];
     S.vendorActiveTabs=sv.vendorActiveTabs||{};
     S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:''};
+    S.vendorTypes=sv.vendorTypes||{};
     // Always reset order filters on page load — never restore a stale filter that
     // would hide orders and confuse the user ("why can't I see my orders?")
     S.filters={client:'',dname:'',dcode:'',status:''};
@@ -3440,6 +3442,32 @@ function rebuildVocab(){
   };
 }
 
+// ── VENDOR TYPE REGISTRY (pipe / karigar / plating) ──────────────────────────
+// Every vendor belongs to one segment. Stored in S.vendorTypes {name: type}.
+// Vendors never registered (legacy data) are seeded from their existing orders,
+// defaulting to 'karigar'.
+function _ensureVendorTypes(){
+  if(!S.vendorTypes)S.vendorTypes={};
+  (S.vendorOrders||[]).forEach(vo=>{
+    if(vo.vendor&&!S.vendorTypes[vo.vendor])S.vendorTypes[vo.vendor]=vo.type||'karigar';
+  });
+}
+function vendorType(name){_ensureVendorTypes();return S.vendorTypes[name]||'karigar';}
+function vendorsOfType(t){_ensureVendorTypes();return (S.vocabulary.vendors||[]).filter(v=>vendorType(v)===t);}
+// Masters: change a vendor's segment AND move all their vendor orders with them
+function setVendorTypeMaster(idx,t){
+  const name=(S.vocabulary.vendors||[])[idx];
+  if(!name||!t)return;
+  _ensureVendorTypes();
+  S.vendorTypes[name]=t;
+  let moved=0;
+  (S.vendorOrders||[]).forEach(vo=>{if(vo.vendor===name&&(vo.type||'karigar')!==t){vo.type=t;moved++;}});
+  const lbl={pipe:'🔩 Pipe',karigar:'🛠️ Karigar',plating:'🪙 Plating'}[t]||t;
+  audit('Vendor type',name+' → '+t+(moved?' ('+moved+' orders moved)':''));
+  save();renderMasters();
+  showToast('✅ '+name+' moved to '+lbl+(moved?' — '+moved+' order'+(moved>1?'s':'')+' moved too':''),'green',3500);
+}
+
 // ── STAGE/DESIGN LOGIC ────────────────────────────────────────────────────────
 function getEffDays(order,design,si){
   const st=design.stages[si];
@@ -4490,8 +4518,10 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<button style="'+pTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
       +'</div></td>';
     // ── Karigar ───────────────────────────────────────────────────────────────
-    const kVendors=S.vocabulary.vendors||[];
+    const kVendors=vendorsOfType('karigar');
     const kVal=holder.assignedVendor||'';
+    // Keep an already-assigned vendor visible even if their segment was changed later
+    if(kVal&&kVal!=='__own__'&&!kVendors.includes(kVal))kVendors.push(kVal);
     const kOpts='<option value="__own__"'+(kVal==='__own__'?' selected':'')+'>Own (in-house)</option>'
       +kVendors.map(v2=>'<option value="'+esc(v2)+'"'+(kVal===v2?' selected':'')+'>'+esc(v2)+'</option>').join('');
     const kRcvd=!!holder.karigarReceived;
@@ -7661,8 +7691,19 @@ function renderMasters(){
           <button onclick="_mastEditKey=null;_mastEditIdx=-1;renderMasters()" style="background:#eee;color:#555;border:none;border-radius:7px;font-size:11px;padding:5px 8px;cursor:pointer" title="Cancel">✕</button>
         </div>`;
       }
+      const vTypeSel=key==='vendors'?(()=>{
+        const vt=vendorType(item);
+        const clr=vt==='pipe'?'#1565C0;background:#E3F2FD;border-color:#90CAF9':vt==='plating'?'#BF360C;background:#FFF3E0;border-color:#FFAB91':'#4A148C;background:#F3E5F5;border-color:#CE93D8';
+        return `<select onchange="setVendorTypeMaster(${i},this.value)" title="Vendor segment — changing this moves all their orders too"
+          style="font-size:10.5px;padding:3px 5px;border-radius:6px;border:1px solid;font-weight:700;margin-right:6px;cursor:pointer;color:${clr}">
+          <option value="pipe"${vt==='pipe'?' selected':''}>🔩 Pipe</option>
+          <option value="karigar"${vt==='karigar'?' selected':''}>🛠️ Karigar</option>
+          <option value="plating"${vt==='plating'?' selected':''}>🪙 Plating</option>
+        </select>`;
+      })():'';
       return `<div class="mast-row" data-val="${esc(item)}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid #F3F2FF;font-size:12px;color:#222">
         <span style="flex:1">${esc(item)}</span>
+        ${vTypeSel}
         <div style="display:flex;align-items:center;gap:2px">
           <button onclick="_mastEditKey='${key}';_mastEditIdx=${i};renderMasters()" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:13px;padding:0 4px;line-height:1;transition:color .15s" onmouseover="this.style.color='#534AB7'" onmouseout="this.style.color='#ccc'" title="Rename">✏️</button>
           <button onclick="masterDelete('${key}',${i})" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:16px;padding:0 4px;line-height:1;transition:color .15s" onmouseover="this.style.color='#A32D2D'" onmouseout="this.style.color='#ccc'" title="Remove">✕</button>
@@ -7687,6 +7728,11 @@ function renderMasters(){
           <input id="master-inp-${key}" placeholder="${addPlaceholder}" autocomplete="off"
             style="flex:1;padding:7px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px"
             onkeydown="if(event.key==='Enter')masterAdd('${key}')">
+          ${key==='vendors'?`<select id="master-type-vendors" style="padding:7px 8px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px;background:#fff;cursor:pointer">
+            <option value="karigar">🛠️ Karigar</option>
+            <option value="pipe">🔩 Pipe</option>
+            <option value="plating">🪙 Plating</option>
+          </select>`:''}
           <button onclick="masterAdd('${key}')" style="padding:7px 16px;background:#534AB7;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap">+ Add</button>
         </div>
       </div>`:''}
@@ -7831,6 +7877,12 @@ function masterAdd(listKey){
     if(!S.vocabularyManual[listKey])S.vocabularyManual[listKey]=[];
     if(!S.vocabularyManual[listKey].includes(val))S.vocabularyManual[listKey].push(val);
     rebuildVocab(); // merge the new manual entry into S.vocabulary
+    // Vendors: record the chosen segment (pipe/karigar/plating)
+    if(listKey==='vendors'){
+      const tSel=document.getElementById('master-type-vendors');
+      if(!S.vendorTypes)S.vendorTypes={};
+      S.vendorTypes[val]=(tSel&&tSel.value)||'karigar';
+    }
   }
   inp.value='';
   save();renderMasters();
@@ -7849,6 +7901,7 @@ function masterDelete(listKey,idx){
       const mi=S.vocabularyManual[listKey].indexOf(val);
       if(mi>=0)S.vocabularyManual[listKey].splice(mi,1);
     }
+    if(listKey==='vendors'&&S.vendorTypes)delete S.vendorTypes[val];
   }
   save();renderMasters();
 }
@@ -7883,6 +7936,7 @@ function masterRename(key,oldVal,newVal,idx){
     (S.orders||[]).forEach(o=>{if(o.client===oldVal)o.client=newVal;});
   } else if(key==='vendors'){
     // Rename vendor across vendor order cards + CO design/variety karigar assignments
+    if(S.vendorTypes&&S.vendorTypes[oldVal]){S.vendorTypes[newVal]=S.vendorTypes[oldVal];delete S.vendorTypes[oldVal];}
     (S.vendorOrders||[]).forEach(vo=>{if(vo.vendor===oldVal)vo.vendor=newVal;});
     (S.orders||[]).forEach(o=>{
       (o.designs||[]).forEach(d=>{
@@ -8084,12 +8138,29 @@ function renderVendorOrders(){
     ?vendOrders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo))).join('')
     :`<div class="empty-state" style="margin:0">${q?`No vendor orders found for "${esc(q)}"`:isVGlobal?'No matching orders':'No orders for this vendor'}</div>`;
 
+  // ── 3 type tabs (Pipe / Karigar / Plating) with live counts ──
+  const _tCounts={pipe:0,karigar:0,plating:0};
+  S.vendorOrders.forEach(vo=>{const t=(vo.type||'karigar');if(_tCounts[t]==null)_tCounts[t]=0;_tCounts[t]++;});
+  const _tTab=(val,clr,bg,icon,label,count)=>{
+    const act=tf===val;
+    return `<button onclick="S.vendorTypeFilter='${val}';renderVendorOrders()"
+      style="display:flex;align-items:center;gap:6px;padding:9px 16px;border:none;background:${act?bg:'transparent'};color:${act?clr:'#777'};font-size:12.5px;font-weight:${act?'800':'600'};cursor:pointer;border-bottom:2.5px solid ${act?clr:'transparent'};border-radius:8px 8px 0 0;white-space:nowrap">
+      ${icon} ${label} <span style="font-size:10.5px;font-weight:700;background:${act?'#fff':'#EEEDFE'};color:${act?clr:'#777'};border-radius:20px;padding:1px 8px">${count}</span></button>`;
+  };
+  const typeTabs=`<div style="display:flex;gap:2px;border-bottom:2px solid #E0DFFF;margin-bottom:10px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+    ${_tTab('','#534AB7','#EEEDFE','📋','All',S.vendorOrders.length)}
+    ${_tTab('pipe','#1565C0','#E3F2FD','🔩','Pipe',_tCounts.pipe)}
+    ${_tTab('karigar','#4A148C','#F3E5F5','🛠️','Karigar',_tCounts.karigar)}
+    ${_tTab('plating','#BF360C','#FFF3E0','🪙','Plating',_tCounts.plating)}
+  </div>`;
+
   container.innerHTML=`
   ${buildVendorStatsBar()}
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
     <div style="font-size:13px;font-weight:700;color:var(--indigo)">🏭 Vendor Orders</div>
     <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
   </div>
+  ${typeTabs}
   <div class="orders-split">
     <div class="orders-sidebar">
       <div class="orders-sidebar-hd">Vendors (${allVendors.length})</div>
@@ -8103,11 +8174,6 @@ function renderVendorOrders(){
         <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
         <button class="orders-chip${chipA('pending')}" onclick="S.vendorStatusFilter='pending';renderVendorOrders()">🔴 Pending</button>
         <button class="orders-chip${chipA('done')}" onclick="S.vendorStatusFilter='done';renderVendorOrders()">✅ Completed</button>
-        <span style="color:#D0CCF5;margin:0 4px">│</span>
-        <button class="orders-chip${typeA('')}" onclick="S.vendorTypeFilter='';renderVendorOrders()">All types</button>
-        <button class="orders-chip${typeA('pipe')}" onclick="S.vendorTypeFilter='pipe';renderVendorOrders()" style="${tf==='pipe'?'background:#E3F2FD;color:#1565C0;border-color:#90CAF9':''}">🔩 Pipe</button>
-        <button class="orders-chip${typeA('karigar')}" onclick="S.vendorTypeFilter='karigar';renderVendorOrders()" style="${tf==='karigar'?'background:#F3E5F5;color:#4A148C;border-color:#CE93D8':''}">🛠️ Karigar</button>
-        <button class="orders-chip${typeA('plating')}" onclick="S.vendorTypeFilter='plating';renderVendorOrders()" style="${tf==='plating'?'background:#FFF3E0;color:#BF360C;border-color:#FFAB91':''}">🪙 Plating</button>
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
@@ -9400,10 +9466,18 @@ function openNewVendorOrderModal(prefill){
           <label>Order ID</label>
           <input id="no-id" placeholder="VORD-01" value="${esc(prefill.orderId||genVendorOrderId())}">
         </div>
+        <div class="field-group" style="max-width:135px">
+          <label>Order type <span style="color:#A32D2D">*</span></label>
+          <select id="no-votype" style="background:#f7f6ff;border-color:#AFA9EC;color:#3C3489;font-weight:600">
+            <option value="karigar"${(prefill.type||'karigar')==='karigar'?' selected':''}>🛠️ Karigar</option>
+            <option value="pipe"${prefill.type==='pipe'?' selected':''}>🔩 Pipe</option>
+            <option value="plating"${prefill.type==='plating'?' selected':''}>🪙 Plating</option>
+          </select>
+        </div>
         <div class="field-group ac-wrap">
           <label>Vendor name <span style="color:#A32D2D">*</span></label>
           <input id="no-client" placeholder="e.g. Rathi Metals" autocomplete="off" value="${esc(prefill.client||'')}"
-            oninput="voAC(this,'no-ac-client',S.vocabulary.vendors||[])" onblur="hideACModal('no-ac-client')">
+            oninput="voAC(this,'no-ac-client',vendorsOfType((document.getElementById('no-votype')||{}).value||'karigar'))" onblur="hideACModal('no-ac-client')">
           <div class="ac-list" id="no-ac-client" style="display:none"></div>
           <div class="err-msg" id="err-no-client" style="display:none">Vendor name is required</div>
         </div>
@@ -9568,8 +9642,12 @@ function createVendorOrder(){
   }
 
   histPush();
-  const newVO={id:uid(),orderId,vendor,startDate,deliveryDate,priority,notes,bangleType,
+  const voType=((document.getElementById('no-votype')||{}).value)||'karigar';
+  const newVO={id:uid(),orderId,vendor,type:voType,startDate,deliveryDate,priority,notes,bangleType,
     designs:allDesigns,attachedFile:window._uploadedOrderFile||null};
+  // New vendor name? Register it in masters under this order's segment.
+  if(!S.vendorTypes)S.vendorTypes={};
+  if(!S.vendorTypes[vendor])S.vendorTypes[vendor]=voType;
   window._uploadedOrderFile=null;
   window._modalExtraDesigns=[];
 
