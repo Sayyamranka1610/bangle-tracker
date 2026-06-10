@@ -907,7 +907,9 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
     <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
     <div class="main-tab" onclick="switchMain('masters')">📋 Masters</div>
     <div class="main-tab" onclick="switchMain('library')">🖼️ Library</div>
-    <div class="main-tab" onclick="switchMain('dispatch')">🔗 Dispatch</div>
+    <!-- Dispatch tab hidden (June 2026) — its functions (karigar assign, received/dispatched ticks)
+         now live inline in the customer order table. Remove the comment wrapper to restore. -->
+    <div class="main-tab" onclick="switchMain('dispatch')" style="display:none">🔗 Dispatch</div>
   </div>
   <div class="filter-bar no-print" id="filter-bar">
     <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
@@ -1058,6 +1060,7 @@ try{
     if(!S.vocabulary.units||!S.vocabulary.units.length)S.vocabulary.units=['pcs','pairs','jotta'];
     S.vocabularyManual=sv.vocabularyManual||{clients:[],vendors:[],dnames:[],dcodes:[]};
     S.mainView=sv.mainView||'orders';
+    if(S.mainView==='dispatch')S.mainView='orders'; // Dispatch tab hidden — fall back to orders
     S.invLedger=sv.invLedger||[];
     S.invPeriod=sv.invPeriod||'monthly';
     S.invGroupBy=sv.invGroupBy||'name';
