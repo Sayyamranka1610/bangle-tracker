@@ -7698,7 +7698,7 @@ function renderMasters(){
         const vt=vendorType(item);
         const clr=vt==='pipe'?'#1565C0;background:#E3F2FD;border-color:#90CAF9':vt==='plating'?'#BF360C;background:#FFF3E0;border-color:#FFAB91':'#4A148C;background:#F3E5F5;border-color:#CE93D8';
         return `<select onchange="setVendorTypeMaster(${i},this.value)" title="Vendor segment — changing this moves all their orders too"
-          style="font-size:10.5px;padding:3px 5px;border-radius:6px;border:1px solid;font-weight:700;margin-right:6px;cursor:pointer;color:${clr}">
+          style="width:auto;max-width:118px;flex:0 0 auto;margin-left:auto;font-size:10.5px;padding:3px 5px;border-radius:6px;border:1px solid;font-weight:700;margin-right:6px;cursor:pointer;color:${clr}">
           <option value="pipe"${vt==='pipe'?' selected':''}>🔩 Pipe</option>
           <option value="karigar"${vt==='karigar'?' selected':''}>🛠️ Karigar</option>
           <option value="plating"${vt==='plating'?' selected':''}>🪙 Plating</option>
@@ -7731,7 +7731,7 @@ function renderMasters(){
           <input id="master-inp-${key}" placeholder="${addPlaceholder}" autocomplete="off"
             style="flex:1;padding:7px 10px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px"
             onkeydown="if(event.key==='Enter')masterAdd('${key}')">
-          ${key==='vendors'?`<select id="master-type-vendors" style="padding:7px 8px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px;background:#fff;cursor:pointer">
+          ${key==='vendors'?`<select id="master-type-vendors" style="width:auto;flex:0 0 auto;padding:7px 8px;border:1px solid #AFA9EC;border-radius:8px;font-size:12px;background:#fff;cursor:pointer">
             <option value="karigar">🛠️ Karigar</option>
             <option value="pipe">🔩 Pipe</option>
             <option value="plating">🪙 Plating</option>
