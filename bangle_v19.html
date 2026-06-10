@@ -6830,6 +6830,7 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   }
   s1.push(`<row r="4">${sc(0,4,'Bangle Type (cnc / dye_gold / both)')}</row>`);
   s1.push(`<row r="5">${sc(0,5,'Notes (Optional)')}</row>`);
+  if(isVendor)s1.push(`<row r="6">${sc(0,6,'Order Type (pipe / karigar / plating)')}</row>`);
   s1.push(`<row r="7">${sc(0,7,'CNC DESIGNS & QUANTITIES')}</row>`);
   const cncHdr=['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit'];
   s1.push(`<row r="8">${cncHdr.map((h,i)=>sc(i,8,h)).join('')}</row>`);
@@ -6890,6 +6891,8 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
     {sqref:partyCell, f:`Lists!$A$2:$A$${pEnd}`},
     // Bangle Type — fixed 3-option list
     {sqref:'B4', f:'"cnc,dye_gold,both"'},
+    // Order Type (vendor template only) — pipe / karigar / plating
+    ...(isVendor?[{sqref:'B6', f:'"pipe,karigar,plating"'}]:[]),
     // Design name — CNC rows 9-21 and Dye Gold rows 24-53
     {sqref:'A9:A21',  f:`Lists!$B$2:$B$${dEnd}`},
     {sqref:'A24:A53', f:`Lists!$B$2:$B$${dEnd}`},
@@ -9816,6 +9819,8 @@ function processVendorOrderFile(file){
       const startDate=parseDateStr(getFromRow(orderRow,'order date','start date','date','start'))||new Date().toISOString().split('T')[0];
       const deliveryDate=parseDateStr(getFromRow(orderRow,'delivery','expected delivery'))||'';
       const notes=getFromRow(orderRow,'notes','remarks','comment');
+      const rawCsvType=getFromRow(orderRow,'order type').toLowerCase();
+      const csvVoType=['pipe','karigar','plating'].includes(rawCsvType)?rawCsvType:undefined;
       const designMap=[];let curDesign=null,lastDName='',lastDCode='';
       dataRows.forEach(row=>{
         const dn=designNameIdx>=0?String(row[designNameIdx]||'').trim():'';
@@ -9830,7 +9835,7 @@ function processVendorOrderFile(file){
       const designs=designMap.filter(d=>d.varieties.length>0);
       status.textContent=`✅ CSV parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
       status.style.display='block';
-      openPrefilled({orderId,client,startDate,deliveryDate,notes,designs:designs.length>0?designs:undefined});
+      openPrefilled({orderId,client,startDate,deliveryDate,notes,designs:designs.length>0?designs:undefined,type:csvVoType});
     };reader.readAsText(file);
 
   } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
@@ -9876,7 +9881,7 @@ function processVendorOrderFile(file){
           });
           return dm.filter(d=>d.name&&d.varieties.length>0);
         };
-        let orderId='',client='',startDate='',deliveryDate='',notes='';
+        let orderId='',client='',startDate='',deliveryDate='',notes='',voType='';
         if(isLabelFormat){
           const labelVal=label=>{const idx=rows.findIndex(r=>cellStr(r[0]).toLowerCase().includes(label));return idx>=0?cellStr(rows[idx][1]).trim():'';};
           orderId=labelVal('order id');
@@ -9885,6 +9890,9 @@ function processVendorOrderFile(file){
           startDate=parseDate(labelVal('order date')||labelVal('start date')||labelVal('date'));
           deliveryDate=parseDate(labelVal('expected delivery')||labelVal('delivery'));
           notes=labelVal('notes');
+          // Order Type row (vendor template) — 'order type' is specific enough to never match 'Bangle Type'
+          const rawVoType=labelVal('order type').toLowerCase();
+          if(['pipe','karigar','plating'].includes(rawVoType))voType=rawVoType;
 
           // ── Helper: parse a section between startRow and endRow ─────────────
           const parseVSection=(startRowIdx,endRowIdx,forceNoVariety)=>{
@@ -9929,13 +9937,13 @@ function processVendorOrderFile(file){
             if(dCount===0){
               status.textContent='⚠️ Sections found but no filled rows detected. Please fill in design names and quantities in the template, then re-upload.';
               status.style.color='#B45309';status.style.display='block';
-              openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,bangleType:'dye_gold'});
+              openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,bangleType:'dye_gold',type:voType||undefined});
               return;
             }
             const btLabel=detectedBT==='both'?'CNC + Dye Gold':detectedBT==='cnc'?'CNC':'Dye Gold';
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded (${btLabel}).`;
             status.style.color='#0F6E56';status.style.display='block';
-            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:allDesigns,bangleType:detectedBT||'dye_gold'});
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:allDesigns,bangleType:detectedBT||'dye_gold',type:voType||undefined});
             return;
           }
 
@@ -9952,7 +9960,7 @@ function processVendorOrderFile(file){
             const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),0,1,vIdx,szIdxMap,allSizes,uIdx);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
             status.style.color='#0F6E56';status.style.display='block';
-            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined,type:voType||undefined});
             return;
           }
         } else {
@@ -9964,6 +9972,8 @@ function processVendorOrderFile(file){
           startDate=parseDate(getH('order date','start date','date'));
           deliveryDate=parseDate(getH('expected delivery','delivery'));
           notes=getH('notes','remarks','comment');
+          const rawTH=getH('order type').toLowerCase();
+          if(['pipe','karigar','plating'].includes(rawTH))voType=rawTH;
           const dnIdx=headers.findIndex(h=>h==='design name'||h==='design');
           const dcIdx=headers.findIndex(h=>h==='design code'||h==='code');
           const vIdx=headers.findIndex(h=>h==='variety name'||h==='variety');
@@ -9975,7 +9985,7 @@ function processVendorOrderFile(file){
             const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes,uIdxV);
             status.textContent=`✅ Excel parsed — ${designs.length} design${designs.length===1?'':'s'}, ${designs.reduce((a,d)=>a+d.varieties.length,0)} varieties loaded.`;
             status.style.display='block';
-            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined});
+            openPrefilled({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],deliveryDate,notes,designs:designs.length?designs:undefined,type:voType||undefined});
             return;
           }
         }
