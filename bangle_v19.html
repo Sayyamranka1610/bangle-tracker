@@ -4654,7 +4654,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'
           +d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' — see rows below'
         +'</td>'
-        +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
+        +'<td class="total-col"></td>'
         +'<td></td>'
         +'<td></td>'
         +'<td class="no-print"></td>'
@@ -4736,7 +4736,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
             +'onmouseover="this.style.background=\'rgba(180,0,0,.6)\';this.style.color=\'#fff\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'rgba(255,255,255,.7)\'"'
             +' title="Delete this size column (removes it from all designs in this group)">✕ del</button>'
         +'</th>').join('')
-        +'<th style="min-width:55px">Total</th>'
+        +'<th style="min-width:70px">Total</th>'
         +'<th style="min-width:72px">Unit</th>'
         +'<th style="min-width:72px">Rate (₹)</th>'
         +'<th style="min-width:105px" class="no-print">Pipe</th>'
@@ -8442,7 +8442,7 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td style="font-weight:700"><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700"></td>'
           +'<td><div class="variety-img-cell">'+dImgCells+addDImgBtn+'</div></td>'
           +'<td colspan="'+szKeys.length+'" style="text-align:center;font-size:10px;color:#6C64CC;font-style:italic;padding:6px">'+varieties.length+' variet'+(varieties.length===1?'y':'ies')+' — see rows below</td>'
-          +'<td class="total-col" style="font-weight:800;font-size:12px;color:#3C3489">'+dTotal+'</td>'
+          +'<td class="total-col"></td>'
           +'<td></td><td></td>'
           +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
             +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
@@ -8480,9 +8480,9 @@ function buildVendorDesignsPanel(vo,vi){
     }); // end g.items.forEach
 
     const footerTotal=Object.values(grpTotals).reduce((a,v)=>a+v,0);
-    // Only show the "Group total" footer when there are 2+ design codes — with a single code
-    // the total is already visible in the card header and the design row itself.
-    const footerHtml=footerTotal>0&&g.items.length>1
+    // Always show the "Group total" footer (matches customer orders) so the Total
+    // column ends in the dark grand-total cell in every table.
+    const footerHtml=footerTotal>0
       ?'<tfoot><tr><td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
         +szKeys.map(sz=>'<td><strong>'+(grpTotals[sz]||0)+'</strong></td>').join('')
         +'<td class="grand-total"><strong>'+footerTotal+'</strong></td>'
@@ -8506,7 +8506,7 @@ function buildVendorDesignsPanel(vo,vi){
               +'onmouseover="this.style.background=\'rgba(180,0,0,.6)\';this.style.color=\'#fff\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'rgba(255,255,255,.7)\'"'
               +' title="Delete this size column (removes it from all designs in this group)">✕ del</button>'
           +'</th>').join('')
-          +'<th style="min-width:55px">Total</th>'
+          +'<th style="min-width:70px">Total</th>'
           +'<th style="min-width:72px">Unit</th>'
           +'<th style="min-width:72px">Rate (₹)</th>'
           +'<th style="min-width:70px" class="no-print">Action</th>'
@@ -10175,7 +10175,7 @@ function openVendorPrintWindow(title,orders,imgMode){
             +`<td style="padding:6px 10px;font-weight:700;color:#3C3489">${esc(d.code||'—')}</td>`
             +(imgMode==='inline'?inlineImg:'')
             +`<td colspan="${szKeys.length}" style="padding:6px 10px;font-size:12px;color:#6C64CC;font-style:italic">${varieties.length} variet${varieties.length===1?'y':'ies'} below</td>`
-            +`<td style="padding:6px 8px;text-align:center;font-weight:700;color:#534AB7">${dTotal}</td>`
+            +`<td style="padding:6px 8px;text-align:center"></td>`
             +`<td></td>`
           +`</tr>`;
           varieties.forEach(v=>{
