@@ -92,6 +92,11 @@
   .version-switch { text-align: center; margin-top: 32px; padding-top: 20px; border-top: 1px solid #2d2a5e; font-size: 0.82rem; color: #6b64a0; }
   .version-switch a { color: #7b72c9; text-decoration: none; }
   .version-switch a:hover { color: #a89cff; }
+
+  /* Camera button */
+  .camera-row { text-align: center; margin-top: 14px; }
+  .btn-camera { background: #1a1750; border: 2px solid #534AB7; color: #a89cff; font-size: 1rem; font-weight: 700; padding: 14px 32px; border-radius: 14px; cursor: pointer; width: 100%; max-width: 340px; transition: all 0.2s; }
+  .btn-camera:hover { background: #534AB7; color: #fff; }
 </style>
 </head>
 <body>
@@ -121,6 +126,15 @@
     <div class="upload-icon">📸</div>
     <h2>Drop client photo here or tap to select</h2>
     <p>Works with WhatsApp photos — multiple bangles in one photo is fine</p>
+  </div>
+
+  <!-- Camera button (prominent on mobile) -->
+  <div class="camera-row" id="cameraRow" style="display:none">
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" />
+    <button class="btn-camera" onclick="document.getElementById('cameraInput').click()">
+      📷 Take Photo with Camera
+    </button>
+    <div style="font-size:0.78rem;color:#6b64a0;margin-top:6px;text-align:center">Opens your phone's rear camera directly</div>
   </div>
 
   <!-- Preview -->
@@ -206,6 +220,7 @@ async function boot() {
 
     document.getElementById("uploadZone").classList.remove("disabled");
     document.getElementById("fileInput").disabled = false;
+    document.getElementById("cameraRow").style.display = "block";
 
   } catch (err) {
     setInit("Error: " + err.message, 0);
@@ -234,6 +249,9 @@ async function loadCatalogCached() {
 
 // ── File input ────────────────────────────────────────────────────────────────
 document.getElementById("fileInput").addEventListener("change", e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+document.getElementById("cameraInput").addEventListener("change", e => {
   if (e.target.files[0]) loadFile(e.target.files[0]);
 });
 const zone = document.getElementById("uploadZone");

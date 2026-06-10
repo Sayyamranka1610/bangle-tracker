@@ -149,6 +149,11 @@
   .selected-banner .copy-btn:hover { background: #3d6a4e; }
 
   /* Toast */
+  /* Camera button */
+  .camera-row { text-align: center; margin-top: 14px; }
+  .btn-camera { background: #1a1750; border: 2px solid #534AB7; color: #a89cff; font-size: 1rem; font-weight: 700; padding: 14px 32px; border-radius: 14px; cursor: pointer; width: 100%; max-width: 340px; transition: all 0.2s; }
+  .btn-camera:hover { background: #534AB7; color: #fff; }
+
   .toast {
     position: fixed; bottom: 24px; left: 50%;
     transform: translateX(-50%) translateY(80px);
@@ -191,6 +196,15 @@
     <div class="upload-icon">📸</div>
     <h2>Drop client photo here or tap to select</h2>
     <p>Works with WhatsApp photos &nbsp;·&nbsp; JPG, PNG, WebP supported</p>
+  </div>
+
+  <!-- Camera button (mobile) -->
+  <div class="camera-row" id="cameraRow" style="display:none">
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" />
+    <button class="btn-camera" onclick="document.getElementById('cameraInput').click()">
+      📷 Take Photo with Camera
+    </button>
+    <div style="font-size:0.78rem;color:#6b64a0;margin-top:6px;text-align:center">Opens your phone's rear camera directly</div>
   </div>
 
   <!-- Image Preview + crop -->
@@ -304,6 +318,7 @@ async function boot() {
     // Enable upload
     document.getElementById("uploadZone").classList.remove("disabled");
     document.getElementById("fileInput").disabled = false;
+    document.getElementById("cameraRow").style.display = "block";
 
   } catch (err) {
     document.getElementById("initBar").classList.remove("visible");
@@ -341,6 +356,9 @@ async function loadEmbeddingsCached() {
 
 // ── File input ────────────────────────────────────────────────────────────────
 document.getElementById("fileInput").addEventListener("change", (e) => {
+  if (e.target.files[0]) loadImageFile(e.target.files[0]);
+});
+document.getElementById("cameraInput").addEventListener("change", (e) => {
   if (e.target.files[0]) loadImageFile(e.target.files[0]);
 });
 
