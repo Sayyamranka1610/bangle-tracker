@@ -4487,7 +4487,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;border:1px solid #90CAF9;background:#EDF4FF;color:#1565C0;flex:1;min-width:0" onchange="setCOPipeVo('+oi+','+di+','+vri+',this.value)">'
       +'<option value="">— pipe —</option>'+pOpts+'</select>'
-      +'<button style="'+pTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
+      +'<button style="'+pTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
       +'</div></td>';
     // ── Karigar ───────────────────────────────────────────────────────────────
     const kVendors=S.vocabulary.vendors||[];
@@ -4503,7 +4503,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+kBdr+';flex:1;min-width:0" onchange="'+kChange+'">'
       +'<option value="">— karigar —</option>'+kOpts+'</select>'
-      +'<button style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
+      +'<button style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
       +'</div></td>';
     // ── Plating ───────────────────────────────────────────────────────────────
     const platVos=(S.vendorOrders||[]).filter(vo=>(vo.type||'karigar')==='plating');
@@ -4518,7 +4518,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+platBdr+';flex:1;min-width:0" onchange="setCOPlatingVo('+oi+','+di+','+vri+',this.value)">'
       +'<option value="">— plating —</option>'+platOpts+'</select>'
-      +'<button style="'+platTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'plating\')" title="'+(platRcvd?'Unmark plating received':'Mark plating received')+'">✓</button>'
+      +'<button style="'+platTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'plating\')" title="'+(platRcvd?'Unmark plating received':'Mark plating received')+'">✓</button>'
       +'</div></td>';
     return pipeTd+karigarTd+platingTd;
   };
@@ -4540,10 +4540,10 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
     const dImages=d.images||[];
     const vImagesFlat=d.varieties.flatMap((v,vi)=>(v.images||[]).map((img,ii)=>({img,vi,ii})));
     const designImgThumbs=dImages.map((img,ii)=>
-      `<div style="position:relative;display:inline-block;flex-shrink:0"><img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}"><button class="no-print" onclick="deleteImg(${oi},${di},${ii})" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:9px;line-height:16px;cursor:pointer;padding:0;font-weight:700;z-index:1" title="Remove image">✕</button></div>`
+      `<div style="position:relative;display:inline-block;flex-shrink:0"><img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}"><button class="no-print" onclick="deleteImg(${oi},${di},${ii})" style="position:absolute;top:3px;right:3px;width:14px;height:14px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:8px;line-height:14px;cursor:pointer;padding:0;font-weight:700;z-index:1;display:inline-flex;align-items:center;justify-content:center" title="Remove image">✕</button></div>`
     ).join('');
     const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>
-      `<div style="position:relative;display:inline-block;flex-shrink:0"><img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in"><button class="no-print" onclick="delVarietyImg(${oi},${di},${vi},${ii})" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:9px;line-height:16px;cursor:pointer;padding:0;font-weight:700;z-index:1" title="Remove image">✕</button></div>`
+      `<div style="position:relative;display:inline-block;flex-shrink:0"><img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in"><button class="no-print" onclick="delVarietyImg(${oi},${di},${vi},${ii})" style="position:absolute;top:3px;right:3px;width:14px;height:14px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:8px;line-height:14px;cursor:pointer;padding:0;font-weight:700;z-index:1;display:inline-flex;align-items:center;justify-content:center" title="Remove image">✕</button></div>`
     ).join('');
     const imgThumbs=designImgThumbs+varImgThumbs;
     const addImgBtn=`<button class="variety-img-add no-print" onclick="openLibraryPicker(${oi},${di},-1)" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>`;
@@ -4642,7 +4642,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         const varImgs=(v.images||[]).map((img,ii)=>
           '<div style="position:relative;display:inline-block;flex-shrink:0">'
           +'<img loading="lazy" class="variety-thumb" src="'+(img.data||'')+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
-          +'<button class="no-print" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:9px;line-height:16px;cursor:pointer;padding:0;font-weight:700;z-index:1" title="Remove">✕</button>'
+          +'<button class="no-print" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" style="position:absolute;top:3px;right:3px;width:14px;height:14px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:8px;line-height:14px;cursor:pointer;padding:0;font-weight:700;z-index:1;display:inline-flex;align-items:center;justify-content:center" title="Remove">✕</button>'
           +'</div>'
         ).join('');
         const addVarImg='<button class="variety-img-add no-print" onclick="openLibraryPicker('+oi+','+di+','+vi+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
@@ -8170,6 +8170,26 @@ function buildVendorOrderCard(vo,vi){
     :_voType==='plating'
     ?'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#FFF3E0;color:#BF360C;border:1px solid #FFAB91;margin-left:6px">🪙 PLATING</span>'
     :'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#F3E5F5;color:#4A148C;border:1px solid #CE93D8;margin-left:6px">🛠️ KARIGAR</span>';
+  // Build body only when open — skips expensive panel builds for collapsed cards.
+  // Uses a local variable (not nested template literal) to avoid JS parse issues.
+  let _voBodyHtml='';
+  if(isOpen){
+    _voBodyHtml=`<div class="tabs no-print">
+        <div class="tab${at==='details'?' active':''}" onclick="setVendorTab('${vo.id}','details')">📋 Order details</div>
+        <div class="tab${at==='designs'?' active':''}" onclick="setVendorTab('${vo.id}','designs')">🎨 Designs &amp; Varieties</div>
+      </div>
+      <div class="tab-panel${at==='details'?' active':''}">
+        ${buildVendorDetailsPanel(vo,vi)}
+      </div>
+      <div class="tab-panel${at==='designs'?' active':''}">
+        ${buildVendorDesignsPanel(vo,vi)}
+      </div>
+      <div class="mobile-action-bar no-print" style="display:none">
+        <button onclick="exportVendorOrderCSV('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
+        <button onclick="askVendorPrint('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
+        <button onclick="delVendorOrder(${vi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
+      </div>`;
+  }
   return`<div class="order-card ${cardAlert}" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
       <div class="oh-icon" style="color:${stColor};background:${stColor}18;font-size:10px;border:2px solid ${stColor}44">●</div>
@@ -8192,21 +8212,7 @@ function buildVendorOrderCard(vo,vi){
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" style="width:${progressPct}%;background:${stColor}"></div></div>
     <div class="order-body${isOpen?' open':''}">
-      ${isOpen?`<div class="tabs no-print">
-        <div class="tab${at==='details'?' active':''}" onclick="setVendorTab('${vo.id}','details')">📋 Order details</div>
-        <div class="tab${at==='designs'?' active':''}" onclick="setVendorTab('${vo.id}','designs')">🎨 Designs &amp; Varieties</div>
-      </div>
-      <div class="tab-panel${at==='details'?' active':''}">
-        ${buildVendorDetailsPanel(vo,vi)}
-      </div>
-      <div class="tab-panel${at==='designs'?' active':''}">
-        ${buildVendorDesignsPanel(vo,vi)}
-      </div>
-      <div class="mobile-action-bar no-print" style="display:none">
-        <button onclick="exportVendorOrderCSV('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
-        <button onclick="askVendorPrint('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
-        <button onclick="delVendorOrder(${vi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
-      </div>`:''}
+      ${_voBodyHtml}
     </div>
   </div>`;
 }
