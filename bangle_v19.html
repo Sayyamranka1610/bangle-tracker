@@ -1029,7 +1029,7 @@ let S = {
   orderStatusFilter:'',   // '' | 'late' | 'warn' | 'done'
   vendorSearchQ:'',       // search text in vendor view
   vendorStatusFilter:'',  // '' | 'late' | 'warn'
-  vendorTypeFilter:''     // '' = All | 'pipe' | 'karigar'
+  vendorTypeFilter:''     // '' = All | 'pipe' | 'karigar' | 'plating'
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -4005,6 +4005,10 @@ function markDesignComplete(oi,di){
   });
   design.receivedFromKarigar=true;
   design.dispatchedToClient=true;
+  // Auto-tick all 3 vendor stage received flags on dispatch
+  design.pipeReceived=true;
+  design.karigarReceived=true;
+  design.platingReceived=true;
   histPush();
   save();
   render();
@@ -4016,10 +4020,77 @@ function markVarietyDone(oi,di,vi){
   const v=S.orders[oi]&&S.orders[oi].designs[di]&&S.orders[oi].designs[di].varieties[vi];
   if(!v)return;
   v.done=!v.done;
-  if(v.done){v.receivedFromKarigar=true;v.dispatchedToClient=true;}
-  else{v.receivedFromKarigar=false;v.dispatchedToClient=false;}
+  if(v.done){
+    v.receivedFromKarigar=true;
+    v.dispatchedToClient=true;
+    // Auto-tick all 3 vendor stage received flags on dispatch
+    v.pipeReceived=true;
+    v.karigarReceived=true;
+    v.platingReceived=true;
+  } else {
+    v.receivedFromKarigar=false;
+    v.dispatchedToClient=false;
+    // Note: stage ticks are NOT cleared on undo — only the dispatch status resets
+  }
   save();render();
-  showToast(v.done?'✅ Variety marked complete':'↩️ Variety marked pending',v.done?'green':'red',2500);
+  showToast(v.done?'✅ Variety dispatched':'↩️ Variety marked pending',v.done?'green':'red',2500);
+}
+
+// ── VENDOR STAGE LINKS (CO ↔ Vendor Orders) ─────────────────────────────────
+
+function setCOPipeVo(oi,di,vri,voId){
+  const order=S.orders[oi];if(!order)return;
+  const d=order.designs[di];if(!d)return;
+  const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
+  if(!holder)return;
+  if(voId==='__own__'){
+    holder.pipeVoId='__own__';
+    delete holder.pipeVoLabel;
+  } else if(voId){
+    const pipeVo=(S.vendorOrders||[]).find(vo=>vo.id===voId);
+    if(pipeVo){
+      holder.pipeVoId=voId;
+      holder.pipeVoLabel=(pipeVo.vendor||'?')+' — '+(pipeVo.orderId||'?');
+    }
+  } else {
+    delete holder.pipeVoId;
+    delete holder.pipeVoLabel;
+  }
+  save();render();
+  showToast(voId?'🔩 Pipe linked: '+(voId==='__own__'?'Own (stock)':holder.pipeVoLabel||voId):'Pipe link cleared');
+}
+
+function setCOPlatingVo(oi,di,vri,voId){
+  const order=S.orders[oi];if(!order)return;
+  const d=order.designs[di];if(!d)return;
+  const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
+  if(!holder)return;
+  if(voId==='__own__'){
+    holder.platingVoId='__own__';
+    delete holder.platingVoLabel;
+  } else if(voId){
+    const platVo=(S.vendorOrders||[]).find(vo=>vo.id===voId);
+    if(platVo){
+      holder.platingVoId=voId;
+      holder.platingVoLabel=(platVo.vendor||'?')+' — '+(platVo.orderId||'?');
+    }
+  } else {
+    delete holder.platingVoId;
+    delete holder.platingVoLabel;
+  }
+  save();render();
+  showToast(voId?'🪙 Plating linked: '+(voId==='__own__'?'Own (in-house)':holder.platingVoLabel||voId):'Plating link cleared');
+}
+
+function toggleCOStageRcvd(oi,di,vri,stage){
+  const order=S.orders[oi];if(!order)return;
+  const d=order.designs[di];if(!d)return;
+  const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
+  if(!holder)return;
+  const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
+  holder[field]=!holder[field];
+  save();render();
+  showToast(holder[field]?'✅ Marked received':'↩️ Marked pending',holder[field]?'green':'red',2000);
 }
 
 // ── KARIGAR / VENDOR ASSIGNMENT ──────────────────────────────────────────────
@@ -4396,53 +4467,58 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
   });
 
   // ── STAGE SUB-ROW BUILDER ─────────────────────────────────────────────────
-  // Renders a no-print sub-row beneath each design/variety row showing:
-  //   🔩 Pipe vendor section  (dropdown picking from pipe-type vendor orders + ✓ received)
-  //   🛠️ Karigar section      (shows existing assignedVendor + linked VO number + ✓ received)
-  // vri = -1 for flat/CNC designs; vri ≥ 0 for variety sub-rows.
-  // Closes over: order, oi, _voMap (from buildDesignsGroupTable scope)
-  const _coStageSubRow=(d,di,vri,szKeys)=>{
-    const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
-    if(!holder)return'';
-    const colSpan=szKeys.length+7; // Design code + Images + sizes + Total + Unit + Rate + Karigar + Action
-    // ── Pipe section ────────────────────────────────────────
+  // ── INLINE VENDOR CELLS (Pipe · Karigar · Plating) ───────────────────────────
+  // Returns 3 <td> elements injected directly into each design/variety row.
+  // Replaces the old sub-row pattern — no more extra row below each variety.
+  // holder = d (flat) or v (variety). vri = -1 for flat, ≥0 for variety.
+  // Closes over: oi, S, esc from buildDesignsGroupTable scope.
+  const _coVendorCells=(holder,di,vri)=>{
+    // ── Pipe ──────────────────────────────────────────────────────────────────
     const pipeVos=(S.vendorOrders||[]).filter(vo=>(vo.type||'karigar')==='pipe');
-    const pipeOpts=pipeVos.map(vo=>'<option value="'+esc(vo.id||'')+'"'+(holder.pipeVoId===vo.id?' selected':'')+'>'+esc((vo.vendor||'?')+' — '+(vo.orderId||'?'))+'</option>').join('');
-    const pipeRcvd=!!holder.pipeReceived;
-    const pipeRcvdSty=pipeRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#9E9E9E;border:1px solid #90CAF9';
-    const pipeHtml='<div style="flex:1;min-width:160px;background:#EDF4FF;border-radius:7px;padding:5px 8px;border:1px solid #90CAF9">'
-      +'<div style="font-size:9px;font-weight:800;color:#1565C0;letter-spacing:.05em;margin-bottom:3px">🔩 PIPE VENDOR</div>'
-      +'<div style="display:flex;align-items:center;gap:5px">'
-      +'<select style="font-size:10px;padding:2px 5px;border-radius:5px;border:1px solid #90CAF9;background:#fff;color:#1565C0;flex:1;min-width:90px" onchange="setCOPipeVo('+oi+','+di+','+vri+',this.value)">'
-      +'<option value="">— pipe order —</option>'+pipeOpts
-      +'</select>'
-      +'<button class="icon-btn sm" style="'+pipeRcvdSty+';font-weight:700;min-width:26px;padding:2px 5px" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pipeRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
-      +'</div>'
-    +'</div>';
-    // ── Karigar section ──────────────────────────────────────
-    const karigarName=holder.assignedVendor||'';
-    const karigarRcvd=!!holder.karigarReceived;
-    const karigarRcvdSty=karigarRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#9E9E9E;border:1px solid #CE93D8';
-    // Show which vendor order this karigar row is linked to (from the VO presence map)
-    const varName=vri>=0?(((d.varieties||[])[vri]||{}).name||''):'__flat__';
-    const voKey=(order.id||'')+'|'+(d.code||'')+'|'+varName;
-    const linkedVoIds=_voMap?(_voMap[voKey]||[]):[];
-    const voBadgeStr=linkedVoIds.map(vid=>'<span class="co-src-badge" style="font-size:9px">→ '+esc(vid)+'</span>').join('');
-    const karigarHtml='<div style="flex:1;min-width:160px;background:#F6EEFF;border-radius:7px;padding:5px 8px;border:1px solid #CE93D8">'
-      +'<div style="font-size:9px;font-weight:800;color:#4A148C;letter-spacing:.05em;margin-bottom:3px">🛠️ KARIGAR</div>'
-      +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
-      +'<span style="font-size:11px;font-weight:600;color:'+(karigarName?'#4A148C':'#BDBDBD')+';flex:1;min-width:70px">'+(karigarName?esc(karigarName):'— not assigned —')+'</span>'
-      +voBadgeStr
-      +'<button class="icon-btn sm" style="'+karigarRcvdSty+';font-weight:700;min-width:26px;padding:2px 5px" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(karigarRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
-      +'</div>'
-    +'</div>';
-    return '<tr class="no-print" style="background:#F5F5FF">'
-      +'<td colspan="'+colSpan+'" style="padding:2px 8px 5px '+(vri>=0?'30px':'8px')+';border-top:none">'
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
-      +pipeHtml+karigarHtml
-      +'</div>'
-      +'</td>'
-    +'</tr>';
+    const pVoId=holder.pipeVoId||'';
+    const pOpts='<option value="__own__"'+(pVoId==='__own__'?' selected':'')+'>Own (stock)</option>'
+      +pipeVos.map(vo=>'<option value="'+esc(vo.id||'')+'"'+(pVoId===vo.id?' selected':'')+'>'+esc((vo.vendor||'?')+' — '+(vo.orderId||'?'))+'</option>').join('');
+    const pRcvd=!!holder.pipeReceived;
+    const pTick=pRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
+    const pipeTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
+      +'<div style="font-size:8px;font-weight:800;color:#1565C0;letter-spacing:.04em;margin-bottom:2px">Pipe</div>'
+      +'<div style="display:flex;align-items:center;gap:3px">'
+      +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;border:1px solid #90CAF9;background:#EDF4FF;color:#1565C0;flex:1;min-width:0" onchange="setCOPipeVo('+oi+','+di+','+vri+',this.value)">'
+      +'<option value="">— pipe —</option>'+pOpts+'</select>'
+      +'<button style="'+pTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
+      +'</div></td>';
+    // ── Karigar ───────────────────────────────────────────────────────────────
+    const kVendors=S.vocabulary.vendors||[];
+    const kVal=holder.assignedVendor||'';
+    const kOpts='<option value="__own__"'+(kVal==='__own__'?' selected':'')+'>Own (in-house)</option>'
+      +kVendors.map(v2=>'<option value="'+esc(v2)+'"'+(kVal===v2?' selected':'')+'>'+esc(v2)+'</option>').join('');
+    const kRcvd=!!holder.karigarReceived;
+    const kTick=kRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
+    const kBdr=kVal?(kVal==='__own__'?'border:1.5px solid #AFA9EC;background:#f7f6ff;color:#534AB7':'border:1.5px solid #CE93D8;background:#F6EEFF;color:#4A148C'):'border:1.5px solid #F5A0A0;background:#FFF0EE;color:#C0392B';
+    const kChange=vri>=0?'upVarietyVendor('+oi+','+di+','+vri+',this.value)':'upDesignVendor('+oi+','+di+',this.value)';
+    const karigarTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
+      +'<div style="font-size:8px;font-weight:800;color:#4A148C;letter-spacing:.04em;margin-bottom:2px">Karigar</div>'
+      +'<div style="display:flex;align-items:center;gap:3px">'
+      +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+kBdr+';flex:1;min-width:0" onchange="'+kChange+'">'
+      +'<option value="">— karigar —</option>'+kOpts+'</select>'
+      +'<button style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
+      +'</div></td>';
+    // ── Plating ───────────────────────────────────────────────────────────────
+    const platVos=(S.vendorOrders||[]).filter(vo=>(vo.type||'karigar')==='plating');
+    const platId=holder.platingVoId||'';
+    const platOpts='<option value="__own__"'+(platId==='__own__'?' selected':'')+'>Own (in-house)</option>'
+      +platVos.map(vo=>'<option value="'+esc(vo.id||'')+'"'+(platId===vo.id?' selected':'')+'>'+esc((vo.vendor||'?')+' — '+(vo.orderId||'?'))+'</option>').join('');
+    const platRcvd=!!holder.platingReceived;
+    const platTick=platRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
+    const platBdr=platId?'border:1px solid #FFAB91;background:#FFF3E0;color:#BF360C':'border:1px solid #FFAB91;background:#FBE9E7;color:#BF360C';
+    const platingTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
+      +'<div style="font-size:8px;font-weight:800;color:#BF360C;letter-spacing:.04em;margin-bottom:2px">Plating</div>'
+      +'<div style="display:flex;align-items:center;gap:3px">'
+      +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+platBdr+';flex:1;min-width:0" onchange="setCOPlatingVo('+oi+','+di+','+vri+',this.value)">'
+      +'<option value="">— plating —</option>'+platOpts+'</select>'
+      +'<button style="'+platTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'plating\')" title="'+(platRcvd?'Unmark plating received':'Mark plating received')+'">✓</button>'
+      +'</div></td>';
+    return pipeTd+karigarTd+platingTd;
   };
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4462,12 +4538,10 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
     const dImages=d.images||[];
     const vImagesFlat=d.varieties.flatMap((v,vi)=>(v.images||[]).map((img,ii)=>({img,vi,ii})));
     const designImgThumbs=dImages.map((img,ii)=>
-      `<img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}">`+
-      `<button class="del-img no-print" style="width:auto" onclick="deleteImg(${oi},${di},${ii})" title="Remove image">✕</button>`
+      `<div style="position:relative;display:inline-block;flex-shrink:0"><img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${ii})" style="cursor:zoom-in" title="${esc(img.name||'Image')}"><button class="no-print" onclick="deleteImg(${oi},${di},${ii})" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:9px;line-height:16px;cursor:pointer;padding:0;font-weight:700;z-index:1" title="Remove image">✕</button></div>`
     ).join('');
     const varImgThumbs=vImagesFlat.map(({img,vi,ii},gOff)=>
-      `<img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in">`+
-      `<button class="del-img no-print" style="width:auto" onclick="delVarietyImg(${oi},${di},${vi},${ii})" title="Remove image">✕</button>`
+      `<div style="position:relative;display:inline-block;flex-shrink:0"><img class="variety-thumb" src="${img.data||''}" onclick="openDesignImgsLb(${oi},${di},${dImages.length+gOff})" style="cursor:zoom-in"><button class="no-print" onclick="delVarietyImg(${oi},${di},${vi},${ii})" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:9px;line-height:16px;cursor:pointer;padding:0;font-weight:700;z-index:1" title="Remove image">✕</button></div>`
     ).join('');
     const imgThumbs=designImgThumbs+varImgThumbs;
     const addImgBtn=`<button class="variety-img-add no-print" onclick="openLibraryPicker(${oi},${di},-1)" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>`;
@@ -4513,19 +4587,13 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
         +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
-        +'<td class="no-print" style="padding:2px 4px">'
-          +'<select style="font-size:10px;padding:3px 5px;border-radius:5px;min-width:95px;border:1.5px solid '+(d.assignedVendor?'#AFA9EC':'#F5A0A0')+';background:'+(d.assignedVendor?'#f7f6ff':'#FFF0EE')+';color:'+(d.assignedVendor?'#3C3489':'#C0392B')+'" onchange="upDesignVendor('+oi+','+di+',this.value)">'
-            +'<option value="">— karigar —</option>'
-            +(S.vocabulary.vendors||[]).map(v=>'<option value="'+esc(v)+'"'+(d.assignedVendor===v?' selected':'')+'>'+esc(v)+'</option>').join('')
-          +'</select>'
-        +'</td>'
+        +_coVendorCells(d,di,-1)
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
-          +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Mark this design\'s production stages as Done">✓</button>'
+          +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Dispatch — auto-ticks all stages">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
-      +'</tr>'
-      +_coStageSubRow(d,di,-1,szKeys);
+      +'</tr>';
 
     } else {
       // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS ───────────────────────────
@@ -4558,6 +4626,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<td></td>'
         +'<td></td>'
         +'<td class="no-print"></td>'
+        +'<td class="no-print"></td>'
+        +'<td class="no-print"></td>'
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>'
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
@@ -4568,8 +4638,10 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       d.varieties.forEach((v,vi)=>{
         const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
         const varImgs=(v.images||[]).map((img,ii)=>
-          '<img loading="lazy" class="variety-thumb" src="'+(img.data||'')+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
-          +'<button class="del-img no-print" style="width:auto" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" title="Remove">✕</button>'
+          '<div style="position:relative;display:inline-block;flex-shrink:0">'
+          +'<img loading="lazy" class="variety-thumb" src="'+(img.data||'')+'" onclick="openVarietyImgsLb('+oi+','+di+','+vi+','+ii+')" style="cursor:zoom-in">'
+          +'<button class="no-print" onclick="delVarietyImg('+oi+','+di+','+vi+','+ii+')" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e53935;color:#fff;border:none;font-size:9px;line-height:16px;cursor:pointer;padding:0;font-weight:700;z-index:1" title="Remove">✕</button>'
+          +'</div>'
         ).join('');
         const addVarImg='<button class="variety-img-add no-print" onclick="openLibraryPicker('+oi+','+di+','+vi+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
         const unitOpts2=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
@@ -4596,18 +4668,12 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
             +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVarietyRate('+oi+','+di+','+vi+',this.value)"></td>'
-          +'<td class="no-print" style="padding:2px 4px">'
-            +'<select style="font-size:10px;padding:3px 5px;border-radius:5px;min-width:95px;border:1.5px solid '+(v.assignedVendor?'#AFA9EC':'#F5A0A0')+';background:'+(v.assignedVendor?'#f7f6ff':'#FFF0EE')+';color:'+(v.assignedVendor?'#3C3489':'#C0392B')+'" onchange="upVarietyVendor('+oi+','+di+','+vi+',this.value)">'
-              +'<option value="">— karigar —</option>'
-              +(S.vocabulary.vendors||[]).map(v2=>'<option value="'+esc(v2)+'"'+(v.assignedVendor===v2?' selected':'')+'>'+esc(v2)+'</option>').join('')
-            +'</select>'
-          +'</td>'
+          +_coVendorCells(v,di,vi)
           +'<td class="no-print"><div style="display:flex;gap:3px">'
-            +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as pending':'Mark variety complete')+'">✓</button>'
+            +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as dispatched (auto-ticks stages)':'Mark variety dispatched')+'">✓</button>'
             +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
           +'</div></td>'
-        +'</tr>'
-        +_coStageSubRow(d,di,vi,szKeys);
+        +'</tr>';
       });
     }
   });
@@ -4619,7 +4685,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<td colspan="2" style="text-align:right;color:#534AB7;font-weight:600;font-size:11px">Group total →</td>'
       +szKeys.map(sz=>'<td><strong>'+(grpTotals[sz]||0)+'</strong></td>').join('')
       +'<td class="grand-total"><strong>'+grandTotal+'</strong></td>'
-      +'<td></td><td></td><td class="no-print"></td><td class="no-print"></td>'
+      +'<td></td><td></td><td class="no-print"></td><td class="no-print"></td><td class="no-print"></td><td class="no-print"></td>'
     +'</tr></tfoot>'
     :'';
 
@@ -4641,7 +4707,9 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<th style="min-width:55px">Total</th>'
         +'<th style="min-width:72px">Unit</th>'
         +'<th style="min-width:72px">Rate (₹)</th>'
-        +'<th style="min-width:110px" class="no-print">Karigar</th>'
+        +'<th style="min-width:105px" class="no-print">Pipe</th>'
+        +'<th style="min-width:105px" class="no-print">Karigar</th>'
+        +'<th style="min-width:105px" class="no-print">Plating</th>'
         +'<th style="min-width:70px" class="no-print">Action</th>'
       +'</tr></thead>'
       +'<tbody>'+tbody+'</tbody>'
@@ -7500,6 +7568,7 @@ function openNewVendorOrderModal(){
             <select id="nvo-type" style="font-size:12px;padding:5px 8px;border-radius:7px;border:1.5px solid #AFA9EC;background:#f7f6ff;color:#3C3489">
               <option value="karigar">🛠️ Karigar</option>
               <option value="pipe">🔩 Pipe</option>
+              <option value="plating">🪙 Plating</option>
             </select>
           </div>
         </div>
@@ -7975,7 +8044,7 @@ function renderVendorOrders(){
   const q=(S.vendorSearchQ||'').toLowerCase().trim();
   const sf=S.vendorStatusFilter||'';
   const chipA=v=>(S.vendorStatusFilter||'')===v?' active':'';
-  const tf=S.vendorTypeFilter||'';  // type filter: '' | 'pipe' | 'karigar'
+  const tf=S.vendorTypeFilter||'';  // type filter: '' | 'pipe' | 'karigar' | 'plating'
   const typeA=v=>(S.vendorTypeFilter||'')===v?' active':'';
 
   // Global search across all vendors when query is typed
@@ -8036,6 +8105,7 @@ function renderVendorOrders(){
         <button class="orders-chip${typeA('')}" onclick="S.vendorTypeFilter='';renderVendorOrders()">All types</button>
         <button class="orders-chip${typeA('pipe')}" onclick="S.vendorTypeFilter='pipe';renderVendorOrders()" style="${tf==='pipe'?'background:#E3F2FD;color:#1565C0;border-color:#90CAF9':''}">🔩 Pipe</button>
         <button class="orders-chip${typeA('karigar')}" onclick="S.vendorTypeFilter='karigar';renderVendorOrders()" style="${tf==='karigar'?'background:#F3E5F5;color:#4A148C;border-color:#CE93D8':''}">🛠️ Karigar</button>
+        <button class="orders-chip${typeA('plating')}" onclick="S.vendorTypeFilter='plating';renderVendorOrders()" style="${tf==='plating'?'background:#FFF3E0;color:#BF360C;border-color:#FFAB91':''}">🪙 Plating</button>
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
@@ -8095,6 +8165,8 @@ function buildVendorOrderCard(vo,vi){
   const _voType=vo.type||'karigar';
   const _typeBadge=_voType==='pipe'
     ?'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;margin-left:6px">🔩 PIPE</span>'
+    :_voType==='plating'
+    ?'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#FFF3E0;color:#BF360C;border:1px solid #FFAB91;margin-left:6px">🪙 PLATING</span>'
     :'<span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#F3E5F5;color:#4A148C;border:1px solid #CE93D8;margin-left:6px">🛠️ KARIGAR</span>';
   return`<div class="order-card ${cardAlert}" id="voc-${vo.id}">
     <div class="order-header" onclick="toggleVendorOrder('${vo.id}')">
