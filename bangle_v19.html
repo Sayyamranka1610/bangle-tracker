@@ -841,11 +841,9 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
     <p class="login-sub">Sign in to access the dashboard</p>
     <div class="login-field">
       <label>Username</label>
-      <input type="text" id="login-user" placeholder="Type your username" autocomplete="username"
-        style="width:100%;padding:12px 14px;border:1.5px solid #C0BFBA;border-radius:10px;font-size:14px;color:#3C3489;background:#fff"
-        list="login-user-list"
-        onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
-      <datalist id="login-user-list"></datalist>
+      <select id="login-user" style="width:100%;padding:12px 14px;border:1.5px solid #C0BFBA;border-radius:10px;font-size:14px;color:#3C3489;background:#fff;cursor:pointer">
+        <option value="" disabled selected>Loading users…</option>
+      </select>
     </div>
     <div class="login-field">
       <label>Password</label>
@@ -14307,23 +14305,28 @@ function _waitForPrompt(maxMs){
   });
 }
 
-// ── LOGIN USERNAME SUGGESTIONS ────────────────────────────────────────────────
-// Populates the datalist for username autocomplete. If Firebase rules block the
-// read (401) or the network is offline, the input still works — user just types.
-(async function initLoginUserlist(){
-  const list = document.getElementById('login-user-list');
-  if(!list) return;
-  list.innerHTML = `<option value="${_AUTH.u.replace(/"/g,'&quot;')}">`;
+// ── LOGIN USERNAME DROPDOWN ───────────────────────────────────────────────────
+// Fetches user list from Firebase and populates the select on the login screen.
+// Falls back to the hardcoded owner username if Firebase is unreachable.
+(async function initLoginDropdown(){
+  const sel = document.getElementById('login-user');
+  if(!sel) return;
+  const populate = (names) => {
+    sel.innerHTML = '<option value="" disabled selected>Select your username</option>'
+      + names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+  };
   try{
-    const r = await fetch(FB_USERS, {signal: AbortSignal.timeout(5000)});
+    const r = await fetch(FB_USERS);
     if(r.ok){
       const users = await r.json();
       if(Array.isArray(users) && users.length){
-        list.innerHTML = users.map(u=>`<option value="${(u.username||'').replace(/"/g,'&quot;')}">`).join('');
+        populate(users.map(u=>u.username));
+        return;
       }
     }
-    // Non-ok (401/403/etc) → silently keep the hardcoded suggestion above
-  }catch(e){ /* network / timeout — silently ignore */ }
+  }catch(e){}
+  // Fallback: hardcoded owner only
+  populate([_AUTH.u]);
 })();
 
 function _showInstallProgress(initialText){
