@@ -841,9 +841,11 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
     <p class="login-sub">Sign in to access the dashboard</p>
     <div class="login-field">
       <label>Username</label>
-      <select id="login-user" style="width:100%;padding:12px 14px;border:1.5px solid #C0BFBA;border-radius:10px;font-size:14px;color:#3C3489;background:#fff;cursor:pointer">
-        <option value="" disabled selected>Loading users…</option>
-      </select>
+      <input type="text" id="login-user" placeholder="Type your username" autocomplete="username"
+        style="width:100%;padding:12px 14px;border:1.5px solid #C0BFBA;border-radius:10px;font-size:14px;color:#3C3489;background:#fff"
+        list="login-user-list"
+        onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+      <datalist id="login-user-list"></datalist>
     </div>
     <div class="login-field">
       <label>Password</label>
@@ -4071,26 +4073,24 @@ function markVarietyDone(oi,di,vi){
 
 // ── VENDOR STAGE LINKS (CO ↔ Vendor Orders) ─────────────────────────────────
 
-function setCOPipeVo(oi,di,vri,voId){
+function setCOPipeVo(oi,di,vri,val){
+  // val is now vendor name (or '__own__' / '' to clear)
   const order=S.orders[oi];if(!order)return;
   const d=order.designs[di];if(!d)return;
   const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
   if(!holder)return;
-  if(voId==='__own__'){
-    holder.pipeVoId='__own__';
-    delete holder.pipeVoLabel;
-  } else if(voId){
-    const pipeVo=(S.vendorOrders||[]).find(vo=>vo.id===voId);
-    if(pipeVo){
-      holder.pipeVoId=voId;
-      holder.pipeVoLabel=(pipeVo.vendor||'?')+' — '+(pipeVo.orderId||'?');
-    }
+  if(val==='__own__'){
+    holder.pipeVendor='__own__';
+    delete holder.pipeVoId; delete holder.pipeVoLabel;
+  } else if(val){
+    holder.pipeVendor=val;
+    delete holder.pipeVoId; delete holder.pipeVoLabel;
   } else {
-    delete holder.pipeVoId;
-    delete holder.pipeVoLabel;
+    delete holder.pipeVendor;
+    delete holder.pipeVoId; delete holder.pipeVoLabel;
   }
   save();render();
-  showToast(voId?'🔩 Pipe linked: '+(voId==='__own__'?'Own (stock)':holder.pipeVoLabel||voId):'Pipe link cleared');
+  showToast(val?'🔩 Pipe: '+(val==='__own__'?'Own (stock)':val):'Pipe link cleared');
 }
 
 function setCOPlatingVo(oi,di,vri,voId){
@@ -4507,10 +4507,20 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
   // Closes over: oi, S, esc from buildDesignsGroupTable scope.
   const _coVendorCells=(holder,di,vri)=>{
     // ── Pipe ──────────────────────────────────────────────────────────────────
-    const pipeVos=(S.vendorOrders||[]).filter(vo=>(vo.type||'karigar')==='pipe');
-    const pVoId=holder.pipeVoId||'';
-    const pOpts='<option value="__own__"'+(pVoId==='__own__'?' selected':'')+'>Own (stock)</option>'
-      +pipeVos.map(vo=>'<option value="'+esc(vo.id||'')+'"'+(pVoId===vo.id?' selected':'')+'>'+esc((vo.vendor||'?')+' — '+(vo.orderId||'?'))+'</option>').join('');
+    // Deduplicate pipe vendors by name — show each vendor once, not once per order
+    const _pSeen=new Set();
+    const pipeVendors=(S.vendorOrders||[]).filter(vo=>{
+      if((vo.type||'karigar')!=='pipe'||!vo.vendor)return false;
+      if(_pSeen.has(vo.vendor))return false;
+      _pSeen.add(vo.vendor);return true;
+    });
+    // Resolve selected vendor name: new field (pipeVendor) OR backward-compat from old order ID
+    const pSel=holder.pipeVendor||
+      (holder.pipeVoId&&holder.pipeVoId!=='__own__'
+        ?((S.vendorOrders||[]).find(v=>v.id===holder.pipeVoId)||{}).vendor||''
+        :(holder.pipeVoId||''));
+    const pOpts='<option value="__own__"'+(pSel==='__own__'?' selected':'')+'>Own (stock)</option>'
+      +pipeVendors.map(vo=>'<option value="'+esc(vo.vendor||'')+'"'+(pSel===vo.vendor?' selected':'')+'>'+esc(vo.vendor||'?')+'</option>').join('');
     const pRcvd=!!holder.pipeReceived;
     const pTick=pRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
     const pipeTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
@@ -14297,28 +14307,23 @@ function _waitForPrompt(maxMs){
   });
 }
 
-// ── LOGIN USERNAME DROPDOWN ───────────────────────────────────────────────────
-// Fetches user list from Firebase and populates the select on the login screen.
-// Falls back to the hardcoded owner username if Firebase is unreachable.
-(async function initLoginDropdown(){
-  const sel = document.getElementById('login-user');
-  if(!sel) return;
-  const populate = (names) => {
-    sel.innerHTML = '<option value="" disabled selected>Select your username</option>'
-      + names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
-  };
+// ── LOGIN USERNAME SUGGESTIONS ────────────────────────────────────────────────
+// Populates the datalist for username autocomplete. If Firebase rules block the
+// read (401) or the network is offline, the input still works — user just types.
+(async function initLoginUserlist(){
+  const list = document.getElementById('login-user-list');
+  if(!list) return;
+  list.innerHTML = `<option value="${_AUTH.u.replace(/"/g,'&quot;')}">`;
   try{
-    const r = await fetch(FB_USERS);
+    const r = await fetch(FB_USERS, {signal: AbortSignal.timeout(5000)});
     if(r.ok){
       const users = await r.json();
       if(Array.isArray(users) && users.length){
-        populate(users.map(u=>u.username));
-        return;
+        list.innerHTML = users.map(u=>`<option value="${(u.username||'').replace(/"/g,'&quot;')}">`).join('');
       }
     }
-  }catch(e){}
-  // Fallback: hardcoded owner only
-  populate([_AUTH.u]);
+    // Non-ok (401/403/etc) → silently keep the hardcoded suggestion above
+  }catch(e){ /* network / timeout — silently ignore */ }
 })();
 
 function _showInstallProgress(initialText){
