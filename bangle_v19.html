@@ -13629,7 +13629,9 @@ function _startLockPolling(fast){
   _lockPollTimer = setInterval(async()=>{
     try{
       const r   = await fetch(FB_LOCK);
-      const lock= r.ok ? await r.json() : null;
+      // Firebase unreachable / rules error — keep waiting, don't act
+      if(!r.ok) return;
+      const lock= await r.json();
       const expired = !lock || !lock.heartbeat
                     ||(Date.now()-new Date(lock.heartbeat).getTime()) > LOCK_EXPIRE_MS;
       if(expired || !lock){
@@ -13875,7 +13877,9 @@ function _startLockOwnershipCheck(){
     if(!_hasLock){ clearInterval(_lockOwnerCheckTimer); _lockOwnerCheckTimer=null; return; }
     try{
       const r = await fetch(FB_LOCK);
-      const lock = r.ok ? await r.json() : null;
+      // Firebase unreachable / rules error — keep current edit state, don't revert
+      if(!r.ok) return;
+      const lock = await r.json();
       // Lock was deleted or overwritten by another device
       if(!lock || lock.deviceId !== FB_DEVICE_ID){
         _hasLock=false;
@@ -14066,8 +14070,12 @@ async function fbInit(){
   } catch(e){
     const isNetwork = e instanceof TypeError && e.message.includes('fetch');
     fbSetStatus('error', isNetwork ? 'Network error — check internet connection' : 'Startup error — ' + e.message);
-    showToast('⚠ ' + (isNetwork ? 'Could not connect to database' : 'Error: ' + e.message), 'red');
-    setTimeout(fbInit, 8000);
+    // Show toast only on first failure — avoid spamming every retry
+    if(!_fb._startupErrShown){
+      _fb._startupErrShown = true;
+      showToast('⚠ ' + (isNetwork ? 'Could not connect to database' : 'Database error: ' + e.message + ' — check Firebase rules'), 'red', 8000);
+    }
+    setTimeout(fbInit, 15000); // retry every 15s (was 8s)
   }
 }
 
