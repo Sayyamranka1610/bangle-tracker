@@ -1241,6 +1241,9 @@ function manualSave(){
 const IDB_NAME = 'bangle_images_v1';
 const IDB_STORE = 'images';
 let _idb = null;
+// Session-level cache of IDB data. Populated on first load so subsequent Firebase
+// syncs don't re-read the entire IDB (which was causing repeated large allocations).
+let _idbSessionCache = null;
 
 function idbOpen(){
   return new Promise((resolve,reject)=>{
@@ -1252,6 +1255,7 @@ function idbOpen(){
   });
 }
 async function idbPut(key,value){
+  if(_idbSessionCache) _idbSessionCache[key]=value; // keep cache in sync
   const db=await idbOpen();
   return new Promise((resolve,reject)=>{
     const tx=db.transaction(IDB_STORE,'readwrite');
@@ -1276,6 +1280,16 @@ async function idbGetAll(){
     const req=tx.objectStore(IDB_STORE).getAll();
     req.onsuccess=e=>resolve(e.target.result||[]);
     req.onerror=e=>reject(e.target.error);
+  });
+}
+async function idbDelete(key){
+  if(_idbSessionCache) delete _idbSessionCache[key];
+  const db=await idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(IDB_STORE,'readwrite');
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete=()=>resolve();
+    tx.onerror=e=>reject(e.target.error);
   });
 }
 
@@ -1343,62 +1357,69 @@ const IMAGE_FB_THRESHOLD=1500000; // ~1.1 MB base64
 // hqData (legacy print copies) is always stripped to IDB in both modes.
 function extractImages(state,forFirebase=false){
   const imageMap={};
-  const cloned=JSON.parse(JSON.stringify(state));
+  // Strip-in-place: temporarily remove base64 from state (which shares refs with S),
+  // serialize the now-tiny state, then immediately restore. This eliminates the
+  // memory spike that occurred when cloning 50+ MB of base64 images before stripping.
+  // Safe because JS is single-threaded — nothing else runs between strip and restore.
+  const stripped=[]; // [[container, field, originalValue], ...]
 
   const maybeStrip=(img,key)=>{
     if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')){
       const tooBig=img.data.length>IMAGE_FB_THRESHOLD;
       if(!forFirebase||tooBig){
-        // localStorage mode: always strip. Firebase mode: only strip if too big.
+        stripped.push([img,'data',img.data]);
         imageMap[key]=img.data;
         img.data='__IDB__'+key;
       }
-      // forFirebase + small image: leave inline so all devices receive it
     }
-    // hqData (legacy): always IDB-only — never sent to Firebase or localStorage
     if(img&&img.hqData&&typeof img.hqData==='string'&&img.hqData.startsWith('data:')){
+      stripped.push([img,'hqData',img.hqData]);
       imageMap[key+'_hq']=img.hqData;
       img.hqData='__IDB__'+key+'_hq';
     }
   };
 
-  // Stock item images
-  (cloned.stockItems||[]).forEach(it=>{
-    (it.images||[]).forEach((img,ii)=>{maybeStrip(img,`stkimg_${it.id}_${ii}`);});
-  });
-
-  // Attached files — threshold-only strip in both modes (files are large)
   const maybeStripFile=(o,fKey)=>{
     if(o.attachedFile&&o.attachedFile.data&&typeof o.attachedFile.data==='string'&&o.attachedFile.data.startsWith('data:')){
       if(o.attachedFile.data.length>IMAGE_FB_THRESHOLD){
-        imageMap[fKey]=o.attachedFile.data;
-        o.attachedFile={name:o.attachedFile.name,type:o.attachedFile.type,data:'__IDB__'+fKey};
+        const orig=o.attachedFile;
+        stripped.push([o,'attachedFile',orig]);
+        imageMap[fKey]=orig.data;
+        o.attachedFile={name:orig.name,type:orig.type,data:'__IDB__'+fKey};
       }
     }
   };
 
-  // Vendor orders
-  (cloned.vendorOrders||[]).forEach(o=>{
+  // Strip images in-place from state (shared refs — modifies S temporarily)
+  (state.stockItems||[]).forEach(it=>{
+    (it.images||[]).forEach((img,ii)=>maybeStrip(img,`stkimg_${it.id}_${ii}`));
+  });
+  (state.vendorOrders||[]).forEach(o=>{
     maybeStripFile(o,`file_vo_${o.id}`);
     (o.designs||[]).forEach(d=>{
-      (d.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_d_${d.id}_${ii}`);});
+      (d.images||[]).forEach((img,ii)=>maybeStrip(img,`img_vord_d_${d.id}_${ii}`));
       (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_vord_${d.id}_${v.name||ii}_${ii}`);});
+        (v.images||[]).forEach((img,ii)=>maybeStrip(img,`img_vord_${d.id}_${v.name||ii}_${ii}`));
+      });
+    });
+  });
+  (state.orders||[]).forEach(o=>{
+    maybeStripFile(o,`file_o_${o.id}`);
+    (o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach((img,ii)=>maybeStrip(img,`img_d_${d.id}_${ii}`));
+      (d.varieties||[]).forEach(v=>{
+        (v.images||[]).forEach((img,ii)=>maybeStrip(img,`img_v_${v.id}_${ii}`));
       });
     });
   });
 
-  // Client orders
-  (cloned.orders||[]).forEach(o=>{
-    maybeStripFile(o,`file_o_${o.id}`);
-    (o.designs||[]).forEach(d=>{
-      (d.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_d_${d.id}_${ii}`);});
-      (d.varieties||[]).forEach(v=>{
-        (v.images||[]).forEach((img,ii)=>{maybeStrip(img,`img_v_${v.id}_${ii}`);});
-      });
-    });
-  });
-  return{stateNoImages:cloned,imageMap};
+  // Serialize the now-tiny state (no large strings)
+  const stateNoImages=JSON.parse(JSON.stringify(state));
+
+  // Restore original data to S (undo the temporary strip)
+  stripped.forEach(([container,field,val])=>{ container[field]=val; });
+
+  return{stateNoImages,imageMap};
 }
 
 // Re-inject images from imageMap back into state
@@ -1472,13 +1493,18 @@ async function downloadOrderAttachment(orderId){
 // Called on startup AND after every Firebase sync so IDB images
 // are never lost when the remote state is applied.
 // Returns true if IDB had any data.
+// Uses a session-level cache after the first load to avoid re-reading
+// the full IDB on every Firebase sync (which was a major source of lag).
 async function _injectIDBImages(){
   try{
-    const all=await idbGetAll();
-    const imageMap={};
-    all.forEach(entry=>{imageMap[entry.key]=entry.value;});
-    if(Object.keys(imageMap).length>0){
-      reinjectImages(S,imageMap);
+    if(!_idbSessionCache){
+      // First call this session: read from IDB and populate cache
+      const all=await idbGetAll();
+      _idbSessionCache={};
+      all.forEach(entry=>{_idbSessionCache[entry.key]=entry.value;});
+    }
+    if(Object.keys(_idbSessionCache).length>0){
+      reinjectImages(S,_idbSessionCache);
       return true;
     }
   }catch(e){
@@ -1522,21 +1548,39 @@ async function _autoMigrateToR2(){
     try{ _fb.pendingLocal=false; }catch(e){} // nothing to migrate, release block
     return;
   }
+  // Track which IDB keys were used so we can delete them after upload
+  const migratedIdbKeys=[];
+  // Wrap each image with its IDB key (so we can delete the IDB entry on success)
+  const toUploadKeyed=toUpload.map(img=>{
+    // If the image has __IDB__ data before injection, the key is in the placeholder
+    // After _injectIDBImages, img.data is already base64 — find the key by reverse-lookup
+    const idbKey=_idbSessionCache?Object.keys(_idbSessionCache).find(k=>_idbSessionCache[k]===img.data):null;
+    return{img,idbKey};
+  });
+
   let done=0;
-  for(let i=0;i<toUpload.length;i+=3){
-    await Promise.all(toUpload.slice(i,i+3).map(async img=>{
+  for(let i=0;i<toUploadKeyed.length;i+=3){
+    await Promise.all(toUploadKeyed.slice(i,i+3).map(async({img,idbKey})=>{
       try{
         const compressed=await compressImageToThumb(img.data,1200);
         const r2url=await uploadToR2(compressed);
-        if(r2url){img.data=r2url;done++;}
+        if(r2url){
+          img.data=r2url;
+          if(idbKey) migratedIdbKeys.push(idbKey);
+          done++;
+        }
       }catch(e){}
     }));
+    // Yield to browser between batches so canvas operations don't freeze the UI
+    await new Promise(r=>setTimeout(r,80));
   }
   if(done>0){
     render(); // Show images immediately from in-memory state
     save();   // Persist to localStorage + IDB
     try{ await fbPush(true); }catch(e){} // Push directly — fbPush clears pendingLocal on success
-    console.log('[AutoMigrate] Uploaded '+done+' image(s) to R2');
+    // Clean up IDB: images are now in R2, stale IDB entries waste memory on future loads
+    migratedIdbKeys.forEach(key=>idbDelete(key).catch(()=>{}));
+    console.log('[AutoMigrate] Uploaded '+done+' image(s) to R2, cleaned '+migratedIdbKeys.length+' IDB entries');
   } else {
     try{ _fb.pendingLocal=false; }catch(e){} // Nothing changed — release the block
   }
@@ -1696,26 +1740,37 @@ async function migrateImagesToCloud(){
     const total = toUpload.length;
     showToast(`Found ${total} image(s) — uploading to cloud…`,'blue',120000);
 
+    // Track which IDB keys were migrated for cleanup
+    const migratedIdbKeys=[];
+    const toUploadKeyed=toUpload.map(img=>{
+      const idbKey=_idbSessionCache?Object.keys(_idbSessionCache).find(k=>_idbSessionCache[k]===img.data):null;
+      return{img,idbKey};
+    });
+
     // Step 4 — upload in batches of 3 (Firebase still blocked)
     let done=0, failed=0;
-    for(let i=0; i<toUpload.length; i+=3){
-      await Promise.all(toUpload.slice(i,i+3).map(async img=>{
+    for(let i=0; i<toUploadKeyed.length; i+=3){
+      await Promise.all(toUploadKeyed.slice(i,i+3).map(async({img,idbKey})=>{
         try{
           const compressed = await compressImageToThumb(img.data, 1200);
           const r2url = await uploadToR2(compressed);
-          if(r2url){ img.data=r2url; done++; }
+          if(r2url){ img.data=r2url; if(idbKey) migratedIdbKeys.push(idbKey); done++; }
           else failed++;
         }catch(e){ failed++; }
       }));
       if(btn) btn.textContent=`☁️ ${done}/${total}…`;
       showToast(`Uploading… ${done}/${total} done`,'blue',120000);
+      // Yield to browser between batches so canvas compression doesn't freeze the page
+      await new Promise(r=>setTimeout(r,80));
     }
 
-    // Step 4 — render immediately, then push to Firebase
+    // Step 5 — render immediately, then push to Firebase, then clean up IDB
     if(done>0){
       render(); // Show images on screen right away
       save();   // Persist to localStorage + IDB
       try{ await fbPush(true); }catch(e){} // Direct push — fbPush clears pendingLocal on success
+      // Remove migrated images from IDB — they're in R2 now, stale IDB entries waste RAM
+      migratedIdbKeys.forEach(key=>idbDelete(key).catch(()=>{}));
       audit('Migrate images',`Migrated ${done} image(s) to Cloudflare R2`);
       showToast('✅ Migration complete! '+done+' image(s) are now in the cloud and will appear on every device.'+(failed?' ('+failed+' failed — try again)':''),'green',10000);
     } else {
