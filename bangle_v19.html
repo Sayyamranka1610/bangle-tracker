@@ -3230,6 +3230,148 @@ async function _lpUploadNew(input,oi,di,vi){
   if(attached)showToast(`✅ ${attached} photo${attached!==1?'s':''} saved to "${targetFolder}"  ✓`,'green',3000);
 }
 
+// ── VENDOR ORDER LIBRARY PICKER (mirrors openLibraryPicker but targets S.vendorOrders) ─
+async function openVOLibraryPicker(voI,di,vri){
+  _lpPage=0;
+  await _ensureLibraryLoaded();
+  const design=S.vendorOrders&&S.vendorOrders[voI]&&S.vendorOrders[voI].designs&&S.vendorOrders[voI].designs[di];
+  const designCode=design?(design.code||''):'';
+  const lib=_imageLibrary;
+  const suggested=designCode?lib.filter(e=>(e.designCode||'').toLowerCase()===designCode.toLowerCase()):[];
+  const cncFolders=[...new Set(lib.filter(e=>(e.segment||'CNC')==='CNC').map(e=>e.folder||'').filter(Boolean))].sort();
+  const dyeFolders=[...new Set(lib.filter(e=>(e.segment||'CNC')==='Dye Gold').map(e=>e.folder||'').filter(Boolean))].sort();
+  const old=document.getElementById('lib-picker-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='lib-picker-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:8px';
+  const folderOpts=(cncFolders.length?`<optgroup label="📦 CNC">${cncFolders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</optgroup>`:'')
+    +(dyeFolders.length?`<optgroup label="✨ Dye Gold">${dyeFolders.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</optgroup>`:'');
+  const suggestedHtml=suggested.length?`
+    <div style="flex-shrink:0">
+      <div style="font-size:11px;font-weight:700;color:#1D9E75;margin-bottom:6px;letter-spacing:.03em">✅ SUGGESTED FOR "${esc(designCode)}" — ${suggested.length} match${suggested.length!==1?'es':''}</div>
+      <div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:6px">
+        ${suggested.map(e=>`<div onclick="_voLpAttachById('${e._id}',${voI},${di},${vri})" style="cursor:pointer;flex-shrink:0;width:88px;border-radius:8px;border:2.5px solid #1D9E75;overflow:hidden;transition:all .15s" onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform=''"><img src="${esc(e.r2url)}" loading="lazy" style="width:100%;height:72px;object-fit:cover;display:block"><div style="padding:3px 5px;font-size:10px;text-align:center;color:#1D9E75;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.folder||'')}</div></div>`).join('')}
+      </div>
+    </div>`:'';
+  wrap.innerHTML=`<div style="background:#fff;border-radius:16px;width:min(900px,98vw);height:90vh;display:flex;flex-direction:column;padding:16px 18px;gap:10px;overflow:hidden">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0">
+    <div><div style="font-size:15px;font-weight:700;color:#534AB7">🖼️ Choose Photo from Library</div>
+    <div style="font-size:11.5px;color:#666;margin-top:3px">${designCode?`Searching for design code <strong>${esc(designCode)}</strong> · `:''}<span style="color:#888">${lib.length.toLocaleString()} photos available</span></div></div>
+    <button onclick="document.getElementById('lib-picker-modal').remove()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;flex-shrink:0;margin-left:10px">✕ Close</button>
+  </div>
+  <div style="display:flex;gap:8px;flex-shrink:0;align-items:flex-end">
+    <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:10px;font-weight:700;color:#534AB7;letter-spacing:.05em;text-transform:uppercase">🔍 Search by design code</label>
+      <input id="lp-search" placeholder="Type design code (e.g. 8001, DD-1)…" value="${esc(designCode)}" oninput="_lpPage=0;_voLpRender(${voI},${di},${vri})" style="width:100%;padding:10px 14px;border:2px solid #AFA9EC;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none" onfocus="this.style.borderColor='#534AB7'" onblur="this.style.borderColor='#AFA9EC'">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;min-width:180px">
+      <label style="font-size:10px;font-weight:700;color:#534AB7;letter-spacing:.05em;text-transform:uppercase">📁 Filter by folder</label>
+      <select id="lp-folder" onchange="_lpPage=0;document.getElementById('lp-search').value='';_voLpRender(${voI},${di},${vri})" style="padding:10px;border:2px solid #AFA9EC;border-radius:8px;font-size:13px;width:100%;background:#fff"><option value="">All folders</option>${folderOpts}</select>
+    </div>
+  </div>
+  ${suggestedHtml}
+  <div id="lp-grid-wrap" style="flex:1;overflow-y:auto;min-height:0">
+    ${lib.length===0?`<div style="text-align:center;padding:40px;color:#888;font-size:13px">Library is empty — <button onclick="document.getElementById('lib-picker-modal').remove();openLibraryImport()" style="color:#534AB7;background:none;border:none;cursor:pointer;font-weight:600;text-decoration:underline">import photos first</button></div>`:''}
+    <div id="lp-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:7px;padding:2px"></div>
+    <div id="lp-load-more-wrap" style="text-align:center;margin-top:10px"></div>
+  </div>
+  <div style="flex-shrink:0;padding-top:8px;border-top:1px solid #eee;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div style="font-size:11px;color:#888">Photo not in library?</div>
+    <label style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600">
+      📁 Upload from Device &amp; Add to Library
+      <input type="file" accept="image/*" multiple onchange="_voLpUploadNew(this,${voI},${di},${vri})" style="display:none">
+    </label>
+    <div style="font-size:10px;color:#aaa">Uploaded photos are saved to library for future use</div>
+  </div></div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click',e=>{if(e.target===wrap)wrap.remove();});
+  _voLpRender(voI,di,vri);
+}
+function _voLpRender(voI,di,vri){
+  const search=(document.getElementById('lp-search')||{}).value||'';
+  const folder=(document.getElementById('lp-folder')||{}).value||'';
+  const lib=_imageLibrary;
+  const q=search.trim().toLowerCase();
+  let items=lib.filter(e=>{
+    if(folder&&(e.folder||'')!==folder)return false;
+    if(q)return (e.designCode||'').toLowerCase().includes(q)||(e.folder||'').toLowerCase().includes(q)||(e.fileName||'').toLowerCase().includes(q);
+    return true;
+  });
+  items.sort((a,b)=>(a.designCode||'').localeCompare(b.designCode||'',undefined,{numeric:true,sensitivity:'base'}));
+  const shown=items.slice(0,(_lpPage+1)*LIB_PAGE);
+  const grid=document.getElementById('lp-grid');
+  const moreWrap=document.getElementById('lp-load-more-wrap');
+  if(!grid)return;
+  grid.innerHTML=shown.map(e=>`<div onclick="_voLpAttachById('${e._id}',${voI},${di},${vri})" title="${esc(e.designCode)} · ${esc(e.folder||'')}" style="cursor:pointer;border-radius:8px;border:2px solid #E8E7E0;overflow:hidden;transition:all .13s;background:#fff" onmouseover="this.style.borderColor='#534AB7';this.style.transform='scale(1.03)'" onmouseout="this.style.borderColor='#E8E7E0';this.style.transform=''"><img src="${esc(e.r2url)}" loading="lazy" style="width:100%;height:70px;object-fit:cover;display:block"><div style="padding:3px 5px"><div style="font-size:10px;font-weight:700;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.designCode)||'—'}</div><div style="font-size:9px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.folder||'')}</div></div></div>`).join('');
+  if(moreWrap){
+    if(shown.length<items.length){
+      moreWrap.innerHTML='<div id="lp-scroll-sentinel" style="height:30px"></div>';
+      const _lpSent=document.getElementById('lp-scroll-sentinel');
+      if(window._lpScrollObs){window._lpScrollObs.disconnect();window._lpScrollObs=null;}
+      if(_lpSent){
+        const root=document.getElementById('lp-grid-wrap');
+        window._lpScrollObs=new IntersectionObserver(entries=>{if(entries[0].isIntersecting){_lpPage++;_voLpRender(voI,di,vri);}},{root:root||null,threshold:0.1});
+        window._lpScrollObs.observe(_lpSent);
+      }
+    } else {
+      moreWrap.innerHTML=items.length?`<div style="font-size:11px;color:#aaa;padding:6px;text-align:center">All ${items.length.toLocaleString()} photos shown</div>`:'';
+      if(window._lpScrollObs){window._lpScrollObs.disconnect();window._lpScrollObs=null;}
+    }
+  }
+}
+function _voLpAttachById(id,voI,di,vri){
+  const entry=_imageLibrary.find(e=>e._id===id);
+  if(!entry)return;
+  const vo=S.vendorOrders&&S.vendorOrders[voI];
+  const design=vo&&vo.designs&&vo.designs[di];
+  if(!design)return;
+  if(vri<0){
+    if(!design.images)design.images=[];
+    design.images.push({data:entry.r2url,name:entry.fileName||entry.designCode||''});
+  } else {
+    if(!design.varieties[vri])return;
+    if(!design.varieties[vri].images)design.varieties[vri].images=[];
+    design.varieties[vri].images.push({data:entry.r2url,name:entry.fileName||entry.designCode||''});
+  }
+  scheduleAutosave();renderVendorOrders();
+  const m=document.getElementById('lib-picker-modal');if(m)m.remove();
+  showToast('Photo attached to design ✓','green',2500);
+}
+async function _voLpUploadNew(input,voI,di,vri){
+  const files=Array.from(input.files);
+  if(!files.length)return;
+  const existingFolders=[...new Set(_imageLibrary.map(e=>e.folder||'').filter(Boolean))].sort();
+  const vo=S.vendorOrders&&S.vendorOrders[voI];
+  const design=vo&&vo.designs&&vo.designs[di];
+  const designCode=design?(design.code||''):'';
+  const curFolderSel=(document.getElementById('lp-folder')||{}).value||'';
+  const suggested=curFolderSel||_lpLastFolder||designCode||'';
+  const targetFolder=await _lpPickFolder(existingFolders,suggested);
+  if(targetFolder===null){input.value='';return;}
+  _lpLastFolder=targetFolder;
+  const btn=input.closest('label');
+  if(btn)btn.style.opacity='0.6';
+  showToast('Uploading '+files.length+' photo'+(files.length!==1?'s':'')+' to library…','blue',15000);
+  let attached=0;
+  for(const f of files){
+    try{
+      const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
+      const compressed=await compressImageToThumb(dataUrl,1200);
+      const r2url=await uploadToR2(compressed);
+      if(!r2url)throw new Error('Upload failed');
+      const dcFromFile=f.name.replace(/\.[^.]+$/,'').trim();
+      await _addLibraryEntry(r2url,dcFromFile||designCode,targetFolder,f.name);
+      _voLpAttachById(_imageLibrary[_imageLibrary.length-1]._id,voI,di,vri);
+      attached++;
+    }catch(e){
+      showToast('Upload failed for '+f.name+': '+e.message,'red',4000);
+    }
+  }
+  if(btn)btn.style.opacity='';
+  input.value='';
+  if(attached)showToast(`✅ ${attached} photo${attached!==1?'s':''} saved to "${targetFolder}"  ✓`,'green',3000);
+}
+
 // ── RESTORE FROM FILE ─────────────────────────────────────────────────────────
 function restoreFromFile(){
   document.getElementById('restore-file-inp').click();
@@ -4091,26 +4233,24 @@ function setCOPipeVo(oi,di,vri,val){
   showToast(val?'🔩 Pipe: '+(val==='__own__'?'Own (stock)':val):'Pipe link cleared');
 }
 
-function setCOPlatingVo(oi,di,vri,voId){
+function setCOPlatingVo(oi,di,vri,val){
+  // val is vendor name (or '__own__' / '' to clear)
   const order=S.orders[oi];if(!order)return;
   const d=order.designs[di];if(!d)return;
   const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
   if(!holder)return;
-  if(voId==='__own__'){
-    holder.platingVoId='__own__';
-    delete holder.platingVoLabel;
-  } else if(voId){
-    const platVo=(S.vendorOrders||[]).find(vo=>vo.id===voId);
-    if(platVo){
-      holder.platingVoId=voId;
-      holder.platingVoLabel=(platVo.vendor||'?')+' — '+(platVo.orderId||'?');
-    }
+  if(val==='__own__'){
+    holder.platingVendor='__own__';
+    delete holder.platingVoId; delete holder.platingVoLabel;
+  } else if(val){
+    holder.platingVendor=val;
+    delete holder.platingVoId; delete holder.platingVoLabel;
   } else {
-    delete holder.platingVoId;
-    delete holder.platingVoLabel;
+    delete holder.platingVendor;
+    delete holder.platingVoId; delete holder.platingVoLabel;
   }
   save();render();
-  showToast(voId?'🪙 Plating linked: '+(voId==='__own__'?'Own (in-house)':holder.platingVoLabel||voId):'Plating link cleared');
+  showToast(val?'🪙 Plating: '+(val==='__own__'?'Own (in-house)':val):'Plating link cleared');
 }
 
 function toggleCOStageRcvd(oi,di,vri,stage){
@@ -4521,7 +4661,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +pipeVendors.map(vo=>'<option value="'+esc(vo.vendor||'')+'"'+(pSel===vo.vendor?' selected':'')+'>'+esc(vo.vendor||'?')+'</option>').join('');
     const pRcvd=!!holder.pipeReceived;
     const pTick=pRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
-    const pipeTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
+    const pipeTdBg=pRcvd?'background:#E8F5E9;':'';
+    const pipeTd='<td class="no-print" style="padding:3px 4px;min-width:105px;'+pipeTdBg+'">'
       +'<div style="font-size:8px;font-weight:800;color:#1565C0;letter-spacing:.04em;margin-bottom:2px">Pipe</div>'
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;border:1px solid #90CAF9;background:#EDF4FF;color:#1565C0;flex:1;min-width:0" onchange="setCOPipeVo('+oi+','+di+','+vri+',this.value)">'
@@ -4539,7 +4680,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
     const kTick=kRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
     const kBdr=kVal?(kVal==='__own__'?'border:1.5px solid #AFA9EC;background:#f7f6ff;color:#534AB7':'border:1.5px solid #CE93D8;background:#F6EEFF;color:#4A148C'):'border:1.5px solid #F5A0A0;background:#FFF0EE;color:#C0392B';
     const kChange=vri>=0?'upVarietyVendor('+oi+','+di+','+vri+',this.value)':'upDesignVendor('+oi+','+di+',this.value)';
-    const karigarTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
+    const karigarTdBg=kRcvd?'background:#E8F5E9;':'';
+    const karigarTd='<td class="no-print" style="padding:3px 4px;min-width:105px;'+karigarTdBg+'">'
       +'<div style="font-size:8px;font-weight:800;color:#4A148C;letter-spacing:.04em;margin-bottom:2px">Karigar</div>'
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+kBdr+';flex:1;min-width:0" onchange="'+kChange+'">'
@@ -4547,15 +4689,21 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<button style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
       +'</div></td>';
     // ── Plating ───────────────────────────────────────────────────────────────
-    const platVos=(S.vendorOrders||[]).filter(vo=>(vo.type||'karigar')==='plating');
-    const platId=holder.platingVoId||'';
-    const platOpts='<option value="__own__"'+(platId==='__own__'?' selected':'')+'>Own (in-house)</option>'
-      +platVos.map(vo=>'<option value="'+esc(vo.id||'')+'"'+(platId===vo.id?' selected':'')+'>'+esc((vo.vendor||'?')+' — '+(vo.orderId||'?'))+'</option>').join('');
+    // Vendor names from vocabulary (same pattern as karigar), backward-compat with old platingVoId
+    const platVendors=vendorsOfType('plating');
+    const platSel=holder.platingVendor||
+      (holder.platingVoId&&holder.platingVoId!=='__own__'
+        ?((S.vendorOrders||[]).find(v=>v.id===holder.platingVoId)||{}).vendor||''
+        :(holder.platingVoId||''));
+    if(platSel&&platSel!=='__own__'&&!platVendors.includes(platSel))platVendors.push(platSel);
+    const platOpts='<option value="__own__"'+(platSel==='__own__'?' selected':'')+'>Own (in-house)</option>'
+      +platVendors.map(vn=>'<option value="'+esc(vn)+'"'+(platSel===vn?' selected':'')+'>'+esc(vn)+'</option>').join('');
     const platRcvd=!!holder.platingReceived;
     const platTick=platRcvd?'background:#E1F5EE;color:#0F6E56;border:1.5px solid #9FE1CB':'background:#fff;color:#ccc;border:1px solid #ddd';
-    const platBdr=platId?'border:1px solid #FFAB91;background:#FFF3E0;color:#BF360C':'border:1px solid #FFAB91;background:#FBE9E7;color:#BF360C';
-    const platingTd='<td class="no-print" style="padding:3px 4px;min-width:105px">'
-      +'<div style="font-size:8px;font-weight:800;color:#BF360C;letter-spacing:.04em;margin-bottom:2px">Plating</div>'
+    const platBdr=platSel?'border:1.5px solid #FFD54F;background:#FFFDE7;color:#7B4A00':'border:1.5px solid #FFE082;background:#FFFFF0;color:#9E6C00';
+    const platTdBg=platRcvd?'background:#E8F5E9;':'';
+    const platingTd='<td class="no-print" style="padding:3px 4px;min-width:105px;'+platTdBg+'">'
+      +'<div style="font-size:8px;font-weight:800;color:#7B4A00;letter-spacing:.04em;margin-bottom:2px">Plating</div>'
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+platBdr+';flex:1;min-width:0" onchange="setCOPlatingVo('+oi+','+di+','+vri+',this.value)">'
       +'<option value="">— plating —</option>'+platOpts+'</select>'
@@ -4610,7 +4758,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       const codeEmpty=!(d.code||'').trim();
       const allStagesDone=(d.stages||[]).length>0&&(d.stages||[]).every(st=>st.status==='done');
       const tickSty=allStagesDone?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0';
-      tbody+='<tr style="background:#fff">'
+      const flatDone=!!d.done||allStagesDone;
+      tbody+='<tr style="background:#fff;border-left:'+(flatDone?'4px solid #4CAF50':'4px solid transparent')+'">'
         +'<td>'
           +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
@@ -4696,7 +4845,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +' onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')"'
           +' tabindex="0"></td>'
         ).join('');
-        tbody+='<tr style="background:#FAFAFF" data-di="'+di+'" data-vi="'+vi+'">'
+        tbody+='<tr style="background:#FAFAFF;border-left:'+(v.done?'4px solid #4CAF50':'4px solid transparent')+'" data-di="'+di+'" data-vi="'+vi+'">'
           +'<td style="padding-left:22px">'
             +'<span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
             +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'"'
@@ -8416,8 +8565,7 @@ function buildVendorDesignsPanel(vo,vi){
         const imgCells=flatImgs.map((img,ii)=>{const src=_resolveImgSrc(img);return src
           ?'<img loading="lazy" class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
             +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
-        const addImgBtn='<label class="variety-img-add no-print" for="vflat-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-          +'<input type="file" id="vflat-'+d.id+'" accept="image/*" style="display:none" onchange="addVendorFlatImg('+vi+','+di+','+hasOnlyDefault+',this)">';
+        const addImgBtn='<button class="variety-img-add no-print" onclick="openVOLibraryPicker('+vi+','+di+','+(hasOnlyDefault?0:-1)+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
         const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'"'
           +' oninput="upVendorFlatSizeSilent('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+');this._dirty=true"'
           +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')}"'
@@ -8447,8 +8595,7 @@ function buildVendorDesignsPanel(vo,vi){
         const dImages=d.images||[];
         const dImgCells=dImages.map((img,ii)=>{const src=_resolveImgSrc(img);return src
           ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
-        const addDImgBtn='<label class="variety-img-add no-print" for="vdimg-'+d.id+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-          +'<input type="file" id="vdimg-'+d.id+'" accept="image/*" style="display:none" onchange="addVDImg('+vi+','+di+',this)">';
+        const addDImgBtn='<button class="variety-img-add no-print" onclick="openVOLibraryPicker('+vi+','+di+',-1)" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
         tbody+='<tr style="background:#EEEDFE">'
           +'<td style="font-weight:700"><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700"></td>'
           +'<td><div class="variety-img-cell">'+dImgCells+addDImgBtn+'</div></td>'
@@ -8463,8 +8610,7 @@ function buildVendorDesignsPanel(vo,vi){
           const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
           const varImgs=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src
             ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
-          const addVarImg='<label class="variety-img-add no-print" for="vvimg-'+d.id+'-'+vri+'" title="Add image"><span style="font-size:16px;line-height:1">+</span></label>'
-            +'<input type="file" id="vvimg-'+d.id+'-'+vri+'" accept="image/*" style="display:none" onchange="addVVImg('+vi+','+di+','+vri+',this)">';
+          const addVarImg='<button class="variety-img-add no-print" onclick="openVOLibraryPicker('+vi+','+di+','+vri+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
           const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
           const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'"'
             +' oninput="upVendorVarietySizeSilent('+vi+','+di+','+vri+',\''+sz+'\',this.value);this._dirty=true"'
@@ -9078,7 +9224,7 @@ function toggleCOStageRcvd(oi,di,vri,stage){
   const d=order.designs[di]; if(!d)return;
   const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
   if(!holder)return;
-  const field=(stage==='pipe')?'pipeReceived':'karigarReceived';
+  const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
   holder[field]=!holder[field];
   save(); render();
   showToast(holder[field]?'✅ Marked received':'↩️ Marked pending',holder[field]?'green':'red',2000);
@@ -9342,7 +9488,7 @@ function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
               ${sizePills}${noQty}
-              ${total>0?`<span style="font-size:10px;color:#888;margin-left:4px">= ${total} pcs</span>`:''}
+              ${total>0?`<span style="font-size:10px;color:#888;margin-left:4px">= ${total} ${esc(r.unit||'pcs')}</span>`:''}
             </div>
           </div>
         </label>`;
