@@ -5872,7 +5872,8 @@ const _CO_STAGE_DEFS=[
   {k:'dispatched',bg:'#D5F0E8',tx:'#085041',lbl:'Dispatched'},
 ];
 function _coStage(h){
-  if(h.done||h.dispatchedToClient)return'dispatched';
+  const allStageDone=Array.isArray(h.stages)&&h.stages.length>0&&h.stages.every(st=>st.status==='done');
+  if(h.done||h.dispatchedToClient||allStageDone)return'dispatched';
   if(h.platingReceived)return'packing';
   if(h.platingVendor||h.platingVoId)return'plating';
   if(h.assignedVendor)return'karigar';
