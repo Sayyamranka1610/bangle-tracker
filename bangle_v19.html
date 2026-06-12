@@ -6057,6 +6057,25 @@ function _resolveImgSrc(img){
   if(valid(img.data))return img.data;     // base64 (old) or R2 URL (new)
   return ''; // placeholder or missing
 }
+// Returns true if the image is a device-local IDB placeholder that couldn't be resolved.
+// Used to show a "stored on other device" warning instead of silently showing nothing.
+function _imgIsDeviceLocal(img){
+  return img&&typeof img.data==='string'&&img.data.startsWith('__IDB__');
+}
+// Counts images that are still IDB placeholders after injection (i.e. stored on another device).
+// Shows a warning toast once per page load so the user knows to run Migrate Images.
+let _brokenImgAlerted=false;
+function _checkForBrokenImages(){
+  if(_brokenImgAlerted)return;
+  let broken=0;
+  const chk=imgs=>(imgs||[]).forEach(img=>{if(_imgIsDeviceLocal(img))broken++;});
+  (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>{chk(d.images);(d.varieties||[]).forEach(v=>chk(v.images));}));
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{chk(d.images);(d.varieties||[]).forEach(v=>chk(v.images));}));
+  if(broken>0){
+    _brokenImgAlerted=true;
+    showToast('⚠️ '+broken+' photo(s) are stored on another device and not visible here. Open the original device/browser and click "☁️ Migrate Images" in the toolbar to upload them to the cloud.','orange',15000);
+  }
+}
 
 // Open lightbox for ALL images of a design code (d.images + all variety images combined).
 // Uses hqData when available so the lightbox shows full print quality.
@@ -8564,7 +8583,9 @@ function buildVendorDesignsPanel(vo,vi){
         const flatImgs=hasOnlyDefault?(varieties[0].images||[]):(d.images||[]);
         const imgCells=flatImgs.map((img,ii)=>{const src=_resolveImgSrc(img);return src
           ?'<img loading="lazy" class="variety-thumb" src="'+src+'" onclick="openLbDirect(\''+src.replace(/'/g,"\\'")+'\') " style="cursor:zoom-in">'
-            +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>':''}).filter(Boolean).join('');
+            +'<button class="del-img no-print" style="width:auto" onclick="delVendorFlatImg('+vi+','+di+','+ii+','+hasOnlyDefault+')">✕</button>'
+          :(_imgIsDeviceLocal(img)?'<span title="This photo is stored on another device only. Open the original device and click \'☁️ Migrate Images\' in the toolbar to upload it to the cloud." style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:48px;background:#FFF3E0;border:1.5px dashed #FF9800;border-radius:6px;font-size:8px;color:#E65100;text-align:center;cursor:help;padding:2px;line-height:1.3">📷<br>Other<br>device</span>':'')
+        }).filter(Boolean).join('');
         const addImgBtn='<button class="variety-img-add no-print" onclick="openVOLibraryPicker('+vi+','+di+','+(hasOnlyDefault?0:-1)+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
         const sizeCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt(rowSizes[sz])||0)+'"'
           +' oninput="upVendorFlatSizeSilent('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+');this._dirty=true"'
@@ -8594,7 +8615,9 @@ function buildVendorDesignsPanel(vo,vi){
         const dTotal=Object.values(colTotals).reduce((a,v)=>a+v,0);
         const dImages=d.images||[];
         const dImgCells=dImages.map((img,ii)=>{const src=_resolveImgSrc(img);return src
-          ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+          ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVDImg('+vi+','+di+','+ii+')">✕</button>'
+          :(_imgIsDeviceLocal(img)?'<span title="This photo is stored on another device only. Open the original device and click \'☁️ Migrate Images\' in the toolbar to upload it to the cloud." style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:48px;background:#FFF3E0;border:1.5px dashed #FF9800;border-radius:6px;font-size:8px;color:#E65100;text-align:center;cursor:help;padding:2px;line-height:1.3">📷<br>Other<br>device</span>':'')
+        }).filter(Boolean).join('');
         const addDImgBtn='<button class="variety-img-add no-print" onclick="openVOLibraryPicker('+vi+','+di+',-1)" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
         tbody+='<tr style="background:#EEEDFE">'
           +'<td style="font-weight:700"><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onblur="rebuildVocab()" tabindex="0" style="max-width:110px;font-weight:700"></td>'
@@ -8609,7 +8632,9 @@ function buildVendorDesignsPanel(vo,vi){
         varieties.forEach((v,vri)=>{
           const rowTotal=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
           const varImgs=(v.images||[]).map((img,ii)=>{const src=_resolveImgSrc(img);return src
-            ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>':''}).filter(Boolean).join('');
+            ?'<img loading="lazy" class="variety-thumb" src="'+src+'" style="cursor:zoom-in"><button class="del-img no-print" style="width:auto" onclick="delVVImg('+vi+','+di+','+vri+','+ii+')">✕</button>'
+            :(_imgIsDeviceLocal(img)?'<span title="This photo is stored on another device only. Open the original device and click \'☁️ Migrate Images\' in the toolbar to upload it to the cloud." style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:48px;background:#FFF3E0;border:1.5px dashed #FF9800;border-radius:6px;font-size:8px;color:#E65100;text-align:center;cursor:help;padding:2px;line-height:1.3">📷<br>Other<br>device</span>':'')
+          }).filter(Boolean).join('');
           const addVarImg='<button class="variety-img-add no-print" onclick="openVOLibraryPicker('+vi+','+di+','+vri+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
           const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
           const szCells=szKeys.map(sz=>'<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'"'
@@ -13296,6 +13321,7 @@ updateUndoRedoBtns();
 save();
 // Load images from IndexedDB, then render. Images load async without blocking the UI.
 loadImagesFromIDB().then(()=>{
+  _checkForBrokenImages();
   render();
   setSaveStatus('saved', window._loadedFromStorage
     ? 'Your data loaded — auto-save active'
@@ -13684,7 +13710,7 @@ function _applyRemoteState(parsed, savedAt){
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   // Re-inject IDB images after every Firebase sync — without this, Firebase
   // __IDB__ placeholders overwrite locally-loaded image data on every sync.
-  _injectIDBImages().then(()=>render());
+  _injectIDBImages().then(()=>{ _checkForBrokenImages(); render(); });
   // If Firebase had inline base64 images, migrate them to R2 now.
   // This shrinks the Firebase payload so old/low-RAM devices stop crashing (OOM fix).
   // Guard: only run once per page load, only on the owner (non-read-only) device.
