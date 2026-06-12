@@ -4030,6 +4030,7 @@ function buildOrderCard(order,oi){
   const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   const isOpen=S.openOrders.has(order.id);
   const at=S.activeTabs[order.id]||'designs';
+  const stageCts=_coOrderStageCounts(order);
   return `<div class="order-card al-${al}" id="oc-${order.id}" data-active-tab="${at}">
     <div class="order-header" onclick="toggleOrder('${order.id}')">
       <div class="oh-icon ${al==='done'?'oh-icon-done':'oh-icon-late'}">●</div>
@@ -4047,6 +4048,10 @@ function buildOrderCard(order,oi){
       </div>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" style="width:${p}%"></div></div>
+    <div style="padding:3px 14px 7px;display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+      ${_coStageBarHTML(stageCts)}
+      ${_coStagePillsHTML(stageCts)}
+    </div>
     <div class="order-body${isOpen?' open':''}">
       ${isOpen?`<div class="tabs no-print">
         <div class="tab${at==='details'?' active':''}" onclick="setTab('${order.id}','details')">📋 Order details</div>
@@ -5228,6 +5233,23 @@ function renderAnalytics(){
   const stageEntries=Object.entries(stageStats).map(([name,v])=>([name,v.total?Math.round(v.done/v.total*100):0]));
   const bySz={};orders.forEach(o=>o.designs.forEach(d=>{const szKeys=Object.keys(d.sizes||{});szKeys.forEach(sz=>{const v=d.varieties&&d.varieties.length?d.varieties.reduce((a,vr)=>a+(parseInt((vr.sizes||{})[sz])||0),0):(parseInt((d.sizes||{})[sz])||0);bySz[sz]=(bySz[sz]||0)+v;});}));
   const szEntries=Object.entries(bySz).sort((a,b)=>b[1]-a[1]),maxSz=Math.max(...szEntries.map(e=>e[1]),1);
+  // Production pipeline counts
+  const _ppGrand={notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0};
+  const _ppPerOrder=orders.map(o=>{const c=_coOrderStageCounts(o);Object.keys(_ppGrand).forEach(k=>{_ppGrand[k]+=c[k];});return{o,c};});
+  const _ppTotal=Object.values(_ppGrand).reduce((a,b)=>a+b,0);
+  const _ppGrandBarSegs=_CO_STAGE_DEFS.map(s=>_ppGrand[s.k]?'<div style="flex:'+_ppGrand[s.k]+';background:'+s.bg+';color:'+s.tx+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;min-width:0" title="'+s.lbl+': '+_ppGrand[s.k]+'">'+(_ppGrand[s.k]>0&&_ppTotal?_ppGrand[s.k]:'')+'</div>':'').join('');
+  const _ppLegend=_CO_STAGE_DEFS.map(s=>'<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px"><span style="width:10px;height:10px;border-radius:2px;background:'+s.bg+';display:inline-block;border:1px solid rgba(0,0,0,.08)"></span><span style="color:#666">'+s.lbl+'</span> <strong style="color:#3C3489">'+_ppGrand[s.k]+'</strong></span>').join('');
+  const _ppPerRows=_ppPerOrder.map(({o,c})=>{
+    const tot=Object.values(c).reduce((a,b)=>a+b,0);
+    const dispPct=tot?Math.round(c.dispatched/tot*100):0;
+    const segs=_CO_STAGE_DEFS.map(s=>c[s.k]?'<div style="flex:'+c[s.k]+';background:'+s.bg+'" title="'+s.lbl+': '+c[s.k]+'"></div>':'').join('');
+    return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'
+      +'<span style="min-width:68px;font-size:12px;font-weight:600;color:#534AB7">'+esc(o.orderId)+'</span>'
+      +'<span style="min-width:100px;font-size:11px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(o.client)+'">'+esc(o.client)+'</span>'
+      +'<div style="flex:1"><div style="display:flex;gap:1px;height:18px;border-radius:4px;overflow:hidden">'+segs+'</div></div>'
+      +'<span style="min-width:44px;text-align:right;font-size:11px;color:#888">'+dispPct+'%</span>'
+      +'</div>';
+  }).join('');
   const byPrio={normal:0,urgent:0,critical:0};orders.forEach(o=>{byPrio[o.priority]=(byPrio[o.priority]||0)+1;});
   const avgPct=Math.round(orders.reduce((a,o)=>a+orderPct(o),0)/totalOrds);
   function pieSvg(data,colors,r=54){
@@ -5247,6 +5269,12 @@ function renderAnalytics(){
         <div class="metric-box"><div class="metric-val" style="color:#A32D2D">${lateOrds}</div><div class="metric-lbl">Overdue orders</div></div>
         <div class="metric-box"><div class="metric-val" style="color:#0F6E56">${doneOrds}</div><div class="metric-lbl">Completed orders</div></div>
       </div>
+    </div>
+    <div class="chart-card full"><div class="chart-title">Production Pipeline</div><div class="chart-sub">Stage breakdown across all ${_ppTotal} variety rows · ${orders.length} orders</div>
+      <div style="display:flex;gap:1px;height:28px;border-radius:6px;overflow:hidden;margin-bottom:10px">${_ppGrandBarSegs}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px">${_ppLegend}</div>
+      <div style="font-size:11px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Per order</div>
+      ${_ppPerRows}
     </div>
     <div class="chart-card"><div class="chart-title">Order status</div><div class="chart-sub">Distribution by health</div>
       <div style="display:flex;gap:20px;align-items:center">
@@ -5831,6 +5859,51 @@ function deleteVendorSizeCol(vi,sz,dids){
 
 // ── DIRECT DESIGN-LEVEL SIZE UPDATES (for flat rows with no varieties) ──────────
 function _hasOnlyDefault(d){return (d.varieties||[]).length===1&&(d.varieties[0].name||'').trim().toLowerCase()==='default';}
+
+// ── CO PRODUCTION STAGE TRACKER ──────────────────────────────────────────────
+// Determines the production stage of one variety/flat-design row.
+// Priority cascade: dispatched > packing > plating > karigar > pipe > notStarted
+const _CO_STAGE_DEFS=[
+  {k:'notStarted',bg:'#E8E7E2',tx:'#444441',lbl:'Not started'},
+  {k:'pipe',      bg:'#FAEEDA',tx:'#633806',lbl:'Pipe'},
+  {k:'karigar',   bg:'#DCEEFF',tx:'#0C447C',lbl:'Karigar'},
+  {k:'plating',   bg:'#FDEEE8',tx:'#712B13',lbl:'Plating'},
+  {k:'packing',   bg:'#E6F2D5',tx:'#27500A',lbl:'Packing'},
+  {k:'dispatched',bg:'#D5F0E8',tx:'#085041',lbl:'Dispatched'},
+];
+function _coStage(h){
+  if(h.done||h.dispatchedToClient)return'dispatched';
+  if(h.platingReceived)return'packing';
+  if(h.platingVendor||h.platingVoId)return'plating';
+  if(h.assignedVendor)return'karigar';
+  if(h.pipeVendor||h.pipeVoId)return'pipe';
+  return'notStarted';
+}
+function _coOrderStageCounts(order){
+  const c={notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0};
+  (order.designs||[]).forEach(d=>{
+    const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+    const hod=_hasOnlyDefault(d);
+    const isFlat=isCnc||!(d.varieties||[]).length||hod;
+    if(isFlat){c[_coStage(d)]++;}
+    else{(d.varieties||[]).forEach(v=>{c[_coStage(v)]++;});}
+  });
+  return c;
+}
+function _coStageBarHTML(cts){
+  const total=Object.values(cts).reduce((a,b)=>a+b,0);
+  if(!total)return'';
+  const segs=_CO_STAGE_DEFS.map(s=>cts[s.k]
+    ?'<div style="flex:'+cts[s.k]+';background:'+s.bg+'" title="'+s.lbl+': '+cts[s.k]+'"></div>':''
+  ).join('');
+  return'<div style="display:flex;gap:1px;height:6px;border-radius:3px;overflow:hidden;width:100%">'+segs+'</div>';
+}
+function _coStagePillsHTML(cts){
+  return _CO_STAGE_DEFS.filter(s=>cts[s.k]>0).map(s=>
+    '<span style="font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap;background:'+s.bg+';color:'+s.tx+'">'+s.lbl+': '+cts[s.k]+'</span>'
+  ).join('');
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Rebuild a sizes object with keys in the correct numeric order (2/2 < 2/4 < 2/6 ...)
 function _sortedSizes(obj){
