@@ -9114,21 +9114,37 @@ function _buildVOPresenceMap(){
     if(!map[k])map[k]=[];
     if(!map[k].includes(voOrderId))map[k].push(voOrderId);
   };
+  // Primary: scan VO designs for sourceCoId (set during import)
   (S.vendorOrders||[]).forEach(vo=>{
     (vo.designs||[]).forEach(vd=>{
       const code=vd.code||'';
       const vars=vd.varieties||[];
       if(!vars.length){
-        // ── Flat / CNC design: link lives on the design object itself ──────────
         if(vd.sourceCoId) add(vd.sourceCoId,code,'__flat__',vo.orderId);
       } else {
-        // ── Multi-variety design: link is per variety row ─────────────────────
-        // v.sourceCoId = new per-variety link (row-wise)
-        // vd.sourceCoId = old design-level link — kept as fallback so existing
-        //                 badges don't disappear before the user re-links by row
         vars.forEach(v=>{
           const coId=v.sourceCoId||(vd.sourceCoId||'');
           if(coId) add(coId,code,v.name||'',vo.orderId);
+        });
+      }
+    });
+  });
+  // Backward-compat: scan CO designs for importedToVOId so older linked rows
+  // show badges even when the VO design doesn't have sourceCoId set.
+  const voById={};
+  (S.vendorOrders||[]).forEach(vo=>{voById[vo.id]=vo;});
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      const hod=_hasOnlyDefault(d);
+      const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+      const isFlat=isCnc||!(d.varieties||[]).length||hod;
+      if(isFlat){
+        if(d.importedToVOId&&voById[d.importedToVOId])
+          add(order.id,d.code||'','__flat__',voById[d.importedToVOId].orderId);
+      } else {
+        (d.varieties||[]).forEach(v=>{
+          if(v.importedToVOId&&voById[v.importedToVOId])
+            add(order.id,d.code||'',v.name||'',voById[v.importedToVOId].orderId);
         });
       }
     });
@@ -9349,26 +9365,6 @@ function _voRowsProgress(vo){
     }
   });
   return {received,total};
-}
-
-// ── CO STAGE TRACKER — PIPE & KARIGAR ────────────────────────────────────────
-// setCOPipeVo: links a customer-order design/variety row to a pipe-type vendor order.
-//   vri = -1 for flat/CNC designs; vri ≥ 0 for variety sub-rows.
-function setCOPipeVo(oi,di,vri,voId){
-  const order=S.orders[oi]; if(!order)return;
-  const d=order.designs[di]; if(!d)return;
-  const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
-  if(!holder)return;
-  const pipeVo=(S.vendorOrders||[]).find(vo=>vo.id===voId);
-  if(voId&&pipeVo){
-    holder.pipeVoId=voId;
-    holder.pipeVoLabel=(pipeVo.vendor||'?')+' — '+(pipeVo.orderId||'?');
-  } else {
-    delete holder.pipeVoId;
-    delete holder.pipeVoLabel;
-  }
-  save(); render();
-  showToast(voId?'🔩 Pipe order linked: '+(holder.pipeVoLabel||''):'Pipe link cleared');
 }
 
 // toggleCOStageRcvd: marks pipe material or karigar finished piece as received/pending.
