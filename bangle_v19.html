@@ -3700,9 +3700,9 @@ function orderAlert(order){
   return orderPct(order)===100?'done':'pending';
 }
 function orderPct(order){
-  let total=0,done=0;
-  order.designs.forEach(d=>{total+=d.stages.length;done+=d.stages.filter(s=>s.status==='done').length;});
-  return total?Math.round(done/total*100):0;
+  const c=_coOrderStageCounts(order);
+  const total=Object.values(c).reduce((a,b)=>a+b,0);
+  return total?Math.round(c.dispatched/total*100):0;
 }
 function designQty(d){
   if(d.varieties&&d.varieties.length>0)
