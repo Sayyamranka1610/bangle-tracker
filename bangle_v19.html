@@ -509,23 +509,27 @@ img,table,pre{max-width:100%}
   /* Keep design header and its content on the same page — never orphan the header alone */
   .design-name-group-head{break-after:avoid!important;-webkit-column-break-after:avoid!important}
   .design-name-group{break-inside:avoid}
-  /* Show full uncropped images in print with blur-fill background */
+  /* Print images: fixed size container, blur bg hidden, foreground image fully visible */
   .img-blur-wrap{
-    width:160px!important;
-    height:160px!important;
+    position:relative!important;
+    width:150px!important;
+    height:150px!important;
+    overflow:hidden!important;
+    display:inline-block!important;
+    flex-shrink:0!important;
+    background:#f5f5f5!important;
     -webkit-print-color-adjust:exact!important;
     print-color-adjust:exact!important;
   }
   .img-blur-bg{
-    -webkit-print-color-adjust:exact!important;
-    print-color-adjust:exact!important;
+    display:none!important;
   }
   .group-img-thumb{
-    position:relative!important;
-    z-index:1!important;
-    width:100%!important;
-    height:100%!important;
+    position:static!important;
+    width:150px!important;
+    height:150px!important;
     object-fit:contain!important;
+    display:block!important;
   }
   .variety-thumb{
     width:110px!important;
