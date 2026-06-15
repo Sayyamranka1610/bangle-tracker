@@ -506,14 +506,23 @@ img,table,pre{max-width:100%}
   .tabs{display:none!important}
   /* Design view blocks for print */
   .design-stage-block{break-inside:avoid}
-  /* Show full uncropped images in print — thumbnails are square-cropped on screen */
+  /* Show full uncropped images in print with blur-fill background */
+  .img-blur-wrap{
+    width:160px!important;
+    height:160px!important;
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+  }
+  .img-blur-bg{
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+  }
   .group-img-thumb{
-    width:auto!important;
-    height:auto!important;
-    max-width:180px!important;
-    max-height:none!important;
+    position:relative!important;
+    z-index:1!important;
+    width:100%!important;
+    height:100%!important;
     object-fit:contain!important;
-    border-radius:4px!important;
   }
   .variety-thumb{
     width:110px!important;
@@ -4646,7 +4655,10 @@ function buildDesignsPanel(order,oi){
       ?'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 4px">'
         +allGroupImgs.map(({img,label})=>
           '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
-            +'<img loading="lazy" class="group-img-thumb" src="'+(img.data||'')+'" onclick="openLbDirect(\''+(img.data||'')+'\')" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12)">'
+            +'<div class="img-blur-wrap" onclick="openLbDirect(\''+(img.data||'')+'\')" style="position:relative;width:100px;height:100px;border-radius:8px;overflow:hidden;border:1.5px solid #AFA9EC;cursor:zoom-in;box-shadow:0 2px 6px rgba(83,74,183,.12);flex-shrink:0;background:#f0efff">'
+              +'<img loading="lazy" class="img-blur-bg" aria-hidden="true" src="'+(img.data||'')+'" style="position:absolute;inset:-20%;width:140%;height:140%;object-fit:cover;filter:blur(10px);opacity:0.75;pointer-events:none;">'
+              +'<img loading="lazy" class="group-img-thumb" src="'+(img.data||'')+'" style="position:relative;z-index:1;width:100%;height:100%;object-fit:contain;">'
+            +'</div>'
             +'<span style="font-size:10px;font-weight:600;color:#3C3489;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span>'
           +'</div>'
         ).join('')
@@ -6221,7 +6233,7 @@ function _imgIsDeviceLocal(img){
 }
 // Counts images that are still IDB placeholders after injection (i.e. stored on another device).
 // Shows a warning toast once per page load so the user knows to run Migrate Images.
-let _brokenImgAlerted=false;
+let _brokenImgAlerted=localStorage.getItem('_biaDate')===new Date().toDateString();
 function _checkForBrokenImages(){
   if(_brokenImgAlerted)return;
   let broken=0;
@@ -6230,7 +6242,8 @@ function _checkForBrokenImages(){
   (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{chk(d.images);(d.varieties||[]).forEach(v=>chk(v.images));}));
   if(broken>0){
     _brokenImgAlerted=true;
-    showToast('⚠️ '+broken+' photo(s) are stored on another device and not visible here. Open the original device/browser and click "☁️ Migrate Images" in the toolbar to upload them to the cloud.','orange',15000);
+    localStorage.setItem('_biaDate',new Date().toDateString());
+    showToast('⚠️ '+broken+' photo(s) are stored on the original upload device and not visible here. To fix: open the app on the device where these were first uploaded, then click "☁️ Migrate Images" in the toolbar.','orange',20000);
   }
 }
 
