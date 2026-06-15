@@ -5242,12 +5242,16 @@ function renderAnalytics(){
   const _ppPerRows=_ppPerOrder.map(({o,c})=>{
     const tot=Object.values(c).reduce((a,b)=>a+b,0);
     const dispPct=tot?Math.round(c.dispatched/tot*100):0;
-    const segs=_CO_STAGE_DEFS.map(s=>c[s.k]?'<div style="flex:'+c[s.k]+';background:'+s.bg+'" title="'+s.lbl+': '+c[s.k]+'"></div>':'').join('');
-    return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'
+    const segs=_CO_STAGE_DEFS.map(s=>c[s.k]
+      ?'<div style="flex:'+c[s.k]+';background:'+s.bg+';color:'+s.tx+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap" title="'+s.lbl+': '+c[s.k]+'">'+c[s.k]+'</div>':''
+    ).join('');
+    const pctCol=dispPct===100?'#1B5E20':dispPct>0?'#534AB7':'#aaa';
+    return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
       +'<span style="min-width:68px;font-size:12px;font-weight:600;color:#534AB7">'+esc(o.orderId)+'</span>'
-      +'<span style="min-width:100px;font-size:11px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(o.client)+'">'+esc(o.client)+'</span>'
-      +'<div style="flex:1"><div style="display:flex;gap:1px;height:18px;border-radius:4px;overflow:hidden">'+segs+'</div></div>'
-      +'<span style="min-width:44px;text-align:right;font-size:11px;color:#888">'+dispPct+'%</span>'
+      +'<span style="min-width:90px;font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(o.client)+'">'+esc(o.client)+'</span>'
+      +'<span style="min-width:62px;font-size:10px;color:#999;white-space:nowrap">'+tot+' design'+(tot!==1?'s':'')+'</span>'
+      +'<div style="flex:1"><div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden">'+segs+'</div></div>'
+      +'<span style="min-width:38px;text-align:right;font-size:11px;font-weight:600;color:'+pctCol+'">'+dispPct+'%</span>'
       +'</div>';
   }).join('');
   const byPrio={normal:0,urgent:0,critical:0};orders.forEach(o=>{byPrio[o.priority]=(byPrio[o.priority]||0)+1;});
@@ -5864,12 +5868,12 @@ function _hasOnlyDefault(d){return (d.varieties||[]).length===1&&(d.varieties[0]
 // Determines the production stage of one variety/flat-design row.
 // Priority cascade: dispatched > packing > plating > karigar > pipe > notStarted
 const _CO_STAGE_DEFS=[
-  {k:'notStarted',bg:'#E8E7E2',tx:'#444441',lbl:'Not started'},
-  {k:'pipe',      bg:'#FAEEDA',tx:'#633806',lbl:'Pipe'},
-  {k:'karigar',   bg:'#DCEEFF',tx:'#0C447C',lbl:'Karigar'},
-  {k:'plating',   bg:'#FDEEE8',tx:'#712B13',lbl:'Plating'},
-  {k:'packing',   bg:'#E6F2D5',tx:'#27500A',lbl:'Packing'},
-  {k:'dispatched',bg:'#D5F0E8',tx:'#085041',lbl:'Dispatched'},
+  {k:'notStarted',bg:'#FFCDD2',tx:'#C62828',lbl:'Not started'},
+  {k:'pipe',      bg:'#FFE082',tx:'#6D4C00',lbl:'Pipe'},
+  {k:'karigar',   bg:'#90CAF9',tx:'#0D47A1',lbl:'Karigar'},
+  {k:'plating',   bg:'#FFAB91',tx:'#BF360C',lbl:'Plating'},
+  {k:'packing',   bg:'#C8E6C9',tx:'#2E7D32',lbl:'Packing'},
+  {k:'dispatched',bg:'#A5D6A7',tx:'#1B5E20',lbl:'Dispatched'},
 ];
 function _coStage(h){
   const allStageDone=Array.isArray(h.stages)&&h.stages.length>0&&h.stages.every(st=>st.status==='done');
