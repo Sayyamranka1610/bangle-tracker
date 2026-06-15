@@ -10928,13 +10928,13 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           // Each image: ~62mm wide, ~82mm tall → 3×62=186mm + 2×4mm gaps = 194mm (fits A4 ~200mm usable width).
           // Quantities table appears below on the same page or overflows to next page.
           ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;padding:4mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
-            +allImgs.map(({src,label})=>'<div style="text-align:center;break-inside:avoid">'
-              +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:block">'
-                +'<img src="'+src+'" aria-hidden="true" style="position:absolute;inset:-15%;width:130%;height:130%;object-fit:cover;filter:blur(10px);opacity:0.75;pointer-events:none">'
-                +'<img src="'+src+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block">'
+            +allImgs.map(({src,label})=>{const es=src.replace(/"/g,'%22');return'<div style="text-align:center;break-inside:avoid">'
+              +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:flex;align-items:center;justify-content:center">'
+                +'<div style="position:absolute;inset:0;transform:scale(1.2);background:url('+es+') center/cover;filter:blur(12px);opacity:0.8"></div>'
+                +'<img src="'+src+'" style="position:relative;z-index:1;max-width:100%;max-height:82mm;display:block">'
               +'</div>'
               +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
-            +'</div>').join('')
+            +'</div>';}).join('')
           +'</div>'
           :'';
         // Build table (no image column)
@@ -11063,11 +11063,12 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
         // Image panel (always 65mm × 90mm primary image + small thumbnails below)
         // hqData preferred for print — 1200px/0.92 quality; falls back to 160px thumb
         const _pri0src=dImgs.length?_resolveImgSrc(dImgs[0]):'';
-        const _blurBox=(src,w,h,r)=>
-          '<div style="position:relative;width:'+w+';height:'+h+';overflow:hidden;border-radius:'+r+';border:1.5px solid #AFA9EC;background:#f0efff;flex-shrink:0">'
-            +'<img src="'+src+'" aria-hidden="true" style="position:absolute;inset:-15%;width:130%;height:130%;object-fit:cover;filter:blur(10px);opacity:0.75;pointer-events:none">'
-            +'<img src="'+src+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block">'
-          +'</div>';
+        const _blurBox=(src,w,h,r)=>{const es=src.replace(/"/g,'%22');return(
+          '<div style="position:relative;width:'+w+';height:'+h+';overflow:hidden;border-radius:'+r+';border:1.5px solid #AFA9EC;background:#f0efff;flex-shrink:0;display:flex;align-items:center;justify-content:center">'
+            +'<div style="position:absolute;inset:0;transform:scale(1.2);background:url('+es+') center/cover;filter:blur(12px);opacity:0.8"></div>'
+            +'<img src="'+src+'" style="position:relative;z-index:1;max-width:100%;max-height:'+h+';display:block">'
+          +'</div>');
+        };
         const imgPanel='<div style="flex-shrink:0;width:65mm;margin-right:8mm">'
           +(_pri0src
             ?_blurBox(_pri0src,'65mm','90mm','8px')
