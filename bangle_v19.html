@@ -10925,7 +10925,10 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           // Quantities table appears below on the same page or overflows to next page.
           ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;padding:4mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
             +allImgs.map(({src,label})=>'<div style="text-align:center;break-inside:avoid">'
-              +'<img src="'+src+'" style="width:100%;height:82mm;object-fit:cover;border-radius:6px;border:1.5px solid #AFA9EC;display:block">'
+              +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:block">'
+                +'<img src="'+src+'" aria-hidden="true" style="position:absolute;inset:-15%;width:130%;height:130%;object-fit:cover;filter:blur(10px);opacity:0.75;pointer-events:none">'
+                +'<img src="'+src+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block">'
+              +'</div>'
               +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
             +'</div>').join('')
           +'</div>'
