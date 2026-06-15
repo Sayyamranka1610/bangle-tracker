@@ -814,6 +814,8 @@ img,table,pre{max-width:100%}
 /* ── READ-ONLY MODE ────────────────────────────────────────────────── */
 body.bt-readonly .primary:not(.allow-ro),
 body.bt-readonly .icon-btn.danger,
+body.bt-readonly .icon-btn.sm:not(.allow-ro),
+body.bt-readonly .co-recv-btn,
 body.bt-readonly #btn-new-order,
 body.bt-readonly .sb-danger,
 body.bt-readonly .del-img { opacity:.35; pointer-events:none }
@@ -4727,7 +4729,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;border:1px solid #90CAF9;background:#EDF4FF;color:#1565C0;flex:1;min-width:0" onchange="setCOPipeVo('+oi+','+di+','+vri+',this.value)">'
       +'<option value="">— pipe —</option>'+pOpts+'</select>'
-      +'<button style="'+pTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
+      +'<button class="co-recv-btn" style="'+pTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'pipe\')" title="'+(pRcvd?'Unmark pipe received':'Mark pipe received')+'">✓</button>'
       +'</div></td>';
     // ── Karigar ───────────────────────────────────────────────────────────────
     const kVendors=vendorsOfType('karigar');
@@ -4746,7 +4748,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+kBdr+';flex:1;min-width:0" onchange="'+kChange+'">'
       +'<option value="">— karigar —</option>'+kOpts+'</select>'
-      +'<button style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
+      +'<button class="co-recv-btn" style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
       +'</div></td>';
     // ── Plating ───────────────────────────────────────────────────────────────
     // Vendor names from vocabulary (same pattern as karigar), backward-compat with old platingVoId
@@ -4767,7 +4769,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+platBdr+';flex:1;min-width:0" onchange="setCOPlatingVo('+oi+','+di+','+vri+',this.value)">'
       +'<option value="">— plating —</option>'+platOpts+'</select>'
-      +'<button style="'+platTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'plating\')" title="'+(platRcvd?'Unmark plating received':'Mark plating received')+'">✓</button>'
+      +'<button class="co-recv-btn" style="'+platTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'plating\')" title="'+(platRcvd?'Unmark plating received':'Mark plating received')+'">✓</button>'
       +'</div></td>';
     return pipeTd+karigarTd+platingTd;
   };
