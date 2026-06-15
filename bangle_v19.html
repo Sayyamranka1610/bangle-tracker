@@ -506,6 +506,9 @@ img,table,pre{max-width:100%}
   .tabs{display:none!important}
   /* Design view blocks for print */
   .design-stage-block{break-inside:avoid}
+  /* Keep design header and its content on the same page — never orphan the header alone */
+  .design-name-group-head{break-after:avoid!important;-webkit-column-break-after:avoid!important}
+  .design-name-group{break-inside:avoid}
   /* Show full uncropped images in print with blur-fill background */
   .img-blur-wrap{
     width:160px!important;
