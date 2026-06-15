@@ -9177,8 +9177,10 @@ function _buildVOPresenceMap(){
       }
     });
   });
-  // Backward-compat: scan CO designs for importedToVOId so older linked rows
-  // show badges even when the VO design doesn't have sourceCoId set.
+  // Backward-compat: scan CO designs for importedToVOId ONLY when the primary
+  // scan above did NOT already find a VO-side link for that same row.
+  // Prevents double badges when a row has both an old importedToVOId AND a
+  // newer VO with sourceCoId pointing to the same variety.
   const voById={};
   (S.vendorOrders||[]).forEach(vo=>{voById[vo.id]=vo;});
   (S.orders||[]).forEach(order=>{
@@ -9187,11 +9189,13 @@ function _buildVOPresenceMap(){
       const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
       const isFlat=isCnc||!(d.varieties||[]).length||hod;
       if(isFlat){
-        if(d.importedToVOId&&voById[d.importedToVOId])
+        const k=order.id+'|'+(d.code||'')+'|__flat__';
+        if(!map[k]&&d.importedToVOId&&voById[d.importedToVOId])
           add(order.id,d.code||'','__flat__',voById[d.importedToVOId].orderId);
       } else {
         (d.varieties||[]).forEach(v=>{
-          if(v.importedToVOId&&voById[v.importedToVOId])
+          const k=order.id+'|'+(d.code||'')+'|'+(v.name||'');
+          if(!map[k]&&v.importedToVOId&&voById[v.importedToVOId])
             add(order.id,d.code||'',v.name||'',voById[v.importedToVOId].orderId);
         });
       }
@@ -11059,12 +11063,17 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
         // Image panel (always 65mm × 90mm primary image + small thumbnails below)
         // hqData preferred for print — 1200px/0.92 quality; falls back to 160px thumb
         const _pri0src=dImgs.length?_resolveImgSrc(dImgs[0]):'';
+        const _blurBox=(src,w,h,r)=>
+          '<div style="position:relative;width:'+w+';height:'+h+';overflow:hidden;border-radius:'+r+';border:1.5px solid #AFA9EC;background:#f0efff;flex-shrink:0">'
+            +'<img src="'+src+'" aria-hidden="true" style="position:absolute;inset:-15%;width:130%;height:130%;object-fit:cover;filter:blur(10px);opacity:0.75;pointer-events:none">'
+            +'<img src="'+src+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block">'
+          +'</div>';
         const imgPanel='<div style="flex-shrink:0;width:65mm;margin-right:8mm">'
           +(_pri0src
-            ?'<img src="'+_pri0src+'" style="width:65mm;height:90mm;object-fit:cover;border-radius:8px;border:2px solid #AFA9EC;display:block;box-shadow:0 2px 8px rgba(83,74,183,.18)">'
+            ?_blurBox(_pri0src,'65mm','90mm','8px')
              +(dImgs.length>1
                ?'<div style="display:flex;flex-wrap:wrap;gap:3mm;margin-top:3mm">'
-                 +dImgs.slice(1,5).map(img=>{const s=_resolveImgSrc(img);return s?'<img src="'+s+'" style="width:29mm;height:29mm;object-fit:cover;border-radius:5px;border:1.5px solid #AFA9EC">':''}).filter(Boolean).join('')
+                 +dImgs.slice(1,5).map(img=>{const s=_resolveImgSrc(img);return s?_blurBox(s,'29mm','29mm','5px'):''}).filter(Boolean).join('')
                +'</div>'
                :'')
             :'<div style="width:65mm;height:90mm;background:#f0efff;border:2px dashed #AFA9EC;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#AFA9EC">No image</div>')
