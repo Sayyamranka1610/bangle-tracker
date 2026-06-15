@@ -9177,10 +9177,12 @@ function _buildVOPresenceMap(){
       }
     });
   });
-  // Backward-compat: scan CO designs for importedToVOId ONLY when the primary
-  // scan above did NOT already find a VO-side link for that same row.
-  // Prevents double badges when a row has both an old importedToVOId AND a
-  // newer VO with sourceCoId pointing to the same variety.
+  // Backward-compat: scan CO designs for importedToVOId ONLY when:
+  // 1. The primary scan found no VO-side link for this row (no sourceCoId)
+  // 2. The target VO still exists AND actually contains a design with the same
+  //    code AND variety name — confirming the link is still valid from both sides.
+  //    If the VO was deleted or doesn't have this design/variety, the link is
+  //    stale and no badge is shown.
   const voById={};
   (S.vendorOrders||[]).forEach(vo=>{voById[vo.id]=vo;});
   (S.orders||[]).forEach(order=>{
@@ -9190,13 +9192,20 @@ function _buildVOPresenceMap(){
       const isFlat=isCnc||!(d.varieties||[]).length||hod;
       if(isFlat){
         const k=order.id+'|'+(d.code||'')+'|__flat__';
-        if(!map[k]&&d.importedToVOId&&voById[d.importedToVOId])
-          add(order.id,d.code||'','__flat__',voById[d.importedToVOId].orderId);
+        if(!map[k]&&d.importedToVOId&&voById[d.importedToVOId]){
+          const tvo=voById[d.importedToVOId];
+          if((tvo.designs||[]).some(vd=>(vd.code||'').trim()===(d.code||'').trim()))
+            add(order.id,d.code||'','__flat__',tvo.orderId);
+        }
       } else {
         (d.varieties||[]).forEach(v=>{
           const k=order.id+'|'+(d.code||'')+'|'+(v.name||'');
-          if(!map[k]&&v.importedToVOId&&voById[v.importedToVOId])
-            add(order.id,d.code||'',v.name||'',voById[v.importedToVOId].orderId);
+          if(!map[k]&&v.importedToVOId&&voById[v.importedToVOId]){
+            const tvo=voById[v.importedToVOId];
+            const vdMatch=(tvo.designs||[]).find(vd=>(vd.code||'').trim()===(d.code||'').trim());
+            if(vdMatch&&(!(vdMatch.varieties||[]).length||(vdMatch.varieties||[]).some(vv=>(vv.name||'')===(v.name||''))))
+              add(order.id,d.code||'',v.name||'',tvo.orderId);
+          }
         });
       }
     });
