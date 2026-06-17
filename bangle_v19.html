@@ -869,6 +869,10 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <span id="fb-current-user" style="font-size:11px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(255,255,255,.12);border-radius:20px;font-weight:600"></span><button class="fb-logout-btn" onclick="openMyPasswordModal()" title="Change my password" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);margin-right:4px">🔑</button><button class="fb-logout-btn" onclick="doLogout()">⏻ Sign out</button>
 </div>
 <div id="readonly-banner" style="display:none;background:#BF360C;color:#fff;text-align:center;padding:10px 16px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:1000;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px"></div>
+<div id="unsaved-banner" class="no-print" style="display:none;background:#7f0000;color:#fff;text-align:center;padding:13px 16px;font-size:14px;font-weight:700;position:sticky;top:0;z-index:1002;border-bottom:3px solid #ff1744;line-height:1.4">
+  ⚠️ YOUR CHANGES ARE NOT SAVED TO THE CLOUD — Internet or sync problem detected.<br>
+  <span style="font-weight:400;font-size:13px">Do NOT close this tab until the green bar at the top says "Live · saved". Your new data exists only on this device right now.</span>
+</div>
 <!-- ── LOGIN SCREEN ───────────────────────────────────────────────────── -->
 <div id="login-screen">
   <div class="login-card" id="login-card">
@@ -13567,8 +13571,11 @@ let _lockOwnerCheckTimer = null; // Device 1: verify lock still belongs to us ev
 function fbSetStatus(state, msg){
   const dot = document.getElementById('fb-dot');
   const txt = document.getElementById('fb-status-txt');
+  const unsaved = document.getElementById('unsaved-banner');
   if(dot) dot.className = 'fb-dot ' + state;
   if(txt) txt.textContent = msg || '';
+  // Show big red banner only when cloud save has failed AND there are unsynced local changes
+  if(unsaved) unsaved.style.display = (state === 'error' && _fb && _fb.pendingLocal) ? 'block' : 'none';
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -14533,6 +14540,19 @@ window.save = function(){
   _origSave();
   fbSchedulePush();
 };
+// ── TAB-CLOSE WARNING WHEN CLOUD SYNC IS PENDING ─────────────────────────────
+// If the user tries to close or refresh the tab while local changes haven't
+// reached Firebase yet, show the browser's built-in "Leave site?" dialog.
+// This prevents the silent data-loss scenario where the browser is closed
+// before the Firebase push completes.
+window.addEventListener('beforeunload', (e) => {
+  if(_fb && _fb.pendingLocal && !_isDemoMode()){
+    e.preventDefault();
+    // returnValue is required for Chrome/Edge; some browsers ignore the string
+    e.returnValue = 'Your changes are not saved to the cloud yet! If you close this tab now, data may be lost. Wait until the green bar says "Live · saved".';
+    return e.returnValue;
+  }
+});
 // ══════════════════════════════════════════════════════════════════════════════
 // ── END LOGIN + FIREBASE MODULE ───────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
