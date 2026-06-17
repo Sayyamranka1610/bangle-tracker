@@ -385,7 +385,7 @@ function renderResults(allResults, multi) {
       card.onclick = () => selectResult(m.design_code, card);
       const sc = m.pct >= 55 ? "score-high" : m.pct >= 40 ? "score-medium" : "score-low";
       const folder = m.path.split("/").slice(0, -1).join(" / ");
-      const eUrl = m.url.split("/").map((p,idx) => idx > 2 ? encodeURIComponent(p) : p).join("/");
+      const eUrl = m.url.replace(/ /g, '%20');
       card.innerHTML = `
         ${i===0?'<div class="best-badge">Best Match</div>':""}
         <img src="${eUrl}" alt="${m.design_code}" loading="lazy" onerror="this.style.background='#1a1750'">
