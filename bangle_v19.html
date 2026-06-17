@@ -3910,6 +3910,13 @@ function render(){
     inputType: ae.type
   } : null;
 
+  // ── PRESERVE HORIZONTAL SCROLL OF EVERY VARIETY TABLE ──────────────────────
+  // render() destroys and recreates the card HTML, resetting scrollLeft to 0.
+  // Snapshot positions now; restore them after redraw so the user stays where
+  // they were (e.g. scrolled right to the Plating dropdown).
+  const _tableScrolls = [];
+  document.querySelectorAll('.variety-table-wrap').forEach(el => _tableScrolls.push(el.scrollLeft));
+
   updateFilterOptions();renderStats();
   if(S.mainView==='orders')renderOrdersView();
   else if(S.mainView==='vendor')renderVendorOrders();
@@ -3939,6 +3946,12 @@ function render(){
         try{ newEl.setSelectionRange(focusInfo.selStart, focusInfo.selEnd); }catch(e){}
       }
     }
+  }
+
+  // ── RESTORE HORIZONTAL SCROLL POSITIONS ────────────────────────────────────
+  if(_tableScrolls.some(s => s > 0)){
+    const _tables = document.querySelectorAll('.variety-table-wrap');
+    _tableScrolls.forEach((s, i) => { if(s > 0 && _tables[i]) _tables[i].scrollLeft = s; });
   }
 }
 function renderStats(){
