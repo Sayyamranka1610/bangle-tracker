@@ -29,3 +29,8 @@ desc_indexer_output.txt
 
 # Context/handoff files (contain credentials — never commit)
 BANGLE_SEARCH_CONTEXT.md
+
+# Local environment files (contain API tokens — never commit)
+*.env
+.env
+bangle-search-ai-worker/.env

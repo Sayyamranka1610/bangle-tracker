@@ -229,19 +229,44 @@ async function boot() {
 }
 
 async function loadCatalogCached() {
+  // Step 1: Ask the server for the current version (tiny request, ~100 bytes)
+  let currentVersion = null;
   try {
-    const cache  = await caches.open(EMB_CACHE_KEY);
-    const cached = await cache.match(WORKER_URL + "/desc-embeddings");
-    if (cached) { setInit("Loading catalog from cache...", 70); return await cached.json(); }
+    const verResp = await fetch(WORKER_URL + "/desc-embeddings-version");
+    if (verResp.ok) { const j = await verResp.json(); currentVersion = j.version; }
   } catch (_) {}
 
-  setInit("Downloading design catalog (~10 MB, one-time)...", 65);
+  // Step 2: Check if our cached version matches the server version
+  const cacheKey = "bangle-desc-embeddings-v2";
+  try {
+    const cache      = await caches.open(cacheKey);
+    const cachedData = await cache.match(WORKER_URL + "/desc-embeddings");
+    const cachedVer  = await cache.match(WORKER_URL + "/desc-embeddings-version");
+
+    if (cachedData && cachedVer) {
+      const storedVersion = await cachedVer.text();
+      if (currentVersion && storedVersion === currentVersion) {
+        setInit("Loading catalog from cache...", 70);
+        return await cachedData.json();
+      }
+    }
+  } catch (_) {}
+
+  // Step 3: Version mismatch or no cache — download fresh copy
+  setInit("Catalog updated — downloading latest (~10 MB)...", 65);
   const resp = await fetch(WORKER_URL + "/desc-embeddings");
   if (!resp.ok) throw new Error("Could not load catalog: " + resp.status);
 
+  // Step 4: Save to cache with current version tag
   try {
-    const cache = await caches.open(EMB_CACHE_KEY);
+    const cache = await caches.open(cacheKey);
+    // Delete old v1 cache if it exists
+    await caches.delete("bangle-desc-embeddings-v1");
     await cache.put(WORKER_URL + "/desc-embeddings", resp.clone());
+    if (currentVersion) {
+      await cache.put(WORKER_URL + "/desc-embeddings-version",
+        new Response(currentVersion, { headers: { "Content-Type": "text/plain" } }));
+    }
   } catch (_) {}
 
   return await resp.json();

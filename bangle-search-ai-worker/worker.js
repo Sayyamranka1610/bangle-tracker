@@ -13,19 +13,32 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const SEARCH_PROMPT = `A customer sent this photo showing one or more bangles they want to order.
-Describe each visible bangle's design pattern. For each bangle, describe:
-- Whether it is solid or has cutouts/open-work
-- The shape of any cutouts (flower, leaf, oval, infinity-loop, diamond, rectangular, bubble/circular, star, etc.)
-- Surface texture (diagonal-ridge, checkered-grid, dot-granulation, wave, smooth, crosshatch, etc.)
-- Decorative ornaments (flower-medallion, leaf, geometric shapes, etc.)
-- Border style (beaded, plain, engraved, etc.)
-- Overall width (narrow/medium/wide)
-- Any unique distinguishing feature
+const SEARCH_PROMPT = `Describe this bangle's PHYSICAL STRUCTURE ONLY for catalog matching.
 
-Completely IGNORE color (gold/silver tones do not matter for matching).
-If multiple bangles are visible, number them: "Bangle 1: ...", "Bangle 2: ..." etc.
-Focus on what makes each design structurally unique.`;
+STRICT RULES — follow exactly:
+1. DO NOT mention color, metal tone, or plating under any circumstances.
+   Gold, silver, rose gold, two-tone, rhodium — these do NOT exist. Pretend the bangle has no color.
+2. Describe ONLY: cutout shapes, surface texture, border style, pattern arrangement.
+3. Use these EXACT vocabulary terms wherever they apply — this is critical for accurate matching:
+
+   Cutout/hole shapes: flower-cutout, leaf-cutout, teardrop-cutout, diamond-cutout, oval-cutout,
+     rectangular-cutout, star-cutout, circular-cutout, arch-cutout, infinity-loop, bubble-mesh
+
+   Open work: open-work, jali-pattern, hexagonal-panel, checkered-grid, lattice-pattern
+
+   Surface texture: diagonal-ridge, dot-texture, wave-pattern, crosshatch, Greek-key,
+     smooth, hammered, engraved-lines, chevron, linear-ridge
+
+   Border/edge: beaded-border, rope-border, plain-border, chain-link
+
+   Pattern layout: center-medallion, flower-medallion, oval-panel, repeating-vertical,
+     alternating, geometric-grid
+
+   Width: narrow (under 8mm), medium (8–12mm), wide (over 12mm)
+
+Write 60–80 words using those exact terms. Be precise — a specific term like "teardrop-cutout"
+is far more useful than a vague phrase like "curved shapes."
+If multiple bangles are visible, start each with "Bangle 1:", "Bangle 2:", etc.`;
 
 // Cache desc-embeddings in memory (reload hourly)
 let cachedEmbeddings = null;
@@ -41,6 +54,19 @@ export default {
     // Health check
     if (url.pathname === "/health") {
       return json({ status: "ok", mode: "semantic-embeddings" });
+    }
+
+    // Lightweight version check — returns upload timestamp of the index file
+    // Browser calls this first (tiny response) to know if it needs to re-download
+    if (url.pathname === "/desc-embeddings-version") {
+      try {
+        const obj = await env.BUCKET.head("_search_index/desc_embeddings.json");
+        if (!obj) return json({ version: "unknown", size: 0 });
+        const version = obj.uploaded ? obj.uploaded.getTime().toString() : obj.size.toString();
+        return json({ version, size: obj.size });
+      } catch (e) {
+        return json({ version: "unknown", size: 0 });
+      }
     }
 
     // Serve desc-embeddings index from R2 (browser downloads this for search)
