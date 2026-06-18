@@ -954,6 +954,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
     <!-- Dispatch tab hidden (June 2026) — its functions (karigar assign, received/dispatched ticks)
          now live inline in the customer order table. Remove the comment wrapper to restore. -->
     <div class="main-tab" onclick="switchMain('dispatch')" style="display:none">🔗 Dispatch</div>
+    <div class="main-tab" onclick="switchMain('assign')">↔ Assign</div>
   </div>
   <div class="filter-bar no-print" id="filter-bar">
     <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
@@ -976,6 +977,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <div id="view-masters" style="display:none"></div>
   <div id="view-library" style="display:none"></div>
   <div id="view-dispatch" style="display:none"></div>
+  <div id="view-assign" style="display:none"></div>
   <div id="empty-msg" class="empty-state" style="display:none">
     <div style="font-size:32px;margin-bottom:8px">○</div>
     <div style="font-size:14px;font-weight:600;color:#888">No orders yet</div>
@@ -3867,7 +3869,7 @@ function orderMatchesFilter(order){
 // ── RENDER CORE ────────────────────────────────────────────────────────────────
 function switchMain(view){
   S.mainView=view;
-  const views=['orders','design','analytics','inventory','vendor','masters','library','dispatch'];
+  const views=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign'];
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',views[i]===view);});
   document.getElementById('view-orders').style.display=view==='orders'?'':'none';
   document.getElementById('view-vendor').style.display=view==='vendor'?'':'none';
@@ -3877,6 +3879,7 @@ function switchMain(view){
   document.getElementById('view-masters').style.display=view==='masters'?'':'none';
   document.getElementById('view-library').style.display=view==='library'?'':'none';
   document.getElementById('view-dispatch').style.display=view==='dispatch'?'':'none';
+  document.getElementById('view-assign').style.display=view==='assign'?'':'none';
   document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders'||view==='dispatch')?'none':'';
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
@@ -3888,6 +3891,7 @@ function switchMain(view){
   if(view==='masters')renderMasters();
   if(view==='library')openLibraryView();
   if(view==='dispatch')renderDispatchView();
+  if(view==='assign')renderAssign();
   scheduleAutosave();
 }
 function render(){
@@ -3925,11 +3929,12 @@ function render(){
   else if(S.mainView==='masters')renderMasters();
   else if(S.mainView==='library')renderLibrary();
   else if(S.mainView==='dispatch')renderDispatchView();
+  else if(S.mainView==='assign')renderAssign();
   else renderAnalytics();
   scheduleAutosave();
   // Sync view div visibility + tab highlights with S.mainView.
   {const _mv=S.mainView||'orders';
-  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch'];
+  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign'];
   _vn.forEach(v=>{const el=document.getElementById('view-'+v);if(el)el.style.display=_mv===v?'':'none';});
   const _fb=document.getElementById('filter-bar');if(_fb)_fb.style.display=_mv==='design'?'':'none';
   document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',_vn[i]===_mv);});}
@@ -8300,6 +8305,288 @@ function saveNewVendorOrder(){
   try{fbPushNow();}catch(e){}
   closeModal();
   renderVendorOrders();
+}
+
+// ── ASSIGN TAB — CO → VO split screen ────────────────────────────────────────
+window._assignQueue=window._assignQueue||[];
+window._assignOpenCOs=window._assignOpenCOs||new Set();
+if(window._assignRightTab===undefined)window._assignRightTab='new';
+
+function _assignToggleCO(coId){
+  if(window._assignOpenCOs.has(coId))window._assignOpenCOs.delete(coId);
+  else window._assignOpenCOs.add(coId);
+  renderAssign();
+}
+
+function _assignQueueAdd(btn){
+  const oi=parseInt(btn.dataset.oi),di=parseInt(btn.dataset.di),vi=parseInt(btn.dataset.vi);
+  const o=S.orders[oi];if(!o)return;
+  const d=o.designs[di];if(!d)return;
+  const isFlat=vi<0;
+  const holder=isFlat?d:(d.varieties[vi]||null);
+  if(!isFlat&&!holder)return;
+  const qty=isFlat?formatQtyByUnit(designQtyByUnit(d)):formatQtyByUnit(designQtyByUnit({varieties:[holder]}));
+  // Prevent duplicate queue entries
+  if(window._assignQueue.some(q=>q.coIdx===oi&&q.dIdx===di&&q.vIdx===vi))return;
+  window._assignQueue.push({
+    coId:o.id,coIdx:oi,dIdx:di,vIdx:vi,isFlat,
+    orderId:o.orderId,client:o.client,
+    code:d.code||'',name:d.name||'',
+    varName:isFlat?null:(holder.name||''),
+    qty,
+    sizes:Object.assign({},isFlat?(d.sizes||{}):(holder.sizes||{})),
+    images:(isFlat?(d.images||[]):(holder.images||[])).map(i=>Object.assign({},i)),
+    unit:isFlat?(d.unit||'pcs'):(holder.unit||'pcs'),
+  });
+  renderAssign();
+}
+
+function _assignQueueRemove(idx){
+  window._assignQueue.splice(idx,1);
+  renderAssign();
+}
+
+function _assignQueueRemoveByRef(btn){
+  const oi=parseInt(btn.dataset.oi),di=parseInt(btn.dataset.di),vi=parseInt(btn.dataset.vi);
+  const idx=window._assignQueue.findIndex(q=>q.coIdx===oi&&q.dIdx===di&&q.vIdx===vi);
+  if(idx>=0){window._assignQueue.splice(idx,1);renderAssign();}
+}
+
+function _assignRowHtml(o,oi,d,di,vi,isFlat){
+  const holder=isFlat?d:(d.varieties[vi]||null);
+  if(!isFlat&&!holder)return'';
+  const qty=isFlat?formatQtyByUnit(designQtyByUnit(d)):formatQtyByUnit(designQtyByUnit({varieties:[holder]}));
+  const stage=_coStage(isFlat?d:holder);
+  const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:'?',bg:'#eee',tx:'#555'};
+  const importedVoId=isFlat?d.importedToVOId:holder.importedToVOId;
+  const importedVO=importedVoId?(S.vendorOrders||[]).find(v=>v.id===importedVoId):null;
+  const inQueue=window._assignQueue.some(q=>q.coIdx===oi&&q.dIdx===di&&q.vIdx===vi);
+  let actionBtn;
+  if(importedVO){
+    actionBtn='<span style="font-size:10px;background:#EEEDFE;color:#534AB7;padding:2px 8px;border-radius:99px;white-space:nowrap;flex-shrink:0">→ '+esc(importedVO.orderId)+'</span>';
+  } else if(inQueue){
+    actionBtn='<button data-oi="'+oi+'" data-di="'+di+'" data-vi="'+vi+'" onclick="_assignQueueRemoveByRef(this)" style="font-size:11px;font-weight:700;padding:3px 10px;border:1.5px solid #534AB7;border-radius:6px;background:#EEEDFE;color:#534AB7;cursor:pointer;white-space:nowrap;flex-shrink:0">✓ Queued</button>';
+  } else {
+    actionBtn='<button data-oi="'+oi+'" data-di="'+di+'" data-vi="'+vi+'" onclick="_assignQueueAdd(this)" style="font-size:11px;font-weight:700;padding:3px 10px;border:none;border-radius:6px;background:#534AB7;color:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0">+ Queue</button>';
+  }
+  return'<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #F0EFFF">'
+    +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+esc(d.code||'—')+'<span style="font-weight:400;color:#555;margin-left:6px">'+esc(d.name||'')+((!isFlat&&holder)?' · <em style="color:#aaa">'+esc(holder.name||'')+'</em>':'')+'</span></div>'
+      +'<div style="font-size:10px;color:#999;margin-top:1px">'+qty+'</div>'
+    +'</div>'
+    +'<span style="background:'+sd.bg+';color:'+sd.tx+';border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">'+esc(sd.lbl)+'</span>'
+    +actionBtn
+  +'</div>';
+}
+
+function _assignBuildVODesigns(){
+  const groups={},keyOrder=[];
+  window._assignQueue.forEach(item=>{
+    const key=(item.name||'?')+'||'+(item.code||'');
+    if(!groups[key]){
+      groups[key]={name:item.name,code:item.code,sizes:{},images:[],varieties:[],isFlat:item.isFlat,unit:item.unit};
+      keyOrder.push(key);
+    }
+    const g=groups[key];
+    if(item.isFlat){
+      g.sizes=Object.assign({},item.sizes);
+      g.images=item.images.map(i=>Object.assign({},i));
+      g.unit=item.unit;
+    } else {
+      g.varieties.push({id:uid(),name:item.varName||'',sizes:Object.assign({},item.sizes),images:item.images.map(i=>Object.assign({},i)),unit:item.unit});
+    }
+  });
+  return keyOrder.map(key=>{
+    const g=groups[key];
+    const szObj=g.isFlat?g.sizes:(()=>{const o={};g.varieties.forEach(v=>Object.keys(v.sizes||{}).forEach(sz=>{o[sz]=(o[sz]||0)+(parseInt(v.sizes[sz])||0);}));return o;})();
+    return{id:uid(),name:g.name,code:g.code,sizesLocked:false,sizes:szObj,images:g.images,varieties:g.varieties,stages:[],unit:g.unit||'pcs'};
+  });
+}
+
+function _assignMarkImported(voId){
+  window._assignQueue.forEach(item=>{
+    const o=S.orders[item.coIdx];if(!o)return;
+    const d=o.designs[item.dIdx];if(!d)return;
+    if(item.isFlat){d.importedToVOId=voId;}
+    else{const v=d.varieties[item.vIdx];if(v)v.importedToVOId=voId;}
+  });
+}
+
+function _assignSubmitNew(){
+  const vendorEl=document.getElementById('asn-vendor');
+  const vendor=(vendorEl?vendorEl.value:'').trim();
+  if(!vendor){showToast('Please enter a vendor name','red');return;}
+  if(!window._assignQueue.length){showToast('Queue is empty — click "+ Queue" on a design row first','warn');return;}
+  const designs=_assignBuildVODesigns();
+  const vo={
+    id:'vo_'+Date.now(),
+    orderId:genVendorOrderId(),
+    vendor,
+    type:(document.getElementById('asn-type')||{}).value||'karigar',
+    startDate:(document.getElementById('asn-start')||{}).value||'',
+    deliveryDate:(document.getElementById('asn-delivery')||{}).value||'',
+    priority:(document.getElementById('asn-priority')||{}).value||'normal',
+    status:'pending',
+    notes:(document.getElementById('asn-notes')||{}).value||'',
+    designs,
+  };
+  if(!S.vendorOrders)S.vendorOrders=[];
+  S.vendorOrders.push(vo);
+  _openVendorSections.add(vo.vendor);
+  if(!S.openVendorOrders)S.openVendorOrders=[];
+  S.openVendorOrders.push(vo.id);
+  _assignMarkImported(vo.id);
+  window._assignQueue=[];
+  audit('Assign VO','Created '+vo.orderId+' for '+vo.vendor+' with '+designs.length+' design(s)');
+  save();try{fbPushNow();}catch(e){}
+  showToast('✅ '+vo.orderId+' created for '+vo.vendor,'green',3500);
+  renderAssign();
+}
+
+function _assignAddToExisting(){
+  if(!window._assignQueue.length){showToast('Queue is empty — click "+ Queue" on a design row first','warn');return;}
+  const sel=document.getElementById('asn-existing-vo');
+  if(!sel||!sel.value){showToast('Please select a vendor order','red');return;}
+  const voId=sel.value;
+  const voIdx=(S.vendorOrders||[]).findIndex(v=>v.id===voId);
+  if(voIdx<0){showToast('Vendor order not found','red');return;}
+  const newDesigns=_assignBuildVODesigns();
+  S.vendorOrders[voIdx].designs.push(...newDesigns);
+  _assignMarkImported(voId);
+  const vo=S.vendorOrders[voIdx];
+  window._assignQueue=[];
+  audit('Assign VO','Added '+newDesigns.length+' design(s) to '+vo.orderId+' ('+vo.vendor+')');
+  save();try{fbPushNow();}catch(e){}
+  showToast('✅ Added '+newDesigns.length+' design'+(newDesigns.length!==1?'s':'')+' to '+vo.orderId,'green',3500);
+  renderAssign();
+}
+
+function renderAssign(){
+  const container=document.getElementById('view-assign');if(!container)return;
+  // Snapshot form values so they survive re-render while user is filling the form
+  const _fv=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const _pv={vendor:_fv('asn-vendor'),type:_fv('asn-type'),start:_fv('asn-start'),delivery:_fv('asn-delivery'),priority:_fv('asn-priority'),notes:_fv('asn-notes'),existingVO:_fv('asn-existing-vo')};
+  const _leftScroll=(document.getElementById('asn-left')||{}).scrollTop||0;
+
+  const allOrders=S.orders||[];
+  const qLen=window._assignQueue.length;
+  const isMobile=window.innerWidth<700;
+  const today=new Date().toISOString().split('T')[0];
+  const uniqueVendors=[...new Set(((S.vocabulary&&S.vocabulary.vendors)||[]).concat((S.vendorOrders||[]).map(v=>v.vendor).filter(Boolean)))].sort();
+  const openVOs=(S.vendorOrders||[]).filter(vo=>vo.status!=='delivered'&&vo.status!=='dispatched');
+  const rightTab=window._assignRightTab||'new';
+  const ls='font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:3px';
+  const is='width:100%;box-sizing:border-box;font-size:12px;padding:7px 9px;border-radius:7px;border:1px solid #D0CCF5;color:#222;background:#fff';
+
+  // ── LEFT: Customer orders ──────────────────────────────────────────────────
+  const leftHtml=allOrders.length?allOrders.map((o,oi)=>{
+    const isOpen=window._assignOpenCOs.has(o.id);
+    const stageCts=_coOrderStageCounts(o);
+    const segs=_CO_STAGE_DEFS.map(s=>stageCts[s.k]?'<div style="flex:'+stageCts[s.k]+';background:'+s.bg+';height:100%"></div>':'').join('');
+    const pct=orderPct(o);
+    let designRows='';
+    if(isOpen){
+      designRows='<div>'+(o.designs||[]).map((d,di)=>{
+        const isCnc=(o.bangleType==='cnc'||d.bangleType==='cnc');
+        const hod=_hasOnlyDefault(d);
+        const isFlat=isCnc||!(d.varieties||[]).length||hod;
+        if(isFlat)return _assignRowHtml(o,oi,d,di,-1,true);
+        return(d.varieties||[]).map((v,vi)=>_assignRowHtml(o,oi,d,di,vi,false)).join('');
+      }).join('')+'</div>';
+    }
+    return'<div style="border:1px solid #D0CDEF;border-radius:10px;margin-bottom:10px;overflow:hidden">'
+      +'<div onclick="_assignToggleCO(\''+esc(o.id)+'\')" style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#534AB7;color:#fff;cursor:pointer;user-select:none">'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:13px;font-weight:700">'+esc(o.orderId)+' · '+esc(o.client)+'</div>'
+          +'<div style="font-size:10px;opacity:.75;margin-top:2px">'+o.designs.length+' design'+(o.designs.length!==1?'s':'')+(o.deliveryDate?' · Due '+fmtDate(o.deliveryDate):'')+'</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:1px;height:12px;width:56px;border-radius:3px;overflow:hidden;flex-shrink:0">'+segs+'</div>'
+        +'<span style="font-size:11px;opacity:.75;min-width:26px;text-align:right;flex-shrink:0">'+pct+'%</span>'
+        +'<span style="font-size:11px;flex-shrink:0;margin-left:4px">'+(isOpen?'▲':'▼')+'</span>'
+      +'</div>'
+      +designRows
+    +'</div>';
+  }).join(''):'<div style="padding:40px;text-align:center;color:#aaa;font-size:13px">No customer orders yet.</div>';
+
+  // ── RIGHT: Queue + form ────────────────────────────────────────────────────
+  const queueHtml=qLen?window._assignQueue.map((item,i)=>'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #EAE9F8">'
+    +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+esc(item.code||'—')+'<span style="font-weight:400;color:#555;margin-left:5px">'+esc(item.name||'')+(item.varName?' · <em style="color:#aaa">'+esc(item.varName)+'</em>':'')+'</span></div>'
+      +'<div style="font-size:10px;color:#999;margin-top:1px">'+esc(item.orderId)+' · '+esc(item.client)+' · '+item.qty+'</div>'
+    +'</div>'
+    +'<button onclick="_assignQueueRemove('+i+')" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;padding:0 2px;flex-shrink:0;line-height:1" onmouseover="this.style.color=\'#A32D2D\'" onmouseout="this.style.color=\'#ccc\'" title="Remove">×</button>'
+  +'</div>').join('')
+  :'<div style="padding:14px;text-align:center;color:#bbb;font-size:12px">No designs queued yet.<br>Click <strong style="color:#534AB7">+ Queue</strong> on any design row on the left.</div>';
+
+  const vendorDatalist='<datalist id="asn-vendor-list">'+uniqueVendors.map(v=>'<option value="'+esc(v)+'">').join('')+'</datalist>';
+  const prioOpts=PRIO_OPTS.map(p=>'<option value="'+p+'"'+((_pv.priority||'normal')===p?' selected':'')+'>'+p+'</option>').join('');
+  const typeOpts=[['karigar','🛠️ Karigar'],['pipe','🔩 Pipe'],['plating','🪙 Plating']].map(([v,l])=>'<option value="'+v+'"'+((_pv.type||'karigar')===v?' selected':'')+'>'+l+'</option>').join('');
+  const submitStyle='width:100%;padding:10px;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px';
+
+  const newFormHtml='<div style="display:flex;flex-direction:column;gap:10px">'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:140px"><label style="'+ls+'">Vendor name *</label>'
+        +'<input id="asn-vendor" list="asn-vendor-list" placeholder="e.g. Ramesh Bangles" autocomplete="off" value="'+esc(_pv.vendor)+'" style="'+is+'">'+vendorDatalist
+      +'</div>'
+      +'<div style="min-width:110px"><label style="'+ls+'">Type</label>'
+        +'<select id="asn-type" style="'+is+'">'+typeOpts+'</select>'
+      +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px">'
+      +'<div style="flex:1;min-width:0"><label style="'+ls+'">Start date</label>'
+        +'<input id="asn-start" type="date" value="'+esc(_pv.start||today)+'" style="'+is+'">'
+      +'</div>'
+      +'<div style="flex:1;min-width:0"><label style="'+ls+'">Delivery date</label>'
+        +'<input id="asn-delivery" type="date" value="'+esc(_pv.delivery)+'" style="'+is+'">'
+      +'</div>'
+    +'</div>'
+    +'<div><label style="'+ls+'">Priority</label>'
+      +'<select id="asn-priority" style="'+is+'">'+prioOpts+'</select>'
+    +'</div>'
+    +'<div><label style="'+ls+'">Notes (optional)</label>'
+      +'<textarea id="asn-notes" placeholder="Notes…" style="'+is+';resize:vertical;min-height:54px">'+esc(_pv.notes||'')+'</textarea>'
+    +'</div>'
+    +'<button onclick="_assignSubmitNew()" style="'+submitStyle+';background:'+(qLen?'linear-gradient(135deg,#E65100,#BF360C)':'#bbb')+'">'
+      +(qLen?'✅ Create Vendor Order · '+qLen+' design'+(qLen!==1?'s':''):'Create Vendor Order (queue designs first)')
+    +'</button>'
+  +'</div>';
+
+  const existingVoOpts=openVOs.map(vo=>'<option value="'+esc(vo.id)+'"'+((_pv.existingVO||'')===vo.id?' selected':'')+'>'+esc(vo.orderId)+' — '+esc(vo.vendor||'')+'</option>').join('');
+  const existFormHtml=openVOs.length?'<div style="display:flex;flex-direction:column;gap:10px">'
+    +'<div><label style="'+ls+'">Vendor order to add designs to</label>'
+      +'<select id="asn-existing-vo" style="'+is+'">'+existingVoOpts+'</select>'
+    +'</div>'
+    +'<button onclick="_assignAddToExisting()" style="'+submitStyle+';background:'+(qLen?'#534AB7':'#bbb')+'">'
+      +(qLen?'➕ Add to VO · '+qLen+' design'+(qLen!==1?'s':''):'Add to VO (queue designs first)')
+    +'</button>'
+  +'</div>':'<div style="padding:20px;text-align:center;color:#aaa;font-size:12px">No open vendor orders found.<br>Use the <strong>New VO</strong> tab to create one.</div>';
+
+  const tabBtn=(label,tab)=>'<button onclick="window._assignRightTab=\''+tab+'\';renderAssign()" style="flex:1;padding:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;border-right:'+(tab==='new'?'1px solid #D0CDEF':'none')+';background:'+(rightTab===tab?'#534AB7':'#F3F2FF')+';color:'+(rightTab===tab?'#fff':'#534AB7')+'">'+label+'</button>';
+
+  const rightPanelStyle='display:flex;flex-direction:column;gap:12px;padding-top:16px;padding-bottom:16px;'+(isMobile?'padding-top:12px':'width:340px;flex-shrink:0;overflow-y:auto;padding-left:16px;border-left:1px solid #E0DFFF');
+  const rightPanel='<div style="'+rightPanelStyle+'">'
+    +'<div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+        +'<span style="font-size:13px;font-weight:700;color:#3C3489">🗂 Queue ('+qLen+')</span>'
+        +(qLen?'<button onclick="window._assignQueue=[];renderAssign()" style="font-size:11px;background:none;border:1px solid #E0DFFF;border-radius:6px;padding:2px 8px;cursor:pointer;color:#888">Clear all</button>':'')
+      +'</div>'
+      +'<div style="background:#F8F7FF;border:1px solid #D0CDEF;border-radius:8px;max-height:200px;overflow-y:auto">'+queueHtml+'</div>'
+    +'</div>'
+    +'<div>'
+      +'<div style="display:flex;border:1px solid #D0CDEF;border-radius:8px;overflow:hidden;margin-bottom:10px">'
+        +tabBtn('New VO','new')+tabBtn('Add to existing VO','existing')
+      +'</div>'
+      +(rightTab==='new'?newFormHtml:existFormHtml)
+    +'</div>'
+  +'</div>';
+
+  container.innerHTML='<div style="display:flex;'+(isMobile?'flex-direction:column;':'')+'gap:0;'+(isMobile?'':'height:calc(100vh - 165px);')+'min-height:400px;padding-top:16px">'
+    +'<div id="asn-left" style="flex:1;min-width:0;overflow-y:auto;padding-right:'+(isMobile?'0':'16px')+'">'+leftHtml+'</div>'
+    +rightPanel
+  +'</div>';
+
+  const lp=document.getElementById('asn-left');
+  if(lp&&_leftScroll)lp.scrollTop=_leftScroll;
 }
 
 // ── MASTERS PANEL ─────────────────────────────────────────────────────────────
