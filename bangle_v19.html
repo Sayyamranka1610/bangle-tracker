@@ -5330,6 +5330,36 @@ function renderAnalytics(){
     return `<svg class="pie-svg" width="120" height="120" viewBox="0 0 120 120">${out}<circle cx="60" cy="60" r="28" fill="#fff"/></svg>`;
   }
   const statusColors=['#1D9E75','#EF9F27','#E24B4A','#888780'],prioColors=['#378ADD','#EF9F27','#E24B4A'];
+  // Upcoming deadlines panel data
+  const _today0=new Date();_today0.setHours(0,0,0,0);
+  const _openOrds=orders.filter(o=>orderPct(o)<100);
+  const _ordsWithDate=_openOrds.filter(o=>o.deliveryDate).sort((a,b)=>new Date(a.deliveryDate)-new Date(b.deliveryDate));
+  const _ordsNoDate=_openOrds.filter(o=>!o.deliveryDate);
+  const _deadlineRows=[..._ordsWithDate,..._ordsNoDate].map(o=>{
+    const pct=orderPct(o);
+    const stageCts=_coOrderStageCounts(o);
+    const segs=_CO_STAGE_DEFS.map(s=>stageCts[s.k]?'<div style="flex:'+stageCts[s.k]+';background:'+s.bg+';height:100%"></div>':'').join('');
+    let pill;
+    if(o.deliveryDate){
+      const due=new Date(o.deliveryDate+'T00:00:00');
+      const dl=Math.ceil((due-_today0)/864e5);
+      if(dl<0)pill='<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:#FCEBEB;color:#A32D2D;white-space:nowrap">'+Math.abs(dl)+'d overdue</span>';
+      else if(dl<=3)pill='<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:#FCEBEB;color:#A32D2D;white-space:nowrap">'+dl+'d left</span>';
+      else if(dl<=7)pill='<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:#FAEEDA;color:#854F0B;white-space:nowrap">'+dl+'d left</span>';
+      else pill='<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:#EAF3DE;color:#3B6D11;white-space:nowrap">'+dl+'d left</span>';
+    }else{
+      pill='<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#F1EFE8;color:#5F5E5A;white-space:nowrap">No date set</span>';
+    }
+    const pctCol=pct===100?'#1B5E20':pct>0?'#534AB7':'#aaa';
+    return'<div data-oid="'+esc(o.id)+'" onclick="goToOrderFromAnalytics(this.dataset.oid)" style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #EAE9F8;cursor:pointer;border-radius:4px" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'\'">'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#534AB7">'+esc(o.orderId)+' · '+esc(o.client)+'</div>'
+      +'<div style="font-size:11px;color:#888;margin-top:2px">'+(o.deliveryDate?fmtDate(o.deliveryDate):'No delivery date')+' · '+o.designs.length+' design'+(o.designs.length!==1?'s':'')+'</div></div>'
+      +'<div style="display:flex;gap:1px;height:14px;width:80px;border-radius:3px;overflow:hidden;flex-shrink:0">'+segs+'</div>'
+      +'<span style="font-size:11px;font-weight:600;color:'+pctCol+';min-width:32px;text-align:right;flex-shrink:0">'+pct+'%</span>'
+      +pill
+      +'<span style="font-size:10px;color:#534AB7;flex-shrink:0">→</span>'
+      +'</div>';
+  }).join('');
   container.innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="exportAnalyticsCSV()" style="font-size:12px">📥 Export Analytics CSV</button></div><div class="analytics-grid">
     <div class="chart-card full"><div class="chart-title">Key metrics</div>
       <div class="metric-grid">
@@ -5373,7 +5403,55 @@ function renderAnalytics(){
     <div class="chart-card full"><div class="chart-title">Quantity by size</div><div class="chart-sub">Total pieces across all orders</div>
       <div class="bar-chart">${szEntries.map(([sz,v])=>`<div class="bar-row"><span class="bar-label">${esc(sz)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/maxSz*100)}%;background:#185FA5"><span class="bar-val">${v}</span></div></div></div>`).join('')}</div>
     </div>
+    <div class="chart-card full"><div class="chart-title">Upcoming deadlines</div><div class="chart-sub">Open orders sorted by delivery date · click any row to open it</div>
+      ${_deadlineRows||'<div style="padding:12px;text-align:center;color:#888;font-size:13px">All orders are completed — nothing pending.</div>'}
+    </div>
+    <div class="chart-card full"><div class="chart-title">Design code lookup</div><div class="chart-sub">Search any design code across all orders</div>
+      <input type="text" id="analytics-code-search" placeholder="Type a code e.g. D-045…" oninput="analyticsCodeSearch(this.value)" style="width:100%;box-sizing:border-box;font-size:13px;padding:7px 10px;border-radius:6px;border:1px solid #D0CCF5;margin-bottom:8px;outline:none;color:#222;background:#fff">
+      <div id="analytics-code-results" style="font-size:12px;color:#888;text-align:center;padding:6px 0">Start typing a design code above.</div>
+    </div>
   </div></div>`;
+}
+
+// Live search by design code across all orders — called from analytics search input
+function analyticsCodeSearch(q){
+  const res=document.getElementById('analytics-code-results');
+  if(!res)return;
+  const qTrim=(q||'').trim().toLowerCase();
+  if(!qTrim){res.innerHTML='<div style="font-size:12px;color:#888;text-align:center;padding:6px 0">Start typing a design code above.</div>';return;}
+  const hits=[];
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      if((d.code||'').toLowerCase().includes(qTrim)||(d.name||'').toLowerCase().includes(qTrim)){
+        const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+        const hod=_hasOnlyDefault(d);
+        const isFlat=isCnc||!(d.varieties||[]).length||hod;
+        if(isFlat){
+          const stage=_coStage(d);
+          const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:stage||'?',bg:'#eee',tx:'#555'};
+          const qty=formatQtyByUnit(designQtyByUnit(d));
+          hits.push({oid:order.id,orderId:order.orderId,client:order.client,code:d.code||'—',name:d.name||'',varName:null,qty,sd});
+        } else {
+          (d.varieties||[]).forEach(v=>{
+            const stage=_coStage(v);
+            const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:stage||'?',bg:'#eee',tx:'#555'};
+            const qty=formatQtyByUnit(designQtyByUnit({varieties:[v]}));
+            hits.push({oid:order.id,orderId:order.orderId,client:order.client,code:d.code||'—',name:d.name||'',varName:v.name||'',qty,sd});
+          });
+        }
+      }
+    });
+  });
+  if(!hits.length){res.innerHTML='<div style="font-size:12px;color:#888;text-align:center;padding:6px 0">No designs found matching "'+esc(qTrim)+'".</div>';return;}
+  res.innerHTML=hits.map(h=>'<div data-oid="'+esc(h.oid)+'" onclick="goToOrderFromAnalytics(this.dataset.oid)" style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #EAE9F8;cursor:pointer;border-radius:4px" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'\'">'
+    +'<div style="flex:1;min-width:0">'
+      +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:13px;font-weight:700;color:#534AB7">'+esc(h.code)+'</span><span style="font-size:12px;color:#555">'+esc(h.name)+(h.varName?'<em style="color:#aaa"> · '+esc(h.varName)+'</em>':'')+'</span></div>'
+      +'<div style="font-size:11px;color:#888;margin-top:2px">'+esc(h.orderId)+' · '+esc(h.client)+'</div>'
+    +'</div>'
+    +'<span style="font-size:11px;color:#777;flex-shrink:0;white-space:nowrap">'+h.qty+'</span>'
+    +'<span style="background:'+h.sd.bg+';color:'+h.sd.tx+';border-radius:3px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap;flex-shrink:0">'+esc(h.sd.lbl)+'</span>'
+    +'<span style="font-size:10px;color:#534AB7;flex-shrink:0">→</span>'
+    +'</div>').join('');
 }
 
 // ── STAGE DRILL-DOWN — shows every variety row at a given pipeline stage ───────
