@@ -10535,7 +10535,7 @@ function askVendorPrint(oid){
         <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #534AB7;background:#EEEDFE">
           <input type="radio" name="vimg-pos" value="top" checked style="width:auto;accent-color:#534AB7">
-          <span style="font-size:12px"><strong>Grouped at top</strong> — all design images shown together below the design name</span>
+          <span style="font-size:12px"><strong>Grouped at top</strong> — 9 images per A4 page (3×3 grid), quantities below <span style="font-size:10px;color:#534AB7;font-weight:700">(default)</span></span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
           <input type="radio" name="vimg-pos" value="inline" style="width:auto;accent-color:#534AB7">
@@ -10561,8 +10561,36 @@ function printVendorOrderById(oid){
   askVendorPrint(oid);
 }
 function printVendorSection(vendor){
-  const orders=S.vendorOrders.filter(o=>o.vendor===vendor);
-  openVendorPrintWindow('Vendor: '+vendor,orders,'top');
+  window._vprintVendor=vendor;
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:400px">
+      <div class="modal-header"><div class="modal-icon">🖨️</div><h3>Print options</h3></div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+        <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #534AB7;background:#EEEDFE">
+          <input type="radio" name="vsect-img-pos" value="top" checked style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Grouped at top</strong> — 9 images per A4 page (3×3 grid), quantities below <span style="font-size:10px;color:#534AB7;font-weight:700">(default)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
+          <input type="radio" name="vsect-img-pos" value="inline" style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>Beside quantities</strong> — image shown at right end of each design code row</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #AFA9EC;background:#f7f6ff">
+          <input type="radio" name="vsect-img-pos" value="none" style="width:auto;accent-color:#534AB7">
+          <span style="font-size:12px"><strong>No images</strong> — quantities only, smallest printout</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="primary" onclick="
+          const pos=document.querySelector('input[name=vsect-img-pos]:checked').value;
+          const ven=window._vprintVendor;
+          closeModal();
+          openVendorPrintWindow('Vendor: '+ven,S.vendorOrders.filter(o=>o.vendor===ven),pos);">🖨️ Print</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 // imgMode: 'top' = grouped images below design name (default)
@@ -10601,11 +10629,14 @@ function openVendorPrintWindow(title,orders,imgMode){
       });
 
       const imgTopHtml=(imgMode==='top'&&groupImgs.length)
-        ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;padding:3mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
-          +groupImgs.map(({src,label})=>'<div style="text-align:center;break-inside:avoid">'
-            +'<img src="'+src+'" style="width:100%;height:55mm;object-fit:cover;border-radius:6px;border:1.5px solid #AFA9EC;display:block">'
+        ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;padding:4mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
+          +groupImgs.map(({src,label})=>{const es=src.replace(/"/g,'%22');return'<div style="text-align:center;break-inside:avoid">'
+            +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:flex;align-items:center;justify-content:center">'
+              +'<div style="position:absolute;inset:0;transform:scale(1.2);background:url('+es+') center/cover;filter:blur(12px);opacity:0.8"></div>'
+              +'<img src="'+src+'" style="position:relative;z-index:1;max-width:100%;max-height:82mm;display:block">'
+            +'</div>'
             +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
-          +'</div>').join('')
+          +'</div>';}).join('')
           +'</div>'
         :'';
 
