@@ -5315,7 +5315,7 @@ function renderAnalytics(){
       const segs=_CO_STAGE_DEFS.map(s=>c[s.k]?'<div style="flex:'+c[s.k]+';background:'+s.bg+';color:'+s.tx+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap" title="'+s.lbl+': '+c[s.k]+'">'+c[s.k]+'</div>':'').join('');
       const pctCol=dispPct===100?'#1B5E20':dispPct>0?'#534AB7':'#aaa';
       return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-        +'<span style="min-width:110px;font-size:12px;font-weight:700;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(client)+'">'+esc(client)+'</span>'
+        +'<span data-client="'+esc(client)+'" onclick="showClientDrilldown(this.dataset.client)" style="min-width:110px;font-size:12px;font-weight:700;color:#534AB7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;text-decoration:underline dotted" title="Click to expand '+esc(client)+' order breakdown">'+esc(client)+'</span>'
         +'<span style="min-width:100px;font-size:10px;color:#999;white-space:nowrap">'+orders.length+' order'+(orders.length!==1?'s':'')+' · '+designs+' design'+(designs!==1?'s':'')+'</span>'
         +'<div style="flex:1"><div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden">'+segs+'</div></div>'
         +'<span style="min-width:38px;text-align:right;font-size:11px;font-weight:600;color:'+pctCol+'">'+dispPct+'%</span>'
@@ -5346,6 +5346,7 @@ function renderAnalytics(){
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px">${_ppLegend}</div>
       <div style="font-size:11px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Per customer</div>
       ${_ppPerRows}
+      <div id="pp-client-drilldown" style="display:none;margin-top:10px;background:#F8F7FF;border:1.5px solid #AFA9EC;border-radius:10px;padding:12px 16px;max-height:55vh;overflow-y:auto"></div>
       <div id="pp-drilldown" style="display:none;margin-top:14px;background:#F8F7FF;border:1.5px solid #AFA9EC;border-radius:10px;padding:12px 16px;max-height:55vh;overflow-y:auto"></div>
     </div>
     <div class="chart-card"><div class="chart-title">Order status</div><div class="chart-sub">Distribution by health</div>
@@ -5396,13 +5397,13 @@ function showStageDrilldown(stageKey){
       if(isFlat){
         if(_coStage(d)===stageKey){
           const imgs=[...(d.images||[]),...(hod&&d.varieties[0]?(d.varieties[0].images||[]):[])];
-          rows.push({orderId:order.orderId,client:order.client,designName:d.name||'—',code:d.code||'',varName:null,imgs});
+          rows.push({orderId:order.orderId,oid:order.id,client:order.client,designName:d.name||'—',code:d.code||'',varName:null,imgs});
         }
       } else {
         (d.varieties||[]).forEach(v=>{
           if(_coStage(v)===stageKey){
             const imgs=[...(d.images||[]),...(v.images||[])];
-            rows.push({orderId:order.orderId,client:order.client,designName:d.name||'—',code:d.code||'',varName:v.name||'',imgs});
+            rows.push({orderId:order.orderId,oid:order.id,client:order.client,designName:d.name||'—',code:d.code||'',varName:v.name||'',imgs});
           }
         });
       }
@@ -5422,13 +5423,14 @@ function showStageDrilldown(stageKey){
           +'<img src="'+img.data+'" style="position:relative;z-index:1;width:100%;height:100%;object-fit:contain">'
         +'</div>').join('')
       :'<div style="width:52px;height:52px;border-radius:6px;border:1.5px dashed #D0CDEF;display:flex;align-items:center;justify-content:center;font-size:20px;color:#ccc;flex-shrink:0">📷</div>';
-    return'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #EAE9F8">'
+    return'<div data-oid="'+esc(r.oid)+'" onclick="goToOrderFromAnalytics(this.dataset.oid)" title="Click to open '+esc(r.orderId)+' in Customer Orders" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #EAE9F8;cursor:pointer;border-radius:4px" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'\'">'
       +'<div style="display:flex;gap:4px;align-items:center">'+imgHtml+'</div>'
       +'<div style="flex:1;min-width:0">'
         +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+esc(r.orderId)+' · '+esc(r.client)+'</div>'
         +'<div style="font-size:11px;color:#333;margin-top:1px">'+esc(r.designName)+(r.code?'&nbsp;<span style="background:#F0EFFF;color:#534AB7;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:600">'+esc(r.code)+'</span>':'')+'</div>'
         +(r.varName!==null?'<div style="font-size:10px;color:#888;margin-top:1px">Variety: '+esc(r.varName)+'</div>':'')
       +'</div>'
+      +'<span style="font-size:10px;color:#534AB7;white-space:nowrap;flex-shrink:0">→ Open</span>'
     +'</div>';
   }).join('');
 
@@ -5441,6 +5443,75 @@ function showStageDrilldown(stageKey){
       +'<button onclick="document.getElementById(\'pp-drilldown\').style.display=\'none\';document.getElementById(\'pp-drilldown\').dataset.stage=\'\'" style="font-size:11px;background:none;border:1px solid #AFA9EC;border-radius:6px;padding:3px 10px;cursor:pointer;color:#534AB7">✕ Close</button>'
     +'</div>'
     +cards;
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// Navigate from analytics drilldown → customer orders tab, open + scroll to the order
+function goToOrderFromAnalytics(oid){
+  switchMain('orders');
+  S.openOrders.add(oid);
+  render();
+  setTimeout(()=>{const el=document.getElementById('oc-'+oid);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},200);
+}
+
+// Show all orders + design breakup for a client below the per-customer bar chart
+function showClientDrilldown(client){
+  const panel=document.getElementById('pp-client-drilldown');
+  if(!panel)return;
+  if(panel.dataset.client===client&&panel.style.display!=='none'){panel.style.display='none';panel.dataset.client='';return;}
+  panel.dataset.client=client;
+  const clientOrders=(S.orders||[]).filter(o=>o.client===client);
+  const closeBtn='<button onclick="document.getElementById(\'pp-client-drilldown\').style.display=\'none\';document.getElementById(\'pp-client-drilldown\').dataset.client=\'\'" style="font-size:11px;background:none;border:1px solid #AFA9EC;border-radius:6px;padding:3px 10px;cursor:pointer;color:#534AB7">✕ Close</button>';
+  let html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">'
+    +'<span style="font-size:14px;font-weight:700;color:#3C3489">'+esc(client)+' — '+clientOrders.length+' order'+(clientOrders.length!==1?'s':'')+'</span>'
+    +closeBtn+'</div>';
+  if(!clientOrders.length){panel.innerHTML=html+'<div style="padding:12px;text-align:center;color:#888;font-size:13px">No orders found.</div>';panel.style.display='block';return;}
+  html+=clientOrders.map(order=>{
+    const stageCts=_coOrderStageCounts(order);
+    const tot=Object.values(stageCts).reduce((a,b)=>a+b,0);
+    const segs=_CO_STAGE_DEFS.map(s=>stageCts[s.k]?'<div style="flex:'+stageCts[s.k]+';background:'+s.bg+';height:100%;min-width:2px" title="'+s.lbl+': '+stageCts[s.k]+'"></div>':'').join('');
+    const pct=tot?Math.round(stageCts.dispatched/tot*100):0;
+    const pctCol=pct===100?'#1B5E20':pct>0?'#534AB7':'#aaa';
+    const designRows=(order.designs||[]).map(d=>{
+      const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+      const hod=_hasOnlyDefault(d);
+      const isFlat=isCnc||!(d.varieties||[]).length||hod;
+      if(isFlat){
+        const stage=_coStage(d);
+        const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:stage||'?',bg:'#eee',tx:'#555'};
+        const qty=formatQtyByUnit(designQtyByUnit(d));
+        return'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid #EAE9F8;font-size:11px">'
+          +'<span style="min-width:70px;font-weight:600;color:#534AB7;flex-shrink:0">'+esc(d.code||'—')+'</span>'
+          +'<span style="flex:1;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.name||'(unnamed)')+'</span>'
+          +'<span style="font-size:10px;color:#777;white-space:nowrap;flex-shrink:0">'+qty+'</span>'
+          +'<span style="background:'+sd.bg+';color:'+sd.tx+';border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">'+esc(sd.lbl)+'</span>'
+        +'</div>';
+      } else {
+        return(d.varieties||[]).map(v=>{
+          const stage=_coStage(v);
+          const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:stage||'?',bg:'#eee',tx:'#555'};
+          const qty=formatQtyByUnit(designQtyByUnit({varieties:[v]}));
+          return'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid #EAE9F8;font-size:11px">'
+            +'<span style="min-width:70px;font-weight:600;color:#534AB7;flex-shrink:0">'+esc(d.code||'—')+'</span>'
+            +'<span style="flex:1;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.name||'')+'<em style="color:#aaa"> · '+esc(v.name||'')+'</em></span>'
+            +'<span style="font-size:10px;color:#777;white-space:nowrap;flex-shrink:0">'+qty+'</span>'
+            +'<span style="background:'+sd.bg+';color:'+sd.tx+';border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">'+esc(sd.lbl)+'</span>'
+          +'</div>';
+        }).join('');
+      }
+    }).join('');
+    return'<div style="margin-bottom:10px;border:1px solid #D0CDEF;border-radius:8px;overflow:hidden">'
+      +'<div data-oid="'+esc(order.id)+'" onclick="goToOrderFromAnalytics(this.dataset.oid)" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#EEEDFE;cursor:pointer" title="Click to open this order" onmouseover="this.style.background=\'#DDD9FC\'" onmouseout="this.style.background=\'#EEEDFE\'">'
+        +'<span style="font-size:12px;font-weight:700;color:#3C3489;white-space:nowrap">'+esc(order.orderId)+'</span>'
+        +'<div style="flex:1;height:14px;border-radius:3px;overflow:hidden;display:flex;gap:1px">'+segs+'</div>'
+        +'<span style="font-size:11px;font-weight:600;white-space:nowrap;color:'+pctCol+'">'+pct+'% done</span>'
+        +'<span style="font-size:10px;color:#534AB7;white-space:nowrap">→ Open</span>'
+      +'</div>'
+      +'<div style="padding:0 12px 8px">'+designRows+'</div>'
+    +'</div>';
+  }).join('');
+  panel.innerHTML=html;
   panel.style.display='block';
   panel.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
