@@ -3769,7 +3769,7 @@ function designQtyByUnit(d){
     });
   } else {
     const qty=Object.values(d.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
-    if(qty>0) out['pcs']=qty;
+    if(qty>0) out[(d.unit||'pcs').toLowerCase()]=qty;
   }
   return out;
 }
