@@ -5298,22 +5298,29 @@ function renderAnalytics(){
   const _ppPerOrder=orders.map(o=>{const c=_coOrderStageCounts(o);Object.keys(_ppGrand).forEach(k=>{_ppGrand[k]+=c[k];});return{o,c};});
   const _ppTotal=Object.values(_ppGrand).reduce((a,b)=>a+b,0);
   const _ppGrandBarSegs=_CO_STAGE_DEFS.map(s=>_ppGrand[s.k]?'<div style="flex:'+_ppGrand[s.k]+';background:'+s.bg+';color:'+s.tx+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;min-width:0" title="'+s.lbl+': '+_ppGrand[s.k]+'">'+(_ppGrand[s.k]>0&&_ppTotal?_ppGrand[s.k]:'')+'</div>':'').join('');
-  const _ppLegend=_CO_STAGE_DEFS.map(s=>'<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px"><span style="width:10px;height:10px;border-radius:2px;background:'+s.bg+';display:inline-block;border:1px solid rgba(0,0,0,.08)"></span><span style="color:#666">'+s.lbl+'</span> <strong style="color:#3C3489">'+_ppGrand[s.k]+'</strong></span>').join('');
-  const _ppPerRows=_ppPerOrder.map(({o,c})=>{
-    const tot=Object.values(c).reduce((a,b)=>a+b,0);
-    const dispPct=tot?Math.round(c.dispatched/tot*100):0;
-    const segs=_CO_STAGE_DEFS.map(s=>c[s.k]
-      ?'<div style="flex:'+c[s.k]+';background:'+s.bg+';color:'+s.tx+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap" title="'+s.lbl+': '+c[s.k]+'">'+c[s.k]+'</div>':''
-    ).join('');
-    const pctCol=dispPct===100?'#1B5E20':dispPct>0?'#534AB7':'#aaa';
-    return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-      +'<span style="min-width:68px;font-size:12px;font-weight:600;color:#534AB7">'+esc(o.orderId)+'</span>'
-      +'<span style="min-width:90px;font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(o.client)+'">'+esc(o.client)+'</span>'
-      +'<span style="min-width:62px;font-size:10px;color:#999;white-space:nowrap">'+tot+' design'+(tot!==1?'s':'')+'</span>'
-      +'<div style="flex:1"><div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden">'+segs+'</div></div>'
-      +'<span style="min-width:38px;text-align:right;font-size:11px;font-weight:600;color:'+pctCol+'">'+dispPct+'%</span>'
-      +'</div>';
-  }).join('');
+  const _ppLegend=_CO_STAGE_DEFS.map(s=>'<span onclick="showStageDrilldown(\''+s.k+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;padding:3px 7px;border-radius:6px;border:1.5px solid transparent;transition:border-color .15s" onmouseover="this.style.borderColor=\''+s.bg+'\'" onmouseout="this.style.borderColor=\'transparent\'" title="Click to see all rows at this stage"><span style="width:10px;height:10px;border-radius:2px;background:'+s.bg+';display:inline-block;border:1px solid rgba(0,0,0,.08)"></span><span style="color:#666">'+s.lbl+'</span> <strong style="color:#3C3489">'+_ppGrand[s.k]+'</strong></span>').join('');
+  // Group per-order stage counts by client for a "per customer" combined view
+  const _ppByClient={};
+  _ppPerOrder.forEach(({o,c})=>{
+    if(!_ppByClient[o.client])_ppByClient[o.client]={client:o.client,orders:[],c:{notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0},designs:0};
+    _ppByClient[o.client].orders.push(o);
+    _ppByClient[o.client].designs+=o.designs.length;
+    Object.keys(c).forEach(k=>_ppByClient[o.client].c[k]+=c[k]);
+  });
+  const _ppPerRows=Object.values(_ppByClient)
+    .sort((a,b)=>Object.values(b.c).reduce((x,y)=>x+y,0)-Object.values(a.c).reduce((x,y)=>x+y,0))
+    .map(({client,orders,c,designs})=>{
+      const tot=Object.values(c).reduce((a,b)=>a+b,0);
+      const dispPct=tot?Math.round(c.dispatched/tot*100):0;
+      const segs=_CO_STAGE_DEFS.map(s=>c[s.k]?'<div style="flex:'+c[s.k]+';background:'+s.bg+';color:'+s.tx+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap" title="'+s.lbl+': '+c[s.k]+'">'+c[s.k]+'</div>':'').join('');
+      const pctCol=dispPct===100?'#1B5E20':dispPct>0?'#534AB7':'#aaa';
+      return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        +'<span style="min-width:110px;font-size:12px;font-weight:700;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(client)+'">'+esc(client)+'</span>'
+        +'<span style="min-width:100px;font-size:10px;color:#999;white-space:nowrap">'+orders.length+' order'+(orders.length!==1?'s':'')+' · '+designs+' design'+(designs!==1?'s':'')+'</span>'
+        +'<div style="flex:1"><div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden">'+segs+'</div></div>'
+        +'<span style="min-width:38px;text-align:right;font-size:11px;font-weight:600;color:'+pctCol+'">'+dispPct+'%</span>'
+        +'</div>';
+    }).join('');
   const byPrio={normal:0,urgent:0,critical:0};orders.forEach(o=>{byPrio[o.priority]=(byPrio[o.priority]||0)+1;});
   const avgPct=Math.round(orders.reduce((a,o)=>a+orderPct(o),0)/totalOrds);
   function pieSvg(data,colors,r=54){
@@ -5337,8 +5344,9 @@ function renderAnalytics(){
     <div class="chart-card full"><div class="chart-title">Production Pipeline</div><div class="chart-sub">Stage breakdown across all ${_ppTotal} variety rows · ${orders.length} orders</div>
       <div style="display:flex;gap:1px;height:28px;border-radius:6px;overflow:hidden;margin-bottom:10px">${_ppGrandBarSegs}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px">${_ppLegend}</div>
-      <div style="font-size:11px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Per order</div>
+      <div style="font-size:11px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Per customer</div>
       ${_ppPerRows}
+      <div id="pp-drilldown" style="display:none;margin-top:14px;background:#F8F7FF;border:1.5px solid #AFA9EC;border-radius:10px;padding:12px 16px;max-height:55vh;overflow-y:auto"></div>
     </div>
     <div class="chart-card"><div class="chart-title">Order status</div><div class="chart-sub">Distribution by health</div>
       <div style="display:flex;gap:20px;align-items:center">
@@ -5365,6 +5373,76 @@ function renderAnalytics(){
       <div class="bar-chart">${szEntries.map(([sz,v])=>`<div class="bar-row"><span class="bar-label">${esc(sz)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/maxSz*100)}%;background:#185FA5"><span class="bar-val">${v}</span></div></div></div>`).join('')}</div>
     </div>
   </div></div>`;
+}
+
+// ── STAGE DRILL-DOWN — shows every variety row at a given pipeline stage ───────
+function showStageDrilldown(stageKey){
+  const panel=document.getElementById('pp-drilldown');
+  if(!panel)return;
+  // If same stage clicked again, toggle off
+  if(panel.dataset.stage===stageKey&&panel.style.display!=='none'){
+    panel.style.display='none';panel.dataset.stage='';return;
+  }
+  panel.dataset.stage=stageKey;
+  const stageDef=_CO_STAGE_DEFS.find(s=>s.k===stageKey)||{lbl:stageKey,bg:'#eee',tx:'#333'};
+
+  // Collect every variety/flat row currently at this stage across all orders
+  const rows=[];
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+      const hod=_hasOnlyDefault(d);
+      const isFlat=isCnc||!(d.varieties||[]).length||hod;
+      if(isFlat){
+        if(_coStage(d)===stageKey){
+          const imgs=[...(d.images||[]),...(hod&&d.varieties[0]?(d.varieties[0].images||[]):[])];
+          rows.push({orderId:order.orderId,client:order.client,designName:d.name||'—',code:d.code||'',varName:null,imgs});
+        }
+      } else {
+        (d.varieties||[]).forEach(v=>{
+          if(_coStage(v)===stageKey){
+            const imgs=[...(d.images||[]),...(v.images||[])];
+            rows.push({orderId:order.orderId,client:order.client,designName:d.name||'—',code:d.code||'',varName:v.name||'',imgs});
+          }
+        });
+      }
+    });
+  });
+
+  if(!rows.length){
+    panel.innerHTML='<div style="padding:12px;text-align:center;color:#888;font-size:13px">No rows currently at <strong>'+esc(stageDef.lbl)+'</strong>.</div>';
+    panel.style.display='block';return;
+  }
+
+  const cards=rows.map(r=>{
+    const validImgs=r.imgs.filter(img=>img&&img.data&&!img.data.startsWith('__IDB__'));
+    const imgHtml=validImgs.length
+      ?validImgs.slice(0,3).map(img=>'<div style="position:relative;width:52px;height:52px;border-radius:6px;overflow:hidden;border:1px solid #D0CDEF;flex-shrink:0">'
+          +'<div style="position:absolute;inset:0;transform:scale(1.15);background:url('+img.data.replace(/"/g,'%22')+') center/cover;filter:blur(6px);opacity:.7"></div>'
+          +'<img src="'+img.data+'" style="position:relative;z-index:1;width:100%;height:100%;object-fit:contain">'
+        +'</div>').join('')
+      :'<div style="width:52px;height:52px;border-radius:6px;border:1.5px dashed #D0CDEF;display:flex;align-items:center;justify-content:center;font-size:20px;color:#ccc;flex-shrink:0">📷</div>';
+    return'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #EAE9F8">'
+      +'<div style="display:flex;gap:4px;align-items:center">'+imgHtml+'</div>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+esc(r.orderId)+' · '+esc(r.client)+'</div>'
+        +'<div style="font-size:11px;color:#333;margin-top:1px">'+esc(r.designName)+(r.code?'&nbsp;<span style="background:#F0EFFF;color:#534AB7;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:600">'+esc(r.code)+'</span>':'')+'</div>'
+        +(r.varName!==null?'<div style="font-size:10px;color:#888;margin-top:1px">Variety: '+esc(r.varName)+'</div>':'')
+      +'</div>'
+    +'</div>';
+  }).join('');
+
+  panel.innerHTML=''
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+        +'<span style="background:'+stageDef.bg+';color:'+stageDef.tx+';border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700">'+esc(stageDef.lbl)+'</span>'
+        +'<span style="font-size:13px;font-weight:600;color:#222">'+rows.length+' row'+(rows.length!==1?'s':'')+' across all orders</span>'
+      +'</div>'
+      +'<button onclick="document.getElementById(\'pp-drilldown\').style.display=\'none\';document.getElementById(\'pp-drilldown\').dataset.stage=\'\'" style="font-size:11px;background:none;border:1px solid #AFA9EC;border-radius:6px;padding:3px 10px;cursor:pointer;color:#534AB7">✕ Close</button>'
+    +'</div>'
+    +cards;
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 // ── DATA MUTATIONS ─────────────────────────────────────────────────────────────
