@@ -5335,6 +5335,45 @@ function renderAnalytics(){
   const _openOrds=orders.filter(o=>orderPct(o)<100);
   const _ordsWithDate=_openOrds.filter(o=>o.deliveryDate).sort((a,b)=>new Date(a.deliveryDate)-new Date(b.deliveryDate));
   const _ordsNoDate=_openOrds.filter(o=>!o.deliveryDate);
+  // Feature 2 — all-stages overview: collect every design row grouped by stage
+  const _allStagesHtml=_CO_STAGE_DEFS.map(stageDef=>{
+    const rows=[];
+    (S.orders||[]).forEach(order=>{
+      (order.designs||[]).forEach(d=>{
+        const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+        const hod=_hasOnlyDefault(d);
+        const isFlat=isCnc||!(d.varieties||[]).length||hod;
+        if(isFlat){
+          if(_coStage(d)===stageDef.k){
+            const qty=formatQtyByUnit(designQtyByUnit(d));
+            rows.push({oid:order.id,orderId:order.orderId,client:order.client,code:d.code||'',name:d.name||'—',varName:null,qty});
+          }
+        } else {
+          (d.varieties||[]).forEach(v=>{
+            if(_coStage(v)===stageDef.k){
+              const qty=formatQtyByUnit(designQtyByUnit({varieties:[v]}));
+              rows.push({oid:order.id,orderId:order.orderId,client:order.client,code:d.code||'',name:d.name||'—',varName:v.name||'',qty});
+            }
+          });
+        }
+      });
+    });
+    const rowsHtml=rows.length?rows.map(r=>'<div data-oid="'+esc(r.oid)+'" onclick="goToOrderFromAnalytics(this.dataset.oid)" style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #EAE9F8;cursor:pointer" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'\'">'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+esc(r.code||'—')+'<span style="font-weight:400;color:#555;margin-left:6px">'+esc(r.name)+(r.varName?'<em style="color:#aaa"> · '+esc(r.varName)+'</em>':'')+'</span></div>'
+        +'<div style="font-size:10px;color:#999;margin-top:1px">'+esc(r.orderId)+' · '+esc(r.client)+'</div>'
+      +'</div>'
+      +'<span style="font-size:11px;color:#777;white-space:nowrap;flex-shrink:0">'+r.qty+'</span>'
+      +'<span style="font-size:10px;color:#534AB7;flex-shrink:0">→</span>'
+    +'</div>').join(''):'<div style="padding:8px 6px;font-size:12px;color:#bbb;text-align:center">Nothing here right now</div>';
+    return'<div style="margin-bottom:10px;border:1px solid '+stageDef.bg+';border-radius:8px;overflow:hidden">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:'+stageDef.bg+'">'
+        +'<span style="font-size:12px;font-weight:700;color:'+stageDef.tx+'">'+stageDef.lbl+'</span>'
+        +'<span style="font-size:11px;font-weight:600;background:rgba(255,255,255,0.45);color:'+stageDef.tx+';padding:1px 8px;border-radius:10px">'+rows.length+' row'+(rows.length!==1?'s':'')+'</span>'
+      +'</div>'
+      +rowsHtml
+    +'</div>';
+  }).join('');
   const _deadlineRows=[..._ordsWithDate,..._ordsNoDate].map(o=>{
     const pct=orderPct(o);
     const stageCts=_coOrderStageCounts(o);
@@ -5402,6 +5441,9 @@ function renderAnalytics(){
     </div>
     <div class="chart-card full"><div class="chart-title">Quantity by size</div><div class="chart-sub">Total pieces across all orders</div>
       <div class="bar-chart">${szEntries.map(([sz,v])=>`<div class="bar-row"><span class="bar-label">${esc(sz)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/maxSz*100)}%;background:#185FA5"><span class="bar-val">${v}</span></div></div></div>`).join('')}</div>
+    </div>
+    <div class="chart-card full"><div class="chart-title">All stages — full view</div><div class="chart-sub">Every design row organised by current stage · click any to open its order</div>
+      ${_allStagesHtml}
     </div>
     <div class="chart-card full"><div class="chart-title">Upcoming deadlines</div><div class="chart-sub">Open orders sorted by delivery date · click any row to open it</div>
       ${_deadlineRows||'<div style="padding:12px;text-align:center;color:#888;font-size:13px">All orders are completed — nothing pending.</div>'}
