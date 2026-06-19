@@ -5541,6 +5541,8 @@ function showStageDrilldown(stageKey){
 
 // Navigate from analytics drilldown → customer orders tab, open + scroll to the order
 function goToOrderFromAnalytics(oid){
+  const order=(S.orders||[]).find(o=>o.id===oid);
+  if(order)S.selectedClient=order.client;
   switchMain('orders');
   S.openOrders.add(oid);
   render();
