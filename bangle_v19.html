@@ -5549,6 +5549,14 @@ function goToOrderFromAnalytics(oid){
   setTimeout(()=>{const el=document.getElementById('oc-'+oid);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},200);
 }
 
+// Returns the assigned vendor name for a given stage + holder (design or variety)
+function _stageVendor(holder,stageKey){
+  if(stageKey==='karigar')return holder.assignedVendor||'';
+  if(stageKey==='plating')return holder.platingVendor||(holder.platingVoId&&holder.platingVoId!=='__own__'?((S.vendorOrders||[]).find(v=>v.id===holder.platingVoId)||{}).vendor||'':'');
+  if(stageKey==='pipe')return holder.pipeVendor||(holder.pipeVoId&&holder.pipeVoId!=='__own__'?((S.vendorOrders||[]).find(v=>v.id===holder.pipeVoId)||{}).vendor||'':'');
+  return'';
+}
+
 // Show all orders + design breakup for a client below the per-customer bar chart
 function showClientDrilldown(client){
   const panel=document.getElementById('pp-client-drilldown');
@@ -5575,22 +5583,26 @@ function showClientDrilldown(client){
         const stage=_coStage(d);
         const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:stage||'?',bg:'#eee',tx:'#555'};
         const qty=formatQtyByUnit(designQtyByUnit(d));
+        const vendor=_stageVendor(d,stage);
         return'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid #EAE9F8;font-size:11px">'
           +'<span style="min-width:70px;font-weight:600;color:#534AB7;flex-shrink:0">'+esc(d.code||'—')+'</span>'
           +'<span style="flex:1;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.name||'(unnamed)')+'</span>'
           +'<span style="font-size:10px;color:#777;white-space:nowrap;flex-shrink:0">'+qty+'</span>'
           +'<span style="background:'+sd.bg+';color:'+sd.tx+';border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">'+esc(sd.lbl)+'</span>'
+          +(vendor?'<span style="font-size:10px;color:#444;white-space:nowrap;flex-shrink:0;font-weight:600">'+esc(vendor)+'</span>':'')
         +'</div>';
       } else {
         return(d.varieties||[]).map(v=>{
           const stage=_coStage(v);
           const sd=_CO_STAGE_DEFS.find(s=>s.k===stage)||{lbl:stage||'?',bg:'#eee',tx:'#555'};
           const qty=formatQtyByUnit(designQtyByUnit({varieties:[v]}));
+          const vendor=_stageVendor(v,stage);
           return'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid #EAE9F8;font-size:11px">'
             +'<span style="min-width:70px;font-weight:600;color:#534AB7;flex-shrink:0">'+esc(d.code||'—')+'</span>'
             +'<span style="flex:1;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.name||'')+'<em style="color:#aaa"> · '+esc(v.name||'')+'</em></span>'
             +'<span style="font-size:10px;color:#777;white-space:nowrap;flex-shrink:0">'+qty+'</span>'
             +'<span style="background:'+sd.bg+';color:'+sd.tx+';border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">'+esc(sd.lbl)+'</span>'
+            +(vendor?'<span style="font-size:10px;color:#444;white-space:nowrap;flex-shrink:0;font-weight:600">'+esc(vendor)+'</span>':'')
           +'</div>';
         }).join('');
       }
