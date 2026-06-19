@@ -8507,6 +8507,7 @@ function renderAssign(){
         +'</div>'
         +'<div style="display:flex;gap:1px;height:12px;width:56px;border-radius:3px;overflow:hidden;flex-shrink:0">'+segs+'</div>'
         +'<span style="font-size:11px;opacity:.75;min-width:26px;text-align:right;flex-shrink:0">'+pct+'%</span>'
+        +'<button data-oid="'+esc(o.id)+'" onclick="event.stopPropagation();goToOrderFromAnalytics(this.dataset.oid)" style="font-size:10px;padding:2px 9px;border:1px solid rgba(255,255,255,0.55);border-radius:6px;background:transparent;color:#fff;cursor:pointer;flex-shrink:0;white-space:nowrap" title="Open this order in the Orders tab">↗ Open</button>'
         +'<span style="font-size:11px;flex-shrink:0;margin-left:4px">'+(isOpen?'▲':'▼')+'</span>'
       +'</div>'
       +designRows
