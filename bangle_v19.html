@@ -8278,6 +8278,7 @@ function saveNewVendorOrder(){
 window._assignQueue=window._assignQueue||[];
 window._assignOpenCOs=window._assignOpenCOs||new Set();
 if(window._assignRightTab===undefined)window._assignRightTab='new';
+if(window._assignVOsCollapsed===undefined)window._assignVOsCollapsed=false;
 
 function _assignToggleCO(coId){
   if(window._assignOpenCOs.has(coId))window._assignOpenCOs.delete(coId);
@@ -8328,6 +8329,11 @@ function _assignRowHtml(o,oi,d,di,vi,isFlat){
   const importedVoId=isFlat?d.importedToVOId:holder.importedToVOId;
   const importedVO=importedVoId?(S.vendorOrders||[]).find(v=>v.id===importedVoId):null;
   const inQueue=window._assignQueue.some(q=>q.coIdx===oi&&q.dIdx===di&&q.vIdx===vi);
+  const imgs=isFlat?(d.images||[]):(holder.images||[]);
+  const thumb=(imgs[0]&&imgs[0].data)?imgs[0].data:null;
+  const thumbHtml=thumb
+    ?'<div style="width:44px;height:44px;flex-shrink:0;border-radius:6px;overflow:hidden;background:#EEE"><img src="'+thumb+'" style="width:100%;height:100%;object-fit:cover;display:block"></div>'
+    :'<div style="width:44px;height:44px;flex-shrink:0;border-radius:6px;background:#EEE;display:flex;align-items:center;justify-content:center;font-size:20px">💍</div>';
   let actionBtn;
   if(importedVO){
     actionBtn='<span style="font-size:10px;background:#EEEDFE;color:#534AB7;padding:2px 8px;border-radius:99px;white-space:nowrap;flex-shrink:0">→ '+esc(importedVO.orderId)+'</span>';
@@ -8337,6 +8343,7 @@ function _assignRowHtml(o,oi,d,di,vi,isFlat){
     actionBtn='<button data-oi="'+oi+'" data-di="'+di+'" data-vi="'+vi+'" onclick="_assignQueueAdd(this)" style="font-size:11px;font-weight:700;padding:3px 10px;border:none;border-radius:6px;background:#534AB7;color:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0">+ Queue</button>';
   }
   return'<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #F0EFFF">'
+    +thumbHtml
     +'<div style="flex:1;min-width:0">'
       +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+esc(d.code||'—')+'<span style="font-weight:400;color:#555;margin-left:6px">'+esc(d.name||'')+((!isFlat&&holder)?' · <em style="color:#aaa">'+esc(holder.name||'')+'</em>':'')+'</span></div>'
       +'<div style="font-size:10px;color:#999;margin-top:1px">'+qty+'</div>'
@@ -8445,6 +8452,37 @@ function renderAssign(){
   const ls='font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:3px';
   const is='width:100%;box-sizing:border-box;font-size:12px;padding:7px 9px;border-radius:7px;border:1px solid #D0CCF5;color:#222;background:#fff';
 
+  // ── Vendor orders compact list (right panel) ──────────────────────────────
+  const _voStatBg={pending:'#FFF8E1',inprogress:'#DBEAFE',delivered:'#DCFCE7',dispatched:'#D1FAE5'};
+  const _voStatTx={pending:'#856404',inprogress:'#1E40AF',delivered:'#166534',dispatched:'#065F46'};
+  const allVOs=S.vendorOrders||[];
+  const voListHtml=allVOs.length?allVOs.map(vo=>{
+    const stBg=_voStatBg[vo.status]||'#F1EFE8';const stTx=_voStatTx[vo.status]||'#5F5E5A';
+    const dRows=(vo.designs||[]).map(d=>{
+      const qty=formatQtyByUnit(designQtyByUnit(d));
+      const th=(d.images||[])[0];const thumbUrl=th&&th.data?th.data:null;
+      return'<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid #F0EFFF">'
+        +(thumbUrl?'<img src="'+thumbUrl+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">'
+          :'<div style="width:32px;height:32px;border-radius:4px;background:#EEE;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px">💍</div>')
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:11px;font-weight:700;color:#534AB7">'+esc(d.code||'—')+'<span style="font-weight:400;color:#555;margin-left:4px">'+esc(d.name||'')+'</span></div>'
+          +'<div style="font-size:10px;color:#999">'+qty+'</div>'
+        +'</div>'
+      +'</div>';
+    }).join('');
+    return'<div style="border:1px solid #E0DFFF;border-radius:8px;overflow:hidden;margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#F3F2FF">'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:12px;font-weight:700;color:#3C3489">'+esc(vo.orderId)+' · '+esc(vo.vendor||'')+'</div>'
+          +'<div style="font-size:10px;color:#888;margin-top:1px">'+esc(vo.type||'karigar')+(vo.startDate?' · '+fmtDate(vo.startDate):'')+'</div>'
+        +'</div>'
+        +'<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:'+stBg+';color:'+stTx+'">'+esc(vo.status||'pending')+'</span>'
+      +'</div>'
+      +dRows
+    +'</div>';
+  }).join('')
+  :'<div style="padding:16px;text-align:center;color:#bbb;font-size:12px">No vendor orders created yet.</div>';
+
   // ── LEFT: Customer orders ──────────────────────────────────────────────────
   const leftHtml=allOrders.length?allOrders.map((o,oi)=>{
     const isOpen=window._assignOpenCOs.has(o.id);
@@ -8530,8 +8568,15 @@ function renderAssign(){
 
   const tabBtn=(label,tab)=>'<button onclick="window._assignRightTab=\''+tab+'\';renderAssign()" style="flex:1;padding:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;border-right:'+(tab==='new'?'1px solid #D0CDEF':'none')+';background:'+(rightTab===tab?'#534AB7':'#F3F2FF')+';color:'+(rightTab===tab?'#fff':'#534AB7')+'">'+label+'</button>';
 
-  const rightPanelStyle='display:flex;flex-direction:column;gap:12px;padding-top:16px;padding-bottom:16px;'+(isMobile?'padding-top:12px':'width:340px;flex-shrink:0;overflow-y:auto;padding-left:16px;border-left:1px solid #E0DFFF');
+  const rightPanelStyle='display:flex;flex-direction:column;gap:12px;padding-top:16px;padding-bottom:16px;'+(isMobile?'padding-top:12px':'width:400px;flex-shrink:0;overflow-y:auto;padding-left:16px;border-left:1px solid #E0DFFF');
   const rightPanel='<div style="'+rightPanelStyle+'">'
+    +'<div>'
+      +'<div onclick="window._assignVOsCollapsed=!window._assignVOsCollapsed;renderAssign()" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;cursor:pointer;user-select:none">'
+        +'<span style="font-size:13px;font-weight:700;color:#3C3489">📋 Vendor Orders ('+allVOs.length+')</span>'
+        +'<span style="font-size:11px;color:#888">'+(window._assignVOsCollapsed?'▼ Show':'▲ Hide')+'</span>'
+      +'</div>'
+      +(window._assignVOsCollapsed?'':'<div style="max-height:280px;overflow-y:auto">'+voListHtml+'</div>')
+    +'</div>'
     +'<div>'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
         +'<span style="font-size:13px;font-weight:700;color:#3C3489">🗂 Queue ('+qLen+')</span>'
