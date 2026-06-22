@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chapter 5 — Integration | Interactive Classroom Tool</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#185FA5;--navy-l:#E6F1FB;
+  --teal:#0F6E56;--teal-l:#E1F5EE;
+  --purple:#534AB7;--purple-l:#EDE9F8;
+  --amber:#BA7517;--amber-l:#FAEEDA;
+  --coral:#993C1D;--coral-l:#FAECE7;
+  --dark:#1a1a2e;--mid:#555;--lgray:#f4f3ef;--bgray:#d3d1c7;
+  --card:#fff;--border:rgba(0,0,0,.1);
+  --font:'Segoe UI',system-ui,sans-serif;
+}
+body{font-family:var(--font);background:#f8f7f4;color:#1a1a1a;line-height:1.6}
+nav{position:sticky;top:0;z-index:100;background:#1a1a2e;display:flex;align-items:center;gap:6px;padding:10px 24px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.nav-title{color:#fff;font-size:15px;font-weight:700;margin-right:12px;white-space:nowrap}
+.nav-sub{color:rgba(255,255,255,.5);font-size:11px;margin-right:auto}
+nav button{padding:6px 16px;border-radius:20px;border:1px solid rgba(255,255,255,.2);background:transparent;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;transition:all .2s}
+nav button:hover,nav button.active{background:var(--purple);color:#fff;border-color:var(--purple)}
+section{padding:40px 24px;max-width:960px;margin:0 auto;display:none}
+section.active{display:block}
+.card{background:var(--card);border-radius:12px;border:1px solid var(--border);padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px}
+.info-card{background:var(--lgray);border-radius:10px;padding:14px 16px}
+.info-card .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--mid);margin-bottom:4px}
+.info-card .value{font-size:20px;font-weight:700;font-family:monospace;margin-bottom:2px}
+.info-card .note{font-size:12px;color:var(--mid);line-height:1.4}
+.sec-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.sec-badge{padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;color:#fff}
+.sec-head h2{font-size:22px;font-weight:700}
+.sub-head{font-size:16px;font-weight:700;margin:20px 0 10px;color:var(--dark)}
+.insight{border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;margin-bottom:14px;line-height:1.5}
+.ins-up{background:#E1F5EE;color:var(--teal)}
+.ins-dn{background:#FAECE7;color:var(--coral)}
+.ins-zero{background:#FAEEDA;color:var(--amber)}
+.ins-purple{background:var(--purple-l);color:var(--purple)}
+.canvas-wrap{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff;position:relative;margin-bottom:14px}
+canvas{display:block;width:100%}
+.drag-hint{position:absolute;bottom:8px;right:12px;font-size:11px;color:#aaa;pointer-events:none}
+.btn{padding:8px 18px;border-radius:8px;border:1px solid var(--border);background:#fff;color:#333;font-size:13px;cursor:pointer;transition:all .15s;font-family:var(--font)}
+.btn:hover{background:var(--lgray)}
+.btn.primary{background:var(--purple);color:#fff;border-color:transparent}
+.btn.primary:hover{opacity:.9}
+.btn.active{background:var(--navy-l);color:var(--navy);border-color:var(--navy)}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.step-list{list-style:none}
+.step-item{display:flex;gap:12px;padding:12px 14px;border-radius:8px;margin-bottom:8px;background:#f9f9f7;border:1px solid transparent;opacity:.3;transform:translateY(4px);transition:all .4s}
+.step-item.shown{opacity:1;transform:translateY(0);border-color:var(--border)}
+.step-item.highlight{background:var(--purple-l);border-color:var(--purple)}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--purple);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:1px}
+.step-content{flex:1}
+.step-title{font-weight:700;font-size:14px;margin-bottom:3px}
+.step-code{font-family:monospace;font-size:14px;color:var(--purple);background:var(--purple-l);padding:6px 12px;border-radius:6px;display:inline-block;margin-top:4px}
+.step-note{font-size:12px;color:var(--mid);margin-top:4px;line-height:1.5}
+.formula-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:20px}
+.formula-card{background:#fff;border-radius:10px;border:1px solid var(--border);overflow:hidden}
+.formula-card .fhead{padding:10px 14px;font-size:13px;font-weight:700;color:#fff}
+.formula-card .fbody{padding:12px 14px}
+.formula-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0ee;font-size:13px;gap:8px}
+.formula-row:last-child{border-bottom:none}
+.formula-row .fn{color:var(--mid);flex-shrink:0}
+.formula-row .fd{font-family:monospace;font-weight:700;color:var(--dark);text-align:right}
+.formula-rule{background:var(--purple-l);border-radius:6px;padding:8px 12px;font-family:monospace;font-size:13px;color:var(--purple);margin:6px 0}
+.ex-btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer;font-family:monospace}
+.ex-btn.active{background:var(--purple-l);border-color:var(--purple);color:var(--purple);font-weight:700}
+.ex-selector{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.quiz-q{background:#fff;border-radius:10px;border:1px solid var(--border);padding:16px;margin-bottom:12px}
+.quiz-q .qtext{font-size:14px;font-weight:600;margin-bottom:12px}
+.quiz-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.qopt{padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:#fafafa;cursor:pointer;font-size:13px;transition:all .2s;text-align:left}
+.qopt:hover{background:var(--lgray)}
+.qopt.correct{background:#E1F5EE;border-color:var(--teal);color:var(--teal)}
+.qopt.wrong{background:#FAECE7;border-color:var(--coral);color:var(--coral)}
+.q-explain{margin-top:10px;padding:10px 12px;background:var(--purple-l);border-radius:6px;font-size:13px;color:var(--purple);display:none}
+.q-explain.show{display:block}
+.usage-box{background:var(--navy-l);border:1px solid var(--navy);border-radius:10px;padding:16px 20px;margin-bottom:20px}
+.usage-box h3{color:var(--navy);font-size:15px;margin-bottom:10px}
+.usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.usage-item{background:#fff;border-radius:8px;padding:10px 12px}
+.usage-item .ui-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);font-weight:700;margin-bottom:4px}
+.usage-item p{font-size:12px;color:#444;line-height:1.4}
+/* Exercises */
+.ex-cat-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.ex-cat-tab{padding:8px 20px;border-radius:8px;border:2px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s}
+.ex-question{background:#fff;border-radius:10px;border:1px solid var(--border);padding:16px 18px;margin-bottom:12px}
+.eq-num{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mid);margin-bottom:4px;font-weight:700}
+.eq-q{font-size:17px;font-weight:700;font-family:monospace;margin-bottom:8px;color:var(--dark)}
+.eq-hint{font-size:12px;color:var(--mid);margin-bottom:10px;padding:6px 10px;background:var(--amber-l);border-radius:6px;border-left:3px solid var(--amber)}
+.btn-toggle-sol{padding:6px 16px;border-radius:6px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-toggle-sol:hover{background:var(--teal);color:#fff}
+.ex-solution{display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.ex-solution.open{display:block}
+.sol-step{display:flex;gap:10px;padding:9px 12px;border-radius:6px;margin-bottom:6px;background:#f9f9f7;font-size:13px;line-height:1.5}
+.sol-num{width:22px;height:22px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:2px}
+.sol-body{flex:1}
+.sol-label{font-weight:700;color:var(--dark);margin-bottom:2px;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.sol-code{font-family:monospace;font-weight:700;color:var(--teal);font-size:14px}
+.sol-note{color:var(--mid);font-size:12px;margin-top:3px}
+.sol-answer{background:var(--teal-l);border:2px solid var(--teal);border-radius:8px;padding:10px 16px;font-family:monospace;font-weight:700;font-size:16px;color:var(--teal);margin-top:10px;text-align:center}
+input[type=range]{accent-color:var(--purple);height:4px;width:100%}
+sup{font-size:.7em;vertical-align:super}
+sub{font-size:.7em;vertical-align:sub}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-title">Ch. 5 — Integration</span>
+  <span class="nav-sub">Std. XII Commerce · Interactive Classroom Tool</span>
+  <button onclick="show('why')" id="nb-why" class="active">Why Integrate?</button>
+  <button onclick="show('area')" id="nb-area">Area Explorer</button>
+  <button onclick="show('sub')" id="nb-sub">Substitution</button>
+  <button onclick="show('parts')" id="nb-parts">By Parts</button>
+  <button onclick="show('def')" id="nb-def">Definite Integrals</button>
+  <button onclick="show('formulas')" id="nb-formulas">Formula Sheet</button>
+  <button onclick="show('exercises')" id="nb-exercises">Exercises &amp; Solutions</button>
+  <button onclick="show('quiz')" id="nb-quiz">Quick Quiz</button>
+</nav>
+
+<!-- ══ SECTION 1 — WHY INTEGRATE? ══ -->
+<section id="why" class="active">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--navy)">PART A</span>
+    <h2>Why Does Integration Exist?</h2>
+  </div>
+
+  <div class="usage-box">
+    <h3>Teacher note — open the chapter with this section</h3>
+    <div class="usage-grid">
+      <div class="usage-item"><div class="ui-label">Tell the story</div><p>Ask students: "The speedometer shows 60 km/h RIGHT NOW — but how far has the car travelled in total?" You need integration.</p></div>
+      <div class="usage-item"><div class="ui-label">Use the area demo</div><p>Move to Area Explorer tab. Drag n slider from 1 to 100 — students see rectangles become exact area.</p></div>
+      <div class="usage-item"><div class="ui-label">Key question</div><p>"If derivative = slope at a point, what does integral = ?" (Answer: total accumulated area = total accumulated change)</p></div>
+      <div class="usage-item"><div class="ui-label">Commerce link</div><p>Marginal cost → Total cost. Marginal revenue → Total revenue. Integration gives us the totals from the rates.</p></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="sub-head" style="margin-top:0">Two Problems That Forced Mathematicians to Invent Integration</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div style="padding:14px;background:var(--coral-l);border-radius:8px;border-left:4px solid var(--coral)">
+        <div style="font-weight:700;color:var(--coral);margin-bottom:6px">Problem 1 — Irregular Area</div>
+        <div style="font-size:13px;line-height:1.7">A farmer's field is bounded by a river — a curved boundary. <b>How to find the area?</b><br><br>You can't use length × width. The edge is curved, not straight. There is no simple formula.</div>
+      </div>
+      <div style="padding:14px;background:var(--amber-l);border-radius:8px;border-left:4px solid var(--amber)">
+        <div style="font-weight:700;color:var(--amber);margin-bottom:6px">Problem 2 — Total from Rate</div>
+        <div style="font-size:13px;line-height:1.7">You know the <i>speed</i> at every instant. <b>How far did you travel in total?</b><br><br>You need to "add up" infinitely many tiny (speed × time) slices. This is integration.</div>
+      </div>
+    </div>
+    <div style="padding:14px;background:var(--teal-l);border-radius:8px;border-left:4px solid var(--teal)">
+      <div style="font-weight:700;color:var(--teal);margin-bottom:6px">Newton's &amp; Leibniz's Solution — The Integral</div>
+      <div style="font-size:13px;line-height:1.7">
+        Slice the area into n thin vertical strips of width Δx. Each strip has area ≈ f(x) × Δx.
+        <b>Sum all strips</b> → this is Σ f(xᵢ) Δx. As Δx → 0 (strips get infinitely thin), the sum becomes EXACT. This limit is the <b>definite integral</b>:
+        <br><br>
+        <span style="font-family:monospace;font-size:15px;background:white;padding:8px 14px;border-radius:6px;display:inline-block">
+          ∫<sub>a</sub><sup>b</sup> f(x) dx = lim<sub>n→∞</sub> Σ f(xᵢ) Δx
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="sub-head" style="margin-top:0">Integration = Reverse of Differentiation</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px">
+      <div style="padding:14px;background:var(--navy-l);border-radius:8px">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:8px">Differentiation (Ch. 3)</div>
+        <div style="font-family:monospace;font-size:14px;line-height:2">
+          f(x) = x³<br>
+          f'(x) = 3x²<br>
+          <span style="font-size:12px;font-family:var(--font);color:var(--mid)">slope at each point</span>
+        </div>
+      </div>
+      <div style="padding:14px;background:var(--teal-l);border-radius:8px">
+        <div style="font-weight:700;color:var(--teal);margin-bottom:8px">Integration (Ch. 5) — REVERSE</div>
+        <div style="font-family:monospace;font-size:14px;line-height:2">
+          f(x) = 3x²<br>
+          ∫3x² dx = x³ + c<br>
+          <span style="font-size:12px;font-family:var(--font);color:var(--mid)">area / total accumulated</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:12px;background:var(--purple-l);border-radius:8px;font-size:13px;line-height:1.7">
+      <b>Key identity:</b> If d/dx[F(x)] = f(x), then ∫f(x) dx = F(x) + c.<br>
+      The "<b>+ c</b>" is the <b>constant of integration</b> — because differentiating any constant gives 0, so we can't know what constant was there. Always write "+ c" for indefinite integrals!
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="sub-head" style="margin-top:0">Commerce Application — Marginal to Total</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div style="padding:12px;background:var(--lgray);border-radius:8px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mid);margin-bottom:6px">Given (Rate)</div>
+        <div style="font-family:monospace;font-size:13px;font-weight:700">MC = 20 − 4x</div>
+        <div style="font-size:12px;color:var(--mid);margin-top:4px">Marginal Cost</div>
+      </div>
+      <div style="padding:12px;background:var(--purple-l);border-radius:8px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);margin-bottom:6px">Integration</div>
+        <div style="font-family:monospace;font-size:13px;font-weight:700">TC = ∫MC dx</div>
+        <div style="font-size:12px;color:var(--mid);margin-top:4px">Apply ∫</div>
+      </div>
+      <div style="padding:12px;background:var(--teal-l);border-radius:8px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--teal);margin-bottom:6px">Total</div>
+        <div style="font-family:monospace;font-size:13px;font-weight:700">TC = 20x − 2x² + c</div>
+        <div style="font-size:12px;color:var(--mid);margin-top:4px">Total Cost</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 2 — AREA EXPLORER ══ -->
+<section id="area">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--teal)">PART B</span>
+    <h2>Area Explorer — Riemann Sums</h2>
+  </div>
+  <p style="font-size:13px;color:var(--mid);margin-bottom:14px">Purple rectangles approximate the area under the curve. <b>Drag the slider right</b> to add more rectangles — watch the approximation approach the exact integral.</p>
+
+  <div class="btn-row" id="rsFuncBtns">
+    <button class="btn active" onclick="rsSelectFunc(0,this)">f(x) = x²</button>
+    <button class="btn" onclick="rsSelectFunc(1,this)">f(x) = 2x+1</button>
+    <button class="btn" onclick="rsSelectFunc(2,this)">f(x) = √x</button>
+  </div>
+  <div class="btn-row" id="rsTypeBtns">
+    <button class="btn active" onclick="rsSetType('left',this)">Left endpoint</button>
+    <button class="btn" onclick="rsSetType('mid',this)">Midpoint</button>
+    <button class="btn" onclick="rsSetType('right',this)">Right endpoint</button>
+  </div>
+
+  <div class="canvas-wrap"><canvas id="rsCv"></canvas><span class="drag-hint">rectangles update live</span></div>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <label style="font-size:13px;font-weight:600;white-space:nowrap">n =</label>
+    <input type="range" id="rsSlider" min="1" max="100" step="1" value="4">
+    <span id="rsNVal" style="font-family:monospace;font-weight:700;font-size:16px;min-width:30px">4</span>
+  </div>
+
+  <div class="card-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    <div class="info-card"><div class="label">Rectangles (n)</div><div class="value" id="rsN">4</div><div class="note">more = more accurate</div></div>
+    <div class="info-card"><div class="label">Approx. Area</div><div class="value" id="rsApprox" style="color:var(--purple)">—</div><div class="note">sum of rectangles</div></div>
+    <div class="info-card"><div class="label">Exact Area ∫</div><div class="value" id="rsExact" style="color:var(--teal)">—</div><div class="note">true integral value</div></div>
+    <div class="info-card"><div class="label">Error</div><div class="value" id="rsError" style="color:var(--coral)">—</div><div class="note">|approx − exact|</div></div>
+  </div>
+
+  <div class="insight ins-purple" id="rsMsg">Drag the slider to begin</div>
+</section>
+
+<!-- ══ SECTION 3 — SUBSTITUTION ══ -->
+<section id="sub">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--purple)">PART C</span>
+    <h2>Integration by Substitution — Step by Step</h2>
+  </div>
+  <div class="card" style="background:var(--purple-l);border-color:var(--purple);margin-bottom:16px">
+    <b style="color:var(--purple)">When to use:</b> <span style="font-size:13px">When the integrand has a function-inside-function pattern, AND the derivative of the inner function also appears (perhaps with a constant factor). Let u = inner function.</span>
+  </div>
+  <div class="ex-selector" id="subSelector"></div>
+  <div class="card" id="subProbCard"></div>
+  <div class="btn-row">
+    <button class="btn primary" onclick="subNext()">Next Step →</button>
+    <button class="btn" onclick="subShowAll()">Show All</button>
+    <button class="btn" onclick="subReset()">↺ Reset</button>
+    <span id="subCounter" style="font-size:13px;color:var(--mid);align-self:center"></span>
+  </div>
+  <ul class="step-list" id="subStepList"></ul>
+</section>
+
+<!-- ══ SECTION 4 — BY PARTS ══ -->
+<section id="parts">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--amber)">PART D</span>
+    <h2>Integration by Parts — Step by Step</h2>
+  </div>
+  <div class="card" style="background:var(--amber-l);border-color:var(--amber);margin-bottom:16px">
+    <b style="color:var(--amber)">ILATE Rule — pick u first:</b>
+    <span style="font-size:13px"> <b>I</b>nverse trig · <b>L</b>ogarithmic · <b>A</b>lgebraic · <b>T</b>rigonometric · <b>E</b>xponential. The one that appears earliest = u.
+    Formula: <span style="font-family:monospace">∫u dv = uv − ∫v du</span></span>
+  </div>
+  <div class="ex-selector" id="partsSelector"></div>
+  <div class="card" id="partsProbCard"></div>
+  <div class="btn-row">
+    <button class="btn primary" onclick="partsNext()">Next Step →</button>
+    <button class="btn" onclick="partsShowAll()">Show All</button>
+    <button class="btn" onclick="partsReset()">↺ Reset</button>
+    <span id="partsCounter" style="font-size:13px;color:var(--mid);align-self:center"></span>
+  </div>
+  <ul class="step-list" id="partsStepList"></ul>
+</section>
+
+<!-- ══ SECTION 5 — DEFINITE INTEGRALS ══ -->
+<section id="def">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--coral)">PART E</span>
+    <h2>Definite Integrals — Live Area</h2>
+  </div>
+  <p style="font-size:13px;color:var(--mid);margin-bottom:14px">The shaded region = ∫<sub>a</sub><sup>b</sup> f(x) dx. Move the sliders to change bounds a and b. Area updates live.</p>
+  <div class="btn-row" id="diFuncBtns">
+    <button class="btn active" onclick="diSelect(0,this)">y = x²</button>
+    <button class="btn" onclick="diSelect(1,this)">y = 2x+1</button>
+    <button class="btn" onclick="diSelect(2,this)">y = −x²+6x</button>
+  </div>
+  <div class="canvas-wrap"><canvas id="diCv"></canvas><span class="drag-hint">← adjust bounds below →</span></div>
+  <div style="display:grid;gap:10px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <label style="font-size:13px;font-weight:700;color:var(--navy);min-width:55px">Lower a =</label>
+      <input type="range" id="diSliderA" min="0" max="5" step="0.1" value="1">
+      <span id="diAVal" style="font-family:monospace;font-weight:700;min-width:30px">1.0</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <label style="font-size:13px;font-weight:700;color:var(--coral);min-width:55px">Upper b =</label>
+      <input type="range" id="diSliderB" min="0" max="5" step="0.1" value="3">
+      <span id="diBVal" style="font-family:monospace;font-weight:700;min-width:30px">3.0</span>
+    </div>
+  </div>
+  <div class="card-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+    <div class="info-card"><div class="label">Lower bound a</div><div class="value" id="diA" style="color:var(--navy)">1.0</div></div>
+    <div class="info-card"><div class="label">Upper bound b</div><div class="value" id="diB" style="color:var(--coral)">3.0</div></div>
+    <div class="info-card"><div class="label">∫ f(x) dx from a to b</div><div class="value" id="diArea" style="color:var(--teal)">—</div></div>
+  </div>
+  <div class="card" style="background:var(--coral-l);border-color:var(--coral)">
+    <b style="color:var(--coral)">Fundamental Theorem of Calculus:</b>
+    <div class="formula-rule" style="background:white;color:var(--coral);margin-top:8px">∫<sub>a</sub><sup>b</sup> f(x) dx  =  F(b) − F(a)  where F'(x) = f(x)</div>
+    <div style="font-size:13px;color:#555;margin-top:6px">Find the antiderivative F(x), substitute the upper limit, substitute the lower limit, subtract. The constant c always cancels.</div>
+  </div>
+</section>
+
+<!-- ══ SECTION 6 — FORMULA SHEET ══ -->
+<section id="formulas">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--amber)">PART F</span>
+    <h2>Formula Quick Reference</h2>
+  </div>
+
+  <p class="sub-head">Standard Integrals</p>
+  <div class="formula-grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    <div class="formula-card">
+      <div class="fhead" style="background:var(--navy)">Algebraic &amp; Exponential</div>
+      <div class="fbody">
+        <div class="formula-row"><span class="fn">∫ xⁿ dx  (n ≠ −1)</span><span class="fd">xⁿ⁺¹/(n+1) + c</span></div>
+        <div class="formula-row"><span class="fn">∫ x⁻¹ dx = ∫ 1/x dx</span><span class="fd">log|x| + c</span></div>
+        <div class="formula-row"><span class="fn">∫ eˣ dx</span><span class="fd">eˣ + c</span></div>
+        <div class="formula-row"><span class="fn">∫ e^(ax) dx</span><span class="fd">e^(ax)/a + c</span></div>
+        <div class="formula-row"><span class="fn">∫ aˣ dx</span><span class="fd">aˣ/log a + c</span></div>
+        <div class="formula-row"><span class="fn">∫ 1/(ax+b) dx</span><span class="fd">(1/a) log|ax+b| + c</span></div>
+      </div>
+    </div>
+    <div class="formula-card">
+      <div class="fhead" style="background:var(--teal)">Trigonometric</div>
+      <div class="fbody">
+        <div class="formula-row"><span class="fn">∫ sin x dx</span><span class="fd">−cos x + c</span></div>
+        <div class="formula-row"><span class="fn">∫ cos x dx</span><span class="fd">sin x + c</span></div>
+        <div class="formula-row"><span class="fn">∫ sin(ax) dx</span><span class="fd">−cos(ax)/a + c</span></div>
+        <div class="formula-row"><span class="fn">∫ cos(ax) dx</span><span class="fd">sin(ax)/a + c</span></div>
+        <div class="formula-row"><span class="fn">∫ sec²x dx</span><span class="fd">tan x + c</span></div>
+        <div class="formula-row"><span class="fn">∫ cosec²x dx</span><span class="fd">−cot x + c</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sub-head">Rules &amp; Methods</p>
+  <div class="formula-grid">
+    <div class="formula-card">
+      <div class="fhead" style="background:var(--purple)">Basic Rules</div>
+      <div class="fbody">
+        <div class="formula-row"><span class="fn">∫ k f(x) dx</span><span class="fd">k ∫f(x) dx</span></div>
+        <div class="formula-row"><span class="fn">∫ [f+g] dx</span><span class="fd">∫f dx + ∫g dx</span></div>
+        <div class="formula-row"><span class="fn">∫ [f−g] dx</span><span class="fd">∫f dx − ∫g dx</span></div>
+        <div class="formula-row" style="background:var(--purple-l);border-radius:6px;padding:6px 8px;border-bottom:none">
+          <span class="fn" style="color:var(--purple);font-weight:700">Substitution</span>
+          <span class="fd" style="color:var(--purple)">∫f(g(x))g'(x)dx = F(g(x)) + c</span>
+        </div>
+        <div class="formula-row" style="background:var(--amber-l);border-radius:6px;padding:6px 8px;border-bottom:none;margin-top:6px">
+          <span class="fn" style="color:var(--amber);font-weight:700">By Parts</span>
+          <span class="fd" style="color:var(--amber)">∫u dv = uv − ∫v du</span>
+        </div>
+      </div>
+    </div>
+    <div class="formula-card">
+      <div class="fhead" style="background:var(--coral)">Definite Integral Properties</div>
+      <div class="fbody">
+        <div class="formula-row"><span class="fn">Newton-Leibniz</span><span class="fd">∫ₐᵇ f dx = F(b) − F(a)</span></div>
+        <div class="formula-row"><span class="fn">Reverse limits</span><span class="fd">∫ₐᵇ f dx = −∫ᵦₐ f dx</span></div>
+        <div class="formula-row"><span class="fn">Same limits</span><span class="fd">∫ₐᵃ f dx = 0</span></div>
+        <div class="formula-row"><span class="fn">Split interval</span><span class="fd">∫ₐᵇ = ∫ₐᶜ + ∫ᶜᵦ</span></div>
+        <div class="formula-row"><span class="fn">ILATE order</span><span class="fd">I → L → A → T → E</span></div>
+      </div>
+    </div>
+    <div class="formula-card">
+      <div class="fhead" style="background:#444">Which Method? — Decision Guide</div>
+      <div class="fbody">
+        <div class="formula-rule" style="background:#fff">Simple power/exp/trig? → Direct formula</div>
+        <div class="formula-rule" style="background:#fff">f(g(x))·g'(x) present? → Substitution (u = g(x))</div>
+        <div class="formula-rule" style="background:#fff">Product of different types? → By Parts (ILATE)</div>
+        <div class="formula-rule" style="background:#fff">Limits given? → Definite integral [F(x)]ₐᵇ</div>
+        <div class="formula-rule" style="background:#fff">log x alone? → Parts with dv = dx</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 7 — EXERCISES & SOLUTIONS ══ -->
+<section id="exercises">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--teal)">PART G</span>
+    <h2>Exercises — Complete Solutions</h2>
+  </div>
+  <p style="font-size:13px;color:var(--mid);margin-bottom:16px">Every question has a full step-by-step solution. Try it yourself first, then click <b>Show Solution</b>.</p>
+  <div class="ex-cat-tabs" id="exCatTabs"></div>
+  <div id="exContainer"></div>
+</section>
+
+<!-- ══ SECTION 8 — QUIZ ══ -->
+<section id="quiz">
+  <div class="sec-head">
+    <span class="sec-badge" style="background:var(--coral)">PART H</span>
+    <h2>Quick Quiz — Test Understanding</h2>
+  </div>
+  <p style="font-size:13px;color:var(--mid);margin-bottom:20px">Click any option to check. Green = correct, Red = wrong. Explanation appears below.</p>
+  <div id="quizContainer"></div>
+</section>
+
+<script>
+// ── Navigation ────────────────────────────────────────────────────────────
+function show(id){
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nb-'+id).classList.add('active');
+  if(id==='area') setTimeout(rsResize,80);
+  if(id==='def') setTimeout(diResize,80);
+}
+
+// ── AREA EXPLORER — Riemann Sums ─────────────────────────────────────────
+const RS_FUNCS=[
+  {label:'f(x)=x²', f:x=>x*x, a:0, b:3, ymax:10, exact:9,   exactStr:'9'},
+  {label:'f(x)=2x+1',f:x=>2*x+1,a:0,b:3,ymax:8,  exact:12,  exactStr:'12'},
+  {label:'f(x)=√x',  f:x=>Math.sqrt(x),a:0,b:4,ymax:3,exact:16/3,exactStr:'16/3 ≈ 5.3333'},
+];
+let rsIdx=0, rsN=4, rsType='left';
+const rsCv=document.getElementById('rsCv');
+const rsCtx=rsCv.getContext('2d');
+
+function rsResize(){
+  const wr=rsCv.parentElement;
+  const dpr=window.devicePixelRatio||1;
+  const w=wr.clientWidth;
+  rsCv.width=w*dpr; rsCv.height=260*dpr; rsCv.style.height='260px';
+  drawRS();
+}
+
+function drawRS(){
+  const dpr=window.devicePixelRatio||1;
+  const W=rsCv.width,H=rsCv.height;
+  const ml=45*dpr,mr=15*dpr,mt=18*dpr,mb=38*dpr;
+  const pw=W-ml-mr,ph=H-mt-mb;
+  const c=RS_FUNCS[rsIdx];
+  const {f,a,b,ymax}=c; const ymin=0;
+  const tx=x=>ml+(x-a)/(b-a)*pw;
+  const ty=y=>mt+(ymax-y)/(ymax-ymin)*ph;
+
+  rsCtx.clearRect(0,0,W,H);
+  rsCtx.fillStyle='#fafaf8'; rsCtx.fillRect(0,0,W,H);
+
+  // grid
+  rsCtx.strokeStyle='rgba(0,0,0,.07)'; rsCtx.lineWidth=.5*dpr;
+  for(let i=0;i<=5;i++){
+    const gx=a+i*(b-a)/5;
+    rsCtx.beginPath();rsCtx.moveTo(tx(gx),mt);rsCtx.lineTo(tx(gx),H-mb);rsCtx.stroke();
+    const gy=i*ymax/5;
+    rsCtx.beginPath();rsCtx.moveTo(ml,ty(gy));rsCtx.lineTo(W-mr,ty(gy));rsCtx.stroke();
+    rsCtx.fillStyle='rgba(0,0,0,.4)';rsCtx.font=`${9.5*dpr}px sans-serif`;
+    rsCtx.textAlign='center';rsCtx.fillText(gx%1===0?gx:gx.toFixed(1),tx(gx),H-mb+13*dpr);
+    rsCtx.textAlign='right';rsCtx.fillText(gy%1===0?gy:gy.toFixed(1),ml-4*dpr,ty(gy)+3.5*dpr);
+  }
+  rsCtx.textAlign='center';rsCtx.fillStyle='rgba(0,0,0,.4)';rsCtx.font=`${10*dpr}px sans-serif`;
+  rsCtx.fillText('x',ml+pw/2,H-3*dpr);
+
+  // axes
+  rsCtx.strokeStyle='#bbb';rsCtx.lineWidth=dpr;
+  rsCtx.beginPath();rsCtx.moveTo(ml,ty(0));rsCtx.lineTo(W-mr,ty(0));rsCtx.stroke();
+  rsCtx.beginPath();rsCtx.moveTo(ml,mt);rsCtx.lineTo(ml,H-mb);rsCtx.stroke();
+
+  // rectangles
+  const dx=(b-a)/rsN;
+  let sum=0;
+  for(let i=0;i<rsN;i++){
+    let xs;
+    if(rsType==='left') xs=a+i*dx;
+    else if(rsType==='right') xs=a+(i+1)*dx;
+    else xs=a+(i+0.5)*dx;
+    const h=Math.max(0,f(xs));
+    sum+=h*dx;
+    const rx=tx(a+i*dx), rw=tx(a+(i+1)*dx)-tx(a+i*dx);
+    const ry=ty(h), rh=ty(0)-ry;
+    rsCtx.fillStyle='rgba(83,74,183,0.28)';
+    rsCtx.fillRect(rx,ry,rw,rh);
+    rsCtx.strokeStyle='rgba(83,74,183,0.7)';rsCtx.lineWidth=dpr;
+    rsCtx.strokeRect(rx,ry,rw,rh);
+  }
+
+  // curve on top
+  rsCtx.beginPath();rsCtx.strokeStyle='#0F6E56';rsCtx.lineWidth=2.5*dpr;
+  for(let i=0;i<=300;i++){
+    const x=a+i/300*(b-a),y=f(x);
+    i===0?rsCtx.moveTo(tx(x),ty(y)):rsCtx.lineTo(tx(x),ty(y));
+  }
+  rsCtx.stroke();
+
+  // shaded bounds labels
+  rsCtx.fillStyle='var(--navy)';rsCtx.font=`bold ${10*dpr}px sans-serif`;
+  rsCtx.textAlign='center';
+  rsCtx.fillStyle='rgba(83,74,183,.8)';
+  rsCtx.fillText('a='+a,tx(a),H-mb+26*dpr);
+  rsCtx.fillText('b='+b,tx(b),H-mb+26*dpr);
+
+  // update info
+  document.getElementById('rsN').textContent=rsN;
+  document.getElementById('rsNVal').textContent=rsN;
+  document.getElementById('rsApprox').textContent=sum.toFixed(4);
+  document.getElementById('rsExact').textContent=c.exact.toFixed(4);
+  const err=Math.abs(sum-c.exact);
+  document.getElementById('rsError').textContent=err.toFixed(4);
+  const msg=document.getElementById('rsMsg');
+  if(rsN>=80){msg.className='insight ins-up';msg.textContent='✓ With '+rsN+' rectangles, approximation ≈ exact. This is how ∫ is defined: the limit as n → ∞.';}
+  else if(rsN>=25){msg.className='insight ins-zero';msg.textContent='Getting closer! Error = '+err.toFixed(4)+'. Try pushing n to 100.';}
+  else{msg.className='insight ins-dn';msg.textContent='Error = '+err.toFixed(4)+'. Increase n to see approximation improve.';}
+}
+
+document.getElementById('rsSlider').addEventListener('input',function(){rsN=+this.value;drawRS();});
+function rsSelectFunc(i,btn){rsIdx=i;document.querySelectorAll('#rsFuncBtns .btn').forEach((b,j)=>b.classList.toggle('active',j===i));drawRS();}
+function rsSetType(t,btn){rsType=t;document.querySelectorAll('#rsTypeBtns .btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');drawRS();}
+
+// ── SUBSTITUTION ANIMATOR ─────────────────────────────────────────────────
+const SUB_EX=[
+  {label:'∫(4x+3)⁷dx',
+   problem:'Find: ∫(4x + 3)⁷ dx',
+   steps:[
+     {t:'Identify the inner function',c:'Inner function = (4x+3)  — the expression inside the power',n:'Whenever you see [something]ⁿ where "something" contains x → Substitution'},
+     {t:'Let u = inner function',c:'Let  u = 4x + 3',n:'This is always the inner expression'},
+     {t:'Find du/dx',c:'du/dx = 4   ⇒   du = 4 dx   ⇒   dx = du/4',n:'Differentiate u = 4x+3 w.r.t. x'},
+     {t:'Substitute into integral',c:'∫(4x+3)⁷ dx = ∫u⁷ · (du/4) = (1/4)∫u⁷ du',n:'Replace (4x+3) with u, and dx with du/4'},
+     {t:'Integrate in terms of u',c:'= (1/4) · u⁸/8 + c = u⁸/32 + c',n:'∫u⁷ du = u⁸/8  (power rule)'},
+     {t:'Back-substitute',c:'= (4x+3)⁸/32 + c',n:'Replace u with the original expression (4x+3)'},
+   ]},
+  {label:'∫2x(x²+1)⁵dx',
+   problem:'Find: ∫ 2x(x² + 1)⁵ dx',
+   steps:[
+     {t:'Identify',c:'Inner function = (x²+1)',n:'The expression inside the power'},
+     {t:'Let u = x²+1',c:'u = x² + 1',n:''},
+     {t:'Find du',c:'du = 2x dx',n:'The 2x in the integrand is EXACTLY the derivative of x²+1 — perfect substitution!'},
+     {t:'Substitute',c:'∫2x·(x²+1)⁵ dx = ∫u⁵ du',n:'2x dx = du, and (x²+1) = u'},
+     {t:'Integrate',c:'= u⁶/6 + c',n:'∫u⁵ du = u⁶/6'},
+     {t:'Back-substitute',c:'= (x²+1)⁶/6 + c',n:'Replace u = x²+1'},
+   ]},
+  {label:'∫(log x)²/x dx',
+   problem:'Find: ∫ (log x)² / x  dx',
+   steps:[
+     {t:'Identify',c:'The expression being squared = log x',n:'log x is inside the power, and 1/x is its derivative — perfect for substitution'},
+     {t:'Let u = log x',c:'u = log x',n:''},
+     {t:'Find du',c:'du = (1/x) dx   ⇒   dx/x = du',n:'Derivative of log x = 1/x'},
+     {t:'Substitute',c:'∫(log x)²/x dx = ∫u² du',n:'(log x) = u and dx/x = du'},
+     {t:'Integrate',c:'= u³/3 + c',n:'∫u² du = u³/3'},
+     {t:'Back-substitute',c:'= (log x)³/3 + c',n:'Replace u = log x'},
+   ]},
+  {label:'∫x·e^(x²)dx',
+   problem:'Find: ∫ x · e^(x²) dx',
+   steps:[
+     {t:'Identify',c:'Exponent = x²,  derivative of x² = 2x',n:'x appears in both the exponent and alongside e^(x²)'},
+     {t:'Let u = x²',c:'u = x²',n:'The exponent of e'},
+     {t:'Find du',c:'du = 2x dx   ⇒   x dx = du/2',n:'Differentiate x²'},
+     {t:'Substitute',c:'∫x·e^(x²) dx = ∫eᵘ · (du/2) = (1/2)∫eᵘ du',n:'x dx = du/2  and  x² = u'},
+     {t:'Integrate',c:'= (1/2)eᵘ + c',n:'∫eᵘ du = eᵘ'},
+     {t:'Back-substitute',c:'= e^(x²)/2 + c',n:'Replace u = x²'},
+   ]},
+];
+let subEx=0,subStep=0;
+
+function initSub(){
+  const sel=document.getElementById('subSelector');
+  SUB_EX.forEach((e,i)=>{
+    const b=document.createElement('button');
+    b.className='ex-btn'+(i===0?' active':'');
+    b.textContent=e.label;b.onclick=()=>loadSubEx(i,b);sel.appendChild(b);
+  });
+  loadSubEx(0,sel.firstChild);
+}
+function loadSubEx(i,btn){
+  subEx=i;subStep=0;
+  document.querySelectorAll('#subSelector .ex-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('subProbCard').innerHTML=
+    `<div style="font-weight:700;font-size:15px;color:var(--purple);margin-bottom:6px">Problem</div>
+     <div style="font-size:16px;font-family:monospace">${SUB_EX[i].problem}</div>`;
+  buildSubSteps();updateSubCounter();
+}
+function buildSubSteps(){
+  const ex=SUB_EX[subEx];
+  const list=document.getElementById('subStepList');list.innerHTML='';
+  ex.steps.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.className='step-item'+(i<subStep?' shown':'')+(i===subStep-1?' highlight':'');
+    li.innerHTML=`<div class="step-num">${i+1}</div><div class="step-content">
+      <div class="step-title">${s.t}</div>
+      <div class="step-code">${s.c}</div>
+      ${s.n?`<div class="step-note">💡 ${s.n}</div>`:''}
+    </div>`;
+    list.appendChild(li);
+  });
+}
+function subNext(){if(subStep<SUB_EX[subEx].steps.length){subStep++;buildSubSteps();updateSubCounter();}}
+function subShowAll(){subStep=SUB_EX[subEx].steps.length;buildSubSteps();updateSubCounter();}
+function subReset(){subStep=0;buildSubSteps();updateSubCounter();}
+function updateSubCounter(){const ex=SUB_EX[subEx];document.getElementById('subCounter').textContent=
+  subStep===0?'Click "Next Step" to begin':subStep>=ex.steps.length?'All steps shown — Reset to try again':`Step ${subStep} of ${ex.steps.length}`;}
+initSub();
+
+// ── BY PARTS ANIMATOR ─────────────────────────────────────────────────────
+const PARTS_EX=[
+  {label:'∫x·eˣdx',
+   problem:'Find: ∫ x · eˣ dx',
+   steps:[
+     {t:'Choose u and dv using ILATE',c:'u = x  (Algebraic — A in ILATE)',n:'Between Algebraic (x) and Exponential (eˣ), A comes first → u = x. So dv = eˣ dx'},
+     {t:'Find du and v',c:'du = dx      v = ∫eˣ dx = eˣ',n:'Differentiate u to get du. Integrate dv to get v.'},
+     {t:'Apply formula: ∫u dv = uv − ∫v du',c:'∫x·eˣ dx = x·eˣ − ∫eˣ·dx',n:'Substitute u=x, v=eˣ, du=dx'},
+     {t:'Integrate the remaining term',c:'= x·eˣ − eˣ + c',n:'∫eˣ dx = eˣ'},
+     {t:'Factorise for neat answer',c:'= eˣ(x − 1) + c',n:'Take eˣ common from both terms'},
+   ]},
+  {label:'∫x·sin x dx',
+   problem:'Find: ∫ x · sin x dx',
+   steps:[
+     {t:'ILATE: u = x (A before T)',c:'u = x  (Algebraic),   dv = sin x dx  (Trigonometric)',n:'A comes before T in ILATE'},
+     {t:'Find du and v',c:'du = dx      v = ∫sin x dx = −cos x',n:'Integrate sin x → −cos x'},
+     {t:'Apply formula',c:'∫x·sin x dx = x·(−cos x) − ∫(−cos x) dx',n:'∫u dv = uv − ∫v du'},
+     {t:'Simplify the signs',c:'= −x cos x + ∫cos x dx',n:'Two negatives make a positive'},
+     {t:'Final integration',c:'= −x cos x + sin x + c',n:'∫cos x dx = sin x'},
+   ]},
+  {label:'∫log x dx',
+   problem:'Find: ∫ log x dx',
+   steps:[
+     {t:'Rewrite and identify',c:'∫log x · 1 dx — treat as product with 1',n:'We need two functions for "by parts". Use 1 as the second function.'},
+     {t:'ILATE: u = log x (L comes first)',c:'u = log x  (Logarithmic),   dv = 1·dx',n:'L appears earliest in ILATE'},
+     {t:'Find du and v',c:'du = (1/x) dx      v = x',n:'d/dx(log x) = 1/x. And ∫1 dx = x.'},
+     {t:'Apply formula',c:'∫log x dx = x·log x − ∫x·(1/x) dx',n:'∫u dv = uv − ∫v du'},
+     {t:'Simplify',c:'= x·log x − ∫1 dx',n:'x · (1/x) = 1'},
+     {t:'Final integration',c:'= x·log x − x + c  =  x(log x − 1) + c',n:'∫1 dx = x. Factorising gives the neat form.'},
+   ]},
+  {label:'∫x²·eˣdx',
+   problem:'Find: ∫ x² · eˣ dx',
+   steps:[
+     {t:'ILATE: u = x² (A before E)',c:'u = x²  (Algebraic),   dv = eˣ dx  (Exponential)',n:'Need to apply By Parts TWICE for x²·eˣ'},
+     {t:'First application of formula',c:'∫x²·eˣ dx = x²·eˣ − ∫eˣ·2x dx  =  x²eˣ − 2∫x·eˣ dx',n:'du = 2x dx,  v = eˣ'},
+     {t:'Solve ∫x·eˣ dx (by parts again)',c:'u=x, dv=eˣdx → x·eˣ − eˣ = eˣ(x−1)',n:'We already solved this in Example C.1'},
+     {t:'Substitute back',c:'∫x²·eˣ dx = x²eˣ − 2·eˣ(x−1) + c',n:'Replace ∫x·eˣ dx = eˣ(x−1)'},
+     {t:'Expand and factorise',c:'= x²eˣ − 2xeˣ + 2eˣ + c  =  eˣ(x² − 2x + 2) + c',n:'Distribute −2, then take eˣ common'},
+   ]},
+];
+let partsEx=0,partsStep=0;
+
+function initParts(){
+  const sel=document.getElementById('partsSelector');
+  PARTS_EX.forEach((e,i)=>{
+    const b=document.createElement('button');
+    b.className='ex-btn'+(i===0?' active':'');
+    b.textContent=e.label;b.onclick=()=>loadPartsEx(i,b);sel.appendChild(b);
+  });
+  loadPartsEx(0,sel.firstChild);
+}
+function loadPartsEx(i,btn){
+  partsEx=i;partsStep=0;
+  document.querySelectorAll('#partsSelector .ex-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('partsProbCard').innerHTML=
+    `<div style="font-weight:700;font-size:15px;color:var(--amber);margin-bottom:6px">Problem</div>
+     <div style="font-size:16px;font-family:monospace">${PARTS_EX[i].problem}</div>`;
+  buildPartsSteps();updatePartsCounter();
+}
+function buildPartsSteps(){
+  const ex=PARTS_EX[partsEx];
+  const list=document.getElementById('partsStepList');list.innerHTML='';
+  ex.steps.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.className='step-item'+(i<partsStep?' shown':'')+(i===partsStep-1?' highlight':'');
+    li.style.setProperty('--step-color','var(--amber)');
+    li.innerHTML=`<div class="step-num" style="background:var(--amber)">${i+1}</div><div class="step-content">
+      <div class="step-title">${s.t}</div>
+      <div class="step-code" style="color:var(--amber);background:var(--amber-l)">${s.c}</div>
+      ${s.n?`<div class="step-note">💡 ${s.n}</div>`:''}
+    </div>`;
+    list.appendChild(li);
+  });
+}
+function partsNext(){if(partsStep<PARTS_EX[partsEx].steps.length){partsStep++;buildPartsSteps();updatePartsCounter();}}
+function partsShowAll(){partsStep=PARTS_EX[partsEx].steps.length;buildPartsSteps();updatePartsCounter();}
+function partsReset(){partsStep=0;buildPartsSteps();updatePartsCounter();}
+function updatePartsCounter(){const ex=PARTS_EX[partsEx];document.getElementById('partsCounter').textContent=
+  partsStep===0?'Click "Next Step" to begin':partsStep>=ex.steps.length?'All steps shown — Reset to try again':`Step ${partsStep} of ${ex.steps.length}`;}
+initParts();
+
+// ── DEFINITE INTEGRAL VISUALIZER ─────────────────────────────────────────
+const DI_FUNCS=[
+  {label:'y=x²', f:x=>x*x, xmin:0,xmax:5,ymin:0,ymax:26,
+   exact:(a,b)=>b*b*b/3-a*a*a/3, exactStr:(a,b)=>`[x³/3]  =  ${(b*b*b/3-a*a*a/3).toFixed(3)}`},
+  {label:'y=2x+1',f:x=>2*x+1,xmin:0,xmax:5,ymin:0,ymax:12,
+   exact:(a,b)=>b*b+b-a*a-a, exactStr:(a,b)=>`[x²+x]  =  ${(b*b+b-a*a-a).toFixed(3)}`},
+  {label:'y=−x²+6x',f:x=>-x*x+6*x,xmin:0,xmax:6,ymin:0,ymax:10,
+   exact:(a,b)=>(-b*b*b/3+3*b*b)-(-a*a*a/3+3*a*a), exactStr:(a,b)=>`[−x³/3+3x²]  =  ${((-b*b*b/3+3*b*b)-(-a*a*a/3+3*a*a)).toFixed(3)}`},
+];
+let diIdx=0,diA=1,diB=3;
+const diCv=document.getElementById('diCv');
+const diCtx=diCv.getContext('2d');
+
+document.getElementById('diSliderA').addEventListener('input',function(){
+  diA=+this.value;
+  if(diA>=diB){diB=diA+0.1;document.getElementById('diSliderB').value=diB;}
+  document.getElementById('diAVal').textContent=diA.toFixed(1);
+  document.getElementById('diA').textContent=diA.toFixed(1);
+  drawDI();
+});
+document.getElementById('diSliderB').addEventListener('input',function(){
+  diB=+this.value;
+  if(diB<=diA){diA=diB-0.1;document.getElementById('diSliderA').value=diA;}
+  document.getElementById('diBVal').textContent=diB.toFixed(1);
+  document.getElementById('diB').textContent=diB.toFixed(1);
+  drawDI();
+});
+
+function diResize(){
+  const dpr=window.devicePixelRatio||1;
+  const w=diCv.parentElement.clientWidth;
+  diCv.width=w*dpr;diCv.height=240*dpr;diCv.style.height='240px';
+  drawDI();
+}
+function drawDI(){
+  const dpr=window.devicePixelRatio||1;
+  const W=diCv.width,H=diCv.height;
+  const ml=40*dpr,mr=15*dpr,mt=18*dpr,mb=35*dpr;
+  const pw=W-ml-mr,ph=H-mt-mb;
+  const c=DI_FUNCS[diIdx];
+  const {f,xmin,xmax,ymin,ymax}=c;
+  const a=Math.max(xmin,Math.min(diA,diB));
+  const b=Math.min(xmax,Math.max(diA,diB));
+  const tx=x=>ml+(x-xmin)/(xmax-xmin)*pw;
+  const ty=y=>mt+(ymax-y)/(ymax-ymin)*ph;
+
+  diCtx.clearRect(0,0,W,H);
+  diCtx.fillStyle='#fafaf8';diCtx.fillRect(0,0,W,H);
+
+  // grid
+  diCtx.strokeStyle='rgba(0,0,0,.07)';diCtx.lineWidth=.5*dpr;
+  for(let i=0;i<=5;i++){
+    const gx=xmin+i*(xmax-xmin)/5;
+    diCtx.beginPath();diCtx.moveTo(tx(gx),mt);diCtx.lineTo(tx(gx),H-mb);diCtx.stroke();
+    const gy=ymin+i*(ymax-ymin)/5;
+    diCtx.beginPath();diCtx.moveTo(ml,ty(gy));diCtx.lineTo(W-mr,ty(gy));diCtx.stroke();
+    diCtx.fillStyle='rgba(0,0,0,.4)';diCtx.font=`${9.5*dpr}px sans-serif`;
+    diCtx.textAlign='center';diCtx.fillText(gx%1===0?gx:gx.toFixed(1),tx(gx),H-mb+13*dpr);
+    diCtx.textAlign='right';diCtx.fillText(gy%1===0?gy:gy.toFixed(1),ml-4*dpr,ty(gy)+3.5*dpr);
+  }
+
+  // axes
+  diCtx.strokeStyle='#ccc';diCtx.lineWidth=dpr;
+  diCtx.beginPath();diCtx.moveTo(ml,ty(0));diCtx.lineTo(W-mr,ty(0));diCtx.stroke();
+  diCtx.beginPath();diCtx.moveTo(ml,mt);diCtx.lineTo(ml,H-mb);diCtx.stroke();
+
+  // shaded area
+  diCtx.beginPath();
+  diCtx.moveTo(tx(a),ty(0));
+  for(let i=0;i<=200;i++){const x=a+i/200*(b-a);diCtx.lineTo(tx(x),ty(f(x)));}
+  diCtx.lineTo(tx(b),ty(0));
+  diCtx.closePath();
+  diCtx.fillStyle='rgba(83,74,183,0.22)';diCtx.fill();
+  diCtx.strokeStyle='rgba(83,74,183,0.5)';diCtx.lineWidth=dpr;diCtx.stroke();
+
+  // bounds lines
+  diCtx.setLineDash([5*dpr,3*dpr]);diCtx.lineWidth=1.5*dpr;
+  diCtx.strokeStyle='rgba(24,95,165,0.7)';
+  diCtx.beginPath();diCtx.moveTo(tx(a),ty(0));diCtx.lineTo(tx(a),ty(f(a)));diCtx.stroke();
+  diCtx.strokeStyle='rgba(153,60,29,0.7)';
+  diCtx.beginPath();diCtx.moveTo(tx(b),ty(0));diCtx.lineTo(tx(b),ty(f(b)));diCtx.stroke();
+  diCtx.setLineDash([]);
+
+  // curve
+  diCtx.beginPath();diCtx.strokeStyle='#0F6E56';diCtx.lineWidth=2.5*dpr;
+  for(let i=0;i<=300;i++){
+    const x=xmin+i/300*(xmax-xmin),y=f(x);
+    if(y<ymin-5||y>ymax+5){continue;}
+    i===0?diCtx.moveTo(tx(x),ty(y)):diCtx.lineTo(tx(x),ty(y));
+  }
+  diCtx.stroke();
+
+  // bound labels
+  diCtx.font=`bold ${10*dpr}px sans-serif`;diCtx.textAlign='center';
+  diCtx.fillStyle='rgba(24,95,165,.9)';diCtx.fillText('a='+a.toFixed(1),tx(a),H-mb+26*dpr);
+  diCtx.fillStyle='rgba(153,60,29,.9)';diCtx.fillText('b='+b.toFixed(1),tx(b),H-mb+26*dpr);
+
+  // compute exact area
+  const area=c.exact(a,b);
+  document.getElementById('diArea').textContent=area.toFixed(4);
+}
+function diSelect(i,btn){
+  diIdx=i;
+  document.querySelectorAll('#diFuncBtns .btn').forEach((b,j)=>b.classList.toggle('active',j===i));
+  const c=DI_FUNCS[i];
+  const sa=document.getElementById('diSliderA'),sb=document.getElementById('diSliderB');
+  sa.max=c.xmax;sb.max=c.xmax;
+  diA=c.xmin+(c.xmax-c.xmin)*0.2;diB=c.xmin+(c.xmax-c.xmin)*0.7;
+  sa.value=diA;sb.value=diB;
+  document.getElementById('diAVal').textContent=diA.toFixed(1);
+  document.getElementById('diBVal').textContent=diB.toFixed(1);
+  document.getElementById('diA').textContent=diA.toFixed(1);
+  document.getElementById('diB').textContent=diB.toFixed(1);
+  drawDI();
+}
+
+// ── EXERCISES ─────────────────────────────────────────────────────────────
+const EX_DATA=[
+  {cat:'A',title:'A — Standard Integrals',color:'var(--navy)',
+   desc:'Apply formulae directly. No substitution needed.',
+   qs:[
+    {q:'∫ x⁵ dx',hint:'Power rule: ∫xⁿ dx = xⁿ⁺¹/(n+1) + c',
+     steps:[['Identify n','n = 5'],['Apply power rule','∫x⁵ dx = x^(5+1)/(5+1) + c','∫xⁿ dx = xⁿ⁺¹/(n+1) + c'],['Simplify','= x⁶/6 + c','']],
+     ans:'x⁶ / 6 + c'},
+    {q:'∫ √x dx',hint:'Write √x = x^(1/2), then use power rule',
+     steps:[['Rewrite','√x = x^(1/2)','Convert surd to fractional power first'],['Apply power rule','∫x^(1/2) dx = x^(3/2) / (3/2) + c','n = 1/2 → n+1 = 3/2'],['Simplify','= (2/3)x^(3/2) + c','Dividing by 3/2 = multiplying by 2/3']],
+     ans:'(2/3) x^(3/2) + c'},
+    {q:'∫ 1/x³ dx',hint:'Write 1/x³ = x⁻³, then power rule',
+     steps:[['Rewrite','1/x³ = x⁻³','Use negative exponent'],['Apply power rule','∫x⁻³ dx = x^(−3+1)/(−3+1) + c = x⁻²/(−2) + c','n = −3'],['Simplify','= −1/(2x²) + c','x⁻² = 1/x²']],
+     ans:'−1/(2x²) + c'},
+    {q:'∫ e^(3x) dx',hint:'Use: ∫e^(ax) dx = e^(ax)/a + c',
+     steps:[['Identify a','a = 3  (coefficient of x in exponent)',''],['Apply formula','∫e^(3x) dx = e^(3x)/3 + c','∫e^(ax) dx = e^(ax)/a + c']],
+     ans:'e^(3x) / 3 + c'},
+    {q:'∫ 5^x dx',hint:'Use: ∫aˣ dx = aˣ/log a + c',
+     steps:[['Identify a','a = 5','Base of the exponential'],['Apply formula','∫5^x dx = 5^x / log 5 + c','∫aˣ dx = aˣ/logₑ a + c  (natural log)']],
+     ans:'5^x / log 5 + c'},
+    {q:'∫ 1/(2x+1) dx',hint:'Use: ∫1/(ax+b) dx = (1/a) log|ax+b| + c',
+     steps:[['Identify a','a = 2,  b = 1','Coefficients in 2x+1'],['Apply formula','∫1/(2x+1) dx = (1/2) log|2x+1| + c','∫1/(ax+b) dx = (1/a) log|ax+b| + c']],
+     ans:'(1/2) log|2x+1| + c'},
+    {q:'∫ cos(3x) dx',hint:'Use: ∫cos(ax) dx = sin(ax)/a + c',
+     steps:[['Identify a','a = 3','Coefficient of x inside cos'],['Apply formula','∫cos(3x) dx = sin(3x)/3 + c','∫cos(ax) dx = sin(ax)/a + c']],
+     ans:'sin(3x) / 3 + c'},
+    {q:'∫ sin(5x+2) dx',hint:'Use: ∫sin(ax+b) dx = −cos(ax+b)/a + c',
+     steps:[['Identify a','a = 5,  b = 2',''],['Apply formula','∫sin(5x+2) dx = −cos(5x+2)/5 + c','∫sin(ax+b) dx = −cos(ax+b)/a + c']],
+     ans:'−cos(5x+2) / 5 + c'},
+   ]},
+  {cat:'B',title:'B — Integration by Substitution',color:'var(--teal)',
+   desc:'Let u = inner function. Find du. Replace everything. Integrate. Back-substitute.',
+   qs:[
+    {q:'∫ (4x+3)⁷ dx',hint:'Let u = 4x+3',
+     steps:[['Substitute','u = 4x+3,   du = 4 dx   →   dx = du/4',''],['Replace','∫(4x+3)⁷ dx = ∫u⁷·(du/4) = (1/4)∫u⁷ du',''],['Integrate','= (1/4)·u⁸/8 + c = u⁸/32 + c','∫u⁷ du = u⁸/8'],['Back-sub','= (4x+3)⁸/32 + c','Replace u = 4x+3']],
+     ans:'(4x+3)⁸ / 32 + c'},
+    {q:'∫ 2x(x²+1)⁵ dx',hint:'Let u = x²+1  (note: du = 2x dx is already there!)',
+     steps:[['Substitute','u = x²+1,   du = 2x dx','2x dx matches exactly what\'s in the integrand'],['Replace','∫2x(x²+1)⁵ dx = ∫u⁵ du','Perfect substitution — no leftover x'],['Integrate','= u⁶/6 + c','∫u⁵ du = u⁶/6'],['Back-sub','= (x²+1)⁶/6 + c','']],
+     ans:'(x²+1)⁶ / 6 + c'},
+    {q:'∫ (log x)² / x  dx',hint:'Let u = log x  (note: du = dx/x is already there!)',
+     steps:[['Substitute','u = log x,   du = (1/x) dx   →   dx/x = du','Derivative of log x = 1/x'],['Replace','∫(log x)²/x dx = ∫u² du','(log x) = u,  dx/x = du'],['Integrate','= u³/3 + c','∫u² du = u³/3'],['Back-sub','= (log x)³/3 + c','']],
+     ans:'(log x)³ / 3 + c'},
+    {q:'∫ eˣ / (eˣ+2)  dx',hint:'Let u = eˣ+2  (du = eˣ dx is the numerator!)',
+     steps:[['Substitute','u = eˣ+2,   du = eˣ dx','Numerator eˣ dx = du'],['Replace','∫eˣ/(eˣ+2) dx = ∫(1/u) du','eˣ+2 = u,  eˣ dx = du'],['Integrate','= log|u| + c = log(eˣ+2) + c','eˣ+2 > 0 always, so no absolute value needed']],
+     ans:'log(eˣ+2) + c'},
+    {q:'∫ x · e^(x²) dx',hint:'Let u = x²  (du = 2x dx, so x dx = du/2)',
+     steps:[['Substitute','u = x²,   du = 2x dx   →   x dx = du/2',''],['Replace','∫x·e^(x²) dx = ∫eᵘ·(du/2) = (1/2)∫eᵘ du','x dx = du/2  and  x² = u'],['Integrate','= (1/2)eᵘ + c','∫eᵘ du = eᵘ'],['Back-sub','= e^(x²)/2 + c','Replace u = x²']],
+     ans:'e^(x²) / 2 + c'},
+    {q:'∫ sin x · cos³x dx',hint:'Let u = cos x  (du = −sin x dx)',
+     steps:[['Substitute','u = cos x,   du = −sin x dx   →   sin x dx = −du','Derivative of cos x = −sin x'],['Replace','∫sin x·cos³x dx = ∫u³·(−du) = −∫u³ du','cos x = u,  sin x dx = −du'],['Integrate','= −u⁴/4 + c','∫u³ du = u⁴/4'],['Back-sub','= −cos⁴x/4 + c','Replace u = cos x']],
+     ans:'−cos⁴x / 4 + c'},
+   ]},
+  {cat:'C',title:'C — Integration by Parts',color:'var(--purple)',
+   desc:'Formula: ∫u dv = uv − ∫v du.  Pick u using ILATE: I > L > A > T > E.',
+   qs:[
+    {q:'∫ x · eˣ dx',hint:'ILATE: u = x (A), dv = eˣ dx (E)',
+     steps:[['ILATE choice','u = x,   dv = eˣ dx','A before E in ILATE'],['Find du, v','du = dx,   v = eˣ','Integrate dv'],['Apply formula','= x·eˣ − ∫eˣ dx','∫u dv = uv − ∫v du'],['Integrate','= x·eˣ − eˣ + c','∫eˣ dx = eˣ'],['Factorise','= eˣ(x−1) + c','']],
+     ans:'eˣ(x − 1) + c'},
+    {q:'∫ x · sin x dx',hint:'ILATE: u = x (A), dv = sin x dx (T)',
+     steps:[['ILATE choice','u = x,   dv = sin x dx','A before T in ILATE'],['Find du, v','du = dx,   v = −cos x','∫sin x dx = −cos x'],['Apply formula','= x·(−cos x) − ∫(−cos x) dx','∫u dv = uv − ∫v du'],['Simplify','= −x cos x + ∫cos x dx','Two negatives → positive'],['Integrate','= −x cos x + sin x + c','']],
+     ans:'−x cos x + sin x + c'},
+    {q:'∫ log x dx',hint:'Write as ∫log x · 1 dx. ILATE: u = log x (L), dv = dx',
+     steps:[['Rewrite','∫log x · 1 dx','Treat 1 as the second function'],['ILATE choice','u = log x,   dv = dx','L comes before A in ILATE'],['Find du, v','du = (1/x) dx,   v = x','d(log x) = 1/x,  ∫dx = x'],['Apply formula','= x·log x − ∫x·(1/x) dx','∫u dv = uv − ∫v du'],['Simplify','= x·log x − ∫1 dx','x·(1/x) = 1'],['Integrate','= x·log x − x + c = x(log x − 1) + c','']],
+     ans:'x(log x − 1) + c'},
+    {q:'∫ x · log x dx',hint:'ILATE: u = log x (L), dv = x dx (A)',
+     steps:[['ILATE choice','u = log x,   dv = x dx','L comes before A'],['Find du, v','du = (1/x) dx,   v = x²/2','∫x dx = x²/2'],['Apply formula','= (x²/2)·log x − ∫(x²/2)·(1/x) dx',''],['Simplify','= (x²/2)·log x − (1/2)∫x dx','(x²/2)·(1/x) = x/2'],['Integrate','= (x²/2)·log x − x²/4 + c','∫x dx = x²/2']],
+     ans:'(x²/2) log x − x²/4 + c'},
+    {q:'∫ x² · eˣ dx',hint:'ILATE: u = x² (A), dv = eˣ dx (E). Apply parts twice.',
+     steps:[['ILATE choice','u = x²,   dv = eˣ dx','A before E'],['Apply formula (1st time)','∫x²eˣ dx = x²eˣ − ∫eˣ·2x dx = x²eˣ − 2∫x·eˣ dx','du = 2x dx,  v = eˣ'],['Solve ∫x·eˣ dx (by parts again)','eˣ(x−1)  [same as Q.C.1]','u = x, dv = eˣ dx → xe^x − e^x'],['Substitute back','= x²eˣ − 2·eˣ(x−1) + c','Replace ∫x·eˣ dx'],['Expand and factorise','= x²eˣ − 2xeˣ + 2eˣ + c = eˣ(x²−2x+2) + c','Take eˣ common']],
+     ans:'eˣ(x² − 2x + 2) + c'},
+   ]},
+  {cat:'D',title:'D — Definite Integrals',color:'var(--coral)',
+   desc:'Find antiderivative F(x), then apply: ∫ₐᵇ f(x) dx = F(b) − F(a).',
+   qs:[
+    {q:'∫₀² (3x² + 2) dx',hint:'Integrate, then substitute limits 0 and 2',
+     steps:[['Integrate','∫(3x²+2) dx = x³+2x  (+c, but c cancels in definite integrals)',''],['Apply limits','[x³+2x]₀²','Write F(x), evaluate from 0 to 2'],['Upper limit','F(2) = 2³+2(2) = 8+4 = 12','Substitute x = 2'],['Lower limit','F(0) = 0³+2(0) = 0','Substitute x = 0'],['Subtract','12 − 0 = 12','F(upper) − F(lower)']],
+     ans:'12'},
+    {q:'∫₁³ (2x + 1) dx',hint:'Integrate, then substitute limits 1 and 3',
+     steps:[['Integrate','∫(2x+1) dx = x²+x',''],['Apply limits','[x²+x]₁³',''],['Upper limit','F(3) = 9+3 = 12','Substitute x = 3'],['Lower limit','F(1) = 1+1 = 2','Substitute x = 1'],['Subtract','12 − 2 = 10','']],
+     ans:'10'},
+    {q:'∫₀¹ eˣ dx',hint:'∫eˣ dx = eˣ. Apply limits 0 and 1.',
+     steps:[['Integrate','∫eˣ dx = eˣ','Standard result: derivative of eˣ is eˣ'],['Apply limits','[eˣ]₀¹',''],['Upper limit','F(1) = e¹ = e',''],['Lower limit','F(0) = e⁰ = 1','Any number to power 0 = 1'],['Subtract','e − 1','Leave in exact form']],
+     ans:'e − 1  ≈  1.7183'},
+    {q:'∫₁⁴ (1/x) dx',hint:'∫(1/x) dx = log x. Apply limits 1 and 4.',
+     steps:[['Integrate','∫(1/x) dx = log x','Standard result (natural logarithm)'],['Apply limits','[log x]₁⁴',''],['Upper limit','F(4) = log 4',''],['Lower limit','F(1) = log 1 = 0','log 1 = 0 always'],['Subtract','log 4 − 0 = log 4',''],['Simplify','= log 2² = 2 log 2','log law: log aⁿ = n log a']],
+     ans:'log 4  =  2 log 2  ≈  1.3863'},
+   ]},
+];
+let curCat='A';
+
+function renderExCatTabs(){
+  const tabs=document.getElementById('exCatTabs');tabs.innerHTML='';
+  EX_DATA.forEach(d=>{
+    const btn=document.createElement('button');
+    btn.className='ex-cat-tab'+(d.cat===curCat?' active':'');
+    btn.textContent=d.title;
+    btn.style.borderColor=d.cat===curCat?d.color:'';
+    btn.style.background=d.cat===curCat?d.color:'';
+    btn.style.color=d.cat===curCat?'#fff':'';
+    btn.onclick=()=>{curCat=d.cat;renderExCatTabs();renderExercises();};
+    tabs.appendChild(btn);
+  });
+}
+
+function renderExercises(){
+  const data=EX_DATA.find(d=>d.cat===curCat);
+  const con=document.getElementById('exContainer');con.innerHTML='';
+  const desc=document.createElement('div');
+  desc.style.cssText='font-size:13px;color:var(--mid);margin-bottom:16px;padding:10px 14px;background:var(--lgray);border-radius:8px';
+  desc.textContent=data.desc;con.appendChild(desc);
+
+  data.qs.forEach((q,qi)=>{
+    const div=document.createElement('div');div.className='ex-question';
+    const solId=`sol_${data.cat}_${qi}`;
+    const btnId=`btn_${data.cat}_${qi}`;
+    div.innerHTML=`
+      <div class="eq-num" style="color:${data.color}">Question ${data.cat}.${qi+1}</div>
+      <div class="eq-q">${q.q}</div>
+      <div class="eq-hint">💡 Hint: ${q.hint}</div>
+      <button class="btn-toggle-sol" id="${btnId}" onclick="toggleSol('${solId}','${btnId}')" style="border-color:${data.color};background:${data.color}22;color:${data.color}">Show Solution ↓</button>
+      <div class="ex-solution" id="${solId}">
+        ${q.steps.map((s,si)=>`
+          <div class="sol-step">
+            <div class="sol-num" style="background:${data.color}">${si+1}</div>
+            <div class="sol-body">
+              <div class="sol-label">${s[0]}</div>
+              <div class="sol-code" style="color:${data.color}">${s[1]}</div>
+              ${s[2]?`<div class="sol-note">⟵ ${s[2]}</div>`:''}
+            </div>
+          </div>`).join('')}
+        <div class="sol-answer" style="background:${data.color}22;border-color:${data.color};color:${data.color}">
+          ✓ Answer:  ${q.ans}
+        </div>
+      </div>`;
+    con.appendChild(div);
+  });
+}
+
+function toggleSol(solId,btnId){
+  const sol=document.getElementById(solId);
+  const btn=document.getElementById(btnId);
+  const open=sol.classList.toggle('open');
+  btn.textContent=open?'Hide Solution ↑':'Show Solution ↓';
+}
+
+renderExCatTabs();renderExercises();
+
+// ── QUIZ ─────────────────────────────────────────────────────────────────
+const QUIZ=[
+  {q:'If d/dx[F(x)] = 3x², then ∫3x² dx = ?',
+   opts:['x³ + c','6x + c','9x³ + c','x³/3 + c'],ans:0,
+   explain:'Integration is the exact reverse of differentiation. Since d/dx[x³] = 3x², we have ∫3x² dx = x³ + c. Always add "+ c" for indefinite integrals.'},
+  {q:'∫ (1/x) dx = ?',
+   opts:['x² + c','−1/x² + c','log|x| + c','1 + c'],ans:2,
+   explain:'∫(1/x) dx = log|x| + c. This is a standard result — it cannot be solved by the power rule (which fails at n = −1). The derivative of log|x| is 1/x.'},
+  {q:'For ∫ 2x(x²+5)³ dx, the correct substitution is:',
+   opts:['u = 2x','u = x²+5','u = x+5','u = x³'],ans:1,
+   explain:'Let u = x²+5. Then du = 2x dx — exactly the 2x already in the integrand! So ∫u³ du = u⁴/4 + c = (x²+5)⁴/4 + c.'},
+  {q:'In ILATE, for ∫ x · log x dx, which function is chosen as u?',
+   opts:['u = x','u = log x','u = x log x','u = 1/x'],ans:1,
+   explain:'ILATE order: L (Logarithmic) comes before A (Algebraic). So u = log x, dv = x dx. This gives v = x²/2, and the integral becomes (x²/2)log x − x²/4 + c.'},
+  {q:'∫₀² x³ dx = ?',
+   opts:['4','8','2','16'],ans:0,
+   explain:'∫x³ dx = x⁴/4. Apply limits: [x⁴/4]₀² = 2⁴/4 − 0⁴/4 = 16/4 − 0 = 4.'},
+  {q:'∫₀¹ e^(2x) dx = ?',
+   opts:['e²−1','(e²−1)/2','2e²−2','e/2'],ans:1,
+   explain:'∫e^(2x) dx = e^(2x)/2. Apply limits: [e^(2x)/2]₀¹ = e²/2 − e⁰/2 = e²/2 − 1/2 = (e²−1)/2.'},
+];
+
+function initQuiz(){
+  const c=document.getElementById('quizContainer');
+  QUIZ.forEach((q,qi)=>{
+    const div=document.createElement('div');div.className='quiz-q';
+    div.innerHTML=`<div class="qtext">${qi+1}. ${q.q}</div>
+      <div class="quiz-opts" id="qopts-${qi}">
+        ${q.opts.map((o,oi)=>`<button class="qopt" onclick="checkQ(${qi},${oi})">${o}</button>`).join('')}
+      </div>
+      <div class="q-explain" id="qexp-${qi}">✓ ${q.explain}</div>`;
+    c.appendChild(div);
+  });
+}
+function checkQ(qi,oi){
+  document.querySelectorAll(`#qopts-${qi} .qopt`).forEach((b,i)=>{
+    b.classList.remove('correct','wrong');
+    if(i===QUIZ[qi].ans)b.classList.add('correct');
+    else if(i===oi)b.classList.add('wrong');
+    b.disabled=true;
+  });
+  document.getElementById(`qexp-${qi}`).classList.add('show');
+}
+initQuiz();
+
+// ── Resize ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize',()=>{
+  if(document.getElementById('area').classList.contains('active')) rsResize();
+  if(document.getElementById('def').classList.contains('active')) diResize();
+});
+setTimeout(()=>{rsResize();},200);
+</script>
+</body>
+</html>
