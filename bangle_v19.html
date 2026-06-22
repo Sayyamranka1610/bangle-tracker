@@ -3039,11 +3039,8 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     const parts=rel.split('/');
     let folder,designCode;
     if(forceFolder){
-      const rel2=f.webkitRelativePath||f.name;
-      const parts2=rel2.split('/');
-      // If file is inside a sub-folder of the selected folder, use that sub-folder
-      // as its own library folder (e.g. PicasaOriginals → separate library folder)
-      folder=parts2.length>2?parts2.slice(1,-1).join('/'):forceFolder;
+      // Uploading into a specific library folder — all files go there regardless of sub-folders
+      folder=forceFolder;
       designCode=f.name.replace(/\.[^.]+$/,'').trim();
     } else if(parts.length>=3){
       folder=parts.slice(1,-1).join('/'); // preserve nested folders
