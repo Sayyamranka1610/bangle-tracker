@@ -2905,10 +2905,35 @@ async function _libDeleteSelected(){
 }
 
 function _libUploadMoreToFolder(folderName){
-  const inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;inp.accept='image/*';
-  inp.onchange=()=>{ if(inp.files.length) _libImportFiles(inp,folderName,_libSegment||'CNC'); };
-  inp.click();
+  const old=document.getElementById('_lib-up-mini');if(old)old.remove();
+  const seg=_libSegment||'CNC';
+  const wrap=document.createElement('div');
+  wrap.id='_lib-up-mini';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  wrap.innerHTML='<div style="background:#fff;border-radius:14px;width:min(440px,96vw);padding:22px;display:flex;flex-direction:column;gap:12px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between">'
+      +'<div style="font-size:15px;font-weight:700;color:#534AB7">📤 Upload to "'+esc(folderName)+'"</div>'
+      +'<button onclick="document.getElementById(\'_lib-up-mini\').remove()" style="background:none;border:none;cursor:pointer;font-size:18px;color:#aaa;line-height:1">✕</button>'
+    +'</div>'
+    +'<div style="font-size:12px;color:#666;line-height:1.7">Upload a whole folder — sub-folders (e.g. Picasa Originals) are kept as separate library folders so you can find and delete them individually. Nothing is filtered or skipped.</div>'
+    +'<label style="display:flex;align-items:center;gap:10px;background:#534AB7;color:#fff;border-radius:9px;padding:12px 18px;font-size:13px;font-weight:600;cursor:pointer">'
+      +'📂 Select a Folder'
+      +'<input type="file" webkitdirectory mozdirectory multiple accept="image/*" style="display:none" id="_lib-up-mini-folder">'
+    +'</label>'
+    +'<label style="display:flex;align-items:center;gap:10px;background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer">'
+      +'🖼️ Select Individual Files'
+      +'<input type="file" multiple accept="image/*" style="display:none" id="_lib-up-mini-files">'
+    +'</label>'
+  +'</div>';
+  document.body.appendChild(wrap);
+  document.getElementById('_lib-up-mini-folder').onchange=function(){
+    document.getElementById('_lib-up-mini').remove();
+    _libImportFiles(this,folderName,seg);
+  };
+  document.getElementById('_lib-up-mini-files').onchange=function(){
+    document.getElementById('_lib-up-mini').remove();
+    _libImportFiles(this,folderName,seg);
+  };
 }
 
 // ── BULK IMPORT PANEL ──────────────────────────────────────────────────────────
@@ -3014,7 +3039,11 @@ async function _libImportFiles(input, forceFolder, forceSeg){
     const parts=rel.split('/');
     let folder,designCode;
     if(forceFolder){
-      folder=forceFolder;
+      const rel2=f.webkitRelativePath||f.name;
+      const parts2=rel2.split('/');
+      // If file is inside a sub-folder of the selected folder, use that sub-folder
+      // as its own library folder (e.g. PicasaOriginals → separate library folder)
+      folder=parts2.length>2?parts2.slice(1,-1).join('/'):forceFolder;
       designCode=f.name.replace(/\.[^.]+$/,'').trim();
     } else if(parts.length>=3){
       folder=parts.slice(1,-1).join('/'); // preserve nested folders
@@ -3081,7 +3110,6 @@ async function _libImportFiles(input, forceFolder, forceSeg){
   const ok=done-failed;
   let finalMsg=`✅ ${ok.toLocaleString()} photos imported!`;
   if(skipCount)finalMsg+=` · ${skipCount} already existed`;
-  if(systemSkipped)finalMsg+=` · ${systemSkipped} Picasa/system files skipped automatically`;
   if(failed)finalMsg+=` · ${failed} failed`;
   if(label)label.textContent=finalMsg;
   if(fill){fill.style.width='100%';fill.style.background=failed?'#F59E0B':'#22C55E';}
