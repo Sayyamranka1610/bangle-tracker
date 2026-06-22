@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chapter 5 — Integration | Worksheet with Solutions</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#fff;color:#111;font-size:13px;line-height:1.6}
+.page{max-width:800px;margin:0 auto;padding:30px 32px}
+h1{font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:4px}
+.subtitle{font-size:13px;color:#666;margin-bottom:24px;border-bottom:2px solid #1a1a2e;padding-bottom:10px}
+h2{font-size:16px;font-weight:700;color:#fff;background:#185FA5;padding:7px 14px;border-radius:6px;margin:22px 0 12px}
+h2.teal{background:#0F6E56}
+h2.purple{background:#534AB7}
+h2.coral{background:#993C1D}
+h2.amber{background:#BA7517;color:#fff}
+h3{font-size:14px;font-weight:700;color:#1a1a2e;margin:16px 0 6px;border-left:4px solid #534AB7;padding-left:10px}
+
+/* Formula table */
+.ftable{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:12.5px}
+.ftable th{background:#f0f0ee;padding:6px 10px;text-align:left;font-weight:700;border:1px solid #ddd}
+.ftable td{padding:6px 10px;border:1px solid #eee;vertical-align:top}
+.ftable td:first-child{color:#555;width:40%}
+.ftable td:last-child{font-family:monospace;font-weight:700;color:#1a1a2e}
+.ftable tr:nth-child(even) td{background:#fafafa}
+
+/* Worked examples */
+.example{background:#f8f7f4;border-radius:8px;padding:14px 16px;margin-bottom:14px;border-left:4px solid #534AB7}
+.ex-title{font-weight:700;color:#534AB7;margin-bottom:6px;font-size:13px}
+.ex-q{font-family:monospace;font-size:15px;font-weight:700;margin-bottom:10px}
+.ex-step{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #ebe9e0;font-size:12.5px}
+.ex-step:last-child{border-bottom:none}
+.step-n{font-weight:700;color:#534AB7;min-width:18px}
+.step-text{flex:1}
+.step-code{font-family:monospace;font-weight:700;color:#534AB7}
+.step-note{color:#777;font-size:11.5px;margin-top:1px}
+.ans-box{background:#E1F5EE;border:1.5px solid #0F6E56;border-radius:6px;padding:7px 12px;font-family:monospace;font-weight:700;color:#0F6E56;margin-top:8px;font-size:14px}
+
+/* Exercises */
+.ex-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.ex-item{padding:10px 12px;border:1px solid #eee;font-size:13px}
+.ex-num{font-size:10px;text-transform:uppercase;color:#999;font-weight:700;margin-bottom:2px}
+.ex-q2{font-family:monospace;font-weight:700;font-size:14px}
+
+/* Solutions */
+.sol-block{margin-bottom:14px;border:1px solid #e0e0e0;border-radius:6px;overflow:hidden}
+.sol-header{background:#1a1a2e;color:#fff;padding:7px 12px;font-weight:700;font-size:13px;font-family:monospace}
+.sol-body{padding:10px 12px}
+.sol-row{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:12.5px}
+.sol-row:last-child{border-bottom:none}
+.sol-n{font-weight:700;color:#0F6E56;min-width:18px;font-size:11px}
+.sol-label{color:#555;font-weight:700;min-width:120px;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.sol-math{font-family:monospace;font-weight:700;color:#1a1a2e}
+.sol-note{color:#888;font-size:11px}
+.sol-ans{background:#E1F5EE;border-top:1px solid #0F6E56;padding:8px 12px;font-family:monospace;font-weight:700;color:#0F6E56;font-size:14px}
+
+.divider{border:none;border-top:1px dashed #ccc;margin:20px 0}
+.pg-break{page-break-before:always;padding-top:20px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rule-box{background:#EDE9F8;border:1px solid #534AB7;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-family:monospace;font-size:13px;color:#534AB7}
+.note-box{background:#FAEEDA;border-left:4px solid #BA7517;border-radius:0 6px 6px 0;padding:9px 14px;margin-bottom:12px;font-size:12.5px;color:#333}
+
+@media print{
+  body{font-size:11.5px}
+  .page{padding:18px 24px;max-width:100%}
+  h1{font-size:18px}
+  h2{font-size:13px;padding:5px 10px}
+  .pg-break{page-break-before:always}
+  .no-break{page-break-inside:avoid}
+  button{display:none}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Chapter 5 — Integration</h1>
+<div class="subtitle">Std. XII Commerce &nbsp;·&nbsp; Theory Notes, Worked Examples &amp; Complete Exercise Solutions</div>
+
+<!-- ═══ FORMULA REFERENCE ═══ -->
+<h2>Part A — Standard Integral Formulae</h2>
+
+<div class="two-col">
+<div>
+<table class="ftable">
+<tr><th>Function f(x)</th><th>∫ f(x) dx</th></tr>
+<tr><td>xⁿ  (n ≠ −1)</td><td>xⁿ⁺¹/(n+1) + c</td></tr>
+<tr><td>1/x  (x ≠ 0)</td><td>log|x| + c</td></tr>
+<tr><td>eˣ</td><td>eˣ + c</td></tr>
+<tr><td>e^(ax)</td><td>e^(ax)/a + c</td></tr>
+<tr><td>aˣ</td><td>aˣ/log a + c</td></tr>
+<tr><td>1/(ax+b)</td><td>(1/a) log|ax+b| + c</td></tr>
+<tr><td>1</td><td>x + c</td></tr>
+</table>
+</div>
+<div>
+<table class="ftable">
+<tr><th>Function f(x)</th><th>∫ f(x) dx</th></tr>
+<tr><td>sin x</td><td>−cos x + c</td></tr>
+<tr><td>cos x</td><td>sin x + c</td></tr>
+<tr><td>sin(ax+b)</td><td>−cos(ax+b)/a + c</td></tr>
+<tr><td>cos(ax+b)</td><td>sin(ax+b)/a + c</td></tr>
+<tr><td>sec²x</td><td>tan x + c</td></tr>
+<tr><td>cosec²x</td><td>−cot x + c</td></tr>
+<tr><td>sec x tan x</td><td>sec x + c</td></tr>
+</table>
+</div>
+</div>
+
+<div class="rule-box">Key Rules:  ∫k·f(x) dx = k∫f(x) dx  &nbsp;|&nbsp;  ∫[f±g] dx = ∫f dx ± ∫g dx</div>
+<div class="note-box"><b>Always add + c</b> for indefinite integrals. The constant of integration exists because differentiating any constant gives 0, so we cannot determine it without a condition (initial value).</div>
+
+<!-- ═══ METHODS ═══ -->
+<h2 class="teal">Part B — Three Main Methods</h2>
+
+<h3>1. Integration by Substitution</h3>
+<div class="rule-box">If integrand = f(g(x)) · g'(x),  let u = g(x),  du = g'(x) dx.  Gives ∫f(u) du.</div>
+<div class="note-box"><b>Steps:</b> (i) Choose u = inner function &nbsp; (ii) Find du &nbsp; (iii) Replace x-terms with u-terms &nbsp; (iv) Integrate in u &nbsp; (v) Back-substitute</div>
+
+<h3>2. Integration by Parts</h3>
+<div class="rule-box">∫u · dv = u·v − ∫v · du  &nbsp;&nbsp; (ILATE rule for choosing u)</div>
+<div class="note-box"><b>ILATE order:</b> Inverse trig → <b>L</b>ogarithm → <b>A</b>lgebraic → <b>T</b>rigonometric → <b>E</b>xponential. The function that appears earliest = u. The remaining part = dv.</div>
+
+<h3>3. Definite Integrals (Newton-Leibniz Formula)</h3>
+<div class="rule-box">∫ₐᵇ f(x) dx = F(b) − F(a)  where F'(x) = f(x)</div>
+<div class="note-box">Find the antiderivative F(x), substitute upper limit, substitute lower limit, subtract. The constant c always cancels.</div>
+
+<!-- ═══ WORKED EXAMPLES ═══ -->
+<h2 class="purple">Part C — Worked Examples</h2>
+
+<div class="example no-break">
+  <div class="ex-title">Substitution Example — ∫ 2x(x²+1)⁵ dx</div>
+  <div class="ex-q">Find: ∫ 2x(x²+1)⁵ dx</div>
+  <div class="ex-step"><div class="step-n">1</div><div class="step-text"><div class="step-code">Let u = x²+1</div><div class="step-note">Inner function inside the power</div></div></div>
+  <div class="ex-step"><div class="step-n">2</div><div class="step-text"><div class="step-code">du = 2x dx</div><div class="step-note">The 2x in the integrand matches exactly — perfect substitution</div></div></div>
+  <div class="ex-step"><div class="step-n">3</div><div class="step-text"><div class="step-code">∫2x(x²+1)⁵ dx = ∫u⁵ du</div><div class="step-note">Replace 2x dx = du and x²+1 = u</div></div></div>
+  <div class="ex-step"><div class="step-n">4</div><div class="step-text"><div class="step-code">= u⁶/6 + c</div><div class="step-note">∫u⁵ du = u⁶/6 (power rule)</div></div></div>
+  <div class="ex-step"><div class="step-n">5</div><div class="step-text"><div class="step-code">= (x²+1)⁶/6 + c</div><div class="step-note">Back-substitute u = x²+1</div></div></div>
+  <div class="ans-box">Answer:  (x²+1)⁶/6 + c</div>
+</div>
+
+<div class="example no-break">
+  <div class="ex-title">By Parts Example — ∫ x · eˣ dx</div>
+  <div class="ex-q">Find: ∫ x · eˣ dx</div>
+  <div class="ex-step"><div class="step-n">1</div><div class="step-text"><div class="step-code">u = x  (A),  dv = eˣ dx  (E)</div><div class="step-note">ILATE: Algebraic before Exponential → u = x</div></div></div>
+  <div class="ex-step"><div class="step-n">2</div><div class="step-text"><div class="step-code">du = dx,   v = eˣ</div><div class="step-note">Differentiate u, integrate dv</div></div></div>
+  <div class="ex-step"><div class="step-n">3</div><div class="step-text"><div class="step-code">∫x·eˣ dx = x·eˣ − ∫eˣ dx</div><div class="step-note">Formula: ∫u dv = uv − ∫v du</div></div></div>
+  <div class="ex-step"><div class="step-n">4</div><div class="step-text"><div class="step-code">= x·eˣ − eˣ + c = eˣ(x−1) + c</div><div class="step-note">∫eˣ dx = eˣ. Factorising: take eˣ common.</div></div></div>
+  <div class="ans-box">Answer:  eˣ(x − 1) + c</div>
+</div>
+
+<div class="example no-break">
+  <div class="ex-title">Definite Integral Example — ∫₀² (3x²+2) dx</div>
+  <div class="ex-q">Evaluate: ∫₀² (3x²+2) dx</div>
+  <div class="ex-step"><div class="step-n">1</div><div class="step-text"><div class="step-code">∫(3x²+2) dx = x³ + 2x</div><div class="step-note">Antiderivative (c cancels in definite integrals)</div></div></div>
+  <div class="ex-step"><div class="step-n">2</div><div class="step-text"><div class="step-code">F(2) = 2³ + 2(2) = 8 + 4 = 12</div><div class="step-note">Upper limit: x = 2</div></div></div>
+  <div class="ex-step"><div class="step-n">3</div><div class="step-text"><div class="step-code">F(0) = 0³ + 2(0) = 0</div><div class="step-note">Lower limit: x = 0</div></div></div>
+  <div class="ex-step"><div class="step-n">4</div><div class="step-text"><div class="step-code">F(2) − F(0) = 12 − 0 = 12</div><div class="step-note">Upper minus lower</div></div></div>
+  <div class="ans-box">Answer:  12</div>
+</div>
+
+<!-- ═══ EXERCISE SET ═══ -->
+<div class="pg-break">
+<h2>Part D — Exercise Set (All 23 Questions)</h2>
+
+<h3>Section A — Standard Integrals</h3>
+<div class="ex-grid" style="margin-bottom:16px">
+  <div class="ex-item"><div class="ex-num">A.1</div><div class="ex-q2">∫ x⁵ dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.2</div><div class="ex-q2">∫ √x dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.3</div><div class="ex-q2">∫ 1/x³ dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.4</div><div class="ex-q2">∫ e^(3x) dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.5</div><div class="ex-q2">∫ 5^x dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.6</div><div class="ex-q2">∫ 1/(2x+1) dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.7</div><div class="ex-q2">∫ cos(3x) dx</div></div>
+  <div class="ex-item"><div class="ex-num">A.8</div><div class="ex-q2">∫ sin(5x+2) dx</div></div>
+</div>
+
+<h3>Section B — Substitution</h3>
+<div class="ex-grid" style="margin-bottom:16px">
+  <div class="ex-item"><div class="ex-num">B.1</div><div class="ex-q2">∫ (4x+3)⁷ dx</div></div>
+  <div class="ex-item"><div class="ex-num">B.2</div><div class="ex-q2">∫ 2x(x²+1)⁵ dx</div></div>
+  <div class="ex-item"><div class="ex-num">B.3</div><div class="ex-q2">∫ (log x)² / x  dx</div></div>
+  <div class="ex-item"><div class="ex-num">B.4</div><div class="ex-q2">∫ eˣ/(eˣ+2) dx</div></div>
+  <div class="ex-item"><div class="ex-num">B.5</div><div class="ex-q2">∫ x · e^(x²) dx</div></div>
+  <div class="ex-item"><div class="ex-num">B.6</div><div class="ex-q2">∫ sin x · cos³x dx</div></div>
+</div>
+
+<h3>Section C — Integration by Parts</h3>
+<div class="ex-grid" style="margin-bottom:16px">
+  <div class="ex-item"><div class="ex-num">C.1</div><div class="ex-q2">∫ x · eˣ dx</div></div>
+  <div class="ex-item"><div class="ex-num">C.2</div><div class="ex-q2">∫ x · sin x dx</div></div>
+  <div class="ex-item"><div class="ex-num">C.3</div><div class="ex-q2">∫ log x dx</div></div>
+  <div class="ex-item"><div class="ex-num">C.4</div><div class="ex-q2">∫ x · log x dx</div></div>
+  <div class="ex-item" style="grid-column:1/-1"><div class="ex-num">C.5</div><div class="ex-q2">∫ x² · eˣ dx  &nbsp;(apply by parts twice)</div></div>
+</div>
+
+<h3>Section D — Definite Integrals</h3>
+<div class="ex-grid" style="margin-bottom:16px">
+  <div class="ex-item"><div class="ex-num">D.1</div><div class="ex-q2">∫₀² (3x²+2) dx</div></div>
+  <div class="ex-item"><div class="ex-num">D.2</div><div class="ex-q2">∫₁³ (2x+1) dx</div></div>
+  <div class="ex-item"><div class="ex-num">D.3</div><div class="ex-q2">∫₀¹ eˣ dx</div></div>
+  <div class="ex-item"><div class="ex-num">D.4</div><div class="ex-q2">∫₁⁴ (1/x) dx</div></div>
+</div>
+</div>
+
+<!-- ═══ COMPLETE SOLUTIONS ═══ -->
+<div class="pg-break">
+<h2 class="teal">Part E — Complete Solutions to All 23 Questions</h2>
+
+<h3>Section A — Standard Integrals</h3>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.1 &nbsp; ∫ x⁵ dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Power rule</div><div><div class="sol-math">∫xⁿ dx = xⁿ⁺¹/(n+1) + c,  n = 5</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply</div><div><div class="sol-math">= x⁶/6 + c</div></div></div>
+  </div>
+  <div class="sol-ans">x⁶/6 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.2 &nbsp; ∫ √x dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Rewrite</div><div><div class="sol-math">√x = x^(1/2)</div><div class="sol-note">Convert surd to fractional power</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply power rule</div><div><div class="sol-math">∫x^(1/2) dx = x^(3/2)/(3/2) + c</div><div class="sol-note">n = 1/2 → n+1 = 3/2</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Simplify</div><div><div class="sol-math">= (2/3) x^(3/2) + c</div><div class="sol-note">Dividing by 3/2 = multiplying by 2/3</div></div></div>
+  </div>
+  <div class="sol-ans">(2/3) x^(3/2) + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.3 &nbsp; ∫ 1/x³ dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Rewrite</div><div><div class="sol-math">1/x³ = x⁻³</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply power rule</div><div><div class="sol-math">∫x⁻³ dx = x⁻²/(−2) + c</div><div class="sol-note">n = −3 → n+1 = −2</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Simplify</div><div><div class="sol-math">= −1/(2x²) + c</div></div></div>
+  </div>
+  <div class="sol-ans">−1/(2x²) + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.4 &nbsp; ∫ e^(3x) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Formula</div><div><div class="sol-math">∫e^(ax) dx = e^(ax)/a + c,  a = 3</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply</div><div><div class="sol-math">= e^(3x)/3 + c</div></div></div>
+  </div>
+  <div class="sol-ans">e^(3x)/3 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.5 &nbsp; ∫ 5^x dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Formula</div><div><div class="sol-math">∫aˣ dx = aˣ/logₑ a + c,  a = 5</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply</div><div><div class="sol-math">= 5^x / log 5 + c</div></div></div>
+  </div>
+  <div class="sol-ans">5^x / log 5 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.6 &nbsp; ∫ 1/(2x+1) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Formula</div><div><div class="sol-math">∫1/(ax+b) dx = (1/a)log|ax+b| + c,  a=2, b=1</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply</div><div><div class="sol-math">= (1/2)log|2x+1| + c</div></div></div>
+  </div>
+  <div class="sol-ans">(1/2) log|2x+1| + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.7 &nbsp; ∫ cos(3x) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Formula</div><div><div class="sol-math">∫cos(ax) dx = sin(ax)/a + c,  a = 3</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply</div><div><div class="sol-math">= sin(3x)/3 + c</div></div></div>
+  </div>
+  <div class="sol-ans">sin(3x)/3 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">A.8 &nbsp; ∫ sin(5x+2) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Formula</div><div><div class="sol-math">∫sin(ax+b) dx = −cos(ax+b)/a + c,  a=5, b=2</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply</div><div><div class="sol-math">= −cos(5x+2)/5 + c</div></div></div>
+  </div>
+  <div class="sol-ans">−cos(5x+2)/5 + c</div>
+</div>
+
+<h3>Section B — Substitution</h3>
+
+<div class="sol-block no-break">
+  <div class="sol-header">B.1 &nbsp; ∫ (4x+3)⁷ dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Substitute</div><div><div class="sol-math">u = 4x+3,  du = 4dx  →  dx = du/4</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Replace</div><div><div class="sol-math">∫u⁷·(du/4) = (1/4)∫u⁷ du</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Integrate</div><div><div class="sol-math">= (1/4)·u⁸/8 + c = u⁸/32 + c</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Back-sub</div><div><div class="sol-math">= (4x+3)⁸/32 + c</div></div></div>
+  </div>
+  <div class="sol-ans">(4x+3)⁸/32 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">B.2 &nbsp; ∫ 2x(x²+1)⁵ dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Substitute</div><div><div class="sol-math">u = x²+1,  du = 2x dx</div><div class="sol-note">2x dx matches exactly what's in the integrand</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Replace</div><div><div class="sol-math">∫u⁵ du</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Integrate + Back-sub</div><div><div class="sol-math">= u⁶/6 + c = (x²+1)⁶/6 + c</div></div></div>
+  </div>
+  <div class="sol-ans">(x²+1)⁶/6 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">B.3 &nbsp; ∫ (log x)²/x  dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Substitute</div><div><div class="sol-math">u = log x,  du = dx/x</div><div class="sol-note">dx/x appears in the integrand as the denominator x</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Replace</div><div><div class="sol-math">∫u² du</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Integrate + Back-sub</div><div><div class="sol-math">= u³/3 + c = (log x)³/3 + c</div></div></div>
+  </div>
+  <div class="sol-ans">(log x)³/3 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">B.4 &nbsp; ∫ eˣ/(eˣ+2) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Substitute</div><div><div class="sol-math">u = eˣ+2,  du = eˣ dx</div><div class="sol-note">Numerator eˣ dx = du</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Replace</div><div><div class="sol-math">∫(1/u) du = log|u| + c</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Back-sub</div><div><div class="sol-math">= log(eˣ+2) + c</div><div class="sol-note">eˣ+2 > 0 always, no absolute value needed</div></div></div>
+  </div>
+  <div class="sol-ans">log(eˣ+2) + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">B.5 &nbsp; ∫ x · e^(x²) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Substitute</div><div><div class="sol-math">u = x²,  du = 2x dx  →  x dx = du/2</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Replace</div><div><div class="sol-math">∫eᵘ·(du/2) = (1/2)∫eᵘ du</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Integrate + Back-sub</div><div><div class="sol-math">= (1/2)eᵘ + c = e^(x²)/2 + c</div></div></div>
+  </div>
+  <div class="sol-ans">e^(x²)/2 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">B.6 &nbsp; ∫ sin x · cos³x dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Substitute</div><div><div class="sol-math">u = cos x,  du = −sin x dx  →  sin x dx = −du</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Replace</div><div><div class="sol-math">∫u³·(−du) = −∫u³ du</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Integrate + Back-sub</div><div><div class="sol-math">= −u⁴/4 + c = −cos⁴x/4 + c</div></div></div>
+  </div>
+  <div class="sol-ans">−cos⁴x/4 + c</div>
+</div>
+
+<h3>Section C — Integration by Parts</h3>
+
+<div class="sol-block no-break">
+  <div class="sol-header">C.1 &nbsp; ∫ x · eˣ dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">ILATE</div><div><div class="sol-math">u = x (A),  dv = eˣ dx (E)</div><div class="sol-note">A before E</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">du, v</div><div><div class="sol-math">du = dx,  v = eˣ</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Formula</div><div><div class="sol-math">= x·eˣ − ∫eˣ dx = x·eˣ − eˣ + c</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Factorise</div><div><div class="sol-math">= eˣ(x−1) + c</div></div></div>
+  </div>
+  <div class="sol-ans">eˣ(x − 1) + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">C.2 &nbsp; ∫ x · sin x dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">ILATE</div><div><div class="sol-math">u = x (A),  dv = sin x dx (T)</div><div class="sol-note">A before T</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">du, v</div><div><div class="sol-math">du = dx,  v = −cos x</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Formula</div><div><div class="sol-math">= x·(−cos x) − ∫(−cos x) dx = −x cos x + ∫cos x dx</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Integrate</div><div><div class="sol-math">= −x cos x + sin x + c</div></div></div>
+  </div>
+  <div class="sol-ans">−x cos x + sin x + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">C.3 &nbsp; ∫ log x dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Rewrite</div><div><div class="sol-math">∫log x · 1 dx</div><div class="sol-note">Use 1 as the second function</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">ILATE</div><div><div class="sol-math">u = log x (L),  dv = dx;  du = dx/x,  v = x</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Formula</div><div><div class="sol-math">= x·log x − ∫x·(1/x) dx = x·log x − ∫1 dx</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Integrate</div><div><div class="sol-math">= x·log x − x + c = x(log x − 1) + c</div></div></div>
+  </div>
+  <div class="sol-ans">x(log x − 1) + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">C.4 &nbsp; ∫ x · log x dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">ILATE</div><div><div class="sol-math">u = log x (L),  dv = x dx (A);  du = dx/x,  v = x²/2</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Formula</div><div><div class="sol-math">= (x²/2)·log x − ∫(x²/2)·(1/x) dx</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Simplify</div><div><div class="sol-math">= (x²/2)·log x − (1/2)∫x dx</div><div class="sol-note">(x²/2)·(1/x) = x/2</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Integrate</div><div><div class="sol-math">= (x²/2)·log x − x²/4 + c</div></div></div>
+  </div>
+  <div class="sol-ans">(x²/2) log x − x²/4 + c</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">C.5 &nbsp; ∫ x² · eˣ dx  (By Parts Twice)</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">1st application</div><div><div class="sol-math">u = x² (A),  dv = eˣ dx (E);  du = 2x dx,  v = eˣ</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">Apply formula</div><div><div class="sol-math">= x²eˣ − ∫eˣ·2x dx = x²eˣ − 2∫x·eˣ dx</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Solve ∫x·eˣ dx</div><div><div class="sol-math">= eˣ(x−1)  [by parts: u=x, v=eˣ → xe^x − e^x]</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Substitute back</div><div><div class="sol-math">= x²eˣ − 2·eˣ(x−1) + c</div></div></div>
+    <div class="sol-row"><div class="sol-n">5</div><div class="sol-label">Expand + factorise</div><div><div class="sol-math">= x²eˣ − 2xeˣ + 2eˣ + c = eˣ(x²−2x+2) + c</div></div></div>
+  </div>
+  <div class="sol-ans">eˣ(x² − 2x + 2) + c</div>
+</div>
+
+<h3>Section D — Definite Integrals</h3>
+
+<div class="sol-block no-break">
+  <div class="sol-header">D.1 &nbsp; ∫₀² (3x²+2) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Antiderivative</div><div><div class="sol-math">F(x) = x³ + 2x</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">F(2)</div><div><div class="sol-math">= 8 + 4 = 12</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">F(0)</div><div><div class="sol-math">= 0 + 0 = 0</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Result</div><div><div class="sol-math">F(2) − F(0) = 12 − 0 = 12</div></div></div>
+  </div>
+  <div class="sol-ans">12</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">D.2 &nbsp; ∫₁³ (2x+1) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Antiderivative</div><div><div class="sol-math">F(x) = x² + x</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">F(3)</div><div><div class="sol-math">= 9 + 3 = 12</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">F(1)</div><div><div class="sol-math">= 1 + 1 = 2</div></div></div>
+    <div class="sol-row"><div class="sol-n">4</div><div class="sol-label">Result</div><div><div class="sol-math">F(3) − F(1) = 12 − 2 = 10</div></div></div>
+  </div>
+  <div class="sol-ans">10</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">D.3 &nbsp; ∫₀¹ eˣ dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Antiderivative</div><div><div class="sol-math">F(x) = eˣ</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">F(1) − F(0)</div><div><div class="sol-math">= e¹ − e⁰ = e − 1</div><div class="sol-note">e⁰ = 1</div></div></div>
+  </div>
+  <div class="sol-ans">e − 1  ≈  1.7183</div>
+</div>
+
+<div class="sol-block no-break">
+  <div class="sol-header">D.4 &nbsp; ∫₁⁴ (1/x) dx</div>
+  <div class="sol-body">
+    <div class="sol-row"><div class="sol-n">1</div><div class="sol-label">Antiderivative</div><div><div class="sol-math">F(x) = log x</div><div class="sol-note">Natural logarithm (logₑ)</div></div></div>
+    <div class="sol-row"><div class="sol-n">2</div><div class="sol-label">F(4) − F(1)</div><div><div class="sol-math">= log 4 − log 1 = log 4 − 0 = log 4</div><div class="sol-note">log 1 = 0 always</div></div></div>
+    <div class="sol-row"><div class="sol-n">3</div><div class="sol-label">Simplify</div><div><div class="sol-math">log 4 = log 2² = 2 log 2</div><div class="sol-note">Log law: log aⁿ = n log a</div></div></div>
+  </div>
+  <div class="sol-ans">log 4  =  2 log 2  ≈  1.3863</div>
+</div>
+
+</div><!-- end page -->
+</div>
+</body>
+</html>
