@@ -31,11 +31,11 @@ API_KEY = "YOUR_API_KEY_HERE"
 #    r"C:\Users\Sayyam\Pictures\bangle1.jpg"
 # ═══════════════════════════════════════════════════════════════════
 BANGLE_IMAGES = [
-    "PASTE_IMAGE_1_URL_OR_PATH_HERE",
-    "PASTE_IMAGE_2_URL_OR_PATH_HERE",
-    "PASTE_IMAGE_3_URL_OR_PATH_HERE",
-    "PASTE_IMAGE_4_URL_OR_PATH_HERE",
-    "PASTE_IMAGE_5_URL_OR_PATH_HERE",
+    "https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev/bt/1782205590095-gt7nk7u.jpg",
+    "https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev/bt/1782205589964-z4mfjlo.jpg",
+    "https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev/CNC/CNC%20EXLUSIVE%20PAIR/.picasaoriginals/1808..jpeg",
+    "https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev/bt/1780654127792-ej47iyg.jpg",
+    "https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev/bt/1780654188859-ovekozc.jpg",
 ]
 
 # ═══════════════════════════════════════════════════════════════════
