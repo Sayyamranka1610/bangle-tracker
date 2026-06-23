@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="theme-color" content="#2C2416">
+<title>Exhibition Catalogue</title>
+<meta property="og:title" content="Exhibition Catalogue">
+<meta property="og:description" content="Browse our curated collection of handcrafted bangles.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #F2F0EC; color: #1C1810; min-height: 100vh; }
+
+  /* ── Header ── */
+  .site-header { background: #2C2416; }
+  .header-main  { padding: 2rem 1.25rem 1.5rem; text-align: center; }
+  .h-eyebrow    { font-size: 10px; letter-spacing: 0.22em; color: #C9A96E; text-transform: uppercase; margin-bottom: 10px; }
+  .h-brand      { font-size: 28px; font-weight: 300; color: #F5EDD8; letter-spacing: 0.1em; line-height: 1.2; }
+  .h-tagline    { font-size: 12px; color: rgba(245,237,216,0.5); margin-top: 6px; letter-spacing: 0.06em; }
+  .h-divider    { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px auto 0; width: fit-content; }
+  .h-div-line   { width: 36px; height: 0.5px; background: rgba(201,169,110,0.4); }
+  .h-div-dia    { width: 4px; height: 4px; background: #C9A96E; transform: rotate(45deg); }
+  .header-foot  { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.25rem; border-top: 0.5px solid rgba(201,169,110,0.15); }
+  .h-count      { font-size: 11px; color: rgba(201,169,110,0.65); letter-spacing: 0.04em; }
+  .h-scan-btn   { font-size: 10px; padding: 4px 14px; border: 0.5px solid rgba(201,169,110,0.5); border-radius: 20px; color: #C9A96E; letter-spacing: 0.06em; cursor: pointer; background: transparent; }
+
+  /* ── Segment tabs ── */
+  .seg-wrap { padding: 1rem 1.25rem 0; display: flex; gap: 8px; }
+  .seg-btn  { flex: 1; padding: 10px 0; font-size: 13px; font-weight: 500; background: #FFFFFF; color: #6B5C3E; border: 0.5px solid #C9B89A; border-radius: 8px; cursor: pointer; letter-spacing: 0.04em; transition: all 0.15s; }
+  .seg-btn.active        { background: #2C2416; color: #C9A96E; border-color: #2C2416; }
+  .seg-btn:not(.active):hover { background: #F0EBE0; }
+
+  /* ── Folder pills ── */
+  .folder-wrap { display: flex; gap: 6px; flex-wrap: wrap; padding: 0.85rem 1.25rem 0; }
+  .folder-btn  { font-size: 11px; padding: 4px 14px; border-radius: 20px; border: 0.5px solid #C9B89A; background: #FFFFFF; color: #6B5C3E; cursor: pointer; letter-spacing: 0.03em; transition: all 0.12s; white-space: nowrap; }
+  .folder-btn.active        { background: #C9A96E; border-color: #C9A96E; color: #2C1800; font-weight: 500; }
+  .folder-btn:not(.active):hover { background: #F0EBE0; }
+
+  /* ── Search ── */
+  .search-wrap  { padding: 0.85rem 1.25rem 0; }
+  .search-input { width: 100%; padding: 9px 14px; border: 0.5px solid #C9B89A; border-radius: 8px; background: #FFFFFF; color: #1C1810; font-size: 13px; outline: none; transition: border-color 0.15s; }
+  .search-input::placeholder { color: #A0906E; }
+  .search-input:focus        { border-color: #C9A96E; }
+
+  /* ── Results label ── */
+  .results-wrap { padding: 0.65rem 1.25rem 0; font-size: 12px; color: #8A7A62; }
+
+  /* ── Design grid ── */
+  .design-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0.75rem 1.25rem 1.5rem; }
+
+  /* ── Design card ── */
+  .d-card      { background: #FFFFFF; border: 0.5px solid #E0D8CC; border-radius: 10px; overflow: hidden; transition: border-color 0.15s; }
+  .d-card:hover { border-color: #C9A96E; }
+  .d-img-wrap  { position: relative; width: 100%; aspect-ratio: 1/1; overflow: hidden; }
+  .d-img       { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .d-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(145deg, #F5EED8, #EDE0C0); }
+  .d-cat-tag   { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 8px 6px; background: linear-gradient(to top, rgba(44,36,22,0.6), transparent); font-size: 8px; color: rgba(245,237,216,0.9); letter-spacing: 0.1em; text-transform: uppercase; }
+  .d-body      { padding: 9px 10px 12px; }
+  .d-code      { font-size: 12px; font-weight: 500; color: #1C1810; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .d-folder    { font-size: 10px; color: #8A7A62; margin-top: 2px; }
+  .d-wa        { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; margin-top: 9px; padding: 7px 0; border: 0.5px solid #25D366; border-radius: 6px; background: transparent; color: #1A7A40; font-size: 11px; font-weight: 500; cursor: pointer; letter-spacing: 0.02em; transition: all 0.13s; }
+  .d-wa:hover, .d-wa:active { background: #25D366; color: #fff; }
+  .wa-icon     { width: 12px; height: 12px; fill: currentColor; flex-shrink: 0; }
+
+  /* ── State messages ── */
+  .state-msg { text-align: center; padding: 3rem 1.25rem; color: #8A7A62; font-size: 14px; grid-column: 1/-1; }
+
+  /* ── QR footer ── */
+  .qr-section  { margin: 0 1.25rem 2.5rem; padding: 1.25rem; background: #FFFFFF; border: 0.5px solid #E0D8CC; border-radius: 10px; display: flex; align-items: flex-start; gap: 1.25rem; }
+  .qr-box      { flex-shrink: 0; border-radius: 6px; overflow: hidden; }
+  .qr-info h3  { font-size: 14px; font-weight: 500; color: #1C1810; }
+  .qr-info p   { font-size: 12px; color: #8A7A62; margin-top: 5px; line-height: 1.6; }
+  .qr-url      { font-size: 10px; color: #C9A96E; margin-top: 8px; word-break: break-all; }
+
+  /* ── Responsive ── */
+  @media (min-width: 480px) {
+    .design-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (min-width: 700px) {
+    .design-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .header-main { padding: 2.5rem 2rem 2rem; }
+    .h-brand { font-size: 36px; }
+    .seg-wrap, .folder-wrap, .search-wrap, .results-wrap, .design-grid, .qr-section { padding-left: 2rem; padding-right: 2rem; }
+    .header-foot { padding: 0.75rem 2rem; }
+  }
+  @media (min-width: 960px) {
+    .seg-wrap, .folder-wrap, .search-wrap, .results-wrap, .design-grid, .qr-section { max-width: 1100px; margin-left: auto; margin-right: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-main">
+    <div class="h-eyebrow"  id="hd-eyebrow">Exhibition 2026</div>
+    <div class="h-brand"    id="hd-brand">Siddhi Bangles</div>
+    <div class="h-tagline"  id="hd-tagline">Artisan Bangle Collection</div>
+    <div class="h-divider"><div class="h-div-line"></div><div class="h-div-dia"></div><div class="h-div-line"></div></div>
+  </div>
+  <div class="header-foot">
+    <span class="h-count" id="hd-count"></span>
+    <button class="h-scan-btn" onclick="document.getElementById('qr-sec').scrollIntoView({behavior:'smooth'})">Scan QR ↓</button>
+  </div>
+</header>
+
+<div class="seg-wrap"    id="seg-wrap"><div style="padding:0.75rem 0;color:#8A7A62;font-size:13px">Loading…</div></div>
+<div class="folder-wrap" id="folder-wrap"></div>
+<div class="search-wrap"><input class="search-input" id="search-in" placeholder="Search by design code…" oninput="onSearch()"></div>
+<div class="results-wrap" id="results-wrap"></div>
+<div class="design-grid"  id="design-grid"></div>
+
+<div class="qr-section" id="qr-sec">
+  <div class="qr-box" id="qr-box"></div>
+  <div class="qr-info">
+    <h3 id="qr-h">Siddhi Bangles — Exhibition Catalogue</h3>
+    <p>Scan this code to browse our full catalogue on your phone and send enquiries on WhatsApp directly.</p>
+    <div class="qr-url" id="qr-url-label"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const FB_ROOT = 'https://bangle-tracker-default-rtdb.firebaseio.com/catalogueV1';
+const CAT_URL = (location.origin + location.pathname).replace(/\/?$/, '/');
+
+let D = { settings:{}, segments:{}, folders:{}, designs:{} };
+let activeSeg = null, activeFolder = 'all', searchQ = '';
+
+async function boot() {
+  try {
+    const res  = await fetch(FB_ROOT + '.json');
+    const raw  = await res.json();
+    if (!raw) { showMsg('Catalogue is being set up. Check back soon.'); return; }
+    D.settings = raw.settings || {};
+    D.segments  = raw.segments  || {};
+    D.folders   = raw.folders   || {};
+    D.designs   = raw.designs   || {};
+    applySettings();
+    buildSegs();
+    buildQR();
+  } catch(e) {
+    showMsg('Unable to load catalogue. Please refresh the page.');
+  }
+}
+
+function applySettings() {
+  const s = D.settings;
+  setText('hd-eyebrow', s.exhibitionLabel || 'Exhibition 2026');
+  setText('hd-brand',   s.brandName  || 'Siddhi Bangles');
+  setText('hd-tagline', s.tagline    || 'Artisan Bangle Collection');
+  setText('qr-h', (s.brandName || 'Siddhi Bangles') + ' — Exhibition Catalogue');
+  if (s.brandName) document.title = s.brandName + ' — Exhibition Catalogue';
+  const total = Object.values(D.designs).filter(d => d.visible !== false).length;
+  setText('hd-count', total + ' designs in this catalogue');
+}
+
+function segsArr()       { return obj2arr(D.segments).sort(byOrder); }
+function foldersFor(sid) { return obj2arr(D.folders).filter(f => f.segId === sid).sort(byOrder); }
+function obj2arr(obj)    { return Object.entries(obj || {}).map(([id,v]) => ({id,...v})); }
+function byOrder(a,b)    { return (a.order||0) - (b.order||0); }
+
+function visDesigns() {
+  const folderIds = foldersFor(activeSeg).map(f => f.id);
+  let arr = obj2arr(D.designs).filter(d => d.visible !== false && folderIds.includes(d.folderId));
+  if (activeFolder !== 'all') arr = arr.filter(d => d.folderId === activeFolder);
+  if (searchQ) { const q = searchQ.toLowerCase(); arr = arr.filter(d => (d.code||'').toLowerCase().includes(q)); }
+  return arr.sort(byOrder);
+}
+
+function buildSegs() {
+  const segs = segsArr();
+  if (!segs.length) { showMsg('No designs yet.'); return; }
+  if (!activeSeg || !segs.find(s => s.id === activeSeg)) activeSeg = segs[0].id;
+  document.getElementById('seg-wrap').innerHTML = segs.map(s =>
+    `<button class="seg-btn${s.id===activeSeg?' active':''}" onclick="selSeg('${s.id}')">${esc(s.name)}</button>`
+  ).join('');
+  buildFolders();
+}
+
+function buildFolders() {
+  const folders = foldersFor(activeSeg);
+  const allBtn  = `<button class="folder-btn${activeFolder==='all'?' active':''}" onclick="selFolder('all')">All</button>`;
+  document.getElementById('folder-wrap').innerHTML = allBtn + folders.map(f =>
+    `<button class="folder-btn${f.id===activeFolder?' active':''}" onclick="selFolder('${f.id}')">${esc(f.name)}</button>`
+  ).join('');
+  buildGrid();
+}
+
+function buildGrid() {
+  const designs = visDesigns();
+  const phone   = (D.settings.whatsapp || '').replace(/\D/g, '');
+  const segName = (D.segments[activeSeg] || {}).name || '';
+  setText('results-wrap', designs.length + ' design' + (designs.length !== 1 ? 's' : '') + (searchQ ? ` matching "${searchQ}"` : ''));
+  if (!designs.length) { showMsg('No designs found' + (searchQ ? ` for "${esc(searchQ)}"` : '') + '.'); return; }
+  document.getElementById('design-grid').innerHTML = designs.map(d => {
+    const folder = D.folders[d.folderId] || {};
+    const waMsg  = encodeURIComponent(`Hi, I am interested in design ${d.code} (${segName} · ${folder.name||''}). Please share more details.`);
+    const waUrl  = phone ? `https://wa.me/${phone}?text=${waMsg}` : '#';
+    const img    = d.imageUrl
+      ? `<img class="d-img" src="${esc(d.imageUrl)}" alt="${esc(d.code)}" loading="lazy">`
+      : `<div class="d-placeholder"><svg width="52" height="30" viewBox="0 0 52 30" fill="none"><ellipse cx="26" cy="15" rx="22" ry="13" stroke="#C9A96E" stroke-width="4.5"/></svg></div>`;
+    return `<div class="d-card">
+      <div class="d-img-wrap">
+        ${img}
+        <div class="d-cat-tag">${esc(segName)} · ${esc(folder.name||'')}</div>
+      </div>
+      <div class="d-body">
+        <div class="d-code">${esc(d.code)}</div>
+        <div class="d-folder">${esc(folder.name||'')}</div>
+        <button class="d-wa" onclick="event.stopPropagation();window.open('${esc(waUrl)}','_blank')">
+          <svg class="wa-icon" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          WhatsApp Enquiry
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function buildQR() {
+  const el = document.getElementById('qr-box');
+  el.innerHTML = '';
+  new QRCode(el, { text: CAT_URL, width: 90, height: 90, colorDark: '#2C2416', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.M });
+  document.getElementById('qr-url-label').textContent = CAT_URL;
+}
+
+function selSeg(id)    { activeSeg = id; activeFolder = 'all'; buildSegs(); }
+function selFolder(id) { activeFolder = id; buildFolders(); }
+function onSearch()    { searchQ = document.getElementById('search-in').value.trim(); buildGrid(); }
+function showMsg(msg)  { document.getElementById('design-grid').innerHTML = `<div class="state-msg">${msg}</div>`; }
+function setText(id,t) { const el = document.getElementById(id); if (el) el.textContent = t; }
+function esc(s)        { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+boot();
+</script>
+</body>
+</html>

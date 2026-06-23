@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catalogue Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F2F0EC; color: #1C1810; min-height: 100vh; }
+
+  /* ── Login ── */
+  .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+  .login-box    { background: #FFFFFF; border: 0.5px solid #E0D8CC; border-radius: 12px; padding: 2rem 1.75rem; width: 100%; max-width: 360px; }
+  .login-title  { font-size: 18px; font-weight: 500; color: #1C1810; margin-bottom: 4px; }
+  .login-sub    { font-size: 12px; color: #8A7A62; margin-bottom: 1.75rem; }
+  .login-err    { font-size: 12px; color: #A32D2D; margin-top: 10px; display: none; }
+  .login-logo   { width: 40px; height: 40px; background: #2C2416; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; }
+  .login-logo svg { width: 22px; height: 22px; fill: #C9A96E; }
+
+  /* ── Top nav ── */
+  .top-nav    { background: #2C2416; padding: 0 1.25rem; display: flex; align-items: center; justify-content: space-between; height: 52px; position: sticky; top: 0; z-index: 100; }
+  .nav-brand  { font-size: 14px; font-weight: 500; color: #C9A96E; letter-spacing: 0.06em; }
+  .nav-right  { display: flex; align-items: center; gap: 8px; }
+  .nav-live   { font-size: 11px; padding: 5px 12px; border: 0.5px solid rgba(201,169,110,0.5); border-radius: 20px; color: #C9A96E; text-decoration: none; letter-spacing: 0.04em; }
+  .nav-live:hover { background: rgba(201,169,110,0.1); }
+  .nav-logout { font-size: 11px; padding: 5px 12px; border: 0.5px solid rgba(245,237,216,0.2); border-radius: 20px; color: rgba(245,237,216,0.6); cursor: pointer; background: transparent; }
+
+  /* ── Tabs ── */
+  .tab-bar  { background: #FFFFFF; border-bottom: 0.5px solid #E0D8CC; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab-btn  { flex-shrink: 0; padding: 12px 20px; font-size: 13px; color: #8A7A62; border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+  .tab-btn.on { color: #1C1810; border-bottom-color: #C9A96E; font-weight: 500; }
+
+  /* ── Tab panels ── */
+  .tab-panel { display: none; padding: 1.25rem; max-width: 900px; margin: 0 auto; }
+  .tab-panel.on { display: block; }
+
+  /* ── Section heading ── */
+  .sec-head { font-size: 14px; font-weight: 500; color: #1C1810; margin-bottom: 4px; }
+  .sec-sub  { font-size: 12px; color: #8A7A62; margin-bottom: 1.25rem; }
+  .divider  { height: 0.5px; background: #E0D8CC; margin: 1.5rem 0; }
+
+  /* ── Form fields ── */
+  .field       { margin-bottom: 1rem; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: #6B5C3E; margin-bottom: 5px; letter-spacing: 0.03em; }
+  .field input, .field select { width: 100%; padding: 9px 12px; border: 0.5px solid #C9B89A; border-radius: 8px; background: #FFFFFF; color: #1C1810; font-size: 13px; outline: none; transition: border-color 0.15s; font-family: inherit; }
+  .field input:focus, .field select:focus { border-color: #C9A96E; }
+  .field small { display: block; font-size: 11px; color: #A0906E; margin-top: 4px; }
+
+  /* ── Buttons ── */
+  .btn-primary { padding: 10px 20px; background: #2C2416; color: #C9A96E; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; letter-spacing: 0.03em; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-secondary { padding: 8px 16px; background: transparent; color: #6B5C3E; border: 0.5px solid #C9B89A; border-radius: 8px; font-size: 12px; cursor: pointer; transition: background 0.15s; }
+  .btn-secondary:hover { background: #F0EBE0; }
+  .btn-danger { padding: 7px 14px; background: transparent; color: #A32D2D; border: 0.5px solid #F09595; border-radius: 8px; font-size: 12px; cursor: pointer; transition: background 0.15s; }
+  .btn-danger:hover { background: #FDE8E8; }
+  .btn-icon { width: 30px; height: 30px; border-radius: 6px; border: 0.5px solid #E0D8CC; background: #FFFFFF; color: #6B5C3E; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background 0.12s; }
+  .btn-icon:hover { background: #F0EBE0; }
+  .btn-add { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border: 0.5px dashed #C9B89A; border-radius: 8px; background: transparent; color: #6B5C3E; font-size: 13px; cursor: pointer; transition: all 0.15s; width: 100%; justify-content: center; }
+  .btn-add:hover { border-color: #C9A96E; color: #2C2416; background: rgba(201,169,110,0.05); }
+
+  /* ── Toast ── */
+  .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%) translateY(10px); background: #1C1810; color: #F5EDD8; font-size: 13px; padding: 10px 20px; border-radius: 24px; z-index: 999; opacity: 0; transition: all 0.25s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Segments & Folders layout ── */
+  .seg-folder-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 600px) { .seg-folder-grid { grid-template-columns: 1fr; } }
+  .panel-box { background: #FFFFFF; border: 0.5px solid #E0D8CC; border-radius: 10px; padding: 1rem; }
+  .panel-box h3 { font-size: 13px; font-weight: 500; color: #1C1810; margin-bottom: 0.85rem; }
+
+  /* ── List items (segments / folders) ── */
+  .list-item { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 0.5px solid #E0D8CC; border-radius: 8px; margin-bottom: 6px; background: #FAFAF8; }
+  .list-item.selected { border-color: #C9A96E; background: rgba(201,169,110,0.06); }
+  .list-item-name { flex: 1; font-size: 13px; color: #1C1810; cursor: pointer; }
+  .list-item-name:hover { color: #C9A96E; }
+
+  /* ── Designs tab ── */
+  .design-filter-bar { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .design-filter-bar select { padding: 8px 12px; border: 0.5px solid #C9B89A; border-radius: 8px; background: #FFFFFF; color: #1C1810; font-size: 13px; outline: none; font-family: inherit; }
+  .design-list { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .design-row  { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #FFFFFF; border: 0.5px solid #E0D8CC; border-radius: 10px; }
+  .design-thumb { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; background: linear-gradient(145deg, #F5EED8, #EDE0C0); flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .design-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+  .design-thumb svg { opacity: 0.5; }
+  .design-info { flex: 1; min-width: 0; }
+  .design-info .code { font-size: 13px; font-weight: 500; color: #1C1810; }
+  .design-info .folder-tag { font-size: 11px; color: #8A7A62; margin-top: 2px; }
+  .design-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .toggle-vis { font-size: 11px; padding: 4px 10px; border-radius: 20px; cursor: pointer; border: 0.5px solid; transition: all 0.15s; }
+  .toggle-vis.visible { border-color: #1D9E75; color: #0F6E56; background: #E1F5EE; }
+  .toggle-vis.hidden  { border-color: #C9B89A; color: #8A7A62; background: #F2F0EC; }
+
+  /* ── Add design form ── */
+  .add-design-form { background: #FFFFFF; border: 0.5px solid #E0D8CC; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+  .add-design-form h3 { font-size: 14px; font-weight: 500; margin-bottom: 1rem; color: #1C1810; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 500px) { .form-row { grid-template-columns: 1fr; } }
+
+  /* ── Move design dropdown ── */
+  .move-select { font-size: 11px; padding: 4px 8px; border: 0.5px solid #C9B89A; border-radius: 6px; background: #FAFAF8; color: #6B5C3E; outline: none; font-family: inherit; max-width: 130px; }
+
+  /* ── Inline edit ── */
+  .inline-edit { display: none; }
+  .inline-edit.show { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .inline-edit input { padding: 5px 9px; border: 0.5px solid #C9A96E; border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; color: #1C1810; }
+
+  /* ── Empty hint ── */
+  .empty-hint { text-align: center; padding: 2rem; color: #A0906E; font-size: 13px; }
+
+  /* ── Drag handle placeholder ── */
+  .order-btns { display: flex; flex-direction: column; gap: 2px; }
+  .order-btns button { width: 22px; height: 18px; font-size: 10px; border: 0.5px solid #E0D8CC; border-radius: 4px; background: #FAFAF8; color: #6B5C3E; cursor: pointer; line-height: 1; }
+  .order-btns button:hover { background: #E0D8CC; }
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="login-screen" class="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>
+    </div>
+    <div class="login-title">Catalogue Admin</div>
+    <div class="login-sub">Sign in to manage your exhibition catalogue</div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="pwd-in" placeholder="Enter admin password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn-primary" style="width:100%" onclick="doLogin()">Sign in</button>
+    <div class="login-err" id="login-err">Incorrect password. Please try again.</div>
+  </div>
+</div>
+
+<!-- ══ ADMIN PANEL ══ -->
+<div id="admin-panel" style="display:none">
+
+  <nav class="top-nav">
+    <span class="nav-brand">Catalogue Admin</span>
+    <div class="nav-right">
+      <a class="nav-live" href="index.html" target="_blank">View Live Catalogue ↗</a>
+      <button class="nav-logout" onclick="doLogout()">Sign out</button>
+    </div>
+  </nav>
+
+  <div class="tab-bar">
+    <button class="tab-btn on"  onclick="switchTab('settings')">Brand Settings</button>
+    <button class="tab-btn"     onclick="switchTab('sections')">Sections &amp; Folders</button>
+    <button class="tab-btn"     onclick="switchTab('designs')">Designs</button>
+  </div>
+
+  <!-- ═══ TAB 1 — Brand Settings ═══ -->
+  <div id="tab-settings" class="tab-panel on">
+    <div class="sec-head">Brand Settings</div>
+    <div class="sec-sub">These words appear on your live catalogue. Changes go live the moment you click Save.</div>
+
+    <div class="field">
+      <label>Brand / Business Name</label>
+      <input type="text" id="s-brand" placeholder="e.g. Siddhi Bangles">
+    </div>
+    <div class="field">
+      <label>Exhibition Label (top banner small text)</label>
+      <input type="text" id="s-exh" placeholder="e.g. Exhibition 2026">
+    </div>
+    <div class="field">
+      <label>Tagline (shown below brand name)</label>
+      <input type="text" id="s-tagline" placeholder="e.g. Artisan Bangle Collection">
+    </div>
+    <div class="field">
+      <label>Your WhatsApp Number</label>
+      <input type="text" id="s-wa" placeholder="e.g. 919876543210">
+      <small>Include country code with no + or spaces. India: 91 then your 10-digit number.</small>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sec-head">Change Admin Password</div>
+    <div class="sec-sub">Leave blank if you do not want to change the password.</div>
+    <div class="field">
+      <label>New Password</label>
+      <input type="password" id="s-newpwd" placeholder="Leave blank to keep current password">
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-top:0.5rem">
+      <button class="btn-primary" onclick="saveSettings()">Save &amp; Go Live</button>
+      <span id="settings-saved" style="font-size:12px;color:#1D9E75;display:none">✓ Saved — live catalogue updated</span>
+    </div>
+  </div>
+
+  <!-- ═══ TAB 2 — Sections & Folders ═══ -->
+  <div id="tab-sections" class="tab-panel">
+    <div class="sec-head">Sections &amp; Folders</div>
+    <div class="sec-sub">Sections are the top-level groups (like CNC, Dye Gold). Folders sit inside each section (like 3MM, 6MM). Click a section name to manage its folders.</div>
+
+    <div class="seg-folder-grid">
+
+      <!-- Segments column -->
+      <div class="panel-box">
+        <h3>Sections</h3>
+        <div id="seg-list"></div>
+        <div style="margin-top:10px">
+          <div style="display:flex;gap:6px">
+            <input type="text" id="new-seg-name" placeholder="New section name…" style="flex:1;padding:8px 10px;border:0.5px solid #C9B89A;border-radius:8px;font-size:13px;outline:none;font-family:inherit">
+            <button class="btn-secondary" onclick="addSegment()">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Folders column -->
+      <div class="panel-box">
+        <h3 id="folder-panel-title">Folders <span style="font-size:11px;color:#A0906E;font-weight:400">(select a section first)</span></h3>
+        <div id="folder-list"><div class="empty-hint">Click a section name on the left to manage its folders.</div></div>
+        <div id="folder-add-row" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:6px">
+            <input type="text" id="new-folder-name" placeholder="New folder name…" style="flex:1;padding:8px 10px;border:0.5px solid #C9B89A;border-radius:8px;font-size:13px;outline:none;font-family:inherit">
+            <button class="btn-secondary" onclick="addFolder()">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB 3 — Designs ═══ -->
+  <div id="tab-designs" class="tab-panel">
+    <div class="sec-head">Designs</div>
+    <div class="sec-sub">Add, edit, move, show or hide individual designs. Changes go live immediately.</div>
+
+    <!-- Add Design Form -->
+    <div class="add-design-form">
+      <h3>Add New Design</h3>
+      <div class="form-row">
+        <div class="field" style="margin-bottom:0">
+          <label>Design Code</label>
+          <input type="text" id="nd-code" placeholder="e.g. CNC-3001">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Folder</label>
+          <select id="nd-folder"></select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px;margin-bottom:10px">
+        <label>Image URL</label>
+        <input type="text" id="nd-img" placeholder="Paste image link (from R2 or any image URL)">
+        <small>Leave blank to show a placeholder. You can update it later.</small>
+      </div>
+      <button class="btn-primary" onclick="addDesign()">Add Design to Catalogue</button>
+      <span id="add-design-msg" style="font-size:12px;color:#1D9E75;margin-left:10px;display:none">✓ Design added</span>
+    </div>
+
+    <!-- Filter -->
+    <div class="design-filter-bar">
+      <select id="filter-seg" onchange="filterDesigns()">
+        <option value="">All Sections</option>
+      </select>
+      <select id="filter-folder" onchange="filterDesigns()">
+        <option value="">All Folders</option>
+      </select>
+    </div>
+
+    <!-- Design list -->
+    <div class="design-list" id="design-list"></div>
+  </div>
+
+</div>
+
+<!-- ══ TOAST ══ -->
+<div class="toast" id="toast"></div>
+
+<script>
+const FB   = 'https://bangle-tracker-default-rtdb.firebaseio.com/catalogueV1';
+const ADMIN_PWD_KEY = 'cat_admin_auth';
+let PASS = 'Siddhi@2026';
+let D    = { settings:{}, segments:{}, folders:{}, designs:{} };
+let selSegId = null;
+
+/* ─── Auth ─── */
+function doLogin() {
+  const v = document.getElementById('pwd-in').value;
+  if (v === PASS) {
+    sessionStorage.setItem(ADMIN_PWD_KEY, '1');
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('admin-panel').style.display  = 'block';
+    loadAll();
+  } else {
+    document.getElementById('login-err').style.display = 'block';
+  }
+}
+function doLogout() {
+  sessionStorage.removeItem(ADMIN_PWD_KEY);
+  location.reload();
+}
+if (sessionStorage.getItem(ADMIN_PWD_KEY)) {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-panel').style.display  = 'block';
+}
+
+/* ─── Load all data ─── */
+async function loadAll() {
+  try {
+    const res = await fetch(FB + '.json');
+    const raw = await res.json();
+    D.settings = (raw && raw.settings)  || {};
+    D.segments  = (raw && raw.segments)  || {};
+    D.folders   = (raw && raw.folders)   || {};
+    D.designs   = (raw && raw.designs)   || {};
+    applySettingsToForm();
+    renderSegments();
+    renderDesigns();
+    populateDesignFilters();
+    populateFolderDropdown();
+    // Store current password from settings if saved there
+    if (D.settings._adminPass) PASS = D.settings._adminPass;
+  } catch(e) { toast('Failed to load data. Check internet connection.', 'err'); }
+}
+
+/* ─── Tab switching ─── */
+function switchTab(name) {
+  ['settings','sections','designs'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('on', t === name);
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    const tabs = ['settings','sections','designs'];
+    b.classList.toggle('on', tabs[i] === name);
+  });
+  if (name === 'designs') renderDesigns();
+}
+
+/* ─── Firebase helpers ─── */
+function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,6); }
+
+async function fbSet(path, data) {
+  await fetch(FB + path + '.json', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+}
+async function fbPatch(path, data) {
+  await fetch(FB + path + '.json', { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+}
+async function fbDelete(path) {
+  await fetch(FB + path + '.json', { method: 'DELETE' });
+}
+
+/* ─── Settings ─── */
+function applySettingsToForm() {
+  const s = D.settings;
+  setVal('s-brand',   s.brandName       || '');
+  setVal('s-exh',     s.exhibitionLabel || '');
+  setVal('s-tagline', s.tagline         || '');
+  setVal('s-wa',      s.whatsapp        || '');
+}
+
+async function saveSettings() {
+  const newPwd = document.getElementById('s-newpwd').value.trim();
+  const patch  = {
+    brandName:       document.getElementById('s-brand').value.trim(),
+    exhibitionLabel: document.getElementById('s-exh').value.trim(),
+    tagline:         document.getElementById('s-tagline').value.trim(),
+    whatsapp:        document.getElementById('s-wa').value.trim(),
+  };
+  if (newPwd) { patch._adminPass = newPwd; PASS = newPwd; }
+  try {
+    await fbPatch('/settings', patch);
+    Object.assign(D.settings, patch);
+    const el = document.getElementById('settings-saved');
+    el.style.display = 'inline';
+    setTimeout(() => el.style.display = 'none', 3000);
+    toast('Settings saved — catalogue updated live');
+  } catch(e) { toast('Save failed. Check your connection.', 'err'); }
+}
+
+/* ─── Segments ─── */
+function segsArr()    { return obj2arr(D.segments).sort(byOrder); }
+function foldersFor(sid) { return obj2arr(D.folders).filter(f => f.segId === sid).sort(byOrder); }
+function obj2arr(o)   { return Object.entries(o||{}).map(([id,v])=>({id,...v})); }
+function byOrder(a,b) { return (a.order||0)-(b.order||0); }
+
+function renderSegments() {
+  const segs = segsArr();
+  const el   = document.getElementById('seg-list');
+  if (!segs.length) { el.innerHTML = '<div class="empty-hint">No sections yet — add one below.</div>'; return; }
+  el.innerHTML = segs.map((s,i) => `
+    <div class="list-item${s.id===selSegId?' selected':''}" id="seg-item-${s.id}">
+      <div class="order-btns">
+        <button onclick="moveSegUp('${s.id}')" ${i===0?'disabled':''}>▲</button>
+        <button onclick="moveSegDown('${s.id}')" ${i===segs.length-1?'disabled':''}>▼</button>
+      </div>
+      <div class="list-item-name" onclick="selectSeg('${s.id}')">${esc(s.name)}</div>
+      <div id="seg-edit-${s.id}" class="inline-edit">
+        <input type="text" id="seg-edit-in-${s.id}" value="${esc(s.name)}" style="width:120px">
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="saveSegRename('${s.id}')">Save</button>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="cancelEdit('seg-edit-${s.id}')">Cancel</button>
+      </div>
+      <button class="btn-icon" onclick="toggleEdit('seg-edit-${s.id}')" title="Rename">✏️</button>
+      <button class="btn-icon" onclick="deleteSeg('${s.id}','${esc(s.name)}')" title="Delete" style="color:#A32D2D">🗑️</button>
+    </div>`
+  ).join('');
+}
+
+function selectSeg(id) {
+  selSegId = id;
+  document.querySelectorAll('.list-item').forEach(el => el.classList.remove('selected'));
+  const el = document.getElementById('seg-item-' + id);
+  if (el) el.classList.add('selected');
+  renderFolders(id);
+}
+
+async function addSegment() {
+  const name = document.getElementById('new-seg-name').value.trim();
+  if (!name) { toast('Please type a section name first', 'err'); return; }
+  const id    = genId();
+  const order = segsArr().length * 10;
+  const entry = { name, order };
+  D.segments[id] = entry;
+  await fbSet('/segments/' + id, entry);
+  document.getElementById('new-seg-name').value = '';
+  renderSegments();
+  populateDesignFilters();
+  populateFolderDropdown();
+  toast('Section "' + name + '" added');
+}
+
+async function deleteSeg(id, name) {
+  const folderCount  = foldersFor(id).length;
+  const designCount  = obj2arr(D.designs).filter(d => foldersFor(id).map(f=>f.id).includes(d.folderId)).length;
+  const warn = (folderCount||designCount) ? `\n\nThis will also delete ${folderCount} folder(s) and ${designCount} design(s) inside it.` : '';
+  if (!confirm(`Delete section "${name}"?${warn}\n\nThis cannot be undone.`)) return;
+  // Delete all folders and designs in this segment
+  foldersFor(id).forEach(f => {
+    obj2arr(D.designs).filter(d => d.folderId === f.id).forEach(d => { delete D.designs[d.id]; fbDelete('/designs/' + d.id); });
+    delete D.folders[f.id];
+    fbDelete('/folders/' + f.id);
+  });
+  delete D.segments[id];
+  await fbDelete('/segments/' + id);
+  if (selSegId === id) { selSegId = null; renderFolders(null); }
+  renderSegments();
+  renderDesigns();
+  populateDesignFilters();
+  populateFolderDropdown();
+  toast('Section deleted');
+}
+
+async function saveSegRename(id) {
+  const newName = document.getElementById('seg-edit-in-' + id).value.trim();
+  if (!newName) return;
+  D.segments[id].name = newName;
+  await fbPatch('/segments/' + id, { name: newName });
+  document.getElementById('seg-edit-' + id).classList.remove('show');
+  renderSegments();
+  populateDesignFilters();
+  populateFolderDropdown();
+  toast('Section renamed to "' + newName + '"');
+}
+
+async function moveSegUp(id) {
+  const segs = segsArr();
+  const idx  = segs.findIndex(s => s.id === id);
+  if (idx <= 0) return;
+  swapOrder(D.segments, segs[idx], segs[idx-1]);
+  await fbPatch('/segments/' + segs[idx].id,   { order: segs[idx].order });
+  await fbPatch('/segments/' + segs[idx-1].id, { order: segs[idx-1].order });
+  renderSegments();
+}
+async function moveSegDown(id) {
+  const segs = segsArr();
+  const idx  = segs.findIndex(s => s.id === id);
+  if (idx >= segs.length-1) return;
+  swapOrder(D.segments, segs[idx], segs[idx+1]);
+  await fbPatch('/segments/' + segs[idx].id,   { order: segs[idx].order });
+  await fbPatch('/segments/' + segs[idx+1].id, { order: segs[idx+1].order });
+  renderSegments();
+}
+
+/* ─── Folders ─── */
+function renderFolders(sid) {
+  const titleEl = document.getElementById('folder-panel-title');
+  const listEl  = document.getElementById('folder-list');
+  const addRow  = document.getElementById('folder-add-row');
+  if (!sid) {
+    titleEl.innerHTML = 'Folders <span style="font-size:11px;color:#A0906E;font-weight:400">(select a section first)</span>';
+    listEl.innerHTML  = '<div class="empty-hint">Click a section name on the left to manage its folders.</div>';
+    addRow.style.display = 'none';
+    return;
+  }
+  const segName = (D.segments[sid] || {}).name || '';
+  titleEl.innerHTML = `Folders in <strong>${esc(segName)}</strong>`;
+  addRow.style.display = 'block';
+  const folders = foldersFor(sid);
+  if (!folders.length) { listEl.innerHTML = '<div class="empty-hint">No folders yet — add one below.</div>'; return; }
+  listEl.innerHTML = folders.map((f,i) => `
+    <div class="list-item">
+      <div class="order-btns">
+        <button onclick="moveFolderUp('${f.id}')" ${i===0?'disabled':''}>▲</button>
+        <button onclick="moveFolderDown('${f.id}')" ${i===folders.length-1?'disabled':''}>▼</button>
+      </div>
+      <div class="list-item-name">${esc(f.name)}</div>
+      <div id="fol-edit-${f.id}" class="inline-edit">
+        <input type="text" id="fol-edit-in-${f.id}" value="${esc(f.name)}" style="width:110px">
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="saveFolderRename('${f.id}')">Save</button>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="cancelEdit('fol-edit-${f.id}')">Cancel</button>
+      </div>
+      <button class="btn-icon" onclick="toggleEdit('fol-edit-${f.id}')" title="Rename">✏️</button>
+      <button class="btn-icon" onclick="deleteFolder('${f.id}','${esc(f.name)}')" title="Delete" style="color:#A32D2D">🗑️</button>
+    </div>`
+  ).join('');
+}
+
+async function addFolder() {
+  if (!selSegId) { toast('Select a section first', 'err'); return; }
+  const name = document.getElementById('new-folder-name').value.trim();
+  if (!name) { toast('Please type a folder name first', 'err'); return; }
+  const id    = genId();
+  const order = foldersFor(selSegId).length * 10;
+  const entry = { name, segId: selSegId, order };
+  D.folders[id] = entry;
+  await fbSet('/folders/' + id, entry);
+  document.getElementById('new-folder-name').value = '';
+  renderFolders(selSegId);
+  populateFolderDropdown();
+  populateDesignFilters();
+  toast('Folder "' + name + '" added');
+}
+
+async function deleteFolder(id, name) {
+  const count = obj2arr(D.designs).filter(d => d.folderId === id).length;
+  if (!confirm(`Delete folder "${name}"?${count ? `\n\nThis will also delete ${count} design(s) inside it.` : ''}\n\nThis cannot be undone.`)) return;
+  obj2arr(D.designs).filter(d => d.folderId === id).forEach(d => { delete D.designs[d.id]; fbDelete('/designs/' + d.id); });
+  delete D.folders[id];
+  await fbDelete('/folders/' + id);
+  renderFolders(selSegId);
+  renderDesigns();
+  populateFolderDropdown();
+  toast('Folder deleted');
+}
+
+async function saveFolderRename(id) {
+  const newName = document.getElementById('fol-edit-in-' + id).value.trim();
+  if (!newName) return;
+  D.folders[id].name = newName;
+  await fbPatch('/folders/' + id, { name: newName });
+  document.getElementById('fol-edit-' + id).classList.remove('show');
+  renderFolders(selSegId);
+  populateFolderDropdown();
+  populateDesignFilters();
+  toast('Folder renamed to "' + newName + '"');
+}
+
+async function moveFolderUp(id) {
+  const folders = foldersFor(selSegId);
+  const idx     = folders.findIndex(f => f.id === id);
+  if (idx <= 0) return;
+  swapOrder(D.folders, folders[idx], folders[idx-1]);
+  await fbPatch('/folders/' + folders[idx].id,   { order: folders[idx].order });
+  await fbPatch('/folders/' + folders[idx-1].id, { order: folders[idx-1].order });
+  renderFolders(selSegId);
+}
+async function moveFolderDown(id) {
+  const folders = foldersFor(selSegId);
+  const idx     = folders.findIndex(f => f.id === id);
+  if (idx >= folders.length-1) return;
+  swapOrder(D.folders, folders[idx], folders[idx+1]);
+  await fbPatch('/folders/' + folders[idx].id,   { order: folders[idx].order });
+  await fbPatch('/folders/' + folders[idx+1].id, { order: folders[idx+1].order });
+  renderFolders(selSegId);
+}
+
+/* ─── Designs ─── */
+function populateFolderDropdown() {
+  const sel     = document.getElementById('nd-folder');
+  const current = sel.value;
+  const segs    = segsArr();
+  sel.innerHTML = '<option value="">Select a folder…</option>' +
+    segs.map(s => {
+      const folders = foldersFor(s.id);
+      if (!folders.length) return '';
+      return `<optgroup label="${esc(s.name)}">${folders.map(f =>
+        `<option value="${f.id}"${f.id===current?' selected':''}>${esc(f.name)}</option>`
+      ).join('')}</optgroup>`;
+    }).join('');
+}
+
+function populateDesignFilters() {
+  const segSel    = document.getElementById('filter-seg');
+  const folderSel = document.getElementById('filter-folder');
+  const curSeg    = segSel.value;
+  const curFolder = folderSel.value;
+  segSel.innerHTML = '<option value="">All Sections</option>' +
+    segsArr().map(s => `<option value="${s.id}"${s.id===curSeg?' selected':''}>${esc(s.name)}</option>`).join('');
+  filterDesigns();
+}
+
+function filterDesigns() {
+  const segVal    = document.getElementById('filter-seg').value;
+  const folderSel = document.getElementById('filter-folder');
+  // Rebuild folder filter based on selected segment
+  let folders = segVal ? foldersFor(segVal) : obj2arr(D.folders).sort(byOrder);
+  const curFolder = folderSel.value;
+  folderSel.innerHTML = '<option value="">All Folders</option>' +
+    folders.map(f => `<option value="${f.id}"${f.id===curFolder?' selected':''}>${esc(f.name)}</option>`).join('');
+  renderDesigns();
+}
+
+function renderDesigns() {
+  const segVal    = document.getElementById('filter-seg').value;
+  const folderVal = document.getElementById('filter-folder').value;
+  let designs = obj2arr(D.designs).sort(byOrder);
+  if (folderVal)  designs = designs.filter(d => d.folderId === folderVal);
+  else if (segVal) {
+    const folderIds = foldersFor(segVal).map(f => f.id);
+    designs = designs.filter(d => folderIds.includes(d.folderId));
+  }
+  const allFolderOptions = obj2arr(D.folders).sort(byOrder)
+    .map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  const el = document.getElementById('design-list');
+  if (!designs.length) {
+    el.innerHTML = '<div class="empty-hint">No designs here yet. Add one using the form above.</div>';
+    return;
+  }
+  el.innerHTML = designs.map(d => {
+    const folder = D.folders[d.folderId] || {};
+    const seg    = D.segments[(folder.segId||'')] || {};
+    const vis    = d.visible !== false;
+    const thumb  = d.imageUrl
+      ? `<img src="${esc(d.imageUrl)}" style="width:52px;height:52px;object-fit:cover;border-radius:6px" loading="lazy">`
+      : `<svg width="28" height="16" viewBox="0 0 28 16" fill="none"><ellipse cx="14" cy="8" rx="12" ry="7" stroke="#C9A96E" stroke-width="3"/></svg>`;
+    return `<div class="design-row" id="drow-${d.id}">
+      <div class="design-thumb">${thumb}</div>
+      <div class="design-info">
+        <div class="code" id="dcode-${d.id}">${esc(d.code)}</div>
+        <div class="folder-tag">${esc(seg.name||'')} › ${esc(folder.name||'')}</div>
+        <div class="inline-edit" id="dedit-${d.id}" style="margin-top:6px">
+          <input type="text" id="dedit-in-${d.id}" value="${esc(d.code)}" style="width:130px">
+          <input type="text" id="dedit-img-${d.id}" value="${esc(d.imageUrl||'')}" placeholder="Image URL" style="width:200px">
+          <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="saveDesignEdit('${d.id}')">Save</button>
+          <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="cancelEdit('dedit-${d.id}')">Cancel</button>
+        </div>
+      </div>
+      <div class="design-controls">
+        <select class="move-select" onchange="moveDesign('${d.id}',this.value)" title="Move to folder">
+          <option value="">Move to…</option>
+          ${allFolderOptions}
+        </select>
+        <button class="toggle-vis ${vis?'visible':'hidden'}" onclick="toggleVis('${d.id}')">${vis?'Visible':'Hidden'}</button>
+        <button class="btn-icon" onclick="toggleEdit('dedit-${d.id}')" title="Edit">✏️</button>
+        <button class="btn-icon" onclick="deleteDesign('${d.id}','${esc(d.code)}')" title="Delete" style="color:#A32D2D">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addDesign() {
+  const code     = document.getElementById('nd-code').value.trim();
+  const folderId = document.getElementById('nd-folder').value;
+  const imageUrl = document.getElementById('nd-img').value.trim();
+  if (!code)     { toast('Please enter a design code', 'err'); return; }
+  if (!folderId) { toast('Please select a folder', 'err'); return; }
+  const id    = genId();
+  const order = obj2arr(D.designs).filter(d=>d.folderId===folderId).length * 10;
+  const entry = { code, folderId, imageUrl: imageUrl||'', visible: true, order };
+  D.designs[id] = entry;
+  await fbSet('/designs/' + id, entry);
+  document.getElementById('nd-code').value = '';
+  document.getElementById('nd-img').value  = '';
+  const msg = document.getElementById('add-design-msg');
+  msg.style.display = 'inline'; setTimeout(()=>msg.style.display='none', 2500);
+  renderDesigns();
+  toast('Design "' + code + '" added to catalogue');
+}
+
+async function deleteDesign(id, code) {
+  if (!confirm(`Remove design "${code}" from the catalogue?\n\nThis cannot be undone.`)) return;
+  delete D.designs[id];
+  await fbDelete('/designs/' + id);
+  renderDesigns();
+  toast('Design removed');
+}
+
+async function toggleVis(id) {
+  const d   = D.designs[id];
+  const vis = !(d.visible !== false);
+  d.visible = vis;
+  await fbPatch('/designs/' + id, { visible: vis });
+  renderDesigns();
+  toast(vis ? 'Design now visible on catalogue' : 'Design hidden from catalogue');
+}
+
+async function moveDesign(id, newFolderId) {
+  if (!newFolderId) return;
+  D.designs[id].folderId = newFolderId;
+  await fbPatch('/designs/' + id, { folderId: newFolderId });
+  renderDesigns();
+  const fname = (D.folders[newFolderId]||{}).name||'';
+  toast('Design moved to "' + fname + '"');
+}
+
+async function saveDesignEdit(id) {
+  const newCode = document.getElementById('dedit-in-' + id).value.trim();
+  const newImg  = document.getElementById('dedit-img-' + id).value.trim();
+  if (!newCode) return;
+  D.designs[id].code = newCode;
+  D.designs[id].imageUrl = newImg;
+  await fbPatch('/designs/' + id, { code: newCode, imageUrl: newImg });
+  document.getElementById('dedit-' + id).classList.remove('show');
+  renderDesigns();
+  toast('Design updated');
+}
+
+/* ─── Utility ─── */
+function swapOrder(obj, a, b) {
+  const ta = a.order||0, tb = b.order||0;
+  obj[a.id].order = tb; a.order = tb;
+  obj[b.id].order = ta; b.order = ta;
+}
+function toggleEdit(elId) {
+  const el = document.getElementById(elId);
+  el.classList.toggle('show');
+}
+function cancelEdit(elId) { document.getElementById(elId).classList.remove('show'); }
+function setVal(id, val)  { const el=document.getElementById(id); if(el) el.value=val; }
+function esc(s)            { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = (type==='err' ? '⚠ ' : '✓ ') + msg;
+  el.style.background = type==='err' ? '#7A1F1F' : '#1C1810';
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 3000);
+}
+
+if (sessionStorage.getItem(ADMIN_PWD_KEY)) loadAll();
+</script>
+</body>
+</html>
