@@ -11861,7 +11861,7 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
       body{font-family:system-ui;padding:2mm 4mm;color:#1a1916;font-size:11px;margin:0;line-height:1.4;transform-origin:top left}
       table{border-collapse:collapse}
       img{max-width:100%}
-      .design-block{break-inside:avoid;page-break-inside:avoid}
+      .design-block{break-inside:auto;page-break-inside:auto}
       .order-block{break-inside:auto;page-break-inside:auto}
       @media print{
         button{display:none!important}
@@ -11869,7 +11869,7 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
       }
     </style>
     </head><body>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #534AB7;break-after:avoid;page-break-after:avoid">
       <h1 style="font-size:19px;color:#3C3489;margin:0;font-weight:700;display:flex;align-items:center;gap:10px">
         <img src="https://sayyamranka1610.github.io/bangle-tracker/icon-192.png" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover">
         Siddhi Bangles Order Details
