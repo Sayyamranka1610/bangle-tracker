@@ -11273,7 +11273,7 @@ function openVendorPrintWindow(title,orders,imgMode){
       <div style="text-align:right;font-size:11px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
     <div class="print-toolbar" style="margin-bottom:10px"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
-    ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
+    ${body}<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});<\/script></body></html>`);
   w.document.close();
 }
 
@@ -11857,12 +11857,11 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
     <style>
       /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
          Body padding provides equivalent white-space around content. */
-      @page{margin:5mm;size:A4 portrait}
-      html{zoom:0.85}
-      body{font-family:system-ui;padding:4mm 6mm;color:#1a1916;font-size:12px;margin:0;line-height:1.4}
+      @page{margin:8mm 6mm;size:A4 portrait}
+      body{font-family:system-ui;padding:2mm 4mm;color:#1a1916;font-size:11px;margin:0;line-height:1.4;transform-origin:top left}
       table{border-collapse:collapse}
       img{max-width:100%}
-      .design-block{break-inside:auto;page-break-inside:auto}
+      .design-block{break-inside:avoid;page-break-inside:avoid}
       .order-block{break-inside:auto;page-break-inside:auto}
       @media print{
         button{display:none!important}
@@ -11878,7 +11877,7 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
       <div style="text-align:right;font-size:12px"><strong>${esc(title)}</strong><br><span style="color:#888;font-size:11px">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
     </div>
     <div class="print-toolbar" style="margin-bottom:10px"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
-    ${body}<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
+    ${body}<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});<\/script></body></html>`);
   w.document.close();
 }
 
