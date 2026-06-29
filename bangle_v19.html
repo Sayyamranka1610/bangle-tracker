@@ -14385,6 +14385,8 @@ const IS_DEMO_MODE = _isDemoMode();
 // and rejects such keys. Storing as a string value sidesteps this entirely.
 async function fbPush(silent){
   _fb.lastPush = Date.now();
+  // Cancel any pending retry — this IS the attempt
+  if(_fb._retryTimer){ clearTimeout(_fb._retryTimer); _fb._retryTimer=null; }
   try{
     // forFirebase=true: small images stay inline in payload so every device
     // receives full-quality images via Firebase without needing local IDB.
@@ -14409,9 +14411,15 @@ async function fbPush(silent){
     const t = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     fbSetStatus('connected', 'Live · saved ' + t);
   } catch(e){
-    // Keep pendingLocal = true so we retry and keep protecting local edits
-    fbSetStatus('error', 'Save failed — ' + e.message);
-    if(!silent) showToast('⚠ Database save failed', 'red');
+    // Keep pendingLocal = true to protect local edits from being overwritten
+    fbSetStatus('error', 'Save failed — retrying…');
+    if(!silent) showToast('⚠ Database save failed — will retry automatically in 30s', 'red');
+    // Schedule automatic retry — this is what was previously missing.
+    // Without this, a single failed push meant data was permanently lost if the
+    // browser was closed before the user made another edit.
+    if(!_fb._retryTimer){
+      _fb._retryTimer = setTimeout(()=>{ _fb._retryTimer=null; if(_fb.pendingLocal) fbPush(false); }, 30000);
+    }
   }
 }
 
@@ -15091,6 +15099,12 @@ async function fbInit(){
         // Rescued orders were missing from Firebase — push merged state now
         fbSetStatus('connected',`Live · restored ${count} order(s) missing from cloud`);
         showToast(`✅ ${count} order(s) found in local backup & restored to cloud`,'green');
+        await fbPush(false);
+      } else if(_fb.pendingLocal){
+        // Changes were made before Firebase finished loading (e.g. a record created
+        // in the brief window between login and the initial Firebase fetch completing).
+        // fbPushNow() silently skips when !_fb.ready — push those changes now.
+        fbSetStatus('connected', 'Live · saving pending changes…');
         await fbPush(false);
       } else {
         fbSetStatus('connected', 'Live · loaded latest data');
