@@ -14520,6 +14520,7 @@ function _mergeLocalIntoRemote(remoteState){
 
   // IDs present in the cleaned remote — used for rescue check below
   const cleanedIds=new Set(cleanedOrders.map(o=>o.id));
+  const cleanedVendorIds=new Set(cleanedVendorOrders.map(o=>o.id));
 
   // Rescue local-only client orders (created on this device but absent from remote
   // due to a sync race — e.g. another device pushed before our new order reached FB)
@@ -14527,13 +14528,21 @@ function _mergeLocalIntoRemote(remoteState){
     ?(localState.orders).filter(o=>o.id&&!cleanedIds.has(o.id)&&!deletedIds.has(o.id))
     :[];
 
-  const needsPush=rescued.length>0||ordersFiltered||vendorFiltered;
+  // Rescue local-only vendor orders — same logic as client orders above.
+  // Without this, a failed Firebase push would permanently lose vendor orders when
+  // the browser reloads, because the merge would silently overwrite localStorage
+  // with the Firebase state that never received them.
+  const rescuedVOs=localState&&localState.vendorOrders
+    ?(localState.vendorOrders).filter(o=>o.id&&!cleanedVendorIds.has(o.id)&&!deletedVendorIds.has(o.id))
+    :[];
+
+  const needsPush=rescued.length>0||rescuedVOs.length>0||ordersFiltered||vendorFiltered;
   if(!needsPush)return{merged:remoteState,added:false,count:0,needsPush:false};
 
   const merged={
     ...remoteState,
     orders:[...cleanedOrders,...rescued],
-    vendorOrders:cleanedVendorOrders,
+    vendorOrders:[...cleanedVendorOrders,...rescuedVOs],
     deletedOrderIds:[...deletedIds],
     deletedVendorOrderIds:[...deletedVendorIds]
   };
