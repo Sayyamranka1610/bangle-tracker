@@ -27,7 +27,7 @@ import json
 #  "auto"   → generates with Imagen 3 API (needs billing, ~$2 one-time)
 #  "export" → saves all prompts to a text file for Google Flow
 # ═══════════════════════════════════════════════════════════════════
-MODE = "export"
+MODE = "auto"
 
 # Only needed for Mode 1 (auto):
 API_KEY = "YOUR_API_KEY_HERE"

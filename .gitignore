@@ -34,3 +34,10 @@ BANGLE_SEARCH_CONTEXT.md
 *.env
 .env
 bangle-search-ai-worker/.env
+
+# Catalogue temp / working image folders (not for sharing)
+.tmp_bangle_check/
+catalogue/generated/
+catalogue/final_catalogue/
+catalogue/backdrops/
+catalogue/enhanced_bangles/

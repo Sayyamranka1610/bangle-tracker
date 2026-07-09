@@ -30,7 +30,6 @@ from io import BytesIO
 #  STEP 1 — YOUR GOOGLE AI STUDIO API KEY
 # ═══════════════════════════════════════════════════════════════════
 API_KEY = "YOUR_API_KEY_HERE"
-
 # ═══════════════════════════════════════════════════════════════════
 #  STEP 2 — YOUR BANGLE IMAGES (URLs or local file paths)
 #  To test: keep these 5. For full catalogue: replace with all your images.
