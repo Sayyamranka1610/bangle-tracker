@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Siddhi Creation — Premium CNC &amp; Dye Gold Imitation Bangles</title>
+<meta name="description" content="Siddhi Creation — Mumbai-based makers of premium CNC and dye gold imitation bangles for wholesalers and retailers across Gujarat and Mumbai.">
+<link rel="icon" type="image/png" href="siddhi-logo.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Siddhi Creation — Premium CNC &amp; Dye Gold Imitation Bangles">
+<meta property="og:description" content="Mumbai-based craftsmanship in imitation gold jewellery, trusted across wholesale networks in Gujarat and Mumbai.">
+<meta property="og:image" content="siddhi-logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --charcoal-900:#18181b;
+    --charcoal-800:#242427;
+    --charcoal-700:#313135;
+    --fluted-line: rgba(255,255,255,0.02);
+    --gold: #c9a15c;
+    --gold-bright:#ecd39b;
+    --gold-dim: #8a6f3f;
+    --cream:#f4efe6;
+    --grey-text:#a7a096;
+    --hairline: rgba(201,161,92,0.35);
+  }
+
+  *{margin:0;padding:0;box-sizing:border-box;}
+
+  html{scroll-behavior:smooth;}
+
+  body{
+    background:var(--charcoal-900);
+    color:var(--cream);
+    font-family:'Jost', sans-serif;
+    font-weight:300;
+    overflow-x:hidden;
+  }
+
+  /* fluted panel texture, echoes the stall wall paneling */
+  .fluted{
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.025) 0px,
+      rgba(255,255,255,0.025) 1px,
+      transparent 1px,
+      transparent 9px
+    );
+  }
+
+  a{color:inherit; text-decoration:none;}
+
+  h1,h2,h3{
+    font-family:'Cormorant Garamond', serif;
+    font-weight:600;
+    letter-spacing:0.02em;
+  }
+
+  .eyebrow{
+    font-family:'Jost', sans-serif;
+    font-size:0.72rem;
+    letter-spacing:0.32em;
+    text-transform:uppercase;
+    color:var(--gold);
+    font-weight:500;
+  }
+
+  /* ---------- NAV ---------- */
+  nav{
+    position:fixed;
+    top:0; left:0; right:0;
+    z-index:50;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:20px 6vw;
+    background:rgba(24,24,27,0.75);
+    backdrop-filter: blur(10px);
+    border-bottom:1px solid rgba(201,161,92,0.15);
+  }
+  .nav-brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .nav-brand img{
+    height:34px;
+    width:auto;
+    filter: drop-shadow(0 0 6px rgba(201,161,92,0.35));
+  }
+  .nav-brand span{
+    font-family:'Cormorant Garamond', serif;
+    font-size:1.15rem;
+    letter-spacing:0.08em;
+    color:var(--cream);
+  }
+  .nav-links{
+    display:flex;
+    gap:28px;
+    font-size:0.85rem;
+    letter-spacing:0.05em;
+  }
+  .nav-links a{
+    color:var(--grey-text);
+    transition:color 0.3s ease;
+  }
+  .nav-links a:hover{color:var(--gold-bright);}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    position:relative;
+    padding: 140px 6vw 80px;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(201,161,92,0.10), transparent 60%),
+      var(--charcoal-900);
+  }
+
+  /* vertical gold channel lines either side, echoing stall pilasters */
+  .hero::before, .hero::after{
+    content:'';
+    position:absolute;
+    top:0; bottom:0;
+    width:2px;
+    background:linear-gradient(180deg, transparent, var(--gold-dim) 20%, var(--gold-dim) 80%, transparent);
+    opacity:0.35;
+  }
+  .hero::before{ left:14%; }
+  .hero::after{ right:14%; }
+
+  .monogram-wrap{
+    position:relative;
+    margin-bottom:28px;
+  }
+  .monogram-wrap img{
+    width:150px;
+    height:auto;
+    filter: drop-shadow(0 0 22px rgba(201,161,92,0.55)) drop-shadow(0 0 46px rgba(201,161,92,0.25));
+    animation: glow 4s ease-in-out infinite;
+  }
+  @keyframes glow{
+    0%,100%{ filter: drop-shadow(0 0 18px rgba(201,161,92,0.45)) drop-shadow(0 0 40px rgba(201,161,92,0.18)); }
+    50%{ filter: drop-shadow(0 0 28px rgba(201,161,92,0.7)) drop-shadow(0 0 58px rgba(201,161,92,0.32)); }
+  }
+
+  .hero h1{
+    font-size:clamp(2.4rem, 6vw, 4.2rem);
+    color:var(--cream);
+    line-height:1.05;
+  }
+  .hero .divider{
+    width:64px;
+    height:1px;
+    background:var(--gold);
+    margin:22px auto;
+  }
+  .hero p.tagline{
+    font-size:0.82rem;
+    letter-spacing:0.28em;
+    text-transform:uppercase;
+    color:var(--gold);
+    font-weight:400;
+  }
+  .hero p.sub{
+    margin-top:22px;
+    max-width:480px;
+    color:var(--grey-text);
+    font-size:0.98rem;
+    line-height:1.7;
+  }
+
+  .scroll-cue{
+    position:absolute;
+    bottom:36px;
+    font-size:0.68rem;
+    letter-spacing:0.3em;
+    text-transform:uppercase;
+    color:var(--grey-text);
+  }
+
+  /* ---------- SECTION BASE ---------- */
+  section{
+    padding:100px 6vw;
+    position:relative;
+  }
+  .section-head{
+    text-align:center;
+    max-width:640px;
+    margin:0 auto 56px;
+  }
+  .section-head h2{
+    font-size:clamp(1.8rem, 3.4vw, 2.6rem);
+    color:var(--cream);
+    margin-top:10px;
+  }
+
+  /* ---------- ABOUT ---------- */
+  .about{
+    background:var(--charcoal-800);
+    border-top:1px solid rgba(201,161,92,0.15);
+    border-bottom:1px solid rgba(201,161,92,0.15);
+  }
+  .about-body{
+    max-width:720px;
+    margin:0 auto;
+    text-align:center;
+    color:var(--grey-text);
+    font-size:1.05rem;
+    line-height:1.9;
+  }
+  .about-body strong{
+    color:var(--gold-bright);
+    font-weight:500;
+  }
+
+  /* ---------- CONTACT ---------- */
+  .contact-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:28px;
+    max-width:920px;
+    margin:0 auto;
+  }
+  .contact-card{
+    background:var(--charcoal-800);
+    border:1px solid var(--hairline);
+    padding:36px 32px;
+    position:relative;
+  }
+  .contact-card::before{
+    content:'';
+    position:absolute;
+    top:0; left:0;
+    width:100%; height:2px;
+    background:linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .contact-card h3{
+    color:var(--gold-bright);
+    font-size:1.5rem;
+    margin-bottom:4px;
+  }
+  .contact-card .role{
+    font-size:0.72rem;
+    letter-spacing:0.2em;
+    text-transform:uppercase;
+    color:var(--grey-text);
+    margin-bottom:24px;
+    display:block;
+  }
+  .contact-row{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:11px 0;
+    border-top:1px solid rgba(255,255,255,0.06);
+    font-size:0.95rem;
+  }
+  .contact-row:first-of-type{border-top:none;}
+  .contact-row .icon{
+    width:18px; height:18px;
+    flex-shrink:0;
+    stroke:var(--gold);
+  }
+  .contact-row a{
+    color:var(--cream);
+    transition:color 0.25s ease;
+  }
+  .contact-row a:hover{color:var(--gold-bright);}
+
+  /* ---------- INSTAGRAM CTA ---------- */
+  .insta-band{
+    background:
+      linear-gradient(180deg, rgba(201,161,92,0.06), transparent),
+      var(--charcoal-900);
+    text-align:center;
+    border-bottom:1px solid rgba(201,161,92,0.15);
+    padding:90px 6vw;
+  }
+  .insta-band .eyebrow{display:block; margin-bottom:14px;}
+  .insta-band h2{
+    font-size:clamp(1.6rem,3vw,2.2rem);
+    margin-bottom:10px;
+  }
+  .insta-band p{
+    color:var(--grey-text);
+    margin-bottom:30px;
+  }
+  .insta-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    border:1px solid var(--gold);
+    color:var(--gold-bright);
+    padding:14px 34px;
+    font-size:0.85rem;
+    letter-spacing:0.15em;
+    text-transform:uppercase;
+    transition:all 0.3s ease;
+  }
+  .insta-btn:hover{
+    background:var(--gold);
+    color:var(--charcoal-900);
+  }
+
+  /* ---------- GALLERY (mirrors stall display niches) ---------- */
+  .gallery{
+    background:var(--charcoal-800);
+  }
+  .niche-grid{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:22px;
+    max-width:1100px;
+    margin:0 auto;
+  }
+  .niche{
+    aspect-ratio:1/1.05;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(201,161,92,0.14), transparent 65%),
+      var(--charcoal-900);
+    border:1px solid var(--hairline);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+    padding:18px;
+    position:relative;
+  }
+  .niche::before{
+    content:'';
+    position:absolute;
+    top:10px; left:10px; right:10px;
+    height:1px;
+    background:linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+    opacity:0.6;
+  }
+  .niche svg{
+    width:36px; height:36px;
+    stroke:var(--gold);
+    opacity:0.85;
+  }
+  .niche span{
+    font-size:0.68rem;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    color:var(--grey-text);
+    text-align:center;
+  }
+
+  .gallery-note{
+    text-align:center;
+    color:var(--grey-text);
+    font-size:0.85rem;
+    margin-top:36px;
+    font-style:italic;
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer{
+    padding:56px 6vw 40px;
+    text-align:center;
+    border-top:1px solid rgba(201,161,92,0.15);
+  }
+  footer img{
+    height:26px;
+    margin-bottom:16px;
+    opacity:0.85;
+  }
+  footer .loc{
+    font-size:0.78rem;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin-bottom:10px;
+  }
+  footer .copy{
+    font-size:0.75rem;
+    color:var(--grey-text);
+  }
+
+  @media (max-width:720px){
+    .contact-grid{grid-template-columns:1fr;}
+    .niche-grid{grid-template-columns:repeat(2,1fr);}
+    .hero::before,.hero::after{display:none;}
+    .nav-links{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <img src="siddhi-logo.png" alt="Siddhi Creation monogram">
+    <span>Siddhi Creation</span>
+  </div>
+  <div class="nav-links">
+    <a href="#about">About</a>
+    <a href="#contact">Contact</a>
+    <a href="#gallery">Collections</a>
+    <a href="https://instagram.com/siddhicreation_official" target="_blank" rel="noopener">Instagram</a>
+  </div>
+</nav>
+
+<section class="hero fluted">
+  <div class="monogram-wrap">
+    <img src="siddhi-logo.png" alt="Siddhi Creation SC monogram">
+  </div>
+  <h1>SIDDHI CREATION</h1>
+  <div class="divider"></div>
+  <p class="tagline">Premium CNC &amp; Dye Gold Imitation Bangles</p>
+  <p class="sub">Mumbai-based craftsmanship in imitation gold jewellery, trusted across wholesale networks in Gujarat and Mumbai.</p>
+  <div class="scroll-cue">Scroll ↓</div>
+</section>
+
+<section class="about" id="about">
+  <div class="section-head">
+    <span class="eyebrow">The Brand</span>
+    <h2>Crafted Gold, Without Compromise</h2>
+  </div>
+  <p class="about-body">
+    <strong>Siddhi Creation</strong> specialises in CNC and dye gold imitation bangles, blending precision manufacturing with the ornamental detail of traditional gold craftsmanship. Every design is built for wholesalers and retailers who need consistent finish, durable plating, and pieces that carry the weight and shine of fine jewellery — at scale.
+  </p>
+</section>
+
+<section class="contact" id="contact">
+  <div class="section-head">
+    <span class="eyebrow">Get in Touch</span>
+    <h2>Contact Details</h2>
+  </div>
+  <div class="contact-grid">
+    <div class="contact-card">
+      <h3>Vikram Ranka</h3>
+      <span class="role">Owner / Proprietor</span>
+      <div class="contact-row">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <a href="tel:+919821299268">+91 98212 99268</a>
+      </div>
+    </div>
+    <div class="contact-card">
+      <h3>Siddhi Creation</h3>
+      <span class="role">Business Enquiries</span>
+      <div class="contact-row">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <a href="tel:+919152280721">+91 91522 80721</a>
+      </div>
+      <div class="contact-row">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M4 4h16v16H4z" opacity="0"/><path d="M22 6l-10 7L2 6" /><path d="M2 6h20v12H2z"/></svg>
+        <a href="mailto:siddhicreation09@gmail.com">siddhicreation09@gmail.com</a>
+      </div>
+      <div class="contact-row">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>
+        <a href="https://instagram.com/siddhicreation_official" target="_blank" rel="noopener">@siddhicreation_official</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="insta-band">
+  <span class="eyebrow">Follow the Craft</span>
+  <h2>New Designs, First on Instagram</h2>
+  <p>Behind-the-scenes making, new bangle drops, and exhibition updates.</p>
+  <a class="insta-btn" href="https://instagram.com/siddhicreation_official" target="_blank" rel="noopener">
+    Visit @siddhicreation_official
+  </a>
+</section>
+
+<section class="gallery" id="gallery">
+  <div class="section-head">
+    <span class="eyebrow">Collections</span>
+    <h2>Our Product Range</h2>
+  </div>
+  <div class="niche-grid">
+    <div class="niche">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/></svg>
+      <span>CNC Bangles</span>
+    </div>
+    <div class="niche">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>
+      <span>Dye Gold Bangles</span>
+    </div>
+    <div class="niche">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.9 7.1 18.2l.9-5.5-4-3.9L9.5 8z"/></svg>
+      <span>Necklace Sets</span>
+    </div>
+    <div class="niche">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><rect x="3" y="8" width="18" height="9" rx="2"/><path d="M3 12h18"/></svg>
+      <span>New Arrivals</span>
+    </div>
+  </div>
+  <p class="gallery-note">Product photography to be added — this space will showcase our latest bangle and necklace collections.</p>
+</section>
+
+<footer>
+  <img src="siddhi-logo.png" alt="Siddhi Creation">
+  <div class="loc">Mumbai · Gujarat &amp; Mumbai Wholesale Distribution</div>
+  <div class="copy">© 2026 Siddhi Creation. All rights reserved.</div>
+</footer>
+
+</body>
+</html>
