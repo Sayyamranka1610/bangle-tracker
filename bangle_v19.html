@@ -1386,7 +1386,7 @@ function compressImageForPrint(dataUrl,maxDim=1200){
 // Images above this size are always stripped to IDB regardless of mode.
 // At 1200px/0.92 JPEG most images are 200–500 KB base64 — well under 1.5 MB.
 // Only exceptionally large/detailed photos would exceed this.
-const IMAGE_FB_THRESHOLD=1500000; // ~1.1 MB base64
+const IMAGE_FB_THRESHOLD=150000; // ~110 KB — keeps only tiny 160px thumbnails inline in Firebase; anything larger goes to R2
 
 // Extract images from state.
 //
@@ -1604,7 +1604,7 @@ async function _autoMigrateToR2(){
     return{img,idbKey};
   });
 
-  let done=0;
+  let done=0, failed=0;
   for(let i=0;i<toUploadKeyed.length;i+=3){
     await Promise.all(toUploadKeyed.slice(i,i+3).map(async({img,idbKey})=>{
       try{
@@ -1614,8 +1614,10 @@ async function _autoMigrateToR2(){
           img.data=r2url;
           if(idbKey) migratedIdbKeys.push(idbKey);
           done++;
+        } else {
+          failed++;
         }
-      }catch(e){}
+      }catch(e){ failed++; }
     }));
     // Yield to browser between batches so canvas operations don't freeze the UI
     await new Promise(r=>setTimeout(r,80));
@@ -1627,8 +1629,13 @@ async function _autoMigrateToR2(){
     // Clean up IDB: images are now in R2, stale IDB entries waste memory on future loads
     migratedIdbKeys.forEach(key=>idbDelete(key).catch(()=>{}));
     console.log('[AutoMigrate] Uploaded '+done+' image(s) to R2, cleaned '+migratedIdbKeys.length+' IDB entries');
+    showToast('☁️ '+done+' photo(s) saved to cloud — now visible on all devices','green',6000);
   } else {
     try{ _fb.pendingLocal=false; }catch(e){} // Nothing changed — release the block
+  }
+  if(failed>0){
+    showToast('⚠️ '+failed+' photo(s) could not be uploaded to cloud. Please check your internet connection and tap "☁️ Migrate Images" to retry.','red',20000);
+    console.warn('[AutoMigrate] '+failed+' upload(s) failed — images remain device-local');
   }
 }
 
@@ -14399,6 +14406,14 @@ async function fbPush(silent){
       savedAt : new Date().toISOString(),
       device  : FB_DEVICE_ID
     });
+    // Guard: if payload is very large (>5 MB), Firebase will likely reject it and
+    // changes will be lost. Trigger R2 migration immediately to reduce size.
+    if(payload.length > 5000000 && !window._r2MigPending && !_readOnly){
+      const mbSize = (payload.length/1024/1024).toFixed(1);
+      showToast('⚠️ Data file is '+mbSize+' MB — uploading photos to cloud to reduce size (this may take a minute)…','orange',15000);
+      window._r2MigPending=true;
+      setTimeout(()=>{ window._r2MigPending=false; _autoMigrateToR2(); }, 200);
+    }
     const r = await fetch(FB_DATA, {
       method : 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -14581,7 +14596,15 @@ function _applyRemoteState(parsed, savedAt){
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   // Re-inject IDB images after every Firebase sync — without this, Firebase
   // __IDB__ placeholders overwrite locally-loaded image data on every sync.
-  _injectIDBImages().then(()=>{ _checkForBrokenImages(); render(); });
+  // Also trigger R2 migration if this device has IDB images that aren't yet in cloud.
+  _injectIDBImages().then((hadIdbData)=>{
+    _checkForBrokenImages();
+    render();
+    if(hadIdbData && !window._r2MigPending && !_readOnly){
+      window._r2MigPending=true;
+      setTimeout(()=>{ window._r2MigPending=false; _autoMigrateToR2(); }, 4000);
+    }
+  });
   // If Firebase had inline base64 images, migrate them to R2 now.
   // This shrinks the Firebase payload so old/low-RAM devices stop crashing (OOM fix).
   // Guard: only run once per page load, only on the owner (non-read-only) device.
@@ -15067,6 +15090,10 @@ async function fbInit(){
       _origSave();
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
       await migrateImagesToThumbs();
+      // Always check IDB for un-migrated images on startup — ensures R2 migration
+      // runs on this device even if Firebase no longer has inline base64 images.
+      // This catches images stored in IDB before the R2 system was added.
+      await loadImagesFromIDB();
       // Fix any frozen rows whose vendor order was deleted on another device
       const _prunedOnLoad=_pruneOrphanedVOLinks();
       if(_prunedOnLoad>0) console.log('Bangle Tracker: un-froze',_prunedOnLoad,'customer order row(s) with stale vendor order links');
