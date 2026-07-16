@@ -15160,6 +15160,27 @@ async function fbInit(){
 // This walks through state and recompresses any leftover large images so they
 // pass the Firebase threshold and reach all devices on next push.
 async function migrateImagesToThumbs(){
+  // ── QUICK PRE-SCAN ────────────────────────────────────────────────────────
+  // Before doing any heavy canvas work, check whether there are even any large
+  // base64 images in state.  If there are none (the common case after one
+  // successful migration), return immediately — zero CPU cost every startup.
+  let hasLarge=false;
+  const _scan=arr=>{
+    if(!arr||hasLarge)return;
+    for(const img of arr){
+      if(img&&img.data&&typeof img.data==='string'&&img.data.startsWith('data:')&&img.data.length>IMAGE_FB_THRESHOLD){hasLarge=true;return;}
+    }
+  };
+  for(const o of (S.orders||[])){for(const d of (o.designs||[])){_scan(d.images);for(const v of (d.varieties||[]))_scan(v.images);}}
+  for(const vo of (S.vendorOrders||[])){for(const d of (vo.designs||[])){for(const v of (d.varieties||[]))_scan(v.images);}}
+  for(const si of (S.stockItems||[]))_scan(si.images);
+  if(!hasLarge)return; // nothing to do — skip all canvas work
+
+  // ── ACTUAL COMPRESSION (only reached when large images exist) ─────────────
+  // Yield 20 ms after each image so the browser can process events between
+  // heavy canvas operations.  Without this yield, 50+ images × ~100 ms each
+  // = 5+ seconds of continuous blocking, which triggers "Page Unresponsive".
+  // With the yield Chrome never sees a block > ~120 ms and stays responsive.
   let migrated = 0;
   const compressArr = async (arr)=>{
     if(!arr) return;
@@ -15169,6 +15190,7 @@ async function migrateImagesToThumbs(){
         try{
           img.data = await compressImageToThumb(img.data);
           migrated++;
+          await new Promise(r=>setTimeout(r,20)); // yield — keeps browser responsive
         }catch(e){ /* keep original if compression fails */ }
       }
     }
