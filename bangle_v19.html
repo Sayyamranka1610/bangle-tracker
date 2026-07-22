@@ -15140,6 +15140,19 @@ async function fbInit(){
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       _fb.ready = true;
       fbStartListener();
+      // Always check for base64 images in Firebase and migrate to R2 if found.
+      // This runs regardless of whether IDB has data — fixes the case where images
+      // were uploaded from a different device (IDB empty here but Firebase still bloated).
+      // Once migration completes, Firebase payload shrinks and every future load is fast.
+      if(!window._r2MigPending && !_readOnly){
+        const _b64=(arr)=>(arr||[]).some(img=>img&&typeof img.data==='string'&&img.data.startsWith('data:'));
+        const _hasFbBase64=()=>(S.orders||[]).some(o=>(o.designs||[]).some(d=>_b64(d.images)||(d.varieties||[]).some(v=>_b64(v.images))))||
+          (S.vendorOrders||[]).some(o=>(o.designs||[]).some(d=>_b64(d.images)||(d.varieties||[]).some(v=>_b64(v.images))));
+        if(_hasFbBase64()){
+          window._r2MigPending=true;
+          setTimeout(()=>{ window._r2MigPending=false; _autoMigrateToR2(); }, 5000);
+        }
+      }
       if(added){
         // Rescued orders were missing from Firebase — push merged state now
         fbSetStatus('connected',`Live · restored ${count} order(s) missing from cloud`);
