@@ -14380,7 +14380,7 @@ const IS_DEMO_MODE = _isDemoMode();
     document.getElementById('fb-bar').style.display = '';
     _updateUserChip();
     // Re-acquire lock on page reload (page reload = new session)
-    _tryAcquireLock(); fbInit(); // parallel — lock only affects UI write-mode
+    _tryAcquireLock(); setTimeout(fbInit, 0); // defer so Chrome paints the page before heavy Firebase load
     return; // don't fall through to fbInit below
   }
   // fb-bar stays hidden until login (set display:none in HTML)
@@ -15057,6 +15057,23 @@ async function takeEditAccess(){
   showToast('✅ Edit access taken — you are now the editor','green');
 }
 
+// Parse a large JSON string in a Web Worker so the main thread never freezes.
+// Chrome's "Page Unresponsive" dialog fires when the main thread is blocked for
+// ~5+ seconds — a 50 MB base64-heavy Firebase payload can do exactly that.
+function _parseJsonInWorker(text){
+  return new Promise((resolve,reject)=>{
+    const blob=new Blob(
+      ['self.onmessage=function(e){try{postMessage({ok:1,d:JSON.parse(e.data)});}catch(ex){postMessage({ok:0,e:ex.message});}}'],
+      {type:'text/javascript'}
+    );
+    const url=URL.createObjectURL(blob);
+    const w=new Worker(url);
+    w.onmessage=function(e){URL.revokeObjectURL(url);w.terminate();e.data.ok?resolve(e.data.d):reject(new Error(e.data.e));};
+    w.onerror=function(e){URL.revokeObjectURL(url);w.terminate();reject(e);};
+    w.postMessage(text);
+  });
+}
+
 // ── INIT: LOAD THEN LISTEN ────────────────────────────────────────────────────
 async function fbInit(){
   fbSetStatus('syncing', 'Connecting…');
@@ -15066,7 +15083,8 @@ async function fbInit(){
     const envelope = await resp.json();
 
     // Unwrap envelope: {data: "JSON string", savedAt, device}
-    const parsed = (envelope && envelope.data) ? JSON.parse(envelope.data) : null;
+    // Parse off the main thread to prevent "Page Unresponsive" on large payloads.
+    const parsed = (envelope && envelope.data) ? await _parseJsonInWorker(envelope.data) : null;
 
     if(parsed && parsed.orders){
       // ── FIREBASE IS THE SOURCE OF TRUTH — but merge any local-only orders ──
@@ -15219,13 +15237,13 @@ function fbStartListener(){
   if(_fb.es){ try{ _fb.es.close(); }catch(e){} }
   _fb.es = new EventSource(FB_DATA);
 
-  _fb.es.addEventListener('put', (ev)=>{
+  _fb.es.addEventListener('put', async (ev)=>{
     try{
       const msg      = JSON.parse(ev.data);
       const envelope = msg.data;                          // {data, savedAt, device}
       if(!envelope || !envelope.data) return;
       if(envelope.device === FB_DEVICE_ID) return;        // own update — ignore (skip self-echo)
-      const parsed   = JSON.parse(envelope.data);
+      const parsed   = await _parseJsonInWorker(envelope.data);
       if(!parsed || !parsed.orders) return;
       // ── PROTECT UNPUSHED LOCAL CHANGES ─────────────────────────────────────
       // If we have local edits that haven't reached Firebase yet, this remote
