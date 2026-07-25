@@ -4137,6 +4137,7 @@ function buildOrderCard(order,oi){
         ${p===100?'<span style="background:#E1F5EE;color:#0F6E56;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;border:1px solid #9FE1CB">✅ Done</span>':''}
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderExport('${order.id}')" title="Export this order">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderPrint('${order.id}')" title="Print this order">🖨️</button>
+        <button class="icon-btn no-print" onclick="event.stopPropagation();duplicateOrder('${order.id}')" title="Duplicate this order">⎘ Copy</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delOrder(${oi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
@@ -5751,6 +5752,37 @@ function delOrder(oi){
   S.orders.splice(oi,1);
   renumberOrders();save();render();
   try{fbPushNow();}catch(e){}
+}
+function duplicateOrder(orderId){
+  const src=S.orders.find(o=>o.id===orderId);
+  if(!src)return;
+  // Deep-clone everything, then reset fields that should start fresh
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.id=uid();
+  copy.orderId='';                              // renumberOrders() will assign
+  copy.createdAt=new Date().toISOString();
+  copy.startDate=new Date().toISOString().split('T')[0]; // today
+  copy.attachedFile=null;                       // file attachments don't carry over
+  // Reset all production stage statuses — this is a fresh production run
+  (copy.designs||[]).forEach(d=>{
+    (d.stages||[]).forEach(st=>{
+      st.status='pending';
+      st.completionDate=null;
+      st.stageNote='';
+      st.qty=null;
+    });
+    // Give every design and variety a new id so edits don't collide
+    d.id=uid();
+    (d.varieties||[]).forEach(v=>{ v.id=uid(); });
+  });
+  S.orders.unshift(copy);
+  S.openOrders.add(copy.id);
+  S.activeTabs[copy.id]='designs';
+  renumberOrders();
+  audit('Duplicate order',`Copied ${src.orderId} (${src.client}) → new order ${copy.orderId}`);
+  save(); render();
+  try{fbPushNow();}catch(e){}
+  showToast(`✅ Order duplicated as ${copy.orderId}`,'green');
 }
 function upDesignStage(oi,di,si,val){
   // If trying to mark as 'done', enforce rules
@@ -8088,6 +8120,7 @@ function buildVendorOrderCard(vo, voi){
       </div>
       <div class="oh-right">
         ${prioBadge(vo.priority)}${badgeHtml(al)}
+        <button class="icon-btn no-print" onclick="event.stopPropagation();duplicateVendorOrder('${vo.id}')" title="Duplicate this vendor order">⎘ Copy</button>
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delVendorOrder(${voi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
@@ -8232,6 +8265,27 @@ function delVendorOrder(voi){
   try{fbPushNow();}catch(e){}
 }
 
+function duplicateVendorOrder(voId){
+  const src=S.vendorOrders.find(o=>o.id===voId);
+  if(!src)return;
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.id=uid();
+  copy.orderId=genVendorOrderId();
+  copy.createdAt=new Date().toISOString();
+  copy.startDate=new Date().toISOString().split('T')[0];
+  copy.deliveryDate='';                         // clear — user should set new deadline
+  copy.status='pending';
+  // Give every design and variety a new id
+  (copy.designs||[]).forEach(d=>{
+    d.id=uid();
+    (d.varieties||[]).forEach(v=>{ v.id=uid(); });
+  });
+  S.vendorOrders.unshift(copy);
+  audit('Duplicate vendor order',`Copied ${src.orderId} (${src.vendor}) → new order ${copy.orderId}`);
+  save(); renderVendorOrders();
+  try{fbPushNow();}catch(e){}
+  showToast(`✅ Vendor order duplicated as ${copy.orderId}`,'green');
+}
 function handleVendorImgUpload(voi, di, vi, input){
   const files = Array.from(input.files);
   let loaded = 0;
