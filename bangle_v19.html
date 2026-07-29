@@ -98,10 +98,21 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 .stat-late::before{background:#A32D2D}
 .stat-done{background:linear-gradient(135deg,#F1EFE8,#E4E1D6);box-shadow:0 2px 8px rgba(0,0,0,.06)}
 .stat-done::before{background:#5F5E5A}
+.stat-archived{background:#EFEDF4;border:1.5px dashed #D8D4E6!important}
+.stat-archived::before{background:#8A8398}
 .stat-val{font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1}
-.stat-total .stat-val{color:#3C3489}.stat-ontrack .stat-val{color:#0A5A45}.stat-soon .stat-val{color:#7A4110}.stat-late .stat-val{color:#8B2020}.stat-done .stat-val{color:#4A4946}
+.stat-total .stat-val{color:#3C3489}.stat-ontrack .stat-val{color:#0A5A45}.stat-soon .stat-val{color:#7A4110}.stat-late .stat-val{color:#8B2020}.stat-done .stat-val{color:#4A4946}.stat-archived .stat-val{color:#6b6478}
 .stat-lbl{font-size:11px;margin-top:5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
-.stat-total .stat-lbl{color:#6C64CC}.stat-ontrack .stat-lbl{color:#178A68}.stat-soon .stat-lbl{color:#9A5520}.stat-late .stat-lbl{color:#A32D2D}.stat-done .stat-lbl{color:#888}
+.stat-total .stat-lbl{color:#6C64CC}.stat-ontrack .stat-lbl{color:#178A68}.stat-soon .stat-lbl{color:#9A5520}.stat-late .stat-lbl{color:#A32D2D}.stat-done .stat-lbl{color:#888}.stat-archived .stat-lbl{color:#8A8398}
+.view-toggle{display:flex;background:#EFEDF4;border-radius:9px;padding:3px;gap:2px}
+.view-toggle button{border:none;background:transparent;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;color:#777;cursor:pointer}
+.view-toggle button.active{background:#fff;color:#3C3489;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.view-toggle button.active.arch-on{color:#6b6478}
+.archive-bulk-btn{background:#fff;border:1.5px solid #D8D4E6;color:#3C3489;font-size:11px;font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer}
+.archive-bulk-btn:hover{border-color:#534AB7}
+.archive-bulk-btn:disabled{opacity:.4;cursor:default}
+.order-card.al-archived{opacity:.85}
+.order-card.al-archived .order-header{background:linear-gradient(135deg,#EFEDF4,#E6E3EF)}
 .filter-bar{background:linear-gradient(135deg,#FAFAFD,#fff);border-radius:14px;padding:12px 18px;margin-bottom:12px;border:1.5px solid #E4E2F8;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;box-shadow:0 2px 8px rgba(83,74,183,.06)}
 .filter-bar label{font-size:11px;color:#6C64CC;font-weight:600;display:block;margin-bottom:3px;letter-spacing:.02em;text-transform:uppercase}
 .filter-bar select,.filter-bar input{max-width:155px;font-size:11px;padding:5px 8px;border-color:#D0CCF5}
@@ -152,7 +163,7 @@ button.icon-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
 }
 .order-card{border-radius:14px;margin-bottom:10px;overflow:hidden;border:1.5px solid var(--border);background:#fff;transition:box-shadow .18s,transform .18s;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .order-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.09);transform:translateY(-1px)}
-.order-card.al-late{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}.order-card.al-warn{border-color:#FAC775;box-shadow:0 2px 8px rgba(186,117,23,.08)}.order-card.al-done{border-color:#C0DD97;box-shadow:0 2px 8px rgba(59,109,17,.06)}.order-card.al-ok{border-color:#9FE1CB;box-shadow:0 2px 8px rgba(15,110,86,.06)}
+.order-card.al-late{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}.order-card.al-warn{border-color:#FAC775;box-shadow:0 2px 8px rgba(186,117,23,.08)}.order-card.al-done{border-color:#C0DD97;box-shadow:0 2px 8px rgba(59,109,17,.06)}.order-card.al-ok{border-color:#9FE1CB;box-shadow:0 2px 8px rgba(15,110,86,.06)}.order-card.al-archived{border-color:#D8D4E6;border-style:dashed}
 .order-card.al-pending{border-color:#F09595;box-shadow:0 2px 8px rgba(163,45,45,.08)}
 /* ── Vendor Order: Import-from-Customer-Orders picker ── */
 .vo-import-overlay{position:fixed;inset:0;background:rgba(0,0,0,.52);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -3992,15 +4003,20 @@ function render(){
   }
 }
 function renderStats(){
-  const o=S.orders;
+  const all=S.orders;
+  const o=all.filter(x=>!x.archived); // archived orders are excluded from live stats — see renderAnalytics for year-end totals
+  const ac=all.length-o.length;
   const dc=o.filter(x=>orderAlert(x)==='done').length;
   const pc=o.length-dc;
-  document.getElementById('stats-bar').innerHTML=`
+  const bar=document.getElementById('stats-bar');
+  bar.style.gridTemplateColumns='repeat(4,1fr)';
+  bar.innerHTML=`
     <div class="stat-card stat-total"><div class="stat-val">${o.length}</div><div class="stat-lbl">Total orders</div></div>
     <div class="stat-card stat-late"><div class="stat-val" style="color:#A32D2D">${pc}</div><div class="stat-lbl">Pending</div></div>
-    <div class="stat-card stat-done"><div class="stat-val" style="color:#0F6E56">${dc}</div><div class="stat-lbl">Completed</div></div>`;
+    <div class="stat-card stat-done"><div class="stat-val" style="color:#0F6E56">${dc}</div><div class="stat-lbl">Completed</div></div>
+    <div class="stat-card stat-archived"><div class="stat-val">${ac}</div><div class="stat-lbl">Archived</div></div>`;
   const sub=document.getElementById('header-sub');
-  if(sub)sub.textContent=`${o.length} orders · ${pc} pending · ${dc} completed`;
+  if(sub)sub.textContent=`${o.length} orders · ${pc} pending · ${dc} completed${ac?` · ${ac} archived`:''}`;
 }
 
 // Status dots: shows "N🟢 N🔴" — number + single dot per status
@@ -4024,9 +4040,13 @@ function renderOrdersView(){
   if(!S.orders.length){container.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
 
-  // Build full client map from ALL orders (sidebar always shows every client)
+  const archMode=S.orderViewMode==='archived';
+
+  // Build full client map from ACTIVE (non-archived) orders only — sidebar/client
+  // list never shows archived orders; they only appear in the Archived toggle below.
   const allClientMap={};
   S.orders.forEach(o=>{
+    if(o.archived)return;
     if(!allClientMap[o.client])allClientMap[o.client]={orders:[],done:0,pending:0};
     allClientMap[o.client].orders.push(o);
     if(orderAlert(o)==='done')allClientMap[o.client].done++;
@@ -4040,24 +4060,39 @@ function renderOrdersView(){
   const q=(S.orderSearchQ||'').toLowerCase().trim();
   const sf=S.orderStatusFilter||'';
   const chipA=v=>(S.orderStatusFilter||'')===v?' active':'';
+  const archivedCount=S.orders.filter(o=>o.archived).length;
+  const completedUnarchivedCount=S.orders.filter(o=>!o.archived&&orderAlert(o)==='done').length;
 
-  // ── Search mode: when query is typed, search ACROSS ALL CLIENTS ──────────
-  // Normal mode: show only the selected client's orders
   let clientOrders,isGlobalSearch=false,sectionIcon='👤',sectionName='',sectionMeta='';
-  if(q){
+  if(archMode){
+    // ── Archived mode: flat list across ALL clients, never mixed with active orders ──
+    clientOrders=S.orders.filter(o=>o.archived);
+    if(q)clientOrders=clientOrders.filter(o=>
+      (o.orderId||'').toLowerCase().includes(q)||
+      (o.client||'').toLowerCase().includes(q)||
+      (o.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
+    );
+    clientOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+    isGlobalSearch=true; // reuse the "flattened, no per-client actions" layout
+    sectionIcon='📦';
+    sectionName='Archived orders';
+    sectionMeta=`${clientOrders.length} order${clientOrders.length!==1?'s':''} · hidden from active view, still counted in analytics`;
+  } else if(q){
+    // ── Search mode: when query is typed, search ACROSS ALL ACTIVE CLIENTS ──
     isGlobalSearch=true;
-    clientOrders=S.orders.filter(o=>
+    clientOrders=S.orders.filter(o=>!o.archived&&(
       (o.orderId||'').toLowerCase().includes(q)||
       (o.client||'').toLowerCase().includes(q)||
       (o.notes||'').toLowerCase().includes(q)||
       (o.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
-    );
+    ));
     if(sf)clientOrders=clientOrders.filter(o=>orderAlert(o)===sf);
     clientOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
     sectionIcon='🔍';
     sectionName=`Results for "${S.orderSearchQ}"`;
     sectionMeta=`${clientOrders.length} order${clientOrders.length!==1?'s':''} across all clients`;
   } else {
+    // ── Normal mode: show only the selected client's active orders ──
     const ci=allClientMap[S.selectedClient]||{orders:[],done:0,pending:0};
     clientOrders=[...ci.orders];
     if(sf)clientOrders=clientOrders.filter(o=>orderAlert(o)===sf);
@@ -4069,15 +4104,15 @@ function renderOrdersView(){
 
   const sidebarHTML=allClients.map(c=>{
     const cd=allClientMap[c];
-    return`<div class="orders-sb-item${!isGlobalSearch&&c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
+    return`<div class="orders-sb-item${!archMode&&!isGlobalSearch&&c===S.selectedClient?' active':''}" onclick="selectOrderClient('${esc(c)}')">
       <span class="orders-sb-name">👤 ${esc(c)}</span>
       ${_sbStatusDots(cd.done,cd.pending)}
     </div>`;
   }).join('');
 
   const cardsHTML=clientOrders.length
-    ?clientOrders.map(o=>buildOrderCard(o,S.orders.indexOf(o))).join('')
-    :`<div class="empty-state" style="margin:0">${q?`No orders found for "${esc(q)}"`:isGlobalSearch?'No matching orders':'No orders for this client'}</div>`;
+    ?clientOrders.map(o=>buildOrderCard(o,S.orders.indexOf(o),archMode)).join('')
+    :`<div class="empty-state" style="margin:0">${archMode?'No archived orders'+(q?` matching "${esc(q)}"`:'')+'.':q?`No orders found for "${esc(q)}"`:isGlobalSearch?'No matching orders':'No orders for this client'}</div>`;
 
   container.innerHTML=`
   <div class="orders-split">
@@ -4093,6 +4128,11 @@ function renderOrdersView(){
         <button class="orders-chip${chipA('')}" onclick="S.orderStatusFilter='';renderOrdersView()">All</button>
         <button class="orders-chip${chipA('pending')}" onclick="S.orderStatusFilter='pending';renderOrdersView()">🔴 Pending</button>
         <button class="orders-chip${chipA('done')}" onclick="S.orderStatusFilter='done';renderOrdersView()">✅ Completed</button>
+        <div class="view-toggle" style="margin-left:auto">
+          <button class="${!archMode?'active':''}" onclick="setOrderViewMode('active')">Active</button>
+          <button class="${archMode?'active arch-on':''}" onclick="setOrderViewMode('archived')">📦 Archived (${archivedCount})</button>
+        </div>
+        ${!archMode?`<button class="archive-bulk-btn" ${completedUnarchivedCount?'':'disabled'} onclick="archiveAllCompletedOrders()">📦 Archive completed (${completedUnarchivedCount})</button>`:''}
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
@@ -4113,31 +4153,39 @@ function renderOrdersView(){
   // Restore search focus if user was typing
   if(_sfWas){const el=document.getElementById('ord-search-inp');if(el){el.focus({preventScroll:true});try{el.setSelectionRange(_sfSel[0],_sfSel[1]);}catch(e){}}}
 }
+function setOrderViewMode(mode){
+  S.orderViewMode=mode;
+  S.orderSearchQ='';S.orderStatusFilter='';
+  renderOrdersView();
+}
 function selectOrderClient(name){
-  S.selectedClient=name;S.orderSearchQ='';S.orderStatusFilter='';
+  S.selectedClient=name;S.orderSearchQ='';S.orderStatusFilter='';S.orderViewMode='active';
   renderOrdersView();scheduleAutosave();
 }
 
-function buildOrderCard(order,oi){
+function buildOrderCard(order,oi,archivedView){
   const p=orderPct(order);
-  const al=orderAlert(order); // 'done' or 'pending'
+  const al=archivedView?'archived':orderAlert(order); // 'done' / 'pending' / 'archived'
   const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   const isOpen=S.openOrders.has(order.id);
   const at=S.activeTabs[order.id]||'designs';
   const stageCts=_coOrderStageCounts(order);
   return `<div class="order-card al-${al}" id="oc-${order.id}" data-active-tab="${at}">
     <div class="order-header" onclick="toggleOrder('${order.id}')">
-      <div class="oh-icon ${al==='done'?'oh-icon-done':'oh-icon-late'}">●</div>
+      <div class="oh-icon ${al==='done'?'oh-icon-done':al==='archived'?'oh-icon-done':'oh-icon-late'}">●</div>
       <div class="oh-left">
         <div class="oh-title">${esc(order.orderId)} · ${esc(order.client)}</div>
-        <div class="oh-sub">${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}</div>
+        <div class="oh-sub">${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}${archivedView&&order.archivedAt?' · Archived '+fmtDate(new Date(order.archivedAt).toISOString().split('T')[0]):''}</div>
       </div>
       <div class="oh-right">
         ${prioBadge(order.priority)}
-        ${p===100?'<span style="background:#E1F5EE;color:#0F6E56;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;border:1px solid #9FE1CB">✅ Done</span>':''}
+        ${archivedView?'<span style="background:#EFEDF4;color:#6b6478;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;border:1px solid #D8D4E6">📦 Archived</span>':(p===100?'<span style="background:#E1F5EE;color:#0F6E56;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;border:1px solid #9FE1CB">✅ Done</span>':'')}
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderExport('${order.id}')" title="Export this order">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askOrderPrint('${order.id}')" title="Print this order">🖨️</button>
-        <button class="icon-btn no-print" onclick="event.stopPropagation();duplicateOrder('${order.id}')" title="Duplicate this order">⎘ Copy</button>
+        ${archivedView
+          ?`<button class="icon-btn no-print" style="background:#EEEDFE;color:#3C3489;border-color:#AFA9EC;font-weight:700" onclick="event.stopPropagation();restoreOrder(${oi})" title="Restore this order to Active">↩ Restore</button>`
+          :`<button class="icon-btn no-print" onclick="event.stopPropagation();duplicateOrder('${order.id}')" title="Duplicate this order">⎘ Copy</button>
+        <button class="icon-btn no-print" style="background:#EFEDF4;color:#6b6478;border-color:#D8D4E6" onclick="event.stopPropagation();archiveOrder(${oi})" title="Archive this order (hides it from active view, keeps it for analytics)">📦 Archive</button>`}
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delOrder(${oi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
@@ -4167,7 +4215,9 @@ function buildOrderCard(order,oi){
         ${buildVendorSummaryPanel(order,oi)}
       </div>
       <div class="mobile-action-bar no-print" style="display:none">
+        ${archivedView?`<button onclick="restoreOrder(${oi})" style="background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC;font-weight:700">↩ Restore</button>`:`
         <button onclick="markOrderComplete(${oi})" style="background:#E1F5EE;color:#0F6E56;border:1px solid #9FE1CB">✓ Complete</button>
+        <button onclick="archiveOrder(${oi})" style="background:#EFEDF4;color:#6b6478;border:1px solid #D8D4E6">📦 Archive</button>`}
         <button onclick="askOrderExport('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
         <button onclick="askOrderPrint('${order.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
         <button onclick="delOrder(${oi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
@@ -4183,6 +4233,11 @@ function _goToVendorOrder(voId){
   S.openVendorOrders=S.openVendorOrders||[];
   const openKey='open_'+voId;
   if(!S.openVendorOrders.includes(openKey)) S.openVendorOrders.push(openKey);
+  // Route to the Archived tab if the target vendor order is archived — otherwise
+  // it wouldn't appear in the (default) Active list and the scroll-to would fail silently.
+  const targetVo=(S.vendorOrders||[]).find(v=>v.id===voId);
+  S.vendorViewMode=(targetVo&&targetVo.archived)?'archived':'active';
+  if(targetVo&&!targetVo.archived)S.selectedVendor=targetVo.vendor;
   save();
   renderVendorOrders();
   setTimeout(()=>{
@@ -5575,7 +5630,10 @@ function showStageDrilldown(stageKey){
 // Navigate from analytics drilldown → customer orders tab, open + scroll to the order
 function goToOrderFromAnalytics(oid){
   const order=(S.orders||[]).find(o=>o.id===oid);
-  if(order)S.selectedClient=order.client;
+  // Route to the Archived tab if this order was archived — otherwise it wouldn't
+  // appear in the (default) Active list and the scroll-to would fail silently.
+  S.orderViewMode=(order&&order.archived)?'archived':'active';
+  if(order&&!order.archived)S.selectedClient=order.client;
   switchMain('orders');
   S.openOrders.add(oid);
   render();
@@ -5752,6 +5810,39 @@ function delOrder(oi){
   S.orders.splice(oi,1);
   renumberOrders();save();render();
   try{fbPushNow();}catch(e){}
+}
+
+// ── ARCHIVE / RESTORE ─────────────────────────────────────────────────────────
+// Archiving hides an order from the active Orders view/stats to reduce clutter,
+// but the order object stays exactly where it is in S.orders — nothing is
+// deleted, so year-end analytics (which reads S.orders directly) still sees it.
+function archiveOrder(oi){
+  const order=S.orders[oi]; if(!order)return;
+  order.archived=true; order.archivedAt=Date.now();
+  audit('Archive order',`Order ${order.orderId} (${order.client}) archived`);
+  save(); render();
+  try{fbPushNow();}catch(e){}
+  showToast('📦 '+order.orderId+' archived — still counted in analytics','green');
+}
+function restoreOrder(oi){
+  const order=S.orders[oi]; if(!order)return;
+  delete order.archived; delete order.archivedAt;
+  audit('Restore order',`Order ${order.orderId} (${order.client}) restored from archive`);
+  S.orderViewMode='active';
+  save(); render();
+  try{fbPushNow();}catch(e){}
+  showToast('↩ '+order.orderId+' restored to active orders','green');
+}
+function archiveAllCompletedOrders(){
+  const targets=S.orders.filter(o=>!o.archived&&orderAlert(o)==='done');
+  if(!targets.length){showToast('No completed orders to archive.','warn');return;}
+  if(!confirm(`Archive ${targets.length} completed order${targets.length!==1?'s':''}?\n\nThey'll be hidden from the active view but kept for analytics. You can restore any of them later from the Archived tab.`))return;
+  const now=Date.now();
+  targets.forEach(o=>{o.archived=true;o.archivedAt=now;});
+  audit('Archive order',`Bulk-archived ${targets.length} completed order(s)`);
+  save(); render();
+  try{fbPushNow();}catch(e){}
+  showToast(`📦 ${targets.length} order${targets.length!==1?'s':''} archived`,'green');
 }
 function duplicateOrder(orderId){
   const src=S.orders.find(o=>o.id===orderId);
@@ -9104,14 +9195,17 @@ function buildVarietyGallery(varieties){
 
 // ── Vendor stats bar ─────────────────────────────────────────────────────────
 function buildVendorStatsBar(){
-  const orders=S.vendorOrders;
+  const allOrders=S.vendorOrders;
+  const orders=allOrders.filter(o=>!o.archived); // archived vendor orders excluded from live stats — analytics still sees them
+  const archivedCount=allOrders.length-orders.length;
   const total=orders.length;
   const done=orders.filter(o=>o.status==='delivered').length;
   const pending=total-done;
-  return`<div class="stats" style="margin-bottom:14px">
+  return`<div class="stats" style="margin-bottom:14px;grid-template-columns:repeat(4,1fr)">
     <div class="stat-card stat-total"><div class="stat-val">${total}</div><div class="stat-lbl">Total Orders</div></div>
     <div class="stat-card stat-late"><div class="stat-val" style="color:#A32D2D">${pending}</div><div class="stat-lbl">Pending</div></div>
     <div class="stat-card stat-done"><div class="stat-val" style="color:#0F6E56">${done}</div><div class="stat-lbl">Completed</div></div>
+    <div class="stat-card stat-archived"><div class="stat-val">${archivedCount}</div><div class="stat-lbl">Archived</div></div>
   </div>`;
 }
 
@@ -9127,10 +9221,14 @@ function renderVendorOrders(){
     return;
   }
 
-  // Build vendor map — filtered by type if a type tab is active
+  const vArchMode=S.vendorViewMode==='archived';
+
+  // Build vendor map — filtered by type if a type tab is active. Archived vendor
+  // orders are excluded here (sidebar/counts) — they only show via the Archived toggle.
   const tf=S.vendorTypeFilter||'';  // declared here so it's available inside forEach below
   const allVendorMap={};
   S.vendorOrders.forEach(vo=>{
+    if(vo.archived) return;
     if(tf && (vo.type||'karigar')!==tf) return; // skip if type filter active and doesn't match
     const v=vo.vendor||'(No vendor)';
     if(!allVendorMap[v])allVendorMap[v]={orders:[],done:0,pending:0};
@@ -9147,17 +9245,31 @@ function renderVendorOrders(){
   const sf=S.vendorStatusFilter||'';
   const chipA=v=>(S.vendorStatusFilter||'')===v?' active':'';
   const typeA=v=>(S.vendorTypeFilter||'')===v?' active':'';
+  const vArchivedCount=S.vendorOrders.filter(vo=>vo.archived).length;
+  const vCompletedUnarchivedCount=S.vendorOrders.filter(vo=>!vo.archived&&vendorOrderAlert(vo)==='done').length;
 
   // Global search across all vendors when query is typed
   let vendOrders,isVGlobal=false,vSecIcon='🏭',vSecName='',vSecMeta='';
-  if(q){
+  if(vArchMode){
+    // ── Archived mode: flat list across ALL vendors, never mixed with active ──
+    vendOrders=S.vendorOrders.filter(vo=>vo.archived);
+    if(q)vendOrders=vendOrders.filter(vo=>
+      (vo.orderId||'').toLowerCase().includes(q)||
+      (vo.vendor||'').toLowerCase().includes(q)||
+      (vo.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
+    );
+    vendOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
     isVGlobal=true;
-    vendOrders=S.vendorOrders.filter(vo=>
+    vSecIcon='📦';vSecName='Archived vendor orders';
+    vSecMeta=`${vendOrders.length} order${vendOrders.length!==1?'s':''} · hidden from active view, still counted in analytics`;
+  } else if(q){
+    isVGlobal=true;
+    vendOrders=S.vendorOrders.filter(vo=>!vo.archived&&(
       (vo.orderId||'').toLowerCase().includes(q)||
       (vo.vendor||'').toLowerCase().includes(q)||
       (vo.notes||'').toLowerCase().includes(q)||
       (vo.designs||[]).some(d=>(d.code||'').toLowerCase().includes(q)||(d.name||'').toLowerCase().includes(q))
-    );
+    ));
     if(sf)vendOrders=vendOrders.filter(vo=>vendorOrderAlert(vo)===sf);
     vendOrders.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
     vSecIcon='🔍';vSecName=`Results for "${S.vendorSearchQ}"`;
@@ -9173,19 +9285,20 @@ function renderVendorOrders(){
 
   const sidebarHTML=allVendors.map(v=>{
     const vd=allVendorMap[v];
-    return`<div class="orders-sb-item${!isVGlobal&&v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
+    return`<div class="orders-sb-item${!vArchMode&&!isVGlobal&&v===S.selectedVendor?' active':''}" onclick="selectVendorSection('${esc(v)}')">
       <span class="orders-sb-name">🏭 ${esc(v)}</span>
       ${_sbStatusDots(vd.done,vd.pending)}
     </div>`;
   }).join('');
 
   const cardsHTML=vendOrders.length
-    ?vendOrders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo))).join('')
-    :`<div class="empty-state" style="margin:0">${q?`No vendor orders found for "${esc(q)}"`:isVGlobal?'No matching orders':'No orders for this vendor'}</div>`;
+    ?vendOrders.map(vo=>buildVendorOrderCard(vo,S.vendorOrders.indexOf(vo),vArchMode)).join('')
+    :`<div class="empty-state" style="margin:0">${vArchMode?'No archived vendor orders'+(q?` matching "${esc(q)}"`:'')+'.':q?`No vendor orders found for "${esc(q)}"`:isVGlobal?'No matching orders':'No orders for this vendor'}</div>`;
 
-  // ── 3 type tabs (Pipe / Karigar / Plating) with live counts ──
+  // ── 3 type tabs (Pipe / Karigar / Plating) with live counts — active orders only ──
+  const _activeVOs=S.vendorOrders.filter(vo=>!vo.archived);
   const _tCounts={pipe:0,karigar:0,plating:0};
-  S.vendorOrders.forEach(vo=>{const t=(vo.type||'karigar');if(_tCounts[t]==null)_tCounts[t]=0;_tCounts[t]++;});
+  _activeVOs.forEach(vo=>{const t=(vo.type||'karigar');if(_tCounts[t]==null)_tCounts[t]=0;_tCounts[t]++;});
   const _tTab=(val,clr,bg,icon,label,count)=>{
     const act=tf===val;
     return `<button onclick="S.vendorTypeFilter='${val}';renderVendorOrders()"
@@ -9193,7 +9306,7 @@ function renderVendorOrders(){
       ${icon} ${label} <span style="font-size:10.5px;font-weight:700;background:${act?'#fff':'#EEEDFE'};color:${act?clr:'#777'};border-radius:20px;padding:1px 8px">${count}</span></button>`;
   };
   const typeTabs=`<div style="display:flex;gap:2px;border-bottom:2px solid #E0DFFF;margin-bottom:10px;overflow-x:auto;-webkit-overflow-scrolling:touch">
-    ${_tTab('','#534AB7','#EEEDFE','📋','All',S.vendorOrders.length)}
+    ${_tTab('','#534AB7','#EEEDFE','📋','All',_activeVOs.length)}
     ${_tTab('pipe','#1565C0','#E3F2FD','🔩','Pipe',_tCounts.pipe)}
     ${_tTab('karigar','#4A148C','#F3E5F5','🛠️','Karigar',_tCounts.karigar)}
     ${_tTab('plating','#BF360C','#FFF3E0','🪙','Plating',_tCounts.plating)}
@@ -9219,6 +9332,11 @@ function renderVendorOrders(){
         <button class="orders-chip${chipA('')}" onclick="S.vendorStatusFilter='';renderVendorOrders()">All</button>
         <button class="orders-chip${chipA('pending')}" onclick="S.vendorStatusFilter='pending';renderVendorOrders()">🔴 Pending</button>
         <button class="orders-chip${chipA('done')}" onclick="S.vendorStatusFilter='done';renderVendorOrders()">✅ Completed</button>
+        <div class="view-toggle" style="margin-left:auto">
+          <button class="${!vArchMode?'active':''}" onclick="setVendorViewMode('active')">Active</button>
+          <button class="${vArchMode?'active arch-on':''}" onclick="setVendorViewMode('archived')">📦 Archived (${vArchivedCount})</button>
+        </div>
+        ${!vArchMode?`<button class="archive-bulk-btn" ${vCompletedUnarchivedCount?'':'disabled'} onclick="archiveAllCompletedVendorOrders()">📦 Archive completed (${vCompletedUnarchivedCount})</button>`:''}
       </div>
       <div class="orders-section-hd">
         <div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0">
@@ -9239,7 +9357,12 @@ function renderVendorOrders(){
   if(_vfWas){const el=document.getElementById('vord-search-inp');if(el){el.focus({preventScroll:true});try{el.setSelectionRange(_vfSel[0],_vfSel[1]);}catch(e){}}}
 }
 function selectVendorSection(name){
-  S.selectedVendor=name;S.vendorSearchQ='';S.vendorStatusFilter='';S.vendorTypeFilter='';
+  S.selectedVendor=name;S.vendorSearchQ='';S.vendorStatusFilter='';S.vendorTypeFilter='';S.vendorViewMode='active';
+  renderVendorOrders();
+}
+function setVendorViewMode(mode){
+  S.vendorViewMode=mode;
+  S.vendorSearchQ='';S.vendorStatusFilter='';
   renderVendorOrders();
 }
 
@@ -9252,7 +9375,7 @@ function toggleVendorSection(vendor){
   renderVendorOrders();save();
 }
 
-function buildVendorOrderCard(vo,vi){
+function buildVendorOrderCard(vo,vi,archivedView){
   const qtyStr=formatQtyByUnit(vendorOrderQtyByUnit(vo));
   const isOpen=(S.openVendorOrders||[]).includes('open_'+vo.id);
   const at=S.vendorActiveTabs[vo.id]||'designs';
@@ -9260,7 +9383,7 @@ function buildVendorOrderCard(vo,vi){
   const statusMap={pending:'#888',processing:'#1976D2',in_progress:'#7B3F00',qa:'#6A0DAD',dispatched:'#E65100',delivered:'#2E7D32'};
   const statusLabel={pending:'Pending',processing:'Processing',in_progress:'In Progress',qa:'QA',dispatched:'Dispatched',delivered:'Delivered'};
   const st=vo.status||'pending';
-  const stColor=statusMap[st]||'#888';
+  const stColor=archivedView?'#8A8398':(statusMap[st]||'#888');
   const stLabel=statusLabel[st]||st;
   const designTotal=vo.designs.reduce((a,d)=>a+Object.values(d.sizes||{}).reduce((b,v)=>b+(parseInt(v)||0),0),0);
 
@@ -9269,7 +9392,7 @@ function buildVendorOrderCard(vo,vi){
   const progressPct=statusProgress[st]||0;
   // Overdue highlight: delivery date passed and not delivered
   const isOverdue=vo.deliveryDate&&new Date(vo.deliveryDate)<new Date()&&st!=='delivered';
-  const cardAlert=st==='delivered'?'al-done':'al-pending';
+  const cardAlert=archivedView?'al-archived':(st==='delivered'?'al-done':'al-pending');
 
   const _prog=_voRowsProgress(vo);
   const _rcvdBadge=_prog.total>0
@@ -9296,6 +9419,8 @@ function buildVendorOrderCard(vo,vi){
         ${buildVendorDesignsPanel(vo,vi)}
       </div>
       <div class="mobile-action-bar no-print" style="display:none">
+        ${archivedView?`<button onclick="restoreVendorOrder(${vi})" style="background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC;font-weight:700">↩ Restore</button>`:`
+        <button onclick="archiveVendorOrder(${vi})" style="background:#EFEDF4;color:#6b6478;border:1px solid #D8D4E6">📦 Archive</button>`}
         <button onclick="exportVendorOrderCSV('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">📥 Export</button>
         <button onclick="askVendorPrint('${vo.id}')" style="background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC">🖨️ Print</button>
         <button onclick="delVendorOrder(${vi})" style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595">🗑️ Delete</button>
@@ -9310,13 +9435,17 @@ function buildVendorOrderCard(vo,vi){
           ${qtyStr} · ${vo.designs.length} design${vo.designs.length!==1?'s':''}${_rcvdBadge}
           · Started ${fmtDate(vo.startDate)}
           ${vo.deliveryDate?'· Delivery: <strong style="color:'+(isOverdue?'#A32D2D':stColor)+'">'+fmtDate(vo.deliveryDate)+'</strong>':''}
+          ${archivedView&&vo.archivedAt?' · Archived '+fmtDate(new Date(vo.archivedAt).toISOString().split('T')[0]):''}
         </div>
       </div>
       <div class="oh-right">
         ${prioBadge(vo.priority)}
-        <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${stColor}18;color:${stColor};border:1px solid ${stColor}44">${stLabel}</span>
+        <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${stColor}18;color:${stColor};border:1px solid ${stColor}44">${archivedView?'📦 Archived':stLabel}</span>
         <button class="icon-btn no-print" onclick="event.stopPropagation();exportVendorOrderCSV('${vo.id}')" title="Export">📥</button>
         <button class="icon-btn no-print" onclick="event.stopPropagation();askVendorPrint('${vo.id}')" title="Print">🖨️</button>
+        ${archivedView
+          ?`<button class="icon-btn no-print" style="background:#EEEDFE;color:#3C3489;border-color:#AFA9EC;font-weight:700" onclick="event.stopPropagation();restoreVendorOrder(${vi})" title="Restore this vendor order to Active">↩ Restore</button>`
+          :`<button class="icon-btn no-print" style="background:#EFEDF4;color:#6b6478;border-color:#D8D4E6" onclick="event.stopPropagation();archiveVendorOrder(${vi})" title="Archive this vendor order (hides it from active view, keeps it for analytics)">📦 Archive</button>`}
         <button class="icon-btn danger no-print" onclick="event.stopPropagation();delVendorOrder(${vi})">Delete</button>
         <span class="chevron${isOpen?' open':''}">▶</span>
       </div>
@@ -9652,6 +9781,40 @@ function delVendorOrder(vi){
   _pruneOrphanedVOLinks(); // immediately unfreeze any customer order rows that were in this vendor order
   audit('VendorOrder','Deleted vendor order '+id);
   save();renderVendorOrders();try{fbPushNow();}catch(e){}
+}
+
+// ── ARCHIVE / RESTORE (vendor orders) ─────────────────────────────────────────
+// Same rules as customer orders (see archiveOrder above): archiving only hides
+// the order from the active Vendor Orders view/stats — the object stays in
+// S.vendorOrders, so linked customer-order rows STAY frozen (correctly — the
+// vendor order still exists) and analytics still counts it.
+function archiveVendorOrder(vi){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  vo.archived=true; vo.archivedAt=Date.now();
+  audit('VendorOrder',`Archived vendor order ${vo.orderId} (${vo.vendor})`);
+  save(); renderVendorOrders();
+  try{fbPushNow();}catch(e){}
+  showToast('📦 '+vo.orderId+' archived — still counted in analytics','green');
+}
+function restoreVendorOrder(vi){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  delete vo.archived; delete vo.archivedAt;
+  audit('VendorOrder',`Restored vendor order ${vo.orderId} (${vo.vendor}) from archive`);
+  S.vendorViewMode='active';
+  save(); renderVendorOrders();
+  try{fbPushNow();}catch(e){}
+  showToast('↩ '+vo.orderId+' restored to active vendor orders','green');
+}
+function archiveAllCompletedVendorOrders(){
+  const targets=S.vendorOrders.filter(vo=>!vo.archived&&vendorOrderAlert(vo)==='done');
+  if(!targets.length){showToast('No completed vendor orders to archive.','warn');return;}
+  if(!confirm(`Archive ${targets.length} completed vendor order${targets.length!==1?'s':''}?\n\nThey'll be hidden from the active view but kept for analytics. You can restore any of them later from the Archived tab.`))return;
+  const now=Date.now();
+  targets.forEach(vo=>{vo.archived=true;vo.archivedAt=now;});
+  audit('VendorOrder',`Bulk-archived ${targets.length} completed vendor order(s)`);
+  save(); renderVendorOrders();
+  try{fbPushNow();}catch(e){}
+  showToast(`📦 ${targets.length} vendor order${targets.length!==1?'s':''} archived`,'green');
 }
 function upVendorDesign(vi,di,key,val){histPush();S.vendorOrders[vi].designs[di][key]=val;save();renderVendorOrders();}
 function removeVendorDesign(vi,di){
@@ -10185,6 +10348,7 @@ function _pruneVODesignLinks(voId, deletedCode){
 function _getVOImportRows(vendorName){
   const rows=[];
   (S.orders||[]).forEach(order=>{
+    if(order.archived)return; // archived customer orders are done — don't offer their rows for import
     (order.designs||[]).forEach(d=>{
       const hod=_hasOnlyDefault(d);
       const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
