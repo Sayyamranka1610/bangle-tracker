@@ -10348,7 +10348,7 @@ function _renderVOImportPickerHTML(vendorName,isExisting,targetVOI){
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">`;
       og.rows.forEach(({r,idx})=>{
-        const blockedVO=_liveVO(r.importedToVOId, r.designCode||'');
+        const blockedVO=_liveVO(r.importedToVOId, r.code||'');
         const isBlocked=!!blockedVO;
         const blockedLabel=blockedVO?`Already in ${esc(blockedVO.orderId)}`:'Already imported';
         // Pick best available thumbnail
