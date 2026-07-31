@@ -4442,6 +4442,8 @@ function setCOPipeVo(oi,di,vri,val){
     delete holder.pipeVendor;
     delete holder.pipeVoId; delete holder.pipeVoLabel;
   }
+  // Timestamp companion for the follow-up system — cleared when unlinked.
+  if(val)holder.pipeVendorAt=Date.now(); else delete holder.pipeVendorAt;
   save();render();
   showToast(val?'🔩 Pipe: '+(val==='__own__'?'Own (stock)':val):'Pipe link cleared');
 }
@@ -4462,6 +4464,8 @@ function setCOPlatingVo(oi,di,vri,val){
     delete holder.platingVendor;
     delete holder.platingVoId; delete holder.platingVoLabel;
   }
+  // Timestamp companion for the follow-up system — cleared when unlinked.
+  if(val)holder.platingVendorAt=Date.now(); else delete holder.platingVendorAt;
   save();render();
   showToast(val?'🪙 Plating: '+(val==='__own__'?'Own (in-house)':val):'Plating link cleared');
 }
@@ -4480,13 +4484,18 @@ function toggleCOStageRcvd(oi,di,vri,stage){
 // ── KARIGAR / VENDOR ASSIGNMENT ──────────────────────────────────────────────
 function upDesignVendor(oi,di,val){
   if(!S.orders[oi]||!S.orders[oi].designs[di])return;
-  S.orders[oi].designs[di].assignedVendor=val;
+  const d=S.orders[oi].designs[di];
+  d.assignedVendor=val;
+  // Timestamp companion for the follow-up system — cleared when unassigned.
+  if(val)d.assignedVendorAt=Date.now(); else delete d.assignedVendorAt;
   scheduleAutosave();
   if(S.mainView==='dispatch')renderDispatchView();
 }
 function upVarietyVendor(oi,di,vi,val){
   if(!S.orders[oi]||!S.orders[oi].designs[di]||!S.orders[oi].designs[di].varieties[vi])return;
-  S.orders[oi].designs[di].varieties[vi].assignedVendor=val;
+  const v=S.orders[oi].designs[di].varieties[vi];
+  v.assignedVendor=val;
+  if(val)v.assignedVendorAt=Date.now(); else delete v.assignedVendorAt;
   scheduleAutosave();
   if(S.mainView==='dispatch')renderDispatchView();
 }
@@ -10289,6 +10298,8 @@ function toggleCOStageRcvd(oi,di,vri,stage){
   if(!holder)return;
   const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
   holder[field]=!holder[field];
+  // Timestamp companion — used by the follow-up system to count days since received.
+  if(holder[field])holder[field+'At']=Date.now(); else delete holder[field+'At'];
   save(); render();
   showToast(holder[field]?'✅ Marked received':'↩️ Marked pending',holder[field]?'green':'red',2000);
 }
@@ -15849,15 +15860,19 @@ function showInstallInstructions(){
 // those, not early/falsely for anything else.
 // ══════════════════════════════════════════════════════════════════════════════
 
+// NOTE: no vo_plating rule — plating is never tracked via a Vendor Order in this
+// business (it's a physical book), so plating follow-ups are a co_row rule below,
+// driven by the customer-order row's platingVendor/platingReceived status instead.
 const FOLLOWUP_RULES={
-  vo_pipe:         {ruleKey:'vo_pipe',         scope:'vo', voType:'pipe',           icon:'🔩', label:'Pipe — follow up',        days:5,  recurDays:5, ask:'Where is my pipe material? By when will it be ready?'},
-  vo_karigar:      {ruleKey:'vo_karigar',      scope:'vo', voType:'karigar',        icon:'🛠️', label:'Karigar — follow up',     days:5,  recurDays:5, ask:'Where is my order? By when will you give it to me?'},
-  vo_plating:      {ruleKey:'vo_plating',      scope:'vo', voType:'plating',        icon:'🪙', label:'Plating — follow up',     days:2,  recurDays:2, ask:'Where is my plating order? When will it be ready?'},
-  co_packing:      {ruleKey:'co_packing',      scope:'co_row', phase:'packing',     icon:'📦', label:'Stuck in packing',        days:3,  recurDays:3, ask:'Why is this still under packing? Please move it faster.'},
-  co_unassigned:   {ruleKey:'co_unassigned',   scope:'co', condition:'unassigned',  icon:'⚠️', label:'Not assigned yet',        days:1,  recurDays:1, ask:'Why has this order not been assigned to any vendor/karigar yet?'},
-  co_notdispatched:{ruleKey:'co_notdispatched',scope:'co', condition:'notDispatched',icon:'🚚', label:'Not dispatched',          days:20, recurDays:5, ask:'Why has this order not been dispatched yet? What happened?'},
+  vo_pipe:              {ruleKey:'vo_pipe',              scope:'vo', voType:'pipe',            icon:'🔩', label:'Pipe — follow up',            days:5,  recurDays:5, ask:'Pipe material kahan hai? Kab tak ready hoga?'},
+  vo_karigar:            {ruleKey:'vo_karigar',           scope:'vo', voType:'karigar',         icon:'🛠️', label:'Karigar — follow up',         days:5,  recurDays:5, ask:'Mera order kahan hai? Kab tak doge?'},
+  co_plating:            {ruleKey:'co_plating',           scope:'co_row', phase:'plating',      icon:'🪙', label:'Plating mein atka hai',       days:2,  recurDays:2, ask:'Plating abhi tak kyun nahi hui? Jaldi karwao.'},
+  co_packing:            {ruleKey:'co_packing',           scope:'co_row', phase:'packing',      icon:'📦', label:'Packing mein atka hai',       days:3,  recurDays:3, ask:'Yeh abhi tak packing mein kyun hai? Jaldi move karo.'},
+  co_karigar_unimported: {ruleKey:'co_karigar_unimported',scope:'co_row', condition:'unimported',icon:'📥', label:'Vendor order mein add nahi hua',days:2, recurDays:2, ask:'Karigar assign ho gaya, lekin abhi tak vendor order mein import kyun nahi kiya?'},
+  co_unassigned:         {ruleKey:'co_unassigned',        scope:'co', condition:'unassigned',   icon:'⚠️', label:'Karigar assign nahi hua',     days:1,  recurDays:1, ask:'Is order ko abhi tak kisi vendor/karigar ko assign kyun nahi kiya?'},
+  co_notdispatched:      {ruleKey:'co_notdispatched',     scope:'co', condition:'notDispatched',icon:'🚚', label:'Dispatch nahi hua',           days:20, recurDays:5, ask:'Yeh order abhi tak dispatch kyun nahi hua? Kya hua?'},
 };
-const FOLLOWUP_RULE_ORDER=['vo_pipe','vo_karigar','vo_plating','co_packing','co_unassigned','co_notdispatched'];
+const FOLLOWUP_RULE_ORDER=['vo_pipe','vo_karigar','co_plating','co_packing','co_karigar_unimported','co_unassigned','co_notdispatched'];
 
 function _fuEntry(key){
   if(!S.followUps)S.followUps={};
@@ -15907,12 +15922,21 @@ function computeFollowUps(){
     dueItem(key,rule,anchor,{
       kind:'vo', voId:vo.id,
       title:(vo.orderId||'VORD')+' · '+(vo.vendor||'(no vendor)'),
-      subtitle:rule.label+' — order created '+fmtDate(vo.startDate)
+      subtitle:rule.label+' — banaya: '+fmtDate(vo.startDate)
     });
   });
 
-  // ── Customer-order row rule: stuck in packing ──────────────────────────────
-  const rulePacking=FOLLOWUP_RULES.co_packing;
+  // ── Customer-order row rules: plating / packing / karigar-not-imported ─────
+  // "anchorFor" resolves the real stamped timestamp when we have one (going
+  // forward, every relevant toggle now stamps a companion *At field). For rows
+  // that reached this state before those timestamps existed, fall back to
+  // "start the clock now" — under-counts a little for pre-existing rows,
+  // never falsely floods the checklist. Same safe pattern as the epoch guard above.
+  const anchorFor=(ts)=>{
+    const parsed=ts?new Date(ts).getTime():0;
+    return (parsed>0)?parsed:Date.now();
+  };
+  const rulePlating=FOLLOWUP_RULES.co_plating, rulePacking=FOLLOWUP_RULES.co_packing, ruleUnimported=FOLLOWUP_RULES.co_karigar_unimported;
   (S.orders||[]).forEach(order=>{
     (order.designs||[]).forEach(d=>{
       const hod=_hasOnlyDefault(d);
@@ -15920,13 +15944,34 @@ function computeFollowUps(){
       const isFlat=isCnc||!(d.varieties||[]).length||hod;
       const rows=isFlat?[{holder:d,vri:-1}]:(d.varieties||[]).map((v,vri)=>({holder:v,vri}));
       rows.forEach(({holder,vri})=>{
-        const key='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_packing';
-        if(order.archived||_coStage(holder)!=='packing'){ drop(key); return; }
-        dueItem(key,rulePacking,Date.now(),{ // no reliable stored anchor — see module note above
-          kind:'co', orderId:order.id,
-          title:(order.orderId||'ORD')+' · '+(order.client||'(no client)'),
-          subtitle:rulePacking.label+' — "'+(d.name||'design')+'"'+(vri>=0&&holder.name?' / '+holder.name:'')
-        });
+        const rowLabel=(order.orderId||'ORD')+' · '+(order.client||'(no client)');
+        const designLabel='"'+(d.name||'design')+'"'+(vri>=0&&holder.name?' / '+holder.name:'');
+        const keyPlating='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_plating';
+        const keyPacking='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_packing';
+        const keyUnimported='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_karigar_unimported';
+
+        if(order.archived){ drop(keyPlating); drop(keyPacking); drop(keyUnimported); return; }
+
+        const phase=_coStage(holder);
+        if(phase==='plating'){
+          dueItem(keyPlating,rulePlating,anchorFor(holder.platingVendorAt),{
+            kind:'co', orderId:order.id, title:rowLabel, subtitle:rulePlating.label+' — '+designLabel
+          });
+        } else drop(keyPlating);
+
+        if(phase==='packing'){
+          dueItem(keyPacking,rulePacking,anchorFor(holder.platingReceivedAt),{
+            kind:'co', orderId:order.id, title:rowLabel, subtitle:rulePacking.label+' — '+designLabel
+          });
+        } else drop(keyPacking);
+
+        // Karigar assigned but never actually imported into a still-live vendor order.
+        const genuinelyImported=!!_liveVO(holder.importedToVOId,d.code||'');
+        if(holder.assignedVendor&&!genuinelyImported){
+          dueItem(keyUnimported,ruleUnimported,anchorFor(holder.assignedVendorAt),{
+            kind:'co', orderId:order.id, title:rowLabel, subtitle:ruleUnimported.label+' — '+designLabel
+          });
+        } else drop(keyUnimported);
       });
     });
   });
@@ -15946,11 +15991,11 @@ function computeFollowUps(){
     const ctx={kind:'co', orderId:order.id, title:(order.orderId||'ORD')+' · '+(order.client||'(no client)')};
 
     if(_orderHasZeroAssignment(order))
-      dueItem(keyU,ruleUnassigned,anchor,{...ctx,subtitle:ruleUnassigned.label+' — created '+fmtDate(order.startDate)});
+      dueItem(keyU,ruleUnassigned,anchor,{...ctx,subtitle:ruleUnassigned.label+' — banaya: '+fmtDate(order.startDate)});
     else drop(keyU);
 
     if(orderAlert(order)!=='done')
-      dueItem(keyD,ruleNotDispatched,anchor,{...ctx,subtitle:ruleNotDispatched.label+' — created '+fmtDate(order.startDate)});
+      dueItem(keyD,ruleNotDispatched,anchor,{...ctx,subtitle:ruleNotDispatched.label+' — banaya: '+fmtDate(order.startDate)});
     else drop(keyD);
   });
 
@@ -15982,7 +16027,7 @@ function markFollowedUp(key){
   audit('Follow-up',(item?item.rule.label+' — '+item.title:key)+' — follow-up logged');
   save();
   try{fbPushNow();}catch(e){}
-  showToast('✅ Follow-up logged — next reminder in '+(item?item.rule.recurDays:'a few')+' day(s)','green',3000);
+  showToast('✅ Follow-up note ho gaya — agla reminder '+(item?item.rule.recurDays:'kuch')+' din baad','green',3000);
   openFollowUpsModal(); // recompute + re-render so this item drops off if resolved
 }
 
@@ -16013,30 +16058,30 @@ function openFollowUpsModal(){
                 <div style="font-weight:700;font-size:13px;color:#2D2D5F">${esc(it.title)}</div>
                 <div style="font-size:11px;color:#888;margin:2px 0 5px">${esc(it.subtitle)}</div>
                 <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(it.rule.ask)}"</div>
-                ${it.timesFollowedUp?`<div style="font-size:10px;color:#aaa;margin-top:3px">Followed up ${it.timesFollowedUp} time${it.timesFollowedUp!==1?'s':''} before</div>`:''}
+                ${it.timesFollowedUp?`<div style="font-size:10px;color:#aaa;margin-top:3px">Pehle bhi ${it.timesFollowedUp} baar follow-up ho chuka hai</div>`:''}
               </div>
               <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
-                <span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:2px 9px;white-space:nowrap">${it.overdueDays<=0?'Due today':it.overdueDays+'d overdue'}</span>
+                <span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:2px 9px;white-space:nowrap">${it.overdueDays<=0?'Aaj se due hai':it.overdueDays+' din se pending'}</span>
                 <div style="display:flex;gap:5px">
-                  <button class="sm" onclick="_goToFollowUpTarget('${it.key}')">↗ Open</button>
-                  <button class="sm primary" onclick="markFollowedUp('${it.key}')">✅ Done</button>
+                  <button class="sm" onclick="_goToFollowUpTarget('${it.key}')">↗ Kholo</button>
+                  <button class="sm primary" onclick="markFollowedUp('${it.key}')">✅ Ho gaya</button>
                 </div>
               </div>
             </div>`).join('')}
         </div>
       </div>`;
     }).join('')
-    :`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Nothing overdue right now — nice work.</div>`;
+    :`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Abhi kuch bhi pending nahi hai — badhiya kaam!</div>`;
 
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
     <div class="modal" style="width:640px">
       <div class="modal-header">
         <div class="modal-icon" style="background:#FCEBEB;color:#A32D2D">🔔</div>
-        <h3>Follow-ups Due ${items.length?`<span style="font-size:12px;font-weight:400;color:#888">(${items.length})</span>`:''}</h3>
+        <h3>Aaj ke Follow-ups ${items.length?`<span style="font-size:12px;font-weight:400;color:#888">(${items.length})</span>`:''}</h3>
       </div>
       <div style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
       <div class="modal-actions">
-        <button class="primary" onclick="closeModal()">Close</button>
+        <button class="primary" onclick="closeModal()">Band karo</button>
       </div>
     </div>
   </div>`;
