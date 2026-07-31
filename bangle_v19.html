@@ -947,6 +947,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
       <button class="ha-desktop" onclick="showPrintMenu()">🖨️ Print</button>
       <button class="ha-desktop" onclick="openStageTemplateEditor()">⚙️ Stages</button>
       <button class="ha-desktop" onclick="openAuditModal()">📋 Audit log</button>
+      <button class="ha-desktop" onclick="openFollowUpsModal()" style="position:relative">🔔 Follow-ups<span id="followup-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:#E53935;color:#fff;font-size:10px;font-weight:800;min-width:17px;height:17px;border-radius:99px;align-items:center;justify-content:center;padding:0 4px;line-height:1;border:1.5px solid #4A42A8">0</span></button>
       <button class="ha-desktop" id="btn-install-app-desktop" onclick="installApp()" style="background:#0F6E56!important;color:#fff!important;border-color:#0F6E56!important">📲 Install app</button>
       <!-- Mobile: just New Order + ☰ More button -->
       <button class="primary" id="btn-new-order" onclick="openNewOrderModal()">+ New order</button>
@@ -1092,7 +1093,8 @@ let S = {
   vendorSearchQ:'',       // search text in vendor view
   vendorStatusFilter:'',  // '' | 'late' | 'warn'
   vendorTypeFilter:'',    // '' = All | 'pipe' | 'karigar' | 'plating'
-  vendorTypes:{}          // {vendorName: 'pipe'|'karigar'|'plating'} — vendor master category
+  vendorTypes:{},         // {vendorName: 'pipe'|'karigar'|'plating'} — vendor master category
+  followUps:{}            // {followUpKey: {firstSeenAt, lastFollowUpAt, timesFollowedUp}} — see FOLLOW-UP SYSTEM section
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -1128,6 +1130,7 @@ try{
     S.vendorActiveTabs=sv.vendorActiveTabs||{};
     S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:''};
     S.vendorTypes=sv.vendorTypes||{};
+    S.followUps=sv.followUps||{};
     // Always reset order filters on page load — never restore a stale filter that
     // would hide orders and confuse the user ("why can't I see my orders?")
     S.filters={client:'',dname:'',dcode:'',status:''};
@@ -10865,6 +10868,7 @@ function createVendorOrder(){
   histPush();
   const voType=((document.getElementById('no-votype')||{}).value)||'karigar';
   const newVO={id:uid(),orderId,vendor,type:voType,startDate,deliveryDate,priority,notes,bangleType,
+    createdAt:new Date().toISOString(), // anchor for the follow-up system's due-date clock
     designs:allDesigns,attachedFile:window._uploadedOrderFile||null};
   // New vendor name? Register it in masters under this order's segment.
   if(!S.vendorTypes)S.vendorTypes={};
@@ -15356,6 +15360,14 @@ async function fbInit(){
       });
       if(_sizesSorted>0){save();console.log('Bangle Tracker: re-sorted sizes in',_sizesSorted,'design(s)/variety(ies) across orders & vendor orders');}
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
+      // Follow-up system: compute due list (lazily stamps new entries, prunes
+      // resolved ones) and show the once-a-day checklist if anything is due.
+      // Wrapped so a bug here can never block the rest of app startup.
+      try{
+        computeFollowUps();
+        save(); // persist any newly-stamped entries so they aren't lost on tab close
+        _maybeShowDailyFollowUpPrompt();
+      }catch(fuErr){ console.warn('Follow-up system init failed:', fuErr); }
       _fb.ready = true;
       fbStartListener();
       // Always check for base64 images in Firebase and migrate to R2 if found.
@@ -15807,6 +15819,246 @@ function showInstallInstructions(){
   _modalDisableBackground();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// FOLLOW-UP / REMINDER SYSTEM
+// ──────────────────────────────────────────────────────────────────────────────
+// A daily checklist of orders/vendor orders that have gone quiet too long, so
+// nothing waits on someone remembering to chase it.
+//
+// Design, kept deliberately simple — one flat dictionary, no new fields
+// scattered onto order/design/variety objects:
+//   • S.followUps = { key → {firstSeenAt, lastFollowUpAt, timesFollowedUp} }
+//   • "key" deterministically identifies (entity, rule) — e.g. "vo:u123ab:vo_karigar"
+//   • computeFollowUps() is the ONLY function that reads/writes S.followUps:
+//       1. Walks every live (non-archived, unresolved) entity each rule covers
+//       2. Lazily creates an entry the first time an entity becomes eligible
+//       3. Next-due date = (lastFollowUpAt || firstSeenAt) + interval days
+//          (first interval = rule.days, every interval after a follow-up = rule.recurDays)
+//       4. Deletes the entry for anything no longer eligible (resolved, archived,
+//          deleted) — keeps S.followUps bounded to only what's currently live
+//   • Runs only on load, when the panel opens, after "Mark followed up", and a
+//     slow 30-min background tick — never on hot paths like typing/dragging.
+//
+// Vendor-order rules (pipe/karigar/plating) anchor to vo.createdAt (falls back
+// to vo.startDate for orders created before this field existed). The "stuck in
+// packing" rule has no such stored timestamp (packing isn't its own entity —
+// it's a computed phase via _coStage()), so its clock starts the first time
+// computeFollowUps() OBSERVES a row sitting in that phase. This intentionally
+// under-alerts rather than over-alerts for rows that were already stuck in
+// packing before this feature shipped — the clock starts a little late for
+// those, not early/falsely for anything else.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const FOLLOWUP_RULES={
+  vo_pipe:         {ruleKey:'vo_pipe',         scope:'vo', voType:'pipe',           icon:'🔩', label:'Pipe — follow up',        days:5,  recurDays:5, ask:'Where is my pipe material? By when will it be ready?'},
+  vo_karigar:      {ruleKey:'vo_karigar',      scope:'vo', voType:'karigar',        icon:'🛠️', label:'Karigar — follow up',     days:5,  recurDays:5, ask:'Where is my order? By when will you give it to me?'},
+  vo_plating:      {ruleKey:'vo_plating',      scope:'vo', voType:'plating',        icon:'🪙', label:'Plating — follow up',     days:2,  recurDays:2, ask:'Where is my plating order? When will it be ready?'},
+  co_packing:      {ruleKey:'co_packing',      scope:'co_row', phase:'packing',     icon:'📦', label:'Stuck in packing',        days:3,  recurDays:3, ask:'Why is this still under packing? Please move it faster.'},
+  co_unassigned:   {ruleKey:'co_unassigned',   scope:'co', condition:'unassigned',  icon:'⚠️', label:'Not assigned yet',        days:1,  recurDays:1, ask:'Why has this order not been assigned to any vendor/karigar yet?'},
+  co_notdispatched:{ruleKey:'co_notdispatched',scope:'co', condition:'notDispatched',icon:'🚚', label:'Not dispatched',          days:20, recurDays:5, ask:'Why has this order not been dispatched yet? What happened?'},
+};
+const FOLLOWUP_RULE_ORDER=['vo_pipe','vo_karigar','vo_plating','co_packing','co_unassigned','co_notdispatched'];
+
+function _fuEntry(key){
+  if(!S.followUps)S.followUps={};
+  if(!S.followUps[key])S.followUps[key]={firstSeenAt:Date.now(),lastFollowUpAt:null,timesFollowedUp:0};
+  return S.followUps[key];
+}
+// True only when NOT ONE row in the order has any vendor/karigar/pipe assignment at all.
+function _orderHasZeroAssignment(order){
+  return (order.designs||[]).every(d=>{
+    const hod=_hasOnlyDefault(d);
+    const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+    const isFlat=isCnc||!(d.varieties||[]).length||hod;
+    const rows=isFlat?[d]:(d.varieties||[]);
+    return rows.every(r=>!r.assignedVendor&&!r.pipeVendor&&!r.pipeVoId);
+  });
+}
+
+let _followUpCache=[]; // last computed due-list — badge/UI read this without recomputing
+
+function computeFollowUps(){
+  const now=Date.now();
+  const items=[];
+  const touchedKeys=new Set();
+  const dueItem=(key,rule,anchor,ctx)=>{
+    touchedKeys.add(key);
+    const entry=_fuEntry(key);
+    if(!entry.firstSeenAt||entry.firstSeenAt>anchor)entry.firstSeenAt=anchor;
+    const base=entry.lastFollowUpAt||entry.firstSeenAt;
+    const intervalDays=entry.lastFollowUpAt?rule.recurDays:rule.days;
+    const dueAt=base+intervalDays*864e5;
+    if(now>=dueAt){
+      items.push({key,rule,dueAt,overdueDays:Math.floor((now-dueAt)/864e5),
+        timesFollowedUp:entry.timesFollowedUp||0,...ctx});
+    }
+  };
+  const drop=(key)=>{ if(S.followUps&&S.followUps[key])delete S.followUps[key]; };
+
+  // ── Vendor-order rules (pipe / karigar / plating) ──────────────────────────
+  (S.vendorOrders||[]).forEach(vo=>{
+    const ruleKey='vo_'+(vo.type||'karigar');
+    const rule=FOLLOWUP_RULES[ruleKey];
+    if(!rule)return;
+    const key='vo:'+vo.id+':'+ruleKey;
+    if(vo.archived||vendorOrderAlert(vo)==='done'){ drop(key); return; } // delivered/archived — nothing to chase
+    const anchor=vo.createdAt?new Date(vo.createdAt).getTime():new Date((vo.startDate||'')+'T00:00:00').getTime();
+    if(!anchor||isNaN(anchor))return;
+    dueItem(key,rule,anchor,{
+      kind:'vo', voId:vo.id,
+      title:(vo.orderId||'VORD')+' · '+(vo.vendor||'(no vendor)'),
+      subtitle:rule.label+' — order created '+fmtDate(vo.startDate)
+    });
+  });
+
+  // ── Customer-order row rule: stuck in packing ──────────────────────────────
+  const rulePacking=FOLLOWUP_RULES.co_packing;
+  (S.orders||[]).forEach(order=>{
+    (order.designs||[]).forEach(d=>{
+      const hod=_hasOnlyDefault(d);
+      const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+      const isFlat=isCnc||!(d.varieties||[]).length||hod;
+      const rows=isFlat?[{holder:d,vri:-1}]:(d.varieties||[]).map((v,vri)=>({holder:v,vri}));
+      rows.forEach(({holder,vri})=>{
+        const key='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_packing';
+        if(order.archived||_coStage(holder)!=='packing'){ drop(key); return; }
+        dueItem(key,rulePacking,Date.now(),{ // no reliable stored anchor — see module note above
+          kind:'co', orderId:order.id,
+          title:(order.orderId||'ORD')+' · '+(order.client||'(no client)'),
+          subtitle:rulePacking.label+' — "'+(d.name||'design')+'"'+(vri>=0&&holder.name?' / '+holder.name:'')
+        });
+      });
+    });
+  });
+
+  // ── Customer-order-level rules: unassigned / not dispatched ────────────────
+  const ruleUnassigned=FOLLOWUP_RULES.co_unassigned, ruleNotDispatched=FOLLOWUP_RULES.co_notdispatched;
+  (S.orders||[]).forEach(order=>{
+    const keyU='co:'+order.id+':co_unassigned', keyD='co:'+order.id+':co_notdispatched';
+    if(order.archived){ drop(keyU); drop(keyD); return; }
+    // renumberOrders() backfills missing createdAt with the Unix epoch as a
+    // sort-order placeholder, NOT a real date — anchoring to it would make
+    // every pre-existing legacy order instantly "20 days overdue" the moment
+    // this feature ships. Treat that sentinel (and any missing value) as
+    // "start the clock now" instead, same safe-default as the packing rule.
+    const parsed=order.createdAt?new Date(order.createdAt).getTime():0;
+    const anchor=(parsed>0)?parsed:Date.now();
+    const ctx={kind:'co', orderId:order.id, title:(order.orderId||'ORD')+' · '+(order.client||'(no client)')};
+
+    if(_orderHasZeroAssignment(order))
+      dueItem(keyU,ruleUnassigned,anchor,{...ctx,subtitle:ruleUnassigned.label+' — created '+fmtDate(order.startDate)});
+    else drop(keyU);
+
+    if(orderAlert(order)!=='done')
+      dueItem(keyD,ruleNotDispatched,anchor,{...ctx,subtitle:ruleNotDispatched.label+' — created '+fmtDate(order.startDate)});
+    else drop(keyD);
+  });
+
+  // ── Garbage-collect: anything not touched this pass belongs to an entity
+  // that's gone (deleted/archived/resolved) — keeps S.followUps bounded. ─────
+  if(S.followUps)Object.keys(S.followUps).forEach(k=>{ if(!touchedKeys.has(k))delete S.followUps[k]; });
+
+  items.sort((a,b)=>b.overdueDays-a.overdueDays);
+  _followUpCache=items;
+  _updateFollowUpBadge();
+  return items;
+}
+
+function _updateFollowUpBadge(){
+  const n=_followUpCache.length;
+  ['followup-badge','followup-badge-mobile'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.textContent=n>99?'99+':String(n);
+    el.style.display=n>0?'inline-flex':'none';
+  });
+}
+
+function markFollowedUp(key){
+  const item=_followUpCache.find(i=>i.key===key);
+  const entry=_fuEntry(key);
+  entry.lastFollowUpAt=Date.now();
+  entry.timesFollowedUp=(entry.timesFollowedUp||0)+1;
+  audit('Follow-up',(item?item.rule.label+' — '+item.title:key)+' — follow-up logged');
+  save();
+  try{fbPushNow();}catch(e){}
+  showToast('✅ Follow-up logged — next reminder in '+(item?item.rule.recurDays:'a few')+' day(s)','green',3000);
+  openFollowUpsModal(); // recompute + re-render so this item drops off if resolved
+}
+
+function _goToFollowUpTarget(key){
+  const item=_followUpCache.find(i=>i.key===key);
+  if(!item)return;
+  closeModal();
+  if(item.kind==='vo')_goToVendorOrder(item.voId);
+  else goToOrderFromAnalytics(item.orderId);
+}
+
+function openFollowUpsModal(){
+  const items=computeFollowUps();
+  const mc=document.getElementById('modal-container');
+  if(!mc)return;
+  const grouped={};
+  items.forEach(it=>{(grouped[it.rule.ruleKey]=grouped[it.rule.ruleKey]||[]).push(it);});
+
+  const body=items.length
+    ?FOLLOWUP_RULE_ORDER.filter(k=>grouped[k]&&grouped[k].length).map(k=>{
+      const rule=FOLLOWUP_RULES[k], rows=grouped[k];
+      return `<div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">${rule.icon} ${esc(rule.label)} (${rows.length})</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${rows.map(it=>`
+            <div style="background:#fff;border:1.5px solid #F09595;border-radius:10px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+              <div style="flex:1;min-width:180px">
+                <div style="font-weight:700;font-size:13px;color:#2D2D5F">${esc(it.title)}</div>
+                <div style="font-size:11px;color:#888;margin:2px 0 5px">${esc(it.subtitle)}</div>
+                <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(it.rule.ask)}"</div>
+                ${it.timesFollowedUp?`<div style="font-size:10px;color:#aaa;margin-top:3px">Followed up ${it.timesFollowedUp} time${it.timesFollowedUp!==1?'s':''} before</div>`:''}
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
+                <span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:2px 9px;white-space:nowrap">${it.overdueDays<=0?'Due today':it.overdueDays+'d overdue'}</span>
+                <div style="display:flex;gap:5px">
+                  <button class="sm" onclick="_goToFollowUpTarget('${it.key}')">↗ Open</button>
+                  <button class="sm primary" onclick="markFollowedUp('${it.key}')">✅ Done</button>
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('')
+    :`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Nothing overdue right now — nice work.</div>`;
+
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:640px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#FCEBEB;color:#A32D2D">🔔</div>
+        <h3>Follow-ups Due ${items.length?`<span style="font-size:12px;font-weight:400;color:#888">(${items.length})</span>`:''}</h3>
+      </div>
+      <div style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
+      <div class="modal-actions">
+        <button class="primary" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
+}
+
+// Shows the checklist automatically once per day, per device (localStorage-gated
+// so it never fires more than once per day and never suppresses other devices).
+function _maybeShowDailyFollowUpPrompt(){
+  try{
+    const items=computeFollowUps();
+    if(!items.length)return;
+    const todayStr=new Date().toISOString().split('T')[0];
+    if(localStorage.getItem('bangle_followup_prompt_date')===todayStr)return;
+    localStorage.setItem('bangle_followup_prompt_date',todayStr);
+    openFollowUpsModal();
+  }catch(e){ console.warn('Follow-up daily prompt failed:',e); }
+}
+
+// Keep the badge fresh across a long-open tab without ever touching a hot path.
+setInterval(()=>{ try{ computeFollowUps(); }catch(e){} }, 30*60*1000);
+
 // ── MOBILE MENU (☰) ─────────────────────────────────────────────────────────
 function openMobileMenu(){
   const mc = document.getElementById('modal-container');
@@ -15832,6 +16084,7 @@ function openMobileMenu(){
         <button onclick="closeModal();showPrintMenu()" class="mm-btn"><span style="font-size:18px">🖨️</span><span>Print</span></button>
         <button onclick="closeModal();openStageTemplateEditor()" class="mm-btn"><span style="font-size:18px">⚙️</span><span>Edit stages</span></button>
         <button onclick="closeModal();openAuditModal()" class="mm-btn"><span style="font-size:18px">📋</span><span>Audit log</span></button>
+        <button onclick="closeModal();openFollowUpsModal()" class="mm-btn"><span style="font-size:18px">🔔</span><span>Follow-ups</span><span id="followup-badge-mobile" style="display:none;margin-left:auto;background:#E53935;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:99px;align-items:center;justify-content:center;padding:0 6px">0</span></button>
       </div>
       <div class="modal-actions">
         <button onclick="closeModal()" style="width:100%">Close</button>
