@@ -10275,15 +10275,22 @@ function toggleVORowReceived(vi, di, vri){
   }
 }
 
-// Returns {received: n, total: n} counting every design/variety row in the vendor order
+// Returns {received: n, total: n} counting every design/variety row in the vendor order.
+// MUST use the exact same flat-vs-variety detection as buildVendorDesignsPanel (the
+// screen that actually renders the ✓ Received button) — otherwise the button can
+// write to holder=vd (design object) while this reads varieties[0], undercounting
+// forever. A CNC/single-"Default"-variety design is a FLAT row: toggleVORowReceived
+// is called with vri=-1, so its "received" flag lives on vd itself, not the variety.
 function _voRowsProgress(vo){
   let received=0, total=0;
   (vo.designs||[]).forEach(vd=>{
-    const vars=vd.varieties&&vd.varieties.length?vd.varieties:null;
-    if(vars){
-      vars.forEach(v=>{ total++; if(v.received)received++; });
-    } else {
+    const varieties=vd.varieties||[];
+    const hasOnlyDefault=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
+    const isFlat=varieties.length===0||hasOnlyDefault;
+    if(isFlat){
       total++; if(vd.received)received++;
+    } else {
+      varieties.forEach(v=>{ total++; if(v.received)received++; });
     }
   });
   return {received,total};
@@ -15916,7 +15923,11 @@ function computeFollowUps(){
     const rule=FOLLOWUP_RULES[ruleKey];
     if(!rule)return;
     const key='vo:'+vo.id+':'+ruleKey;
-    if(vo.archived||vendorOrderAlert(vo)==='done'){ drop(key); return; } // delivered/archived — nothing to chase
+    // Resolved if EITHER the order was explicitly marked Delivered, OR every row is
+    // already ticked received — don't rely solely on someone remembering to flip the
+    // status dropdown after the last row comes in; that's a manual step people forget.
+    const fullyReceived=(()=>{const p=_voRowsProgress(vo);return p.total>0&&p.received===p.total;})();
+    if(vo.archived||vendorOrderAlert(vo)==='done'||fullyReceived){ drop(key); return; }
     const anchor=vo.createdAt?new Date(vo.createdAt).getTime():new Date((vo.startDate||'')+'T00:00:00').getTime();
     if(!anchor||isNaN(anchor))return;
     dueItem(key,rule,anchor,{
