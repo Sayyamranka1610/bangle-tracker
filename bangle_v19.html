@@ -5830,6 +5830,9 @@ function delOrder(oi){
 // deleted, so year-end analytics (which reads S.orders directly) still sees it.
 function archiveOrder(oi){
   const order=S.orders[oi]; if(!order)return;
+  if(orderAlert(order)!=='done'){
+    if(!confirm('This order is not completed yet. Do you still want to archive it?'))return;
+  }
   order.archived=true; order.archivedAt=Date.now();
   audit('Archive order',`Order ${order.orderId} (${order.client}) archived`);
   save(); render();
@@ -9802,6 +9805,9 @@ function delVendorOrder(vi){
 // vendor order still exists) and analytics still counts it.
 function archiveVendorOrder(vi){
   const vo=S.vendorOrders[vi]; if(!vo)return;
+  if(vendorOrderAlert(vo)!=='done'){
+    if(!confirm('This order is not completed yet. Do you still want to archive it?'))return;
+  }
   vo.archived=true; vo.archivedAt=Date.now();
   audit('VendorOrder',`Archived vendor order ${vo.orderId} (${vo.vendor})`);
   save(); renderVendorOrders();
