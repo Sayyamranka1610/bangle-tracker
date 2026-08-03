@@ -16143,7 +16143,7 @@ function computeFollowUps(){
     const anchor=vo.createdAt?new Date(vo.createdAt).getTime():new Date((vo.startDate||'')+'T00:00:00').getTime();
     if(!anchor||isNaN(anchor))return;
     dueItem(key,rule,anchor,{
-      kind:'vo', voId:vo.id,
+      kind:'vo', voId:vo.id, vendor:vo.vendor||'(no vendor)',
       title:(vo.orderId||'VORD')+' · '+(vo.vendor||'(no vendor)'),
       subtitle:rule.label+' — banaya: '+fmtDate(vo.startDate)
     });
@@ -16178,7 +16178,7 @@ function computeFollowUps(){
         const phase=_coStage(holder);
         if(phase==='plating'){
           dueItem(keyPlating,rulePlating,anchorFor(holder.platingVendorAt),{
-            kind:'co', orderId:order.id, title:rowLabel, subtitle:rulePlating.label+' — '+designLabel
+            kind:'co', orderId:order.id, vendor:holder.platingVendor||'(no vendor)', title:rowLabel, subtitle:rulePlating.label+' — '+designLabel
           });
         } else drop(keyPlating);
 
@@ -16192,7 +16192,7 @@ function computeFollowUps(){
         const genuinelyImported=!!_liveVO(holder.importedToVOId,d.code||'');
         if(holder.assignedVendor&&!genuinelyImported){
           dueItem(keyUnimported,ruleUnimported,anchorFor(holder.assignedVendorAt),{
-            kind:'co', orderId:order.id, title:rowLabel, subtitle:ruleUnimported.label+' — '+designLabel
+            kind:'co', orderId:order.id, vendor:holder.assignedVendor, title:rowLabel, subtitle:ruleUnimported.label+' — '+designLabel
           });
         } else drop(keyUnimported);
       });
@@ -16237,7 +16237,7 @@ function _updateFollowUpBadge(){
   ['followup-badge','followup-badge-mobile'].forEach(id=>{
     const el=document.getElementById(id);
     if(!el)return;
-    el.textContent=n>99?'99+':String(n);
+    el.textContent=String(n); // always the real count — the team needs to see exactly how much is left, not a capped "99+"
     el.style.display=n>0?'inline-flex':'none';
   });
 }
@@ -16262,39 +16262,74 @@ function _goToFollowUpTarget(key){
   else goToOrderFromAnalytics(item.orderId);
 }
 
+// One item card. showRuleTag=true adds a small pill naming which rule this is —
+// needed in the vendor-grouped view where one vendor can have items from several
+// different rules mixed together (e.g. a karigar order plus an unimported row).
+function _fuItemCardHtml(it,showRuleTag){
+  return `<div style="background:#fff;border:1.5px solid #F09595;border-radius:10px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div style="flex:1;min-width:180px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <div style="font-weight:700;font-size:13px;color:#2D2D5F">${esc(it.title)}</div>
+        ${showRuleTag?`<span style="font-size:9px;font-weight:700;background:#EEEDFE;color:#534AB7;border-radius:20px;padding:1px 8px;white-space:nowrap">${it.rule.icon} ${esc(it.rule.label)}</span>`:''}
+      </div>
+      <div style="font-size:11px;color:#888;margin:2px 0 5px">${esc(it.subtitle)}</div>
+      <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(it.rule.ask)}"</div>
+      ${it.timesFollowedUp?`<div style="font-size:10px;color:#aaa;margin-top:3px">Pehle bhi ${it.timesFollowedUp} baar follow-up ho chuka hai</div>`:''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
+      <span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:2px 9px;white-space:nowrap">${it.overdueDays<=0?'Aaj se due hai':it.overdueDays+' din se pending'}</span>
+      <div style="display:flex;gap:5px">
+        <button class="sm" onclick="_goToFollowUpTarget('${it.key}')">↗ Kholo</button>
+        <button class="sm primary" onclick="markFollowedUp('${it.key}')">✅ Ho gaya</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function openFollowUpsModal(){
   const items=computeFollowUps();
   const mc=document.getElementById('modal-container');
   if(!mc)return;
-  const grouped={};
-  items.forEach(it=>{(grouped[it.rule.ruleKey]=grouped[it.rule.ruleKey]||[]).push(it);});
 
-  const body=items.length
-    ?FOLLOWUP_RULE_ORDER.filter(k=>grouped[k]&&grouped[k].length).map(k=>{
+  // Split: vendor-attributable items (something to call someone about) vs
+  // order-level items (nobody external to call — assignment/dispatch/packing).
+  const vendorItems=items.filter(it=>it.vendor);
+  const orderItems=items.filter(it=>!it.vendor);
+
+  let body='';
+
+  if(vendorItems.length){
+    const byVendor={};
+    vendorItems.forEach(it=>{(byVendor[it.vendor]=byVendor[it.vendor]||[]).push(it);});
+    // Vendor with the most overdue item first — that's who to call first.
+    const vendorNames=Object.keys(byVendor).sort((a,b)=>
+      Math.max(...byVendor[b].map(i=>i.overdueDays))-Math.max(...byVendor[a].map(i=>i.overdueDays)));
+    body+=`<div style="font-size:12px;font-weight:800;color:#3C3489;margin-bottom:8px">📞 Vendor-wise Follow-ups — jab call karo, sab kuch ek jagah</div>`;
+    body+=vendorNames.map(vendor=>{
+      const rows=byVendor[vendor].sort((a,b)=>b.overdueDays-a.overdueDays);
+      return `<div style="margin-bottom:14px;border:1.5px solid #D0CCF5;border-radius:12px;padding:10px 10px 6px;background:#FAFAFF">
+        <div style="font-size:12.5px;font-weight:800;color:#2D2D5F;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          🏭 ${esc(vendor)} <span style="font-size:10px;font-weight:700;background:#F0EFFF;color:#534AB7;border-radius:20px;padding:1px 9px">${rows.length} item${rows.length!==1?'s':''}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">${rows.map(it=>_fuItemCardHtml(it,true)).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  if(orderItems.length){
+    const grouped={};
+    orderItems.forEach(it=>{(grouped[it.rule.ruleKey]=grouped[it.rule.ruleKey]||[]).push(it);});
+    body+=`<div style="font-size:12px;font-weight:800;color:#3C3489;margin:${vendorItems.length?'18':'0'}px 0 8px">📋 Order-level Follow-ups</div>`;
+    body+=FOLLOWUP_RULE_ORDER.filter(k=>grouped[k]&&grouped[k].length).map(k=>{
       const rule=FOLLOWUP_RULES[k], rows=grouped[k];
       return `<div style="margin-bottom:14px">
         <div style="font-size:11px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">${rule.icon} ${esc(rule.label)} (${rows.length})</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          ${rows.map(it=>`
-            <div style="background:#fff;border:1.5px solid #F09595;border-radius:10px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
-              <div style="flex:1;min-width:180px">
-                <div style="font-weight:700;font-size:13px;color:#2D2D5F">${esc(it.title)}</div>
-                <div style="font-size:11px;color:#888;margin:2px 0 5px">${esc(it.subtitle)}</div>
-                <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(it.rule.ask)}"</div>
-                ${it.timesFollowedUp?`<div style="font-size:10px;color:#aaa;margin-top:3px">Pehle bhi ${it.timesFollowedUp} baar follow-up ho chuka hai</div>`:''}
-              </div>
-              <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
-                <span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:2px 9px;white-space:nowrap">${it.overdueDays<=0?'Aaj se due hai':it.overdueDays+' din se pending'}</span>
-                <div style="display:flex;gap:5px">
-                  <button class="sm" onclick="_goToFollowUpTarget('${it.key}')">↗ Kholo</button>
-                  <button class="sm primary" onclick="markFollowedUp('${it.key}')">✅ Ho gaya</button>
-                </div>
-              </div>
-            </div>`).join('')}
-        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">${rows.map(it=>_fuItemCardHtml(it,false)).join('')}</div>
       </div>`;
-    }).join('')
-    :`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Abhi kuch bhi pending nahi hai — badhiya kaam!</div>`;
+    }).join('');
+  }
+
+  if(!items.length)body=`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Abhi kuch bhi pending nahi hai — badhiya kaam!</div>`;
 
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
     <div class="modal" style="width:640px">
