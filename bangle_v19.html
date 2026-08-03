@@ -4171,7 +4171,11 @@ function buildOrderCard(order,oi,archivedView){
   const al=archivedView?'archived':orderAlert(order); // 'done' / 'pending' / 'archived'
   const qtyStr=formatQtyByUnit(orderQtyByUnit(order));
   const isOpen=S.openOrders.has(order.id);
-  const at=S.activeTabs[order.id]||'designs';
+  // 'stages' tab was removed (Production Stages feature scrapped — unused, no
+  // analytics were meaningful from it) — fall back to Designs for any order
+  // whose saved active-tab still points at it.
+  let at=S.activeTabs[order.id]||'designs';
+  if(at==='stages')at='designs';
   const stageCts=_coOrderStageCounts(order);
   return `<div class="order-card al-${al}" id="oc-${order.id}" data-active-tab="${at}">
     <div class="order-header" onclick="toggleOrder('${order.id}')">
@@ -4202,7 +4206,6 @@ function buildOrderCard(order,oi,archivedView){
       ${isOpen?`<div class="tabs no-print">
         <div class="tab${at==='details'?' active':''}" onclick="setTab('${order.id}','details')">📋 Order details</div>
         <div class="tab${at==='designs'?' active':''}" onclick="setTab('${order.id}','designs')">🎨 Designs &amp; Varieties</div>
-        <div class="tab${at==='stages'?' active':''}" onclick="setTab('${order.id}','stages')">⚙️ Production stages</div>
         <div class="tab${at==='vendor_summary'?' active':''}" onclick="setTab('${order.id}','vendor_summary')">🏭 Vendor Summary</div>
       </div>
       <div class="tab-panel${at==='details'?' active':''}" data-tab="details">
@@ -4210,9 +4213,6 @@ function buildOrderCard(order,oi,archivedView){
       </div>
       <div class="tab-panel${at==='designs'?' active':''}" data-tab="designs">
         ${buildDesignsPanel(order,oi)}
-      </div>
-      <div class="tab-panel${at==='stages'?' active':''}" data-tab="stages">
-        ${buildStagesPanel(order,oi)}
       </div>
       <div class="tab-panel${at==='vendor_summary'?' active':''}" data-tab="vendor_summary">
         ${buildVendorSummaryPanel(order,oi)}
@@ -4397,6 +4397,12 @@ function markDesignComplete(oi,di){
   design.pipeReceived=true;
   design.karigarReceived=true;
   design.platingReceived=true;
+  // Timestamp for turnaround-time analytics — preserve an earlier value if this
+  // was somehow already set. Intentionally NOT backfilling pipe/karigar/plating
+  // received timestamps here: this button is a shortcut that skips per-stage
+  // tracking, so we genuinely don't know how long each stage took — better to
+  // leave that stage breakdown blank than fabricate it.
+  if(!design.dispatchedAt)design.dispatchedAt=Date.now();
   histPush();
   save();
   render();
@@ -4415,9 +4421,12 @@ function markVarietyDone(oi,di,vi){
     v.pipeReceived=true;
     v.karigarReceived=true;
     v.platingReceived=true;
+    // Timestamp for turnaround-time analytics.
+    v.dispatchedAt=Date.now();
   } else {
     v.receivedFromKarigar=false;
     v.dispatchedToClient=false;
+    delete v.dispatchedAt;
     // Note: stage ticks are NOT cleared on undo — only the dispatch status resets
   }
   save();render();
@@ -5394,8 +5403,6 @@ function renderAnalytics(){
   const clientEntries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]).slice(0,8),maxC=Math.max(...clientEntries.map(e=>e[1]),1);
   const byCode={};orders.forEach(o=>o.designs.forEach(d=>{byCode[d.code||'?']=(byCode[d.code||'?']||0)+designQty(d);}));
   const codeEntries=Object.entries(byCode).sort((a,b)=>b[1]-a[1]).slice(0,8),maxCode=Math.max(...codeEntries.map(e=>e[1]),1);
-  const stageStats={};orders.forEach(o=>o.designs.forEach(d=>d.stages.forEach(st=>{const t=getTmpl(st.stageId);if(!t)return;if(!stageStats[t.name])stageStats[t.name]={done:0,total:0};stageStats[t.name].total++;if(st.status==='done')stageStats[t.name].done++;})));
-  const stageEntries=Object.entries(stageStats).map(([name,v])=>([name,v.total?Math.round(v.done/v.total*100):0]));
   const bySz={};orders.forEach(o=>o.designs.forEach(d=>{const szKeys=Object.keys(d.sizes||{});szKeys.forEach(sz=>{const v=d.varieties&&d.varieties.length?d.varieties.reduce((a,vr)=>a+(parseInt((vr.sizes||{})[sz])||0),0):(parseInt((d.sizes||{})[sz])||0);bySz[sz]=(bySz[sz]||0)+v;});}));
   const szEntries=Object.entries(bySz).sort((a,b)=>b[1]-a[1]),maxSz=Math.max(...szEntries.map(e=>e[1]),1);
   // Production pipeline counts
@@ -5485,6 +5492,7 @@ function renderAnalytics(){
         <div class="metric-box"><div class="metric-val" style="color:#0F6E56">${doneOrds}</div><div class="metric-lbl">Completed orders</div></div>
       </div>
     </div>
+    ${_renderTurnaroundSection()}
     <div class="chart-card full"><div class="chart-title">Production Pipeline</div><div class="chart-sub">Stage breakdown across all ${_ppTotal} variety rows · ${orders.length} orders</div>
       <div style="display:flex;gap:1px;height:28px;border-radius:6px;overflow:hidden;margin-bottom:10px">${_ppGrandBarSegs}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px">${_ppLegend}</div>
@@ -5510,9 +5518,6 @@ function renderAnalytics(){
     </div>
     <div class="chart-card"><div class="chart-title">Pieces by design code</div><div class="chart-sub">Total quantity</div>
       <div class="bar-chart">${codeEntries.map(([c,v])=>`<div class="bar-row"><span class="bar-label" title="${esc(c)}">${esc(c)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/maxCode*100)}%;background:#0F6E56"><span class="bar-val">${v}</span></div></div></div>`).join('')}</div>
-    </div>
-    <div class="chart-card full"><div class="chart-title">Stage completion rate</div><div class="chart-sub">% of design-stages marked done</div>
-      <div class="bar-chart">${stageEntries.map(([name,pct])=>`<div class="bar-row"><span class="bar-label" title="${esc(name)}">${esc(name)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${pct>=80?'#1D9E75':pct>=40?'#EF9F27':'#E24B4A'}"><span class="bar-val">${pct}%</span></div></div></div>`).join('')}</div>
     </div>
     <div class="chart-card full"><div class="chart-title">Quantity by size</div><div class="chart-sub">Total pieces across all orders</div>
       <div class="bar-chart">${szEntries.map(([sz,v])=>`<div class="bar-row"><span class="bar-label">${esc(sz)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/maxSz*100)}%;background:#185FA5"><span class="bar-val">${v}</span></div></div></div>`).join('')}</div>
@@ -6394,6 +6399,213 @@ function _coStagePillsHTML(cts){
   ).join('');
 }
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TURNAROUND-TIME ANALYTICS
+// ──────────────────────────────────────────────────────────────────────────────
+// How long each customer-order ROW (a design, or one variety of it) actually
+// took to reach the customer, and where along the way the time went.
+//
+// Anchored on the SAME Pipe/Karigar/Plating cells the follow-up system uses —
+// deliberately NOT the separate "Production Stages" tab, which only tracks at
+// the design level and can't tell varieties apart (confirmed with the owner
+// before building this).
+//
+// A row only counts once it has a real dispatchedAt AND its order has a real
+// (non-epoch-sentinel) createdAt. No historical guessing — every number shown
+// here is a real, measured duration. This means totals start sparse right
+// after this ships and grow richer as new orders complete.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// One row per dispatched design/variety, with total + per-stage day counts
+// (a stage's days is null — not 0 — when we don't have both boundary timestamps,
+// so it's correctly excluded from stage averages rather than dragging them down).
+function _turnaroundRows(){
+  const rows=[];
+  const seg=(startTs,endTs)=>{
+    const s=startTs?new Date(startTs).getTime():0, e=endTs?new Date(endTs).getTime():0;
+    return (s>0&&e>0&&e>=s)?(e-s)/864e5:null;
+  };
+  (S.orders||[]).forEach(order=>{
+    const createdAt=order.createdAt?new Date(order.createdAt).getTime():0;
+    if(!(createdAt>0))return; // missing / epoch-sentinel placeholder — can't measure accurately
+    (order.designs||[]).forEach(d=>{
+      const hod=_hasOnlyDefault(d);
+      const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+      const isFlat=isCnc||!(d.varieties||[]).length||hod;
+      const items=isFlat?[d]:(d.varieties||[]);
+      items.forEach(holder=>{
+        const dispatchedAt=holder.dispatchedAt?new Date(holder.dispatchedAt).getTime():0;
+        if(!(dispatchedAt>createdAt))return; // not dispatched yet, or bad data
+        const packingStart=holder.platingReceivedAt||holder.karigarReceivedAt; // skip-plating fallback
+        rows.push({
+          orderId:order.id, orderLabel:order.orderId||'', client:order.client||'(no client)', code:d.code||'(no code)',
+          pipeVendor:(holder.pipeVendor&&holder.pipeVendor!=='__own__')?holder.pipeVendor:null,
+          karigar:holder.assignedVendor||null,
+          platingVendor:(holder.platingVendor&&holder.platingVendor!=='__own__')?holder.platingVendor:null,
+          totalDays:(dispatchedAt-createdAt)/864e5,
+          pipeDays:seg(holder.pipeVendorAt,holder.pipeReceivedAt),
+          karigarDays:seg(holder.assignedVendorAt,holder.karigarReceivedAt),
+          platingDays:seg(holder.platingVendorAt,holder.platingReceivedAt),
+          packingDays:seg(packingStart,holder.dispatchedAt),
+          dispatchedAt
+        });
+      });
+    });
+  });
+  return rows;
+}
+
+function _taAvg(arr){return arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;}
+function _taMedian(arr){
+  if(!arr.length)return null;
+  const s=[...arr].sort((a,b)=>a-b), mid=Math.floor(s.length/2);
+  return s.length%2?s[mid]:(s[mid-1]+s[mid])/2;
+}
+function _taFmt(n){return n==null?'—':(Math.round(n*10)/10)+'d';}
+
+// Groups rows by keyFn, averaging valFn over each group. minSample filters out
+// groups too small to be a fair judgment (e.g. don't rank a vendor on 1 order).
+function _taGroup(rows,keyFn,valFn,minSample){
+  const groups={};
+  rows.forEach(r=>{
+    const k=keyFn(r); if(!k)return;
+    const v=valFn(r); if(v==null)return;
+    (groups[k]=groups[k]||[]).push(v);
+  });
+  return Object.entries(groups)
+    .map(([key,vals])=>({key,avg:_taAvg(vals),median:_taMedian(vals),n:vals.length}))
+    .filter(g=>g.n>=(minSample||1))
+    .sort((a,b)=>b.avg-a.avg);
+}
+
+// Bar list for a ranked group (client/item/vendor) — each bar clickable to drill in.
+// dimension is one of 'client'|'code'|'pipeVendor'|'karigar'|'platingVendor'.
+function _taBarListHtml(groups,dimension,barColor){
+  if(!groups.length)return '<div style="font-size:12px;color:#aaa;text-align:center;padding:10px 0">Not enough dispatched data yet.</div>';
+  const max=Math.max(...groups.map(g=>g.avg),0.01);
+  return '<div class="bar-chart">'+groups.map(g=>
+    '<div class="bar-row" style="cursor:pointer" onclick="showTurnaroundDrilldown(\''+dimension+'\',\''+esc(g.key).replace(/'/g,"\\'")+'\')">'
+    +'<span class="bar-label" title="'+esc(g.key)+' — '+g.n+' row'+(g.n!==1?'s':'')+'">'+esc(g.key)+'</span>'
+    +'<div class="bar-track"><div class="bar-fill" style="width:'+Math.round(g.avg/max*100)+'%;background:'+barColor+'">'
+      +'<span class="bar-val">'+_taFmt(g.avg)+' avg · '+g.n+'</span>'
+    +'</div></div></div>'
+  ).join('')+'</div>';
+}
+
+const TURNAROUND_TRACKING_SINCE='Tracking since 1 Aug 2026'; // timestamps needed for this feature were only started on this date — nothing before it is trustworthy, so it's never backfilled or guessed.
+
+function _renderTurnaroundSection(){
+  const rows=_turnaroundRows();
+  if(!rows.length){
+    return '<div class="chart-card full"><div class="chart-title">⏱ Turnaround Time</div>'
+      +'<div style="font-size:11px;color:#AFA9EC;font-weight:600;margin-bottom:8px">'+TURNAROUND_TRACKING_SINCE+'</div>'
+      +'<div style="text-align:center;padding:1.5rem;color:#888;font-size:13px">No dispatched rows with full timing data yet.<br>'
+      +'<span style="font-size:11.5px;color:#aaa">This fills in automatically as orders get dispatched from now on — nothing is estimated or guessed.</span></div></div>';
+  }
+  const totalDaysArr=rows.map(r=>r.totalDays);
+  const overallAvg=_taAvg(totalDaysArr), overallMedian=_taMedian(totalDaysArr);
+  const fastest=Math.min(...totalDaysArr), slowest=Math.max(...totalDaysArr);
+
+  const byClient=_taGroup(rows,r=>r.client,r=>r.totalDays,1).slice(0,8);
+  const byCode=_taGroup(rows,r=>r.code,r=>r.totalDays,1).slice(0,8);
+  const byPipeVendor=_taGroup(rows,r=>r.pipeVendor,r=>r.pipeDays,3);
+  const byKarigar=_taGroup(rows,r=>r.karigar,r=>r.karigarDays,3);
+  const byPlatingVendor=_taGroup(rows,r=>r.platingVendor,r=>r.platingDays,3);
+  const smallSampleNote='<div style="font-size:10px;color:#aaa;margin-top:6px">Vendors with fewer than 3 dispatched rows aren\'t ranked yet — one order isn\'t enough to judge fairly.</div>';
+
+  const stageStats=[
+    ['Pipe wait',_taAvg(rows.map(r=>r.pipeDays).filter(x=>x!=null)),rows.filter(r=>r.pipeDays!=null).length,'#1565C0'],
+    ['Karigar production',_taAvg(rows.map(r=>r.karigarDays).filter(x=>x!=null)),rows.filter(r=>r.karigarDays!=null).length,'#4A148C'],
+    ['Plating',_taAvg(rows.map(r=>r.platingDays).filter(x=>x!=null)),rows.filter(r=>r.platingDays!=null).length,'#BF360C'],
+    ['Packing → dispatch',_taAvg(rows.map(r=>r.packingDays).filter(x=>x!=null)),rows.filter(r=>r.packingDays!=null).length,'#2E7D32'],
+  ].filter(s=>s[1]!=null);
+  const maxStage=Math.max(...stageStats.map(s=>s[1]),0.01);
+  const stageBarsHtml=stageStats.length
+    ?'<div class="bar-chart">'+stageStats.map(([name,avg,n,color])=>
+      '<div class="bar-row"><span class="bar-label">'+esc(name)+'</span><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(avg/maxStage*100)+'%;background:'+color+'"><span class="bar-val">'+_taFmt(avg)+' · '+n+' rows</span></div></div></div>'
+    ).join('')+'</div>'
+    :'<div style="font-size:12px;color:#aaa;text-align:center;padding:10px 0">No stage timing data yet.</div>';
+
+  // Monthly trend — average total days per dispatch month, chronological
+  const byMonth={};
+  rows.forEach(r=>{
+    const mk=new Date(r.dispatchedAt).toISOString().slice(0,7); // YYYY-MM
+    (byMonth[mk]=byMonth[mk]||[]).push(r.totalDays);
+  });
+  const monthKeys=Object.keys(byMonth).sort();
+  const maxMonth=Math.max(...monthKeys.map(k=>_taAvg(byMonth[k])),0.01);
+  const trendHtml=monthKeys.length>1
+    ?'<div class="bar-chart">'+monthKeys.map(k=>{
+        const avg=_taAvg(byMonth[k]);
+        const lbl=new Date(k+'-01').toLocaleDateString('en-IN',{month:'short',year:'2-digit'});
+        return '<div class="bar-row"><span class="bar-label">'+lbl+'</span><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(avg/maxMonth*100)+'%;background:#534AB7"><span class="bar-val">'+_taFmt(avg)+'</span></div></div></div>';
+      }).join('')+'</div>'
+    :'<div style="font-size:12px;color:#aaa;text-align:center;padding:10px 0">Need at least 2 months of dispatched orders to show a trend.</div>';
+
+  return `
+    <div class="chart-card full"><div class="chart-title">⏱ Turnaround Time — Order to Dispatch</div>
+      <div style="font-size:11px;color:#534AB7;font-weight:700;margin-bottom:2px">${TURNAROUND_TRACKING_SINCE}</div>
+      <div class="chart-sub">Based on ${rows.length} dispatched row${rows.length!==1?'s':''} with complete timing data · measured from order creation to dispatch</div>
+      <div class="metric-grid">
+        <div class="metric-box"><div class="metric-val">${_taFmt(overallAvg)}</div><div class="metric-lbl">Average</div></div>
+        <div class="metric-box"><div class="metric-val">${_taFmt(overallMedian)}</div><div class="metric-lbl">Median (typical)</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:#0F6E56">${_taFmt(fastest)}</div><div class="metric-lbl">Fastest</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:#A32D2D">${_taFmt(slowest)}</div><div class="metric-lbl">Slowest</div></div>
+      </div>
+    </div>
+    <div class="chart-card full"><div class="chart-title">Where the time actually goes</div><div class="chart-sub">Average days spent in each stage (only rows with both start &amp; end timestamps count)</div>
+      ${stageBarsHtml}
+    </div>
+    <div class="chart-card"><div class="chart-title">Slowest customers</div><div class="chart-sub">Average days order-to-dispatch · click to see rows</div>
+      ${_taBarListHtml(byClient,'client','#534AB7')}
+    </div>
+    <div class="chart-card"><div class="chart-title">Slowest items</div><div class="chart-sub">By design code · click to see rows</div>
+      ${_taBarListHtml(byCode,'code','#0F6E56')}
+    </div>
+    <div class="chart-card full"><div class="chart-title">Vendor performance</div><div class="chart-sub">Average days per stage, slowest first · click a vendor to see affected orders</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
+        <div><div style="font-size:11px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">🔩 Pipe vendors</div>${_taBarListHtml(byPipeVendor,'pipeVendor','#1565C0')}</div>
+        <div><div style="font-size:11px;font-weight:700;color:#4A148C;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">🛠️ Karigars</div>${_taBarListHtml(byKarigar,'karigar','#4A148C')}</div>
+        <div><div style="font-size:11px;font-weight:700;color:#BF360C;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">🪙 Plating vendors</div>${_taBarListHtml(byPlatingVendor,'platingVendor','#BF360C')}</div>
+      </div>
+      ${smallSampleNote}
+      <div id="ta-drilldown" style="display:none;margin-top:14px;background:#F8F7FF;border:1.5px solid #AFA9EC;border-radius:10px;padding:12px 16px;max-height:50vh;overflow-y:auto"></div>
+    </div>
+    <div class="chart-card full"><div class="chart-title">Trend over time</div><div class="chart-sub">Average days-to-dispatch per month</div>
+      ${trendHtml}
+    </div>`;
+}
+
+// Click a customer/item/vendor bar to see exactly which dispatched rows make up that average.
+function showTurnaroundDrilldown(dimension,key){
+  const panel=document.getElementById('ta-drilldown');
+  if(!panel)return;
+  if(panel.dataset.dim===dimension&&panel.dataset.key===key&&panel.style.display!=='none'){
+    panel.style.display='none';panel.dataset.dim='';panel.dataset.key='';return;
+  }
+  panel.dataset.dim=dimension;panel.dataset.key=key;
+  const rows=_turnaroundRows().filter(r=>r[dimension]===key);
+  const dayFieldByDim={pipeVendor:'pipeDays',karigar:'karigarDays',platingVendor:'platingDays',client:'totalDays',code:'totalDays'};
+  const dayField=dayFieldByDim[dimension]||'totalDays';
+  const sorted=[...rows].sort((a,b)=>(b[dayField]||0)-(a[dayField]||0));
+  panel.innerHTML=`<div style="font-weight:700;color:#3C3489;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <span>${esc(key)} — ${rows.length} row${rows.length!==1?'s':''}</span>
+      <button onclick="document.getElementById('ta-drilldown').style.display='none'" style="margin-left:auto;background:none;border:none;color:#888;cursor:pointer;font-size:16px;line-height:1">✕</button>
+    </div>`
+    +sorted.map(r=>{
+      const days=r[dayField];
+      return `<div data-oid="${esc(r.orderId)}" onclick="goToOrderFromAnalytics(this.dataset.oid)" style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #EAE9F8;cursor:pointer;border-radius:4px" onmouseover="this.style.background='#EEEDFE'" onmouseout="this.style.background=''">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700;color:#534AB7">${esc(r.code)} <span style="font-weight:400;color:#555">· ${esc(r.client)}</span></div>
+          ${r.orderLabel?`<div style="font-size:10px;color:#999;margin-top:1px">${esc(r.orderLabel)}</div>`:''}
+        </div>
+        <span style="font-size:11px;font-weight:700;color:#A32D2D;white-space:nowrap">${_taFmt(days)}</span>
+        <span style="font-size:10px;color:#534AB7;flex-shrink:0">→</span>
+      </div>`;
+    }).join('');
+  panel.style.display='block';
+}
 
 // Rebuild a sizes object with keys in the correct numeric order (2/2 < 2/4 < 2/6 ...)
 function _sortedSizes(obj){
@@ -12525,12 +12737,6 @@ function exportAnalyticsCSV(){
   const byCode={};
   orders.forEach(o=>o.designs.forEach(d=>{const k=d.code||'?';if(!byCode[k])byCode[k]={name:d.name,qty:0};byCode[k].qty+=designQty(d);}));
   Object.entries(byCode).sort((a,b)=>b[1].qty-a[1].qty).forEach(([c,v])=>rows.push([c,v.name,v.qty]));
-  rows.push([]);
-  rows.push(['--- Stage Completion Rates ---']);
-  rows.push(['Stage Name','Done Count','Total Count','Completion %']);
-  const stageStats={};
-  orders.forEach(o=>o.designs.forEach(d=>d.stages.forEach(st=>{const t=getTmpl(st.stageId);if(!t)return;if(!stageStats[t.name])stageStats[t.name]={done:0,total:0};stageStats[t.name].total++;if(st.status==='done')stageStats[t.name].done++;})));
-  Object.entries(stageStats).forEach(([name,v])=>rows.push([name,v.done,v.total,v.total?Math.round(v.done/v.total*100)+'%':'0%']));
   downloadCSV(csvEncode(rows),`analytics_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
