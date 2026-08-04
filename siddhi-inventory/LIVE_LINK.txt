@@ -1,0 +1,13 @@
+Siddhi Inventory — live app link
+
+Primary:  https://bangle-tracker.pages.dev/siddhi-inventory/
+Backup:   https://sayyamranka1610.github.io/bangle-tracker/siddhi-inventory/
+
+Naya Entry (data entry) needs no login.
+Stock Kitna Hai / Opening Balance / Daybook need a login — use Manage Users
+(top-right menu, after signing in) to set up real accounts for yourself,
+your dad, the accountant, and the inventory manager.
+
+Default seeded account (CHANGE THIS PASSWORD FIRST):
+  username: owner
+  password: siddhi123
