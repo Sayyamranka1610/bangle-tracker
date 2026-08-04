@@ -187,8 +187,11 @@
   .col-total{width:66px;}
   .col-customer{width:118px;} .col-customer input{width:100px;font-size:.82rem;padding:5px 7px;}
   .col-plate select{min-width:118px;font-size:.8rem;}
-  th[contenteditable="true"]{cursor:text;border-bottom:1px dashed var(--muted);}
-  th[contenteditable="true"]:focus{outline:1px solid var(--brass);background:var(--chip-bg);}
+  .size-label[contenteditable="true"]{cursor:text;border-bottom:1px dashed var(--muted);}
+  .size-label[contenteditable="true"]:focus{outline:1px solid var(--brass);background:var(--chip-bg);}
+  th.size-cell{position:relative;padding-right:16px;}
+  .size-rm{all:unset;position:absolute;top:5px;right:2px;cursor:pointer;color:var(--muted);font-size:.72rem;line-height:1;padding:1px 3px;border-radius:3px;}
+  .size-rm:hover{color:var(--bad);background:var(--chip-bg);}
   .row-rm{all:unset;cursor:pointer;color:var(--bad);font-size:.85rem;}
   .add-design-row{padding:12px 20px;}
   .pending-list{padding:6px 20px 16px;}
@@ -365,10 +368,10 @@
         <table class="entry-table" id="entryTable">
           <thead><tr id="entryHeadRow">
             <th class="row-design">Design / Variety</th>
-            <th class="size-cell" data-size="2/4" contenteditable="true">2/4</th>
-            <th class="size-cell" data-size="2/6" contenteditable="true">2/6</th>
-            <th class="size-cell" data-size="2/8" contenteditable="true">2/8</th>
-            <th class="size-cell" data-size="2/10" contenteditable="true">2/10</th>
+            <th class="size-cell" data-size="2/4"><span class="size-label" contenteditable="true">2/4</span><button type="button" class="size-rm" title="Yeh size column hatayein" onclick="removeSizeColumn(this)">&times;</button></th>
+            <th class="size-cell" data-size="2/6"><span class="size-label" contenteditable="true">2/6</span><button type="button" class="size-rm" title="Yeh size column hatayein" onclick="removeSizeColumn(this)">&times;</button></th>
+            <th class="size-cell" data-size="2/8"><span class="size-label" contenteditable="true">2/8</span><button type="button" class="size-rm" title="Yeh size column hatayein" onclick="removeSizeColumn(this)">&times;</button></th>
+            <th class="size-cell" data-size="2/10"><span class="size-label" contenteditable="true">2/10</span><button type="button" class="size-rm" title="Yeh size column hatayein" onclick="removeSizeColumn(this)">&times;</button></th>
             <th class="col-reject">Reject</th>
             <th class="col-total">Total</th>
             <th class="col-total">Packets</th>
@@ -580,20 +583,36 @@
     while(typeof v==='string' && tries<6){ try{ v=JSON.parse(v); }catch(e){ break; } tries++; }
     return v;
   }
+  function designThumbData(des){
+    // each image entry is {data, name} — data is the actual URL/data-URI; the
+    // object itself must never be used as an <img src> (was the bug: it stringified
+    // to "[object Object]" and every photo silently failed to load)
+    if(des.images && des.images[0] && des.images[0].data) return des.images[0].data;
+    var varieties=des.varieties||[];
+    for(var i=0;i<varieties.length;i++){
+      var v=varieties[i];
+      if(v.images && v.images[0] && v.images[0].data) return v.images[0].data;
+    }
+    return null;
+  }
   async function loadBTData(){
     if(btCache) return btCache;
     var raw = await fbGet(BT+'/data');
     var d = deepParse(raw) || {};
     raw=null;
     var idx={};
-    (d.orders||[]).forEach(function(o){
-      (o.designs||[]).forEach(function(des){
-        if(!des || !des.code) return;
-        var thumb = (des.images&&des.images[0]) || null;
-        (des.varieties||[]).forEach(function(v){ if(!thumb && v.images && v.images[0]) thumb=v.images[0]; });
-        idx[des.code]={ name:des.name||'', thumb:thumb };
+    function indexOrderList(list){
+      (list||[]).forEach(function(o){
+        (o.designs||[]).forEach(function(des){
+          if(!des || !des.code) return;
+          var thumb=designThumbData(des);
+          // keep the first hit for a code, but upgrade it if a later order has a photo and this one didn't
+          if(!idx[des.code] || (!idx[des.code].thumb && thumb)) idx[des.code]={ name:des.name||'', thumb:thumb };
+        });
       });
-    });
+    }
+    indexOrderList(d.orders);       // customer sales orders
+    indexOrderList(d.vendorOrders); // vendor/karigar job-work orders — most design photos live here
     btCache={ vendorTypes: d.vendorTypes||{}, vocabulary: d.vocabulary||{clients:[]}, designIndex: idx };
     d=null; // discard the full parsed blob — only the small derived pieces above are kept
     return btCache;
@@ -639,11 +658,18 @@
     var idx=await buildDesignIndex();
     var hit=idx[v];
     if(hit){
-      pop.innerHTML = (hit.thumb? '<img src="'+hit.thumb+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">' : '<div class="swatch">'+v+'</div>') +
-        '<div><b style="display:block;">'+v+'</b><span style="font-size:.78rem;color:var(--muted);">'+(hit.name||'')+' &middot; Bangle Tracker se</span></div>';
+      var usable=usableThumb(hit.thumb);
+      pop.innerHTML = (usable? '<img src="'+usable+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">' : '<div class="swatch">'+v+'</div>') +
+        '<div><b style="display:block;">'+v+'</b><span style="font-size:.78rem;color:var(--muted);">'+(hit.name||'')+' &middot; Bangle Tracker se'+(hit.thumb&&!usable?' &middot; photo sirf us device par hai':'')+'</span></div>';
     } else {
       pop.innerHTML='<div><b>Nahi mila</b><br><span style="font-size:.78rem;color:var(--muted);">"'+v+'" Bangle Tracker mein nahi mila</span></div>';
     }
+  }
+  // Some old photos are too large to sync — Bangle Tracker keeps them only in that
+  // device's own browser storage (a "__IDB__..." placeholder), not in Firebase.
+  // Those can never be shown from here; treat them the same as "no photo".
+  function usableThumb(thumb){
+    return (thumb && thumb.indexOf('__IDB__')!==0) ? thumb : null;
   }
   async function designThumbFor(code){
     var idx=await buildDesignIndex();
@@ -790,13 +816,24 @@
   function addSizeColumn(){
     var inp=document.getElementById('newSizeInp'); var label=inp.value.trim(); if(!label)return;
     var headRow=document.getElementById('entryHeadRow'); var refTh=headRow.querySelector('.col-reject');
-    var th=document.createElement('th'); th.className='size-cell'; th.setAttribute('data-size',label); th.setAttribute('contenteditable','true'); th.textContent=label;
+    var th=document.createElement('th'); th.className='size-cell'; th.setAttribute('data-size',label);
+    th.innerHTML='<span class="size-label" contenteditable="true">'+label+'</span><button type="button" class="size-rm" title="Yeh size column hatayein" onclick="removeSizeColumn(this)">&times;</button>';
     headRow.insertBefore(th, refTh);
     document.querySelectorAll('#entryRows tr').forEach(function(tr){
       var refTd=tr.querySelector('.col-reject'); var td=document.createElement('td'); td.className='size-cell'; td.innerHTML=sizeCellHTML();
       tr.insertBefore(td, refTd);
     });
     inp.value='';
+  }
+  function removeSizeColumn(btn){
+    var th=btn.closest('th');
+    var headRow=th.parentElement;
+    var idx=Array.prototype.indexOf.call(headRow.children, th);
+    document.querySelectorAll('#entryRows tr').forEach(function(tr){
+      if(tr.children[idx]) tr.children[idx].remove();
+    });
+    th.remove();
+    document.querySelectorAll('#entryRows tr').forEach(function(tr){ recalcRow(tr); });
   }
   function plateOptionsHTML(){
     return '<option>Raw</option><option>Rose Gold 2-Tone</option><option>Gold</option><option>Silver</option><option>Deep Silver</option><option>2-Tone</option><option>3-Tone</option>';
@@ -823,7 +860,8 @@
     var code=inp.value.trim(); if(!code)return;
     var hit=await designThumbFor(code);
     var swatch=inp.closest('.row-design-inner').querySelector('.swatch');
-    if(hit && hit.thumb){ swatch.outerHTML='<img src="'+hit.thumb+'" style="width:32px;height:32px;border-radius:8px;object-fit:cover;" class="swatch">'; }
+    var usable=hit&&usableThumb(hit.thumb);
+    if(usable){ swatch.outerHTML='<img src="'+usable+'" style="width:32px;height:32px;border-radius:8px;object-fit:cover;" class="swatch">'; }
   }
   function addSimpleRow(){
     var showPlate = document.getElementById('plateColHead').style.display!=='none' || currentDir()==='out'; // plating-karvane always needs a plating dropdown
@@ -882,7 +920,7 @@
 
   /* ===================== SAVE ENTRY ===================== */
   function readTabularRows(){
-    var sizeLabels=[]; document.querySelectorAll('#entryHeadRow .size-cell').forEach(function(th){ sizeLabels.push(th.textContent.trim()); });
+    var sizeLabels=[]; document.querySelectorAll('#entryHeadRow .size-cell').forEach(function(th){ var lbl=th.querySelector('.size-label'); sizeLabels.push((lbl?lbl.textContent:th.textContent).trim()); });
     var rows=[];
     document.querySelectorAll('#entryRows tr').forEach(function(tr){
       var code=tr.querySelector('.code-inp').value.trim();
