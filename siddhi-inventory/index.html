@@ -224,6 +224,8 @@
   .grp-head .sum{margin-left:auto;text-align:right;font-family:var(--font-num);font-size:.85rem;}
   .grp-head .sum small{display:block;font-family:var(--font-body);color:var(--muted);font-size:.68rem;}
   .grp-head .arrow{color:var(--muted);transition:transform .15s;}
+  .grp-del{all:unset;cursor:pointer;color:var(--muted);font-size:.85rem;padding:4px 6px;border-radius:6px;flex:0 0 auto;}
+  .grp-del:hover{color:var(--bad);background:var(--chip-bg);}
   .grp-card.open .arrow{transform:rotate(90deg);}
   .grp-detail{display:none;border-top:1px solid var(--line);padding:10px 14px 14px;}
   .grp-card.open .grp-detail{display:block;}
@@ -258,10 +260,32 @@
   .sign-box .cap{font-size:.7rem;color:var(--muted);}
   .copy-tag{text-align:center;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--rule);font-weight:700;margin-bottom:8px;}
   .cut-line{text-align:center;border-top:1px dashed var(--muted);margin:22px 0;padding-top:6px;color:var(--muted);font-size:.72rem;}
+  /* ---- mobile / tablet ---- */
+  @media (max-width:700px){
+    .topbar{align-items:flex-start;padding:10px 14px;row-gap:10px;}
+    .brand{order:1;}
+    .tabs{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;order:2;}
+    .tab-btn{flex:0 0 auto;white-space:nowrap;padding:7px 10px;font-size:.8rem;}
+    .lookup{flex:1 1 100%;order:3;}
+    .lookup-box{width:100%;}
+    .lookup-pop{left:0;right:0;width:auto;}
+    .who{order:4;margin-left:auto;}
+    main{padding:18px 14px 60px;}
+    .page-head{flex-direction:column;align-items:flex-start;gap:4px;}
+    .page-head .meta{text-align:left;}
+    .form-foot{flex-direction:column;align-items:stretch;}
+    .form-foot > div{display:flex;flex-direction:column;gap:8px;}
+    .grp-head{flex-wrap:wrap;}
+    .grp-head .sum{margin-left:0;}
+    .modal{padding:20px;}
+  }
   @media print{
-    body *{visibility:hidden;}
-    #printArea, #printArea *{visibility:visible;}
-    #printArea{display:block;position:absolute;left:0;top:0;width:100%;}
+    /* Hiding the app with visibility:hidden alone still leaves its full height in the
+       page flow, so the browser paginated for that height and left a trailing blank
+       page. display:none removes it from layout entirely — only #printArea remains. */
+    body > *{display:none !important;}
+    #printArea{display:block !important;position:static;width:100%;margin:0;}
+    #printArea *{visibility:visible;}
     .print-copy{break-inside:avoid;page-break-inside:avoid;}
   }
 </style>
@@ -498,6 +522,7 @@
   function fbPatch(path,data){ return fetch(FB_ROOT+path+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
   function fbPut(path,data){ return fetch(FB_ROOT+path+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
   function fbPost(path,data){ return fetch(FB_ROOT+path+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}); }
+  function fbDelete(path){ return fetch(FB_ROOT+path+'.json',{method:'DELETE'}); }
   function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
   function fmtDate(s){ if(!s)return ''; var p=s.split('-'); return p[2]+'-'+p[1]+'-'+p[0]; }
 
@@ -1251,6 +1276,7 @@
     var ins=[], outs=[];
     Object.keys(S.movements||{}).forEach(function(id){
       var m=S.movements[id]; if(m.date!==daybookDate) return;
+      m._id=id; // tagged only for on-screen delete buttons — never written back to Firebase
       (m.dir==='in'?ins:outs).push(m);
     });
     document.getElementById('dayInTot').textContent=ins.length+' entries';
@@ -1261,7 +1287,8 @@
       list.forEach(function(m,i){
         html+='<div class="card grp-card'+(i===0?' open':'')+'"><div class="grp-head" onclick="this.parentElement.classList.toggle(\'open\')">'+
           '<span class="arrow">&#9656;</span><div><span class="who">'+m.party+'</span><span class="kind">'+kindDisplayLabel(m)+'</span></div>'+
-          '<div class="sum">'+movementQtyLabel(m)+'<small>'+movementDesignCount(m)+' design</small></div></div>'+
+          '<div class="sum">'+movementQtyLabel(m)+'<small>'+movementDesignCount(m)+' design</small></div>'+
+          '<button type="button" class="grp-del" title="Yeh entry hatayein" onclick="event.stopPropagation();deleteMovement(\''+m._id+'\');">&#128465;</button></div>'+
           '<div class="grp-detail">'+movementDetailHTML(m)+'</div></div>';
       });
       return html;
@@ -1272,6 +1299,19 @@
   function kindDisplayLabel(m){
     var map={design:m.dir==='in'?'Design Hoke':'Designing Karvane', plating:m.dir==='in'?'Plating Hoke':'Plating Karvane', customer:'Customer Dispatch'};
     return map[m.kind] || m.kind;
+  }
+  // Entries were append-only until now — this is a deliberate, deletion-only fix for
+  // mis-entered records. It's a real Firebase delete (no undo), so it's gated behind
+  // (a) the Daybook login lock and (b) a confirm prompt naming the party/qty being removed.
+  async function deleteMovement(id){
+    if(!id) return;
+    var m=(S.movements||{})[id];
+    var label=m ? (m.party+' — '+movementQtyLabel(m)) : 'yeh entry';
+    if(!confirm('Pakka delete karein?\n\n'+label+'\n\nYeh permanently hat jayegi — stock turant update ho jayega. Wapas nahi la sakte.')) return;
+    await fbDelete(DATA+'/movements/'+id);
+    delete S.movements[id];
+    toast('Entry delete ho gayi.');
+    renderDaybook();
   }
 
   /* ===================== BOOT ===================== */
