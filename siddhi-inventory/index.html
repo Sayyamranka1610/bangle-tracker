@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Siddhi Inventory</title>
+<meta name="description" content="Siddhi Creation — job-work inventory tracker.">
+<link rel="manifest" href="siddhi-inv-manifest.json">
+<meta name="theme-color" content="#a1712f">
+<link rel="icon" type="image/png" href="../icon-192.png">
+<link rel="apple-touch-icon" href="../icon-192.png">
+<style>
+  :root{
+    --bg:#faf6ef; --surface:#ffffff; --surface-2:#f2ece1; --ink:#221f1a; --muted:#7c7263;
+    --line:#e4dbc9; --rule:#b1453d; --brass:#a1712f; --brass-ink:#6e4f22; --ledger:#2f4b7c;
+    --good:#3f7d4f; --warn:#b8863a; --bad:#b1453d; --chip-bg:#f2ece1; --radius:10px;
+    --shadow:0 1px 2px rgba(34,31,26,.06), 0 6px 16px rgba(34,31,26,.05);
+    --font-display:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+    --font-body:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+    --font-num:'Cambria','Consolas',ui-monospace,'SFMono-Regular',Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1a1712; --surface:#221f1a; --surface-2:#2a2620; --ink:#efe8db; --muted:#a89a83;
+      --line:#3a3529; --rule:#d16a61; --brass:#d4a44f; --brass-ink:#f0cf8f; --ledger:#7fa0da;
+      --good:#6fbf82; --warn:#e0ac5a; --bad:#e07b73; --chip-bg:#2a2620;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35); }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14.5px;line-height:1.5;}
+  h1,h2,h3{font-family:var(--font-display);font-weight:600;margin:0;}
+  .num{font-variant-numeric:tabular-nums;font-family:var(--font-num);}
+  a{color:var(--ledger);}
+  *{box-sizing:border-box;}
+
+  /* ---- login screen ---- */
+  #loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:36px 32px;width:100%;max-width:340px;}
+  .login-card h1{font-size:1.4rem;text-align:center;margin-bottom:4px;}
+  .login-card .sub{text-align:center;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:26px;}
+  .login-card label{font-size:.78rem;font-weight:600;color:var(--muted);display:block;margin-bottom:6px;}
+  .login-card input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:10px 12px;
+    color:var(--ink);font-size:.92rem;margin-bottom:16px;}
+  .login-card .err{color:var(--bad);font-size:.8rem;margin-bottom:12px;display:none;}
+  .btn{all:unset;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 16px;border-radius:8px;
+    font-size:.88rem;font-weight:600;cursor:pointer;width:100%;background:var(--brass);color:#251c0c;}
+  .btn:hover{filter:brightness(1.06);}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);width:auto;}
+  .btn.sm{padding:6px 12px;font-size:.78rem;width:auto;}
+
+  /* ---- app shell ---- */
+  #app{display:none;}
+  .topbar{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:22px;padding:12px 24px;flex-wrap:wrap;}
+  .brand{display:flex;flex-direction:column;margin-right:6px;}
+  .brand .mark{font-family:var(--font-display);font-size:1.18rem;line-height:1.1;}
+  .brand .sub{color:var(--muted);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;}
+  .tabs{display:flex;gap:4px;flex:1;flex-wrap:wrap;}
+  .tab-btn{all:unset;padding:8px 14px;border-radius:8px;font-size:.86rem;font-weight:600;color:var(--muted);cursor:pointer;}
+  .tab-btn .n{font-family:var(--font-num);font-size:.68rem;margin-right:6px;}
+  .tab-btn:hover{background:var(--surface-2);color:var(--ink);}
+  .tab-btn.active{background:var(--chip-bg);color:var(--brass-ink);}
+  .who{position:relative;}
+  .who-btn{all:unset;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;color:var(--muted);
+    padding:7px 12px;border:1px solid var(--line);border-radius:99px;}
+  .who-btn:hover{background:var(--surface-2);}
+  .who-pop{display:none;position:absolute;right:0;top:calc(100% + 8px);width:220px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:10px;z-index:30;}
+  .who-pop.show{display:block;}
+  .who-pop button{all:unset;display:block;width:100%;padding:8px 10px;border-radius:7px;font-size:.85rem;cursor:pointer;color:var(--ink);}
+  .who-pop button:hover{background:var(--surface-2);}
+
+  main{padding:26px 30px 70px;max-width:1180px;margin:0 auto;}
+  .page{display:none;}
+  .page.active{display:block;}
+  .page-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    padding-bottom:14px;margin-bottom:20px;border-bottom:2px solid var(--rule);}
+  .page-head h1{font-size:1.42rem;}
+  .page-head .eyebrow{color:var(--rule);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:4px;}
+  .page-head .meta{color:var(--muted);font-size:.83rem;text-align:right;}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
+  .note-banner{display:flex;gap:10px;align-items:flex-start;background:var(--chip-bg);border:1px solid var(--line);
+    border-radius:9px;padding:12px 14px;margin-bottom:20px;font-size:.83rem;color:var(--muted);}
+  .note-banner b{color:var(--ink);}
+  .empty-state{padding:48px 24px;text-align:center;color:var(--muted);}
+  .empty-state .big{font-size:2rem;margin-bottom:10px;}
+  .empty-state b{color:var(--ink);display:block;font-size:1rem;margin-bottom:6px;}
+
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;}
+  @media (max-width:700px){.stat-row{grid-template-columns:repeat(2,1fr);}}
+  .stat{padding:14px 16px;}
+  .stat .k{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;}
+  .stat .v{font-family:var(--font-num);font-size:1.5rem;margin-top:3px;}
+  .stat .v small{font-size:.7rem;color:var(--muted);font-family:var(--font-body);}
+
+  .placeholder-card{padding:40px 24px;text-align:center;color:var(--muted);}
+  .placeholder-card .tag{display:inline-block;background:var(--chip-bg);color:var(--brass-ink);font-size:.7rem;
+    font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:4px 10px;border-radius:99px;margin-bottom:12px;}
+
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(20,17,12,.45);z-index:50;align-items:center;justify-content:center;padding:20px;}
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px;width:100%;max-width:420px;max-height:86vh;overflow:auto;}
+  .modal h3{font-size:1.05rem;margin-bottom:16px;}
+  .modal .field{margin-bottom:12px;}
+  .modal label{font-size:.78rem;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;}
+  .modal input, .modal select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink);font-size:.88rem;}
+  .user-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.85rem;}
+  .user-row b{flex:1;}
+  .user-row .role{color:var(--muted);font-size:.74rem;}
+  .modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);
+    padding:10px 18px;border-radius:8px;font-size:.85rem;z-index:60;display:none;}
+  .toast.show{display:block;}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>Siddhi Inventory</h1>
+    <div class="sub">Sign in</div>
+    <div class="err" id="loginErr"></div>
+    <label>Username</label>
+    <input type="text" id="loginUser" autocomplete="username" />
+    <label>Password</label>
+    <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" />
+    <button class="btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- ================= APP SHELL ================= -->
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><div class="mark">Siddhi Inventory</div><div class="sub">Live</div></div>
+    <div class="tabs">
+      <button class="tab-btn active" data-target="p-stock" onclick="showPage('p-stock')"><span class="n">01</span>Stock Kitna Hai</button>
+      <button class="tab-btn" data-target="p-entry" onclick="showPage('p-entry')"><span class="n">02</span>Naya Entry</button>
+      <button class="tab-btn" data-target="p-opening" onclick="showPage('p-opening')"><span class="n">03</span>Opening Balance</button>
+      <button class="tab-btn" data-target="p-daybook" onclick="showPage('p-daybook')"><span class="n">04</span>Daybook</button>
+    </div>
+    <div class="who">
+      <button class="who-btn" onclick="toggleWhoPop()"><span id="whoName">—</span> ▾</button>
+      <div class="who-pop" id="whoPop">
+        <button onclick="openUsersModal()">Manage Users</button>
+        <button onclick="doLogout()">Sign Out</button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <!-- PAGE 1: STOCK SUMMARY -->
+    <section class="page active" id="p-stock">
+      <div class="page-head">
+        <div><div class="eyebrow">Live view</div><h1>Stock Kitna Hai</h1></div>
+        <div class="meta" id="stockUpdatedMeta">—</div>
+      </div>
+      <div id="stockContent">
+        <div class="empty-state">
+          <div class="big">📦</div>
+          <b>Abhi tak koi movement record nahi hui</b>
+          Opening Balance daalein ya Naya Entry karein — stock yahan turant dikhega.
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 2: NAYA ENTRY (placeholder — next build stage) -->
+    <section class="page" id="p-entry">
+      <div class="page-head"><div><div class="eyebrow">Naya record</div><h1>Naya Entry</h1></div></div>
+      <div class="card placeholder-card">
+        <div class="tag">Agle Stage Mein</div>
+        <p>Yeh screen mockup mein finalize ho chuki hai — ab yahan real, connected version banaya jayega.</p>
+      </div>
+    </section>
+
+    <!-- PAGE 3: OPENING BALANCE (placeholder) -->
+    <section class="page" id="p-opening">
+      <div class="page-head"><div><div class="eyebrow">Setup &amp; correction</div><h1>Opening Balance / Correction</h1></div></div>
+      <div class="card placeholder-card">
+        <div class="tag">Agle Stage Mein</div>
+        <p>Yeh screen bhi agle step mein connect hogi.</p>
+      </div>
+    </section>
+
+    <!-- PAGE 4: DAYBOOK (placeholder) -->
+    <section class="page" id="p-daybook">
+      <div class="page-head"><div><div class="eyebrow">Din ka summary</div><h1>Daybook</h1></div></div>
+      <div class="card placeholder-card">
+        <div class="tag">Agle Stage Mein</div>
+        <p>Naya Entry connect hone ke baad Daybook usi data se apne aap banega.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ================= USERS MODAL ================= -->
+<div class="modal-bg" id="usersModalBg">
+  <div class="modal">
+    <h3>Manage Users</h3>
+    <div id="usersList"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Naya User Jodein</label>
+      <input type="text" id="nuName" placeholder="Naam — e.g. Rakesh (Inventory Manager)" style="margin-bottom:8px;" />
+      <input type="text" id="nuUser" placeholder="Username" style="margin-bottom:8px;" />
+      <input type="text" id="nuPass" placeholder="Password" style="margin-bottom:8px;" />
+      <select id="nuRole">
+        <option value="owner">Owner</option>
+        <option value="staff" selected>Staff (accountant / inventory manager)</option>
+      </select>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost sm" onclick="closeUsersModal()">Band Karein</button>
+      <button class="btn sm" style="width:auto;" onclick="addUser()">+ Jodein</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  var FB_ROOT='https://bangle-tracker-default-rtdb.firebaseio.com';
+  var DATA='/siddhiInv';
+  var BT_ROOT=FB_ROOT+'/appData';
+  var S={ user:null, users:{}, movements:{} };
+
+  function toast(msg){
+    var t=document.getElementById('toast');
+    t.textContent=msg; t.classList.add('show');
+    setTimeout(function(){t.classList.remove('show');},2600);
+  }
+
+  // ---------------- AUTH ----------------
+  function fbGet(path){ return fetch(FB_ROOT+path+'.json').then(function(r){return r.json();}); }
+  function fbPatch(path,data){ return fetch(FB_ROOT+path+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
+  function fbPut(path,data){ return fetch(FB_ROOT+path+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
+
+  async function ensureSeedUser(){
+    var users=await fbGet(DATA+'/users');
+    if(!users){
+      var seed={ owner:{ name:'Owner', password:'siddhi123', role:'owner' } };
+      await fbPut(DATA+'/users', seed);
+      return seed;
+    }
+    return users;
+  }
+
+  async function doLogin(){
+    var u=document.getElementById('loginUser').value.trim();
+    var p=document.getElementById('loginPass').value;
+    var errEl=document.getElementById('loginErr');
+    errEl.style.display='none';
+    if(!u||!p){ errEl.textContent='Username aur password dono bharein.'; errEl.style.display='block'; return; }
+    var users=await ensureSeedUser();
+    var rec=users[u];
+    if(!rec || rec.password!==p){
+      errEl.textContent='Username ya password galat hai.'; errEl.style.display='block'; return;
+    }
+    S.user={ username:u, name:rec.name||u, role:rec.role||'staff' };
+    sessionStorage.setItem('si_auth', JSON.stringify(S.user));
+    enterApp();
+  }
+
+  function doLogout(){
+    sessionStorage.removeItem('si_auth');
+    S.user=null;
+    document.getElementById('app').style.display='none';
+    document.getElementById('loginScreen').style.display='flex';
+  }
+
+  function enterApp(){
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('whoName').textContent=S.user.name+' ('+S.user.role+')';
+    loadStock();
+  }
+
+  (function tryResume(){
+    var raw=sessionStorage.getItem('si_auth');
+    if(raw){ S.user=JSON.parse(raw); enterApp(); }
+  })();
+
+  // ---------------- NAV ----------------
+  function showPage(id){
+    document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.toggle('active', b.dataset.target===id);});
+    document.querySelectorAll('.page').forEach(function(p){p.classList.toggle('active', p.id===id);});
+  }
+  function toggleWhoPop(){ document.getElementById('whoPop').classList.toggle('show'); }
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.who')) document.getElementById('whoPop').classList.remove('show');
+  });
+
+  // ---------------- STOCK SUMMARY (real data, empty-safe) ----------------
+  async function loadStock(){
+    var meta=document.getElementById('stockUpdatedMeta');
+    meta.textContent='Load ho raha hai…';
+    var movements = await fbGet(DATA+'/movements') || {};
+    S.movements=movements;
+    var count=Object.keys(movements).length;
+    meta.textContent = count ? ('Total movements: '+count) : 'Abhi tak koi record nahi';
+    if(!count){
+      document.getElementById('stockContent').innerHTML =
+        '<div class="empty-state"><div class="big">📦</div><b>Abhi tak koi movement record nahi hui</b>'+
+        'Opening Balance daalein ya Naya Entry karein — stock yahan turant dikhega.</div>';
+      return;
+    }
+    // Real aggregation logic (Design × Size × Plating, unit-aware) is built in the next stage
+    // once Naya Entry is writing real movement records to aggregate.
+    document.getElementById('stockContent').innerHTML =
+      '<div class="empty-state"><div class="big">🔧</div><b>'+count+' movement(s) mile</b>'+
+      'Size/plating-wise summary agle stage mein yahan banegi.</div>';
+  }
+
+  // ---------------- USERS MODAL ----------------
+  async function openUsersModal(){
+    toggleWhoPop();
+    var users=await ensureSeedUser();
+    S.users=users;
+    var html='';
+    Object.keys(users).forEach(function(k){
+      html+='<div class="user-row"><b>'+ (users[k].name||k) +'</b><span class="role">'+ (users[k].role||'staff') +'</span></div>';
+    });
+    document.getElementById('usersList').innerHTML=html || '<p style="color:var(--muted);font-size:.85rem;">Koi user nahi mila.</p>';
+    document.getElementById('usersModalBg').classList.add('show');
+  }
+  function closeUsersModal(){ document.getElementById('usersModalBg').classList.remove('show'); }
+
+  async function addUser(){
+    var name=document.getElementById('nuName').value.trim();
+    var uname=document.getElementById('nuUser').value.trim();
+    var pass=document.getElementById('nuPass').value;
+    var role=document.getElementById('nuRole').value;
+    if(!name||!uname||!pass){ toast('Sab fields bharein.'); return; }
+    var patch={}; patch[uname]={name:name,password:pass,role:role};
+    await fbPatch(DATA+'/users', patch);
+    toast('User jud gaya: '+name);
+    document.getElementById('nuName').value='';
+    document.getElementById('nuUser').value='';
+    document.getElementById('nuPass').value='';
+    openUsersModal();
+  }
+</script>
+</body>
+</html>
