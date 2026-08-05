@@ -1094,7 +1094,8 @@ let S = {
   vendorStatusFilter:'',  // '' | 'late' | 'warn'
   vendorTypeFilter:'',    // '' = All | 'pipe' | 'karigar' | 'plating'
   vendorTypes:{},         // {vendorName: 'pipe'|'karigar'|'plating'} — vendor master category
-  followUps:{}            // {followUpKey: {firstSeenAt, lastFollowUpAt, timesFollowedUp}} — see FOLLOW-UP SYSTEM section
+  followUps:{},           // {followUpKey: {firstSeenAt, lastFollowUpAt, timesFollowedUp, nextDueOverride, overrideKind, promisedDate}}
+  followUpLog:[]          // append-only log of every "Kya Bola" response ever submitted — feeds the daily email + Today's Log screen
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -1131,6 +1132,7 @@ try{
     S.vendorFilters=sv.vendorFilters||{vendor:'',design:'',code:''};
     S.vendorTypes=sv.vendorTypes||{};
     S.followUps=sv.followUps||{};
+    S.followUpLog=sv.followUpLog||[];
     // Always reset order filters on page load — never restore a stale filter that
     // would hide orders and confuse the user ("why can't I see my orders?")
     S.filters={client:'',dname:'',dcode:'',status:''};
@@ -16093,6 +16095,18 @@ const FOLLOWUP_RULES={
 };
 const FOLLOWUP_RULE_ORDER=['vo_pipe','vo_karigar','co_plating','co_packing','co_karigar_unimported','co_unassigned','co_notdispatched'];
 
+// "Kya Bola?" — the mandatory response options shown when marking a follow-up
+// done. Forces the team to actually say what happened, instead of a blank
+// "Ho gaya" click. Each option's `kind` controls what extra field (if any) is
+// required, and feeds computeFollowUps()'s scheduling override below.
+const FU_REASONS=[
+  {key:'in_process',    label:'Process mein hai, de dega',   kind:'date',        question:'Kab tak?'},
+  {key:'unknown_delay', label:'Pata nahi kitna time lagega',  kind:'text',        question:'Kya karan itna delay ka?'},
+  {key:'no_pipe',       label:'Pipe nahi aya ab tak',         kind:'instruction', message:'📌 Likh ke rakh lo aur bhai se bolke pipe mangva lo'},
+  {key:'no_pickup',     label:'Nahi uthaya call',             kind:'instruction', message:'📞 Kal fir se try karo'},
+  {key:'other',         label:'Others',                       kind:'text',        question:''},
+];
+
 function _fuEntry(key){
   if(!S.followUps)S.followUps={};
   if(!S.followUps[key])S.followUps[key]={firstSeenAt:Date.now(),lastFollowUpAt:null,timesFollowedUp:0};
@@ -16119,12 +16133,22 @@ function computeFollowUps(){
     touchedKeys.add(key);
     const entry=_fuEntry(key);
     if(!entry.firstSeenAt||entry.firstSeenAt>anchor)entry.firstSeenAt=anchor;
-    const base=entry.lastFollowUpAt||entry.firstSeenAt;
-    const intervalDays=entry.lastFollowUpAt?rule.recurDays:rule.days;
-    const dueAt=base+intervalDays*864e5;
+    // A logged "Kab tak?" date or a missed-call retry overrides the generic
+    // recurDays interval — see _submitFollowUpResponse().
+    let dueAt;
+    if(entry.nextDueOverride){
+      dueAt=entry.nextDueOverride;
+    } else {
+      const base=entry.lastFollowUpAt||entry.firstSeenAt;
+      const intervalDays=entry.lastFollowUpAt?rule.recurDays:rule.days;
+      dueAt=base+intervalDays*864e5;
+    }
     if(now>=dueAt){
       items.push({key,rule,dueAt,overdueDays:Math.floor((now-dueAt)/864e5),
-        timesFollowedUp:entry.timesFollowedUp||0,...ctx});
+        timesFollowedUp:entry.timesFollowedUp||0,
+        isBrokenPromise:entry.overrideKind==='promised_date',
+        promisedDate:entry.promisedDate||null,
+        ...ctx});
     }
   };
   const drop=(key)=>{ if(S.followUps&&S.followUps[key])delete S.followUps[key]; };
@@ -16242,16 +16266,180 @@ function _updateFollowUpBadge(){
   });
 }
 
-function markFollowedUp(key){
+// ── "KYA BOLA?" RESPONSE MODAL ─────────────────────────────────────────────
+// Replaces the old one-click "Ho gaya" — a team member must pick what the
+// vendor actually said (or "Others" + write it) before a follow-up can be
+// marked done. This is the whole point: no more blank clicks with nothing
+// to show for them.
+function openFollowUpResponseModal(key){
   const item=_followUpCache.find(i=>i.key===key);
+  if(!item)return;
+  window._fuResponseKey=key;
+  window._fuSelectedReason=null;
+  const mc=document.getElementById('modal-container');
+  if(!mc)return;
+  mc.innerHTML=_fuResponseModalHtml(item,null);
+  _modalDisableBackground();
+}
+
+function _fuResponseModalHtml(item,selectedReasonKey){
+  const optsHtml=FU_REASONS.map(r=>`
+    <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1.5px solid ${selectedReasonKey===r.key?'#534AB7':'#E0DFFF'};border-radius:9px;cursor:pointer;background:${selectedReasonKey===r.key?'#F0EFFF':'#fff'};margin-bottom:6px">
+      <input type="radio" name="fu-reason" value="${r.key}" ${selectedReasonKey===r.key?'checked':''} onchange="_fuSelectReason('${r.key}')" style="margin-top:2px">
+      <span style="font-size:13px;font-weight:600;color:#2D2D5F">${esc(r.label)}</span>
+    </label>`).join('');
+
+  const r=FU_REASONS.find(x=>x.key===selectedReasonKey);
+  let detailHtml='';
+  if(r){
+    if(r.kind==='date'){
+      detailHtml=`<div style="margin-top:10px"><label style="font-size:11.5px;font-weight:700;color:#534AB7">${esc(r.question)}</label>
+        <input type="date" id="fu-detail-input" oninput="_fuValidate()" style="width:100%;padding:8px 10px;border:1.5px solid #D0CCF5;border-radius:8px;margin-top:4px;font-size:13px;box-sizing:border-box"></div>`;
+    } else if(r.kind==='text'){
+      detailHtml=`<div style="margin-top:10px">${r.question?`<label style="font-size:11.5px;font-weight:700;color:#534AB7">${esc(r.question)}</label>`:''}
+        <textarea id="fu-detail-input" oninput="_fuValidate()" rows="2" placeholder="Yahan likhein…" style="width:100%;padding:8px 10px;border:1.5px solid #D0CCF5;border-radius:8px;margin-top:4px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea></div>`;
+    } else if(r.kind==='instruction'){
+      detailHtml=`<div style="margin-top:10px;background:#FFF8E1;border:1.5px solid #FFD580;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:700;color:#7B5800">${esc(r.message)}</div>`;
+    }
+  }
+
+  return `<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:440px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEEDFE;color:#534AB7">💬</div>
+        <h3>Kya Bola?</h3>
+      </div>
+      <div style="font-size:12px;color:#666;margin-bottom:2px">${esc(item.title)}</div>
+      <div style="font-size:11px;color:#A32D2D;font-style:italic;margin-bottom:12px">"${esc(item.rule.ask)}"</div>
+      <div>${optsHtml}</div>
+      <div id="fu-detail-area">${detailHtml}</div>
+      <div class="modal-actions">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="primary" id="fu-submit-btn" disabled onclick="_submitFollowUpResponse()">✅ Submit</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _fuSelectReason(reasonKey){
+  window._fuSelectedReason=reasonKey;
+  const item=_followUpCache.find(i=>i.key===window._fuResponseKey);
+  const mc=document.getElementById('modal-container');
+  if(!item||!mc)return;
+  mc.innerHTML=_fuResponseModalHtml(item,reasonKey);
+  _modalDisableBackground();
+  _fuValidate();
+  setTimeout(()=>{const el=document.getElementById('fu-detail-input');if(el)el.focus();},50);
+}
+
+// Submit stays disabled until the picked reason has everything it needs:
+// instruction-only reasons need nothing further; date/text reasons need a
+// real value. No blank submits possible.
+function _fuValidate(){
+  const btn=document.getElementById('fu-submit-btn');
+  if(!btn)return;
+  const r=FU_REASONS.find(x=>x.key===window._fuSelectedReason);
+  if(!r){btn.disabled=true;return;}
+  if(r.kind==='instruction'){btn.disabled=false;return;}
+  const el=document.getElementById('fu-detail-input');
+  btn.disabled=!((el&&el.value)||'').trim();
+}
+
+function _submitFollowUpResponse(){
+  const key=window._fuResponseKey;
+  const r=FU_REASONS.find(x=>x.key===window._fuSelectedReason);
+  const item=_followUpCache.find(i=>i.key===key);
+  if(!key||!r||!item)return;
+
+  let detail='';
+  if(r.kind==='date'){
+    const el=document.getElementById('fu-detail-input');
+    detail=(el&&el.value)||'';
+    if(!detail){showToast('Date select karein','warn');return;}
+  } else if(r.kind==='text'){
+    const el=document.getElementById('fu-detail-input');
+    detail=((el&&el.value)||'').trim();
+    if(!detail){showToast('Kuch likhein pehle','warn');return;}
+  } else {
+    detail=r.message;
+  }
+
   const entry=_fuEntry(key);
   entry.lastFollowUpAt=Date.now();
   entry.timesFollowedUp=(entry.timesFollowedUp||0)+1;
-  audit('Follow-up',(item?item.rule.label+' — '+item.title:key)+' — follow-up logged');
+
+  // Scheduling override — see computeFollowUps()'s dueItem for how this is read.
+  delete entry.nextDueOverride; delete entry.overrideKind; delete entry.promisedDate;
+  if(r.kind==='date'){
+    const promisedTs=new Date(detail+'T00:00:00').getTime();
+    if(promisedTs&&!isNaN(promisedTs)){
+      entry.nextDueOverride=promisedTs;
+      entry.overrideKind='promised_date';
+      entry.promisedDate=detail;
+    }
+  } else if(r.key==='no_pickup'){
+    entry.nextDueOverride=Date.now()+1*864e5; // try again tomorrow, not the normal multi-day interval
+    entry.overrideKind='retry_tomorrow';
+  }
+
+  const loggedBy=(typeof _currentUser!=='undefined'&&_currentUser&&_currentUser.username)||'Unknown';
+  if(!S.followUpLog)S.followUpLog=[];
+  S.followUpLog.push({
+    key, ruleKey:item.rule.ruleKey, kind:item.kind, vendor:item.vendor||null,
+    title:item.title, subtitle:item.subtitle,
+    reasonKey:r.key, reasonLabel:r.label, detail,
+    loggedBy, loggedAt:Date.now()
+  });
+  // Keep the log bounded — older than 90 days isn't needed for the daily email
+  // or the Today's Log screen, and would otherwise grow forever.
+  const cutoff=Date.now()-90*864e5;
+  S.followUpLog=S.followUpLog.filter(e=>e.loggedAt>=cutoff);
+
+  audit('Follow-up',r.label+' — '+item.title+' (by '+loggedBy+')');
   save();
   try{fbPushNow();}catch(e){}
-  showToast('✅ Follow-up note ho gaya — agla reminder '+(item?item.rule.recurDays:'kuch')+' din baad','green',3000);
+  showToast('✅ Follow-up note ho gaya','green',2500);
+  closeModal();
   openFollowUpsModal(); // recompute + re-render so this item drops off if resolved
+}
+
+// ── TODAY'S FOLLOW-UP LOG (owner-only) ────────────────────────────────────
+// Every response logged today, grouped by team member — the exact question
+// "what did they say" answered on demand, not just via the evening email.
+function openTodayFollowUpLogModal(){
+  const mc=document.getElementById('modal-container');
+  if(!mc)return;
+  const todayStr=new Date().toISOString().split('T')[0];
+  const todayLog=(S.followUpLog||[]).filter(e=>new Date(e.loggedAt).toISOString().split('T')[0]===todayStr);
+  const byUser={};
+  todayLog.forEach(e=>{(byUser[e.loggedBy]=byUser[e.loggedBy]||[]).push(e);});
+  const userNames=Object.keys(byUser).sort((a,b)=>byUser[b].length-byUser[a].length);
+
+  const body=todayLog.length?userNames.map(u=>{
+    const rows=[...byUser[u]].sort((a,b)=>b.loggedAt-a.loggedAt);
+    return `<div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:800;color:#3C3489;margin-bottom:6px">👤 ${esc(u)} <span style="font-size:10px;color:#888;font-weight:600">(${rows.length})</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${rows.map(e=>`<div style="background:#F8F7FF;border:1px solid #E0DFFF;border-radius:8px;padding:8px 10px">
+          <div style="font-size:12px;font-weight:700;color:#2D2D5F">${esc(e.title)}</div>
+          <div style="font-size:11.5px;color:#534AB7;margin-top:2px">🗣️ ${esc(e.reasonLabel)}${(e.reasonKey!=='no_pipe'&&e.reasonKey!=='no_pickup')?' — '+esc(e.detail):''}</div>
+          <div style="font-size:10px;color:#aaa;margin-top:2px">${new Date(e.loggedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join(''):'<div style="text-align:center;padding:2rem;color:#888">Aaj tak koi follow-up log nahi hua.</div>';
+
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:560px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEEDFE;color:#534AB7">📋</div>
+        <h3>Aaj ka Follow-up Log <span style="font-size:12px;font-weight:400;color:#888">(${todayLog.length})</span></h3>
+      </div>
+      <div style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
+      <div class="modal-actions"><button class="primary" onclick="closeModal()">Close</button></div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
 }
 
 function _goToFollowUpTarget(key){
@@ -16266,11 +16454,15 @@ function _goToFollowUpTarget(key){
 // needed in the vendor-grouped view where one vendor can have items from several
 // different rules mixed together (e.g. a karigar order plus an unimported row).
 function _fuItemCardHtml(it,showRuleTag){
+  const promiseBadge=it.isBrokenPromise
+    ?`<span style="font-size:9px;font-weight:800;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:1px 8px;white-space:nowrap;border:1px solid #F09595">⚠️ Maal promise kiya${it.promisedDate?' ('+fmtDate(it.promisedDate)+')':''}, diya nahi</span>`
+    :'';
   return `<div style="background:#fff;border:1.5px solid #F09595;border-radius:10px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
     <div style="flex:1;min-width:180px">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <div style="font-weight:700;font-size:13px;color:#2D2D5F">${esc(it.title)}</div>
         ${showRuleTag?`<span style="font-size:9px;font-weight:700;background:#EEEDFE;color:#534AB7;border-radius:20px;padding:1px 8px;white-space:nowrap">${it.rule.icon} ${esc(it.rule.label)}</span>`:''}
+        ${promiseBadge}
       </div>
       <div style="font-size:11px;color:#888;margin:2px 0 5px">${esc(it.subtitle)}</div>
       <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(it.rule.ask)}"</div>
@@ -16280,7 +16472,7 @@ function _fuItemCardHtml(it,showRuleTag){
       <span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:2px 9px;white-space:nowrap">${it.overdueDays<=0?'Aaj se due hai':it.overdueDays+' din se pending'}</span>
       <div style="display:flex;gap:5px">
         <button class="sm" onclick="_goToFollowUpTarget('${it.key}')">↗ Kholo</button>
-        <button class="sm primary" onclick="markFollowedUp('${it.key}')">✅ Ho gaya</button>
+        <button class="sm primary" onclick="openFollowUpResponseModal('${it.key}')">✅ Ho gaya</button>
       </div>
     </div>
   </div>`;
@@ -16339,6 +16531,7 @@ function openFollowUpsModal(){
       </div>
       <div style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
       <div class="modal-actions">
+        ${_currentUser&&_currentUser.role==='owner'?`<button onclick="openTodayFollowUpLogModal()">📋 Aaj ka Log</button>`:''}
         <button class="primary" onclick="closeModal()">Band karo</button>
       </div>
     </div>
