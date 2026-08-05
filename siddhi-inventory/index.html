@@ -850,7 +850,7 @@
     if(hit){
       var usable=usableThumb(hit.thumb);
       pop.innerHTML = (usable? '<img src="'+usable+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">' : '<div class="swatch">'+v+'</div>') +
-        '<div><b style="display:block;">'+v+'</b><span style="font-size:.78rem;color:var(--muted);">'+(hit.name||'')+' &middot; Bangle Tracker se'+(hit.thumb&&!usable?' &middot; photo sirf us device par hai':'')+'</span></div>';
+        '<div><b style="display:block;">'+v+'</b>'+(hit.thumb&&!usable?'<span style="font-size:.78rem;color:var(--muted);">photo sirf us device par hai</span>':'')+'</div>';
     } else {
       pop.innerHTML='<div><b>Nahi mila</b><br><span style="font-size:.78rem;color:var(--muted);">"'+v+'" Bangle Tracker mein nahi mila</span></div>';
     }
@@ -1466,7 +1466,16 @@
     } else {
       (m.simpleRows||[]).forEach(function(r){ html+='<div class="grp-detail-row"><span class="code">'+r.code+'</span><span class="breakdown">'+(r.plating||'')+' &middot; '+r.qty+' '+r.unit+'</span></div>'; });
     }
+    if(m.dir==='out'){
+      html+='<button type="button" class="btn ghost sm" style="margin-top:10px;" onclick="event.stopPropagation();printMovementById(\''+m._id+'\');">&#128424; Chitthi Print Karein</button>';
+    }
     return html;
+  }
+  // Lets Daybook re-print any past outgoing entry's chitthi, any time later --
+  // not just right after saving it.
+  function printMovementById(id){
+    var m=(S.movements||{})[id];
+    if(m) printChitthi(m);
   }
   async function renderDaybook(){
     document.getElementById('dayLabel').textContent=fmtDate(daybookDate);
@@ -1561,8 +1570,11 @@
 
   /* ===================== AASAN ENTRY WIZARD ===================== */
   var wizState={}, wizStack=[], WIZ_SIZES=['2/4','2/6','2/8','2/10'];
+  function wizFreshCurrent(){
+    return { code:'', sizes:WIZ_SIZES.map(function(s){return {size:s,qty:''};}), plating:'', qty:'', unit:'pair' };
+  }
   function openWizard(){
-    wizState={sizes:WIZ_SIZES.map(function(s){return {size:s,qty:''};})};
+    wizState={ designs:[], current:wizFreshCurrent() };
     wizStack=[];
     document.getElementById('wizardOverlay').classList.add('show');
     document.body.style.overflow='hidden';
@@ -1576,7 +1588,7 @@
   function wizBack(){
     if(wizStack.length){ wizRenderStep(wizStack.pop(), true); } else { closeWizard(); }
   }
-  var WIZ_ORDER=['dir','kind','party','pendingPick','pendingQty','code','platingPick','platingQty','sizes','weight','pkg','review','done'];
+  var WIZ_ORDER=['dir','kind','party','pendingPick','pendingQty','code','platingPick','platingQty','sizes','addMore','weight','pkg','review','done'];
   function wizRenderStep(name){
     wizState.__current=name;
     document.getElementById('wizBackBtn').style.visibility = wizStack.length ? 'visible' : 'hidden';
@@ -1637,12 +1649,14 @@
       addVoiceButton(document.getElementById('wizPendQtyInp'), {numeric:true});
     },
     code: function(){
-      wizSetBody('<div class="wiz-q">Design Code Kya Hai?</div>'+
-        '<input type="text" class="wiz-big-input" id="wizCodeInp" placeholder="e.g. 8383" value="'+(wizState.code||'')+'" oninput="wizCodeLookup(this.value)" />'+
+      var n=wizState.designs.length;
+      wizSetBody('<div class="wiz-q">'+(n?'Ek Aur Design Code Kya Hai?':'Design Code Kya Hai?')+'</div>'+
+        (n?'<p style="text-align:center;color:var(--muted);margin-bottom:14px;">'+n+' design code pehle se jud chuka hai</p>':'')+
+        '<input type="text" class="wiz-big-input" id="wizCodeInp" placeholder="e.g. 8383" value="'+(wizState.current.code||'')+'" oninput="wizCodeLookup(this.value)" />'+
         '<div id="wizCodePhoto"></div>');
       wizSetFoot('<button class="btn" onclick="wizConfirmCode()">Aage &#8594;</button>');
       addVoiceButton(document.getElementById('wizCodeInp'), {numeric:false});
-      setTimeout(function(){ var el=document.getElementById('wizCodeInp'); if(el){el.focus(); if(wizState.code) wizCodeLookup(wizState.code);} },50);
+      setTimeout(function(){ var el=document.getElementById('wizCodeInp'); if(el){el.focus(); if(wizState.current.code) wizCodeLookup(wizState.current.code);} },50);
     },
     platingPick: function(){
       var opts=['Raw (Bina Plating)','Rose Gold 2-Tone','Gold','Silver','Deep Silver','2-Tone','3-Tone'].map(function(p){
@@ -1653,14 +1667,14 @@
     },
     platingQty: function(){
       wizSetBody('<div class="wiz-q">Kitna Total Maal?</div>'+
-        '<input type="text" class="wiz-big-input" id="wizPlatQtyInp" inputmode="numeric" placeholder="0" value="'+(wizState.qty||'')+'" />'+
+        '<input type="text" class="wiz-big-input" id="wizPlatQtyInp" inputmode="numeric" placeholder="0" value="'+(wizState.current.qty||'')+'" />'+
         '<div style="margin-top:16px;"><select id="wizPlatUnitSel" class="wiz-big-input" style="font-size:1.1rem;padding:12px;">'+
         '<option value="pcs">Pieces</option><option value="pair" selected>Pair</option><option value="jotta">Jotta</option><option value="set">Set</option></select></div>');
       wizSetFoot('<button class="btn" onclick="wizConfirmPlatingQty()">Aage &#8594;</button>');
       addVoiceButton(document.getElementById('wizPlatQtyInp'), {numeric:true});
     },
     sizes: function(){
-      var rows=wizState.sizes.map(function(s,i){
+      var rows=wizState.current.sizes.map(function(s,i){
         return '<div class="wiz-size-row"><span class="sz">'+s.size+'</span><input type="text" inputmode="numeric" placeholder="0 — khaali chhod sakte hain" data-i="'+i+'" class="wiz-sz-inp" value="'+s.qty+'"/></div>';
       }).join('');
       wizSetBody('<div class="wiz-q">Kitna Maal, Kis Size Mein?</div>'+
@@ -1669,6 +1683,16 @@
         (wizState.kind==='customer' ? '<div style="margin-top:20px;"><label style="display:block;text-align:center;color:var(--muted);margin-bottom:8px;">Plating</label><select id="wizCustPlateSel" class="wiz-big-input" style="font-size:1.05rem;padding:12px;"><option>Raw</option><option>Rose Gold 2-Tone</option><option>Gold</option><option>Silver</option><option>Deep Silver</option><option>2-Tone</option><option>3-Tone</option></select></div>' : ''));
       wizSetFoot('<button class="btn" onclick="wizConfirmSizes()">Aage &#8594;</button>');
       document.querySelectorAll('.wiz-sz-inp').forEach(function(inp){ addVoiceButton(inp, {numeric:true}); });
+    },
+    addMore: function(){
+      var count=wizState.designs.length;
+      wizSetBody('<div class="wiz-q">Ek Aur Design Code Jodein?</div>'+
+        '<p style="text-align:center;color:var(--muted);margin-bottom:14px;">Ab tak '+count+' design code jud chuka hai</p>'+
+        '<div class="wiz-opts">'+
+          '<button class="wiz-opt" onclick="wizAddMoreChoice(true)"><span class="ic">&#43;</span> Haan, Ek Aur Jodein</button>'+
+          '<button class="wiz-opt" onclick="wizAddMoreChoice(false)"><span class="ic">&#10003;</span> Nahi, Aage Badhein</button>'+
+        '</div>');
+      wizSetFoot('');
     },
     weight: function(){
       wizSetBody('<div class="wiz-q">Wazan Kitna Hai?</div>'+
@@ -1692,21 +1716,33 @@
       var rows='';
       rows+=wizReviewRow('Kya Hua', wizState.dir==='in'?'Maal Aaya':'Maal Bheja');
       rows+=wizReviewRow(wizState.dir==='in'?'Kisse':'Kisko', wizState.party);
-      if(wizState.code) rows+=wizReviewRow('Design', wizState.code);
-      if(wizState.plating) rows+=wizReviewRow('Plating', wizState.plating);
-      if(wizState.__current!=='pendingQty' && wizState.sizes && wizState.__usedSizes){
-        wizState.sizes.filter(function(s){return s.qty;}).forEach(function(s){ rows+=wizReviewRow(s.size, s.qty+' Pair'); });
+      if(wizState.__pendingPicked){
+        rows+=wizReviewRow('Design', wizState.__pendingPicked.code);
+        if(wizState.__pendingPicked.plating) rows+=wizReviewRow('Plating', wizState.__pendingPicked.plating);
+        rows+=wizReviewRow('Received Qty', wizState.__pendingRecv+' pc (bheja tha '+Math.round(wizState.__pendingPicked.qty)+' pc)');
+      } else {
+        wizState.designs.forEach(function(d){
+          var parts = d.qty ? (d.qty+' '+(d.unit||'')) : d.sizes.filter(function(s){return s.qty;}).map(function(s){return s.size+': '+s.qty;}).join(', ');
+          var label = d.code + (d.plating?(' — '+d.plating):'');
+          rows+=wizReviewRow(label, parts||'—');
+        });
       }
-      if(wizState.qty) rows+=wizReviewRow('Total Qty', wizState.qty+' '+(wizState.unit||''));
-      if(wizState.__pendingPicked) rows+=wizReviewRow('Received Qty', wizState.__pendingRecv+' pc (bheja tha '+Math.round(wizState.__pendingPicked.qty)+' pc)');
       rows+=wizReviewRow('Wazan', wizState.weight||'—');
       if(wizState.pkgCount) rows+=wizReviewRow('Packaging', (wizState.pkgType||'')+' '+wizState.pkgCount);
       wizSetBody('<div class="wiz-q">Check Kar Lein</div><div class="wiz-review">'+rows+'</div>');
-      wizSetFoot('<button class="btn ghost" onclick="wizBack()">Badlein</button><button class="btn" onclick="wizSave()">&#10003; Sahi Hai, Save Karein</button>');
+      var footBtns='<button class="btn ghost" onclick="wizBack()">Badlein</button>';
+      if(wizState.dir==='out'){
+        footBtns+='<button class="btn ghost" onclick="wizSave(false)">Save Karein</button>'+
+          '<button class="btn" onclick="wizSave(true)">&#128424; Chitthi Print</button>';
+      } else {
+        footBtns+='<button class="btn" onclick="wizSave(false)">&#10003; Sahi Hai, Save Karein</button>';
+      }
+      wizSetFoot(footBtns);
     },
     done: function(){
+      var codes = wizState.__pendingPicked ? wizState.__pendingPicked.code : wizState.designs.map(function(d){return d.code;}).join(', ');
       wizSetBody('<div class="wiz-done"><div class="big">&#9989;</div><h2>Entry Save Ho Gayi!</h2>'+
-        '<p style="color:var(--muted);">'+wizState.code+' &middot; '+wizState.party+'</p></div>');
+        '<p style="color:var(--muted);">'+codes+' &middot; '+wizState.party+'</p></div>');
       wizSetFoot('<button class="btn ghost" onclick="closeWizard()">Band Karein</button><button class="btn" onclick="openWizard()">+ Ek Aur Entry</button>');
     }
   };
@@ -1728,8 +1764,7 @@
     wizGo('code');
   }
   function wizPickPending(i){
-    var r=wizState.__pending[i];
-    wizState.__pendingPicked=r; wizState.code=r.code; wizState.plating=r.plating;
+    wizState.__pendingPicked=wizState.__pending[i];
     wizGo('pendingQty');
   }
   function wizConfirmPendingQty(){
@@ -1738,7 +1773,7 @@
     wizGo('weight');
   }
   async function wizCodeLookup(v){
-    v=v.trim(); wizState.code=v;
+    v=v.trim(); wizState.current.code=v;
     var box=document.getElementById('wizCodePhoto');
     if(!v){ box.innerHTML=''; return; }
     var idx=await buildDesignIndex();
@@ -1746,7 +1781,7 @@
     if(hit){
       var usable=usableThumb(hit.thumb);
       box.innerHTML='<div class="wiz-photo">'+(usable?'<img src="'+usable+'">':'<div class="swatch">'+v+'</div>')+
-        '<div><b>'+v+'</b><br><span style="color:var(--muted);font-size:.85rem;">'+(hit.name||'Bangle Tracker mein mila')+'</span></div></div>';
+        '<div><b>'+v+'</b></div></div>';
     } else {
       box.innerHTML='<div class="wiz-photo"><div class="swatch">?</div><div style="color:var(--muted);">Naya code — pehli baar</div></div>';
     }
@@ -1754,27 +1789,32 @@
   function wizConfirmCode(){
     var v=document.getElementById('wizCodeInp').value.trim();
     if(!v){ toast('Design code likhein.'); return; }
-    wizState.code=v;
+    wizState.current.code=v;
     if(wizState.dir==='out' && wizState.kind==='plating'){ wizGo('platingPick'); return; }
-    if(wizState.dir==='out' && wizState.kind==='customer'){ wizGo('sizes'); wizState.__usedSizes=true; return; }
-    wizState.__usedSizes=true;
     wizGo('sizes');
   }
-  function wizPickPlating(p){ wizState.plating=p; wizGo('platingQty'); }
+  function wizPickPlating(p){ wizState.current.plating=p; wizGo('platingQty'); }
   function wizConfirmPlatingQty(){
     var v=parseFloat(document.getElementById('wizPlatQtyInp').value)||0;
     if(!v){ toast('Quantity likhein.'); return; }
-    wizState.qty=v; wizState.unit=document.getElementById('wizPlatUnitSel').value;
-    wizGo('weight');
+    wizState.current.qty=v; wizState.current.unit=document.getElementById('wizPlatUnitSel').value;
+    wizState.designs.push(wizState.current);
+    wizState.current=wizFreshCurrent();
+    wizGo('addMore');
   }
   function wizConfirmSizes(){
     document.querySelectorAll('.wiz-sz-inp').forEach(function(inp){
-      wizState.sizes[parseInt(inp.dataset.i)].qty=inp.value.trim();
+      wizState.current.sizes[parseInt(inp.dataset.i)].qty=inp.value.trim();
     });
-    if(wizState.kind==='customer'){ wizState.plating=document.getElementById('wizCustPlateSel').value; }
-    var any=wizState.sizes.some(function(s){return s.qty && parseFloat(s.qty)>0;});
+    if(wizState.kind==='customer'){ wizState.current.plating=document.getElementById('wizCustPlateSel').value; }
+    var any=wizState.current.sizes.some(function(s){return s.qty && parseFloat(s.qty)>0;});
     if(!any){ toast('Kam se kam ek size mein quantity bharein.'); return; }
-    wizGo('weight');
+    wizState.designs.push(wizState.current);
+    wizState.current=wizFreshCurrent();
+    wizGo('addMore');
+  }
+  function wizAddMoreChoice(yes){
+    if(yes){ wizGo('code'); } else { wizGo('weight'); }
   }
   function wizEvalWeight(){
     var el=document.getElementById('wizWtInp'); if(!el)return;
@@ -1806,28 +1846,32 @@
     wizGo('review');
   }
 
-  async function wizSave(){
+  async function wizSave(withPrint){
     var movement={ dir:wizState.dir, kind:wizState.kind, party:wizState.party, date:todayStr(),
       weight:wizState.weight||'', pkgType:wizState.pkgType||'', pkgCount:wizState.pkgCount||'', createdAt:Date.now() };
 
     if(wizState.dir==='in' && wizState.kind==='plating'){
       movement.mode='pending';
-      movement.pendingRows=[{ code:wizState.code, plating:wizState.plating,
+      movement.pendingRows=[{ code:wizState.__pendingPicked.code, plating:wizState.__pendingPicked.plating,
         sentMatched:wizState.__pendingPicked.qty, received:wizState.__pendingRecv,
         loss: Math.max(0, wizState.__pendingPicked.qty - wizState.__pendingRecv) }];
     } else if(wizState.dir==='out' && wizState.kind==='plating'){
       movement.mode='single';
-      movement.simpleRows=[{ code:wizState.code, variety:'', plating:wizState.plating, qty:wizState.qty, unit:wizState.unit, customer:'' }];
+      movement.simpleRows=wizState.designs.map(function(d){
+        return { code:d.code, variety:'', plating:d.plating, qty:d.qty, unit:d.unit, customer:'' };
+      });
     } else {
       movement.mode='tabular';
       movement.sizeLabels=WIZ_SIZES;
-      var sizes=wizState.sizes.filter(function(s){return s.qty && parseFloat(s.qty)>0;})
-        .map(function(s){ return {size:s.size, pair:parseFloat(s.qty)||0, jotta:0, set:0}; });
-      movement.rows=[{ code:wizState.code, variety:'', sizes:sizes, reject:0, plating:wizState.plating||'Raw', customer:'' }];
+      movement.rows=wizState.designs.map(function(d){
+        var sizes=d.sizes.filter(function(s){return s.qty && parseFloat(s.qty)>0;})
+          .map(function(s){ return {size:s.size, pair:parseFloat(s.qty)||0, jotta:0, set:0}; });
+        return { code:d.code, variety:'', sizes:sizes, reject:0, plating:d.plating||'Raw', customer:'' };
+      });
     }
 
     await commitMovement(movement);
-    if(wizState.dir==='out') printChitthi(movement);
+    if(withPrint && wizState.dir==='out') printChitthi(movement);
     wizGo('done');
   }
 
