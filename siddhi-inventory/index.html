@@ -902,7 +902,7 @@
   // ---- packet stacking (per-packet unit) ----
   function pkUnitOptions(){ return '<option value="pair" selected>Pair</option><option value="pcs">Pcs</option><option value="jotta">Jotta</option><option value="set">Set</option>'; }
   function pkChipHTML(){ return '<div class="pk-chip"><input type="text" value="" class="pk-inp" placeholder="0"/><select class="pk-unit">'+pkUnitOptions()+'</select><button class="rm" onclick="rmPk(this)">&times;</button></div>'; }
-  function sizeCellHTML(){ return '<div class="pk-stack">'+pkChipHTML()+'<button class="pk-add" onclick="addPk(this)">+ Packet</button></div><div class="size-total">Khaali &middot; 0</div>'; }
+  function sizeCellHTML(){ return '<div class="pk-stack">'+pkChipHTML()+'<button class="pk-add" onclick="addPk(this)">+ Add</button></div><div class="size-total">&mdash;</div>'; }
   function addPk(btn){
     var stack=btn.parentElement;
     var chip=document.createElement('div'); chip.className='pk-chip';
@@ -918,15 +918,18 @@
       if(valStr!=='')count++;
       raw[u]=(raw[u]||0)+v;
     });
+    // Stock aggregation still merges Pcs into Pair (the confirmed rule) — that
+    // math happens here for dataset.pair, but the on-screen line below shows
+    // plain totals in whatever unit was actually typed, no conversion shown.
     var pairTotal = raw.pair + raw.pcs/2;
     td.dataset.pkcount=count; td.dataset.pair=pairTotal; td.dataset.jotta=raw.jotta; td.dataset.set=raw.set;
     var parts=[];
     if(raw.pair) parts.push(raw.pair+' Pair');
-    if(raw.pcs) parts.push(raw.pcs+' Pieces (= '+(raw.pcs/2)+' Pair)');
+    if(raw.pcs) parts.push(raw.pcs+' Pcs');
     if(raw.jotta) parts.push(raw.jotta+' Jotta');
     if(raw.set) parts.push(raw.set+' Set');
     var el=td.querySelector('.size-total');
-    if(el) el.innerHTML = count ? (count+' packet &middot; '+(parts.length?parts.join(', '):'0')) : 'Khaali &middot; 0';
+    if(el) el.innerHTML = parts.length ? parts.join(', ') : '&mdash;';
     recalcRow(td.closest('tr'));
   }
   function recalcRow(tr){
