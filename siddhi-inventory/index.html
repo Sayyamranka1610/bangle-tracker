@@ -7,8 +7,8 @@
 <meta name="description" content="Siddhi Creation — job-work inventory tracker.">
 <link rel="manifest" href="siddhi-inv-manifest.json">
 <meta name="theme-color" content="#a1712f">
-<link rel="icon" type="image/png" href="../icon-192.png">
-<link rel="apple-touch-icon" href="../icon-192.png">
+<link rel="icon" type="image/png" href="siddhi-inv-icon-192.png">
+<link rel="apple-touch-icon" href="siddhi-inv-icon-192.png">
 <style>
   :root{
     --bg:#faf6ef; --surface:#ffffff; --surface-2:#f2ece1; --ink:#221f1a; --muted:#7c7263;
@@ -72,6 +72,14 @@
   .who-pop.show{display:block;}
   .who-pop button{all:unset;display:block;width:100%;padding:8px 10px;border-radius:7px;font-size:.85rem;cursor:pointer;color:var(--ink);}
   .who-pop button:hover{background:var(--surface-2);}
+
+  .install-banner{display:flex;align-items:center;gap:12px;background:var(--chip-bg);border-bottom:1px solid var(--line);
+    padding:10px 24px;font-size:.85rem;color:var(--ink);}
+  .install-banner .install-ic{font-size:1.2rem;}
+  .install-banner span:nth-child(2){flex:1;}
+  .install-dismiss{all:unset;cursor:pointer;color:var(--muted);padding:4px 8px;font-size:.9rem;}
+  .install-dismiss:hover{color:var(--ink);}
+  @media (max-width:680px){ .install-banner{padding:10px 14px;} }
 
   @media (max-width:680px){
     body{overflow-x:hidden;}
@@ -395,6 +403,13 @@
         <button onclick="doLogout()">Sign Out</button>
       </div>
     </div>
+  </div>
+
+  <div class="install-banner" id="installBanner" style="display:none;">
+    <span class="install-ic">&#128241;</span>
+    <span id="installBannerText">App install karein — baar baar link kholne ki zaroorat nahi.</span>
+    <button class="btn sm" id="installBtn" style="display:none;" onclick="doInstallClick()">Install Karein</button>
+    <button class="install-dismiss" onclick="dismissInstallBanner()" title="Band karein">&#10005;</button>
   </div>
 
   <main>
@@ -1775,6 +1790,38 @@
     wizGo('done');
   }
 
+  /* ===================== INSTALL AS APP ===================== */
+  var deferredInstallPrompt=null;
+  function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone===true; }
+  function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream; }
+  function showInstallBanner(kind){
+    if(isStandalone() || sessionStorage.getItem('si_install_dismissed')) return;
+    var el=document.getElementById('installBanner');
+    el.style.display='flex';
+    document.getElementById('installBannerText').textContent = kind==='ios'
+      ? 'App install karne ke liye: neeche Share button dabayein, phir "Add to Home Screen" chunein.'
+      : 'App install karein — baar baar link kholne ki zaroorat nahi.';
+    document.getElementById('installBtn').style.display = kind==='android' ? 'inline-flex' : 'none';
+  }
+  function hideInstallBanner(){ document.getElementById('installBanner').style.display='none'; }
+  function dismissInstallBanner(){ sessionStorage.setItem('si_install_dismissed','1'); hideInstallBanner(); }
+  async function doInstallClick(){
+    if(!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt=null;
+    hideInstallBanner();
+  }
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferredInstallPrompt=e;
+    showInstallBanner('android');
+  });
+  window.addEventListener('appinstalled', function(){ hideInstallBanner(); toast('App install ho gaya!'); });
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){ navigator.serviceWorker.register('./siddhi-inv-sw.js').catch(function(){}); });
+  }
+
   /* ===================== BOOT ===================== */
   (function boot(){
     var raw=sessionStorage.getItem('si_auth');
@@ -1782,6 +1829,7 @@
     onAuthChanged();
     document.getElementById('entryDate').value=todayStr();
     renderKindOptions().then(onKindChange);
+    if(isIOS() && !isStandalone()) showInstallBanner('ios');
   })();
 </script>
 </body>
