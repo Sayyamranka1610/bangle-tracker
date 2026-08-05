@@ -1,0 +1,15 @@
+name = "bt-followup-email"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# 8:00 PM IST every day = 14:30 UTC (IST is UTC+5:30, no daylight saving)
+[triggers]
+crons = ["30 14 * * *"]
+
+# Secrets (set with `wrangler secret put NAME`, never in this file):
+#   RESEND_API_KEY   — from https://resend.com (free tier: 100 emails/day)
+#   TO_EMAIL          — sayyamranka09@gmail.com
+# Optional var (safe to keep here, not a secret):
+#   FROM_EMAIL — defaults to "Siddhi Bangle Tracker <onboarding@resend.dev>"
+#                if you verify your own domain on Resend, change this to
+#                something like "Siddhi Bangle Tracker <reports@yourdomain.com>"

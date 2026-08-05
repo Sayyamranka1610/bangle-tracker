@@ -1095,7 +1095,8 @@ let S = {
   vendorTypeFilter:'',    // '' = All | 'pipe' | 'karigar' | 'plating'
   vendorTypes:{},         // {vendorName: 'pipe'|'karigar'|'plating'} — vendor master category
   followUps:{},           // {followUpKey: {firstSeenAt, lastFollowUpAt, timesFollowedUp, nextDueOverride, overrideKind, promisedDate}}
-  followUpLog:[]          // append-only log of every "Kya Bola" response ever submitted — feeds the daily email + Today's Log screen
+  followUpLog:[],         // append-only log of every "Kya Bola" response ever submitted — feeds the daily email + Today's Log screen
+  followUpSnapshot:null   // {generatedAt, totalPending, byCategory, items} — read by the daily-email Worker, no rules engine on the server side
 };
 try{
   // Try canonical key first, then fall back to old versioned keys, then sessionStorage
@@ -1133,6 +1134,7 @@ try{
     S.vendorTypes=sv.vendorTypes||{};
     S.followUps=sv.followUps||{};
     S.followUpLog=sv.followUpLog||[];
+    S.followUpSnapshot=sv.followUpSnapshot||null;
     // Always reset order filters on page load — never restore a stale filter that
     // would hide orders and confuse the user ("why can't I see my orders?")
     S.filters={client:'',dname:'',dcode:'',status:''};
@@ -15601,6 +15603,7 @@ async function fbInit(){
         _maybeShowDailyFollowUpPrompt();
       }catch(fuErr){ console.warn('Follow-up system init failed:', fuErr); }
       _fb.ready = true;
+      try{ fbSchedulePush(); }catch(e){} // push the fresh followUpSnapshot now that Firebase is ready
       fbStartListener();
       // Always check for base64 images in Firebase and migrate to R2 if found.
       // This runs regardless of whether IDB has data — fixes the case where images
@@ -16253,6 +16256,20 @@ function computeFollowUps(){
   items.sort((a,b)=>b.overdueDays-a.overdueDays);
   _followUpCache=items;
   _updateFollowUpBadge();
+
+  // Lightweight snapshot for the daily email Worker, which has no access to
+  // the app's own rules engine — it just reads this instead of re-deriving
+  // "what's currently due" server-side. Refreshed on every compute; actually
+  // reaching Firebase depends on something calling save()+a push afterward
+  // (see the periodic tick and post-load hook below).
+  const CATEGORY_BY_RULE={vo_pipe:'pipe',vo_karigar:'karigar',co_karigar_unimported:'karigar',co_plating:'plating',co_packing:'orderLevel',co_unassigned:'orderLevel',co_notdispatched:'orderLevel'};
+  const byCategory={pipe:0,karigar:0,plating:0,orderLevel:0};
+  items.forEach(it=>{const c=CATEGORY_BY_RULE[it.rule.ruleKey]||'orderLevel';byCategory[c]++;});
+  S.followUpSnapshot={
+    generatedAt:Date.now(), totalPending:items.length, byCategory,
+    items:items.map(it=>({title:it.title,ruleLabel:it.rule.label,ruleIcon:it.rule.icon,vendor:it.vendor||null,overdueDays:it.overdueDays,isBrokenPromise:!!it.isBrokenPromise,promisedDate:it.promisedDate||null}))
+  };
+
   return items;
 }
 
@@ -16553,7 +16570,16 @@ function _maybeShowDailyFollowUpPrompt(){
 }
 
 // Keep the badge fresh across a long-open tab without ever touching a hot path.
-setInterval(()=>{ try{ computeFollowUps(); }catch(e){} }, 30*60*1000);
+// Also keeps S.followUpSnapshot current in Firebase — the daily-email Worker
+// has no rules engine of its own and just reads whatever was last pushed here,
+// so this is what keeps the evening email's "total pending" close to accurate.
+setInterval(()=>{
+  try{
+    computeFollowUps();
+    save();
+    fbSchedulePush(); // throttled — safe to call every 30 min, won't spam Firebase
+  }catch(e){}
+}, 30*60*1000);
 
 // ── MOBILE MENU (☰) ─────────────────────────────────────────────────────────
 function openMobileMenu(){
