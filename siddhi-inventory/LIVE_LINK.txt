@@ -11,3 +11,12 @@ your dad, the accountant, and the inventory manager.
 Default seeded account (CHANGE THIS PASSWORD FIRST):
   username: owner
   password: siddhi123
+
+Installing on a phone (so no one needs this link again):
+  Android/Chrome — open the link once, a banner appears with an
+    "Install Karein" button. Tap it, done — icon appears on the home screen.
+  iPhone/Safari — open the link, tap the Share icon, choose
+    "Add to Home Screen". Safari doesn't support an automatic install
+    button, so this manual step is the only way on iOS.
+  After installing, it opens straight from the home screen icon like
+  any other app — this link is only needed the first time.
