@@ -1,4 +1,4 @@
-const CACHE_NAME = 'siddhi-inv-v1';
+const CACHE_NAME = 'siddhi-inv-v2';
 const APP_SHELL = [
   './index.html',
   './siddhi-inv-manifest.json',
