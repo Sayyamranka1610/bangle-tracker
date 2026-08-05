@@ -166,6 +166,20 @@
     padding:10px 18px;border-radius:8px;font-size:.85rem;z-index:60;display:none;}
   .toast.show{display:block;}
 
+  /* ---- image lightbox (tap a design photo to enlarge / zoom) ---- */
+  .lightbox-bg{display:none;position:fixed;inset:0;background:rgba(10,8,5,.92);z-index:200;
+    align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:20px;
+    overscroll-behavior:contain;touch-action:pinch-zoom;}
+  .lightbox-bg.show{display:flex;}
+  .lightbox-bg img{max-width:92vw;max-height:78vh;object-fit:contain;border-radius:10px;
+    transition:transform .2s ease;cursor:zoom-in;touch-action:pinch-zoom;}
+  .lightbox-bg img.zoomed{transform:scale(2.2);cursor:zoom-out;}
+  .lightbox-close{all:unset;position:absolute;top:18px;right:18px;color:#fff;font-size:1.6rem;
+    cursor:pointer;padding:8px 14px;border-radius:8px;background:rgba(255,255,255,.1);}
+  .lightbox-close:hover{background:rgba(255,255,255,.2);}
+  .lightbox-hint{color:rgba(255,255,255,.6);font-size:.8rem;text-align:center;}
+  img.swatch{cursor:zoom-in;}
+
   /* ---- Naya Entry ---- */
   .step{padding:18px 20px;margin-bottom:16px;}
   .step-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;margin-bottom:10px;}
@@ -453,12 +467,11 @@
             <label id="partyLabel">Kisse <span class="req">*</span></label>
             <select id="partySel" onchange="onPartyChange()"></select>
             <div class="add-new-row"><input type="text" id="newPartyInp" placeholder="Naya naam yahan likhein..." /><button class="btn ghost sm" onclick="addNewParty()">+ Jodein</button></div>
-            <span class="hint">Bangle Tracker ke master list se auto-sync &middot; naya naam yahin save hoga</span>
           </div>
         </div>
         <div class="meta-row">
           <div class="field"><label>Date <span class="req">*</span></label><input type="date" id="entryDate" /></div>
-          <div class="field"><label>Wazan / Weight <span class="req" id="wtReq">*</span></label><input type="text" id="wtInp" placeholder="e.g. 12.5+2.5+3 ya seedha 18" onkeydown="if(event.key==='Enter'){evalWeight();event.preventDefault();}" onblur="evalWeight()" /><span class="hint">Jodna ho to 12.5+2.5+3 likh kar Enter dabayein</span></div>
+          <div class="field"><label>Wazan / Weight <span class="req" id="wtReq">*</span></label><input type="text" id="wtInp" placeholder="e.g. 12.5+2.5+3 ya seedha 18" onkeydown="if(event.key==='Enter'){evalWeight();event.preventDefault();}" onblur="evalWeight()" /></div>
           <div class="pkg-row">
             <div class="field"><label>Packaging</label><select id="pkgType"><option>Guni</option><option>Carton</option><option value="">—</option></select></div>
             <div class="field"><label>Kitne</label><input type="text" id="pkgCount" placeholder="e.g. 6" /></div>
@@ -596,6 +609,13 @@
   </div>
 </div>
 
+<!-- ================= IMAGE LIGHTBOX (tap any design photo to enlarge) ================= -->
+<div class="lightbox-bg" id="imgLightbox" onclick="if(event.target===this)closeImgLightbox()">
+  <button class="lightbox-close" onclick="closeImgLightbox()">&#10005;</button>
+  <img id="imgLightboxImg" src="" ondblclick="toggleImgZoom(this)" />
+  <p class="lightbox-hint">Bada karne ke liye do baar dabayein (double-tap), ya do ungliyon se zoom karein</p>
+</div>
+
 <div class="toast" id="toast"></div>
 <div id="printArea"></div>
 
@@ -629,6 +649,27 @@
   var S={ user:null, movements:{}, corrections:{} };
 
   function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},2600); }
+
+  // ---------------- IMAGE LIGHTBOX (tap any design photo to enlarge/zoom) ----------------
+  function openImgLightbox(src){
+    var box=document.getElementById('imgLightbox'), img=document.getElementById('imgLightboxImg');
+    img.src=src; img.classList.remove('zoomed');
+    box.classList.add('show');
+  }
+  function closeImgLightbox(){
+    document.getElementById('imgLightbox').classList.remove('show');
+    document.getElementById('imgLightboxImg').src='';
+  }
+  function toggleImgZoom(img){ img.classList.toggle('zoomed'); }
+  // Delegated: covers the search-lookup photo, every entry-row thumbnail, and the
+  // wizard's photo confirmation, without needing an onclick on each one individually.
+  document.addEventListener('click', function(e){
+    var img=e.target.closest('img');
+    if(!img || img.id==='imgLightboxImg') return;
+    if(img.classList.contains('swatch') || img.closest('.lookup-pop') || img.closest('.wiz-photo')){
+      openImgLightbox(img.src);
+    }
+  });
   function fbGet(path){ return fetch(FB_ROOT+path+'.json').then(function(r){return r.json();}).catch(function(){return null;}); }
   function fbPatch(path,data){ return fetch(FB_ROOT+path+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
   function fbPut(path,data){ return fetch(FB_ROOT+path+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
