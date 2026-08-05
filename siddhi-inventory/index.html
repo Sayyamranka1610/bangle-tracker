@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -338,6 +338,12 @@
     background:var(--surface);color:var(--ink);margin-bottom:16px;}
   .wiz-big-input{width:100%;box-sizing:border-box;padding:18px;font-size:1.6rem;text-align:center;border-radius:14px;
     border:2px solid var(--line);background:var(--surface);color:var(--ink);font-family:var(--font-num);}
+  .voice-wrap{display:flex;align-items:stretch;gap:8px;}
+  .voice-wrap .wiz-big-input, .voice-wrap input{flex:1;}
+  .voice-btn{all:unset;flex:0 0 auto;width:56px;display:flex;align-items:center;justify-content:center;
+    font-size:1.4rem;background:var(--chip-bg);border:2px solid var(--line);border-radius:14px;cursor:pointer;}
+  .voice-btn:active, .voice-btn.listening{border-color:var(--rule);background:var(--rule);color:#fff;}
+  .wiz-size-row .voice-wrap{flex:1;}
   .wiz-sizes{display:flex;flex-direction:column;gap:14px;margin-top:6px;}
   .wiz-size-row{display:flex;align-items:center;gap:14px;background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:14px 18px;}
   .wiz-size-row .sz{font-family:var(--font-num);font-size:1.3rem;font-weight:700;width:64px;}
@@ -407,7 +413,7 @@
       <div class="page-head"><div><div class="eyebrow">Naya record</div><h1>Naya Entry</h1></div></div>
 
       <button class="wiz-launch" onclick="openWizard()">
-        <span class="wiz-launch-ic">📱</span>
+        <span class="wiz-launch-ic">ðŸ“±</span>
         <span><b>Aasan Tarika Se Entry Karein</b><small>Ek-ek sawaal, bade button — mobile ke liye</small></span>
         <span class="wiz-launch-arrow">&#8594;</span>
       </button>
@@ -981,7 +987,7 @@
     var showPlate = document.getElementById('plateColHead').style.display!=='none';
     var tr=document.createElement('tr');
     var html='<td class="row-design"><div class="row-design-inner"><div class="swatch" id="rowSwatch">?</div>'+
-      '<div><input type="text" class="nm-inp code-inp" placeholder="Design code" onchange="onRowCodeChange(this)"/>'+
+      '<div><input type="text" class="nm-inp code-inp" placeholder="Design code" oninput="onRowCodeChange(this)"/>'+
       '<input type="text" class="nm-inp" placeholder="Variety"/></div></div></td>';
     sizeHeads.forEach(function(){ html+='<td class="size-cell">'+sizeCellHTML()+'</td>'; });
     html+='<td class="col-reject"><input type="text" placeholder="0"/></td>'+
@@ -994,18 +1000,35 @@
     document.getElementById('entryRows').appendChild(tr);
     updateCustomerColVisibility();
   }
-  async function onRowCodeChange(inp){
-    var code=inp.value.trim(); if(!code)return;
+  var rowCodeDebounce=null;
+  function onRowCodeChange(inp){
+    clearTimeout(rowCodeDebounce);
+    rowCodeDebounce=setTimeout(function(){ resolveRowSwatch(inp); }, 250);
+  }
+  async function resolveRowSwatch(inp){
+    var code=inp.value.trim();
+    var wrap=inp.closest('.row-design-inner');
+    if(!code){ wrap.querySelector('.swatch,img.swatch').outerHTML='<div class="swatch">?</div>'; return; }
     var hit=await designThumbFor(code);
-    var swatch=inp.closest('.row-design-inner').querySelector('.swatch');
+    // the input may have changed again while the lookup was in flight — only
+    // apply the result if it's still for the code currently in the box
+    if(inp.value.trim()!==code) return;
+    var el=wrap.querySelector('.swatch,img.swatch');
+    if(!el) return;
     var usable=hit&&usableThumb(hit.thumb);
-    if(usable){ swatch.outerHTML='<img src="'+usable+'" style="width:32px;height:32px;border-radius:8px;object-fit:cover;" class="swatch">'; }
+    if(usable){
+      el.outerHTML='<img src="'+usable+'" style="width:32px;height:32px;border-radius:8px;object-fit:cover;" class="swatch" title="'+code+'">';
+    } else if(hit){
+      el.outerHTML='<div class="swatch" title="Photo is device par nahi hai jahan bana tha">'+code.slice(0,4)+'</div>';
+    } else {
+      el.outerHTML='<div class="swatch" title="Bangle Tracker mein yeh code nahi mila" style="background:var(--muted);">'+code.slice(0,4)+'</div>';
+    }
   }
   function addSimpleRow(){
     var showPlate = document.getElementById('plateColHead').style.display!=='none' || currentDir()==='out'; // plating-karvane always needs a plating dropdown
     var tr=document.createElement('tr');
     tr.innerHTML='<td class="row-design"><div class="row-design-inner"><div class="swatch">?</div>'+
-      '<div><input type="text" class="nm-inp code-inp" placeholder="Design code" onchange="onRowCodeChange(this)"/>'+
+      '<div><input type="text" class="nm-inp code-inp" placeholder="Design code" oninput="onRowCodeChange(this)"/>'+
       '<input type="text" class="nm-inp" placeholder="Variety"/></div></div></td>'+
       '<td class="col-plate"><select>'+plateOptionsHTML()+'</select></td>'+
       '<td><input type="text" class="row-qty" placeholder="0" style="text-align:right;font-family:var(--font-num);"/></td>'+
@@ -1272,7 +1295,7 @@
     meta.textContent = keys.length ? ('Designs: '+keys.length) : 'Abhi tak koi record nahi';
     var content=document.getElementById('stockContent');
     if(!keys.length){
-      content.innerHTML='<div class="empty-state"><div class="big">📦</div><b>Abhi tak koi movement record nahi hui</b>Opening Balance daalein ya Naya Entry karein — stock yahan turant dikhega.</div>';
+      content.innerHTML='<div class="empty-state"><div class="big">ðŸ“¦</div><b>Abhi tak koi movement record nahi hui</b>Opening Balance daalein ya Naya Entry karein — stock yahan turant dikhega.</div>';
       return;
     }
     var html='';
@@ -1433,6 +1456,53 @@
     renderDaybook();
   }
 
+  /* ===================== VOICE INPUT (trial — see note) =====================
+     Strictly additive: this whole block only ever ADDS a mic button next to an
+     existing input and fills that input's value on a result — it never changes
+     what happens after (the normal Confirm/Next logic runs unchanged either way).
+     TO SCRAP: set VOICE_ENABLED=false below (mic buttons vanish immediately,
+     everything else keeps working exactly as before), or delete this whole
+     block plus the addVoiceButton(...) call lines in WIZ_STEPS — nothing else
+     in the wizard depends on this code. */
+  var VOICE_ENABLED = true;
+  function voiceSupported(){ return VOICE_ENABLED && (('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window)); }
+  function addVoiceButton(inputEl, opts){
+    if(!inputEl || !voiceSupported()) return;
+    opts=opts||{};
+    var btn=document.createElement('button');
+    btn.type='button'; btn.className='voice-btn'; btn.innerHTML='&#127908;'; btn.title='Bolke bharein';
+    btn.onclick=function(e){ e.preventDefault(); voiceCapture(inputEl, opts, btn); };
+    if(inputEl.parentNode.classList.contains('voice-wrap')){
+      inputEl.parentNode.appendChild(btn);
+    } else {
+      var wrap=document.createElement('div'); wrap.className='voice-wrap';
+      inputEl.parentNode.insertBefore(wrap, inputEl);
+      wrap.appendChild(inputEl); wrap.appendChild(btn);
+    }
+  }
+  function voiceExtractNumber(text){
+    var m=text.replace(/,/g,'').match(/[0-9]+(\.[0-9]+)?/);
+    return m?m[0]:null;
+  }
+  function voiceCapture(inputEl, opts, btn){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    var rec=new SR();
+    rec.lang='hi-IN'; rec.interimResults=false; rec.maxAlternatives=3;
+    btn.classList.add('listening'); btn.innerHTML='&#128266;';
+    rec.onresult=function(ev){
+      var transcript=ev.results[0][0].transcript||'';
+      var value = opts.numeric ? voiceExtractNumber(transcript) : transcript.trim();
+      if(!value){ toast('Samajh nahi aaya, dobara bolein'); return; }
+      inputEl.value=value;
+      inputEl.dispatchEvent(new Event('input',{bubbles:true}));
+      inputEl.dispatchEvent(new Event('change',{bubbles:true}));
+      toast('Mila: '+value);
+    };
+    rec.onerror=function(){ toast('Sun nahi paaye, dobara try karein'); };
+    rec.onend=function(){ btn.classList.remove('listening'); btn.innerHTML='&#127908;'; };
+    rec.start();
+  }
+
   /* ===================== AASAN ENTRY WIZARD ===================== */
   var wizState={}, wizStack=[], WIZ_SIZES=['2/4','2/6','2/8','2/10'];
   function openWizard(){
@@ -1508,12 +1578,14 @@
         '<input type="text" class="wiz-big-input" id="wizPendQtyInp" value="'+Math.round(p.qty)+'" inputmode="numeric" style="margin-top:20px;" />'+
         '<p style="text-align:center;color:var(--muted);margin-top:10px;">Agar kam aaya hai to number badal dein</p>');
       wizSetFoot('<button class="btn" onclick="wizConfirmPendingQty()">Aage &#8594;</button>');
+      addVoiceButton(document.getElementById('wizPendQtyInp'), {numeric:true});
     },
     code: function(){
       wizSetBody('<div class="wiz-q">Design Code Kya Hai?</div>'+
         '<input type="text" class="wiz-big-input" id="wizCodeInp" placeholder="e.g. 8383" value="'+(wizState.code||'')+'" oninput="wizCodeLookup(this.value)" />'+
         '<div id="wizCodePhoto"></div>');
       wizSetFoot('<button class="btn" onclick="wizConfirmCode()">Aage &#8594;</button>');
+      addVoiceButton(document.getElementById('wizCodeInp'), {numeric:false});
       setTimeout(function(){ var el=document.getElementById('wizCodeInp'); if(el){el.focus(); if(wizState.code) wizCodeLookup(wizState.code);} },50);
     },
     platingPick: function(){
@@ -1529,6 +1601,7 @@
         '<div style="margin-top:16px;"><select id="wizPlatUnitSel" class="wiz-big-input" style="font-size:1.1rem;padding:12px;">'+
         '<option value="pcs">Pieces</option><option value="pair" selected>Pair</option><option value="jotta">Jotta</option><option value="set">Set</option></select></div>');
       wizSetFoot('<button class="btn" onclick="wizConfirmPlatingQty()">Aage &#8594;</button>');
+      addVoiceButton(document.getElementById('wizPlatQtyInp'), {numeric:true});
     },
     sizes: function(){
       var rows=wizState.sizes.map(function(s,i){
@@ -1539,6 +1612,7 @@
         '<div class="wiz-sizes">'+rows+'</div>'+
         (wizState.kind==='customer' ? '<div style="margin-top:20px;"><label style="display:block;text-align:center;color:var(--muted);margin-bottom:8px;">Plating</label><select id="wizCustPlateSel" class="wiz-big-input" style="font-size:1.05rem;padding:12px;"><option>Raw</option><option>Rose Gold 2-Tone</option><option>Gold</option><option>Silver</option><option>Deep Silver</option><option>2-Tone</option><option>3-Tone</option></select></div>' : ''));
       wizSetFoot('<button class="btn" onclick="wizConfirmSizes()">Aage &#8594;</button>');
+      document.querySelectorAll('.wiz-sz-inp').forEach(function(inp){ addVoiceButton(inp, {numeric:true}); });
     },
     weight: function(){
       wizSetBody('<div class="wiz-q">Wazan Kitna Hai?</div>'+
@@ -1546,6 +1620,7 @@
         '<p style="text-align:center;color:var(--muted);margin-top:10px;">Jodna ho to + laga kar likhein — jaise 12.5+2.5+3</p>'+
         (wizState.dir==='out'&&wizState.kind==='customer' ? '<p style="text-align:center;"><button class="wiz-opt" style="margin-top:10px;justify-content:center;" onclick="wizSkipWeight()">Wazan Chhod Dein</button></p>' : ''));
       wizSetFoot('<button class="btn" onclick="wizConfirmWeight()">Aage &#8594;</button>');
+      addVoiceButton(document.getElementById('wizWtInp'), {numeric:true});
     },
     pkg: function(){
       wizSetBody('<div class="wiz-q">Kitne Guni Ya Carton?</div>'+
@@ -1555,6 +1630,7 @@
         '</div>'+
         '<input type="text" class="wiz-big-input" id="wizPkgCountInp" inputmode="numeric" placeholder="Kitne — jaise 6" value="'+(wizState.pkgCount||'')+'" style="margin-top:16px;" />');
       wizSetFoot('<button class="btn ghost" onclick="wizSkipPkg()">Chhod Dein</button><button class="btn" onclick="wizConfirmPkg()">Aage &#8594;</button>');
+      addVoiceButton(document.getElementById('wizPkgCountInp'), {numeric:true});
     },
     review: function(){
       var rows='';
