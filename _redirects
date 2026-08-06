@@ -1,8 +1,7 @@
 # Cloudflare Pages redirect rules
 
-# Real redirect (not a silent rewrite) so the installed app's PWA scope
-# check passes cleanly at the bare root URL — see manifest.json scope
-/        /bangle_v19.html  302
+# Serve the main app directly at the root URL — no redirect flash
+/        /bangle_v19.html  200
 
 # Short alias — /app also opens the main app
-/app     /bangle_v19.html  302
+/app     /bangle_v19.html  200
