@@ -922,6 +922,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <button onclick="manualSave()" title="Force-save all data right now">💾 Save now</button>
   <button onclick="backupToFile()" title="Download a full backup of all data as a JSON file">📤 Backup</button>
   <button onclick="restoreFromFile()" title="Restore from a previously downloaded backup">📥 Restore</button>
+  <button onclick="openCloudBackupsModal()" title="Browse automatic hourly cloud snapshots and restore an older version">🕐 Version History</button>
   <button id="btn-migrate-imgs" onclick="migrateImagesToCloud()" title="Upload all images from this device to cloud so they appear everywhere" style="background:#534AB7;color:#fff;border-color:#534AB7">☁️ Migrate Images</button>
   <button onclick="exportImageManifest()" title="Download a CSV listing every image and exactly which order/design/variety it belongs to — keep this as your image backup" style="background:#185FA5;color:#fff;border-color:#185FA5">🗂️ Image Backup</button>
   <div class="save-bar-sep"></div>
@@ -3547,6 +3548,61 @@ function doRestoreFromFile(input){
   };
   reader.readAsText(file);
   input.value='';
+}
+
+// ── CLOUD VERSION HISTORY ────────────────────────────────────────────────────
+// Browses the automatic hourly snapshots written by _maybeSnapshotBackup() (see
+// FB_BACKUPS_ROOT). Self-service recovery — no developer needed to restore
+// an earlier version if something ever looks wrong again.
+async function openCloudBackupsModal(){
+  const mc=document.getElementById('modal-container');
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:480px;max-height:80vh;overflow:auto">
+      <div class="modal-header"><div class="modal-icon" style="background:#EDEBFC;color:#4A3AAE">🕐</div><h3>Cloud version history</h3></div>
+      <p style="font-size:12px;color:#777;margin-bottom:10px">Automatic snapshots taken roughly once an hour, kept for the last 30. Pick one to see its order counts and restore it if today's data looks wrong.</p>
+      <div id="cloud-backups-list" style="font-size:13px">Loading…</div>
+      <div class="modal-actions"><button onclick="closeModal()">Close</button></div>
+    </div>
+  </div>`;
+  const list = document.getElementById('cloud-backups-list');
+  try{
+    const r = await fetch(FB_BACKUPS_ROOT+'.json?shallow=true');
+    const keys = Object.keys((r.ok?await r.json():{})||{}).sort().reverse();
+    if(!keys.length){ list.textContent='No automatic snapshots yet — check back in about an hour.'; return; }
+    // Fetch counts for each snapshot's metadata only (small — orders/vendorOrders are top-level ints)
+    const rows = await Promise.all(keys.slice(0,30).map(async k=>{
+      try{
+        const rr = await fetch(FB_BACKUPS_ROOT+'/'+k+'.json');
+        const snap = rr.ok ? await rr.json() : null;
+        return {k, savedAt: snap?.savedAt||k, orders: snap?.orders ?? '?', vendorOrders: snap?.vendorOrders ?? '?'};
+      }catch(e){ return {k, savedAt:k, orders:'?', vendorOrders:'?'}; }
+    }));
+    list.innerHTML = rows.map(row=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid #eee">
+        <span>${new Date(row.savedAt).toLocaleString('en-IN')} <span style="color:#888">— ${row.orders} orders, ${row.vendorOrders} vendor orders</span></span>
+        <button style="font-size:12px" onclick="restoreCloudBackup('${row.k}')">Restore</button>
+      </div>`).join('');
+  }catch(e){ list.textContent='Failed to load: '+e.message; }
+}
+async function restoreCloudBackup(key){
+  if(!confirm('Restore this snapshot? Your current data will be replaced with this earlier version (today\'s changes since then will be lost unless you download a backup first).')) return;
+  try{
+    const r = await fetch(FB_BACKUPS_ROOT+'/'+key+'.json');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const snap = await r.json();
+    const state = JSON.parse(snap.data);
+    if(!state.orders){ showToast('⚠ Snapshot looks invalid','red'); return; }
+    histPush(); // save current state first so this itself can be undone
+    Object.assign(S, state);
+    S.openOrders = new Set(state.openOrders||[]);
+    S.openClients = new Set(state.openClients||[]);
+    S.openDesignStages = new Set(state.openDesignStages||[]);
+    closeModal();
+    render();
+    audit('Restore','Restored cloud snapshot from '+key);
+    save(); // routes through fbPush()'s safety guard automatically if this drops counts
+    showToast('🕐 Restored snapshot — '+state.orders.length+' orders loaded','green');
+  }catch(e){ showToast('⚠ Restore failed: '+e.message,'red'); }
 }
 
 // ── RESET ALL ─────────────────────────────────────────────────────────────────
@@ -14659,7 +14715,90 @@ const FB_USERS = 'https://bangle-tracker-default-rtdb.firebaseio.com/users.json'
 const FB_LOCK           = 'https://bangle-tracker-default-rtdb.firebaseio.com/editLock.json';
 const FB_ACCESS_REQUEST = 'https://bangle-tracker-default-rtdb.firebaseio.com/accessRequest.json';
 const FB_LIB   = 'https://bangle-tracker-default-rtdb.firebaseio.com/imageLibrary';
+const FB_BACKUPS_ROOT = 'https://bangle-tracker-default-rtdb.firebaseio.com/appDataBackups';
 const LOCK_EXPIRE_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = lock expired
+
+// ── DATA-LOSS SAFETY NET (added after the Aug 6 2026 incident) ─────────────────
+// An accidental Ctrl+Z jumped to a stale/empty history snapshot, and the app's
+// own auto-save silently pushed that emptiness to Firebase, wiping 68 customer
+// orders + 105 vendor orders with no warning. Root causes fixed:
+//   1) fbPush() now refuses to silently push a save that would delete a large
+//      chunk of what's currently in the cloud — it asks first (see
+//      _confirmDestructiveSave below, wired into fbPush()).
+//   2) That protection is remembered across page reloads (localStorage), so it
+//      also covers the very first load of a fresh tab/session — which is
+//      exactly the scenario that slipped through originally via fbInit()'s
+//      "remote looks empty, so upload local as truth" branch.
+//   3) Hourly automatic snapshots to /appDataBackups/ give a real point-in-time
+//      undo at the database level, independent of any client-side bug.
+let _lastKnownRemoteCounts = null;
+try{
+  const savedCounts = localStorage.getItem('bangle_last_remote_counts');
+  if(savedCounts) _lastKnownRemoteCounts = JSON.parse(savedCounts);
+}catch(e){}
+function _rememberRemoteCounts(counts){
+  _lastKnownRemoteCounts = counts;
+  try{ localStorage.setItem('bangle_last_remote_counts', JSON.stringify(counts)); }catch(e){}
+}
+// Returns true if going from `remote` to `local` looks like an accidental mass-delete
+// rather than a normal edit (deleting one or two orders should never trip this).
+function _looksLikeAccidentalWipe(remote, local){
+  if(!remote) return false;
+  const drop = (r,l)=> r>0 && (r-l) > 0 && ((r-l) >= 5 || (r-l) >= r*0.2);
+  return drop(remote.orders, local.orders) || drop(remote.vendorOrders, local.vendorOrders);
+}
+function _confirmDestructiveSave(remote, local){
+  return new Promise(resolve=>{
+    const mc=document.getElementById('modal-container');
+    if(!mc){ resolve(true); return; } // no UI available (shouldn't happen) — fail open rather than hang forever
+    mc.innerHTML=`<div class="modal-overlay">
+      <div class="modal" style="width:460px">
+        <div class="modal-header"><div class="modal-icon" style="background:#FCEBEB;color:#A32D2D">⚠️</div><h3>This save would delete data</h3></div>
+        <p style="font-size:13px;line-height:1.6;color:#555;margin-bottom:12px">
+          The cloud currently has <strong>${remote.orders} customer orders</strong> and <strong>${remote.vendorOrders} vendor orders</strong>.
+          What's about to be saved only has <strong>${local.orders} customer orders</strong> and <strong>${local.vendorOrders} vendor orders</strong>.
+        </p>
+        <p style="font-size:12px;color:#A32D2D;background:#FCEBEB;padding:8px 12px;border-radius:8px;margin-bottom:12px">
+          If you didn't intentionally delete orders (e.g. this followed an Undo, or the page just loaded), click Cancel — nothing will be lost — then try Redo or reload the page.
+        </p>
+        <div class="modal-actions">
+          <button onclick="window._resolveDestructiveSave(false)">Cancel — don't save this</button>
+          <button class="danger" onclick="window._resolveDestructiveSave(true)">Yes, I meant to remove this data</button>
+        </div>
+      </div>
+    </div>`;
+    window._resolveDestructiveSave = (ok)=>{ closeModal(); delete window._resolveDestructiveSave; resolve(ok); };
+  });
+}
+// Fire-and-forget hourly snapshot to /appDataBackups/ — a server-side safety
+// net that survives even if a future bug slips past the guard above.
+async function _maybeSnapshotBackup(){
+  if(_isDemoMode()||_readOnly) return;
+  try{
+    const lastTs = parseInt(localStorage.getItem('bangle_last_backup_ts')||'0',10);
+    if(Date.now()-lastTs < 60*60*1000) return; // at most once an hour
+    localStorage.setItem('bangle_last_backup_ts', String(Date.now()));
+    const key = new Date().toISOString().replace(/[.:]/g,'-');
+    const { stateNoImages } = extractImages({
+      ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
+    }, true);
+    const payload = JSON.stringify({
+      data: JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
+      savedAt: new Date().toISOString(),
+      orders: S.orders.length, vendorOrders: (S.vendorOrders||[]).length
+    });
+    await fetch(FB_BACKUPS_ROOT+'/'+key+'.json', {method:'PUT', headers:{'Content-Type':'application/json'}, body:payload});
+    // Prune down to the most recent 30 snapshots so this never grows unbounded.
+    const listResp = await fetch(FB_BACKUPS_ROOT+'.json?shallow=true');
+    if(listResp.ok){
+      const keys = Object.keys((await listResp.json())||{}).sort();
+      if(keys.length>30){
+        const toDelete = keys.slice(0, keys.length-30);
+        await Promise.all(toDelete.map(k=>fetch(FB_BACKUPS_ROOT+'/'+k+'.json',{method:'DELETE'}).catch(()=>{})));
+      }
+    }
+  }catch(e){ console.warn('Backup snapshot failed:', e); }
+}
 
 // Unique device ID so we don't re-apply our own pushed updates
 const FB_DEVICE_ID = (()=>{
@@ -14851,6 +14990,18 @@ async function fbPush(silent){
   // Cancel any pending retry — this IS the attempt
   if(_fb._retryTimer){ clearTimeout(_fb._retryTimer); _fb._retryTimer=null; }
   try{
+    // SAFETY GUARD — see the block above FB_BACKUPS_ROOT for why this exists.
+    // Compare what we're about to save against the last state we know is really
+    // in the cloud; if this would wipe out a large chunk of it, stop and ask.
+    const localCounts = {orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length};
+    if(!_isDemoMode() && _looksLikeAccidentalWipe(_lastKnownRemoteCounts, localCounts)){
+      const ok = await _confirmDestructiveSave(_lastKnownRemoteCounts, localCounts);
+      if(!ok){
+        fbSetStatus('error','Save blocked — not saved');
+        showToast('⚠ Save blocked to protect your data. Press Redo or reload the page.','red',10000);
+        return;
+      }
+    }
     // forFirebase=true: small images stay inline in payload so every device
     // receives full-quality images via Firebase without needing local IDB.
     const { stateNoImages } = extractImages({
@@ -14879,6 +15030,8 @@ async function fbPush(silent){
     // Our local changes are now safely in Firebase — clear the "dirty" flag
     // so incoming remote updates are allowed to apply again.
     _fb.pendingLocal = false;
+    _rememberRemoteCounts(localCounts); // this push succeeded — remote now matches local
+    _maybeSnapshotBackup(); // fire-and-forget hourly backup, never blocks the save
     const t = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     fbSetStatus('connected', 'Live · saved ' + t);
   } catch(e){
@@ -15049,6 +15202,7 @@ function _applyRemoteState(parsed, savedAt){
   S.openDesignStages = keepDesignStages || new Set();
   renumberOrders();
   _origSave();
+  _rememberRemoteCounts({orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length});
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   // Re-inject IDB images after every Firebase sync — without this, Firebase
   // __IDB__ placeholders overwrite locally-loaded image data on every sync.
@@ -15562,6 +15716,10 @@ async function fbInit(){
       S.openDesignStages = keepDStages || new Set(merged.openDesignStages || []);
       renumberOrders();
       _origSave();
+      // Remember these counts as the last known-good cloud state — this is what
+      // lets fbPush()'s safety guard catch an accidental wipe even on the very
+      // first load of a brand-new tab/session (survives via localStorage).
+      _rememberRemoteCounts({orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length});
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
       await migrateImagesToThumbs();
       // Always check IDB for un-migrated images on startup — ensures R2 migration
@@ -15633,7 +15791,12 @@ async function fbInit(){
         fbSetStatus('connected', 'Live · loaded latest data');
       }
     } else {
-      // Remote is empty — push local up as initial state
+      // Remote looks empty (or its response didn't parse as expected). This is
+      // the exact branch that caused the Aug 6 2026 data-loss incident — it used
+      // to push local state up unconditionally. It no longer can silently wipe
+      // real data: fbPush() itself now checks the last known-good cloud counts
+      // (persisted in localStorage, so this protects even a brand-new tab) and
+      // asks for confirmation before overwriting a populated database.
       await fbPush(true);
       fbSetStatus('connected', 'Live · uploaded local data');
       _fb.ready = true;
