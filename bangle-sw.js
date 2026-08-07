@@ -2,8 +2,11 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v175';
+const CACHE_NAME = 'bangle-tracker-v176';
 const APP_SHELL = [
+  './bangle_v19',     // the REAL URL the browser actually requests — Cloudflare
+                       // redirects "bangle_v19.html" here, so caching that literal
+                       // name (as this used to) never matched a real navigation
   './bangle_v19.html',
   './',               // cache index.html (the entry redirect page)
   './bangle-logo.jpg',
@@ -52,8 +55,11 @@ self.addEventListener('fetch', (event) => {
   if (url.includes('r2.dev')) return;           // R2 images: handled by browser cache
   if (event.request.method !== 'GET') return;
 
-  // Main HTML file — serve cache instantly if we have it, refresh in the background
-  const isMainHtml = url.includes('bangle_v19.html') || url.endsWith('/') || url.endsWith('/index.html');
+  // Main HTML file — serve cache instantly if we have it, refresh in the background.
+  // Matches "bangle_v19" with or without ".html" — Cloudflare redirects the .html
+  // URL to the extensionless one, so the real navigation request never contains
+  // ".html" at all. This substring check was the actual bug in the previous fix.
+  const isMainHtml = url.includes('bangle_v19') || url.endsWith('/') || url.endsWith('/index.html');
   if (isMainHtml) {
     event.respondWith(
       caches.match(event.request).then(cached => {
