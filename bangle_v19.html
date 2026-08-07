@@ -16399,8 +16399,12 @@ function computeFollowUps(){
         } else drop(keyPacking);
 
         // Karigar assigned but never actually imported into a still-live vendor order.
+        // Skip if the item's already been ticked as received — that means it came
+        // back (e.g. arranged by phone call) even though no formal vendor order was
+        // ever created for it, so there's genuinely nothing left to follow up on.
         const genuinelyImported=!!_liveVO(holder.importedToVOId,d.code||'');
-        if(holder.assignedVendor&&!genuinelyImported){
+        const alreadyReceived=!!(holder.karigarReceived||holder.pipeReceived||holder.platingReceived);
+        if(holder.assignedVendor&&!genuinelyImported&&!alreadyReceived){
           dueItem(keyUnimported,ruleUnimported,anchorFor(holder.assignedVendorAt),{
             kind:'co', orderId:order.id, vendor:holder.assignedVendor, title:rowLabel, subtitle:ruleUnimported.label+' — '+designLabel
           });
@@ -16485,7 +16489,7 @@ function openFollowUpResponseModal(key){
 function _fuResponseModalHtml(item,selectedReasonKey){
   const optsHtml=FU_REASONS.map(r=>`
     <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1.5px solid ${selectedReasonKey===r.key?'#534AB7':'#E0DFFF'};border-radius:9px;cursor:pointer;background:${selectedReasonKey===r.key?'#F0EFFF':'#fff'};margin-bottom:6px">
-      <input type="radio" name="fu-reason" value="${r.key}" ${selectedReasonKey===r.key?'checked':''} onchange="_fuSelectReason('${r.key}')" style="margin-top:2px">
+      <input type="radio" name="fu-reason" value="${r.key}" ${selectedReasonKey===r.key?'checked':''} onchange="_fuSelectReason('${r.key}')" style="margin-top:2px;width:auto;flex:0 0 auto">
       <span style="font-size:13px;font-weight:600;color:#2D2D5F">${esc(r.label)}</span>
     </label>`).join('');
 
