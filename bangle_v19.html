@@ -15753,14 +15753,19 @@ async function fbInit(){
           (d.varieties||[]).forEach(v=>{if(v.sizes){const s=_sortedSizes(v.sizes);if(JSON.stringify(Object.keys(v.sizes))!==JSON.stringify(Object.keys(s))){v.sizes=s;_sizesSorted++;}}});
         });
       });
-      if(_sizesSorted>0){save();console.log('Bangle Tracker: re-sorted sizes in',_sizesSorted,'design(s)/variety(ies) across orders & vendor orders');}
+      // Don't save() here even if sizes changed — that's a full ~2MB clone of the
+      // whole dataset, and the follow-up save() a few lines down (same synchronous
+      // tick, nothing async runs between) will pick up this in-place mutation too.
+      // Startup used to do this clone 2-3x back to back, which is what made login
+      // itself feel like a freeze ("Page Unresponsive") on top of everything else.
+      if(_sizesSorted>0){console.log('Bangle Tracker: re-sorted sizes in',_sizesSorted,'design(s)/variety(ies) across orders & vendor orders');}
       try{ render(); }catch(renderErr){ console.error('render() error in fbInit:', renderErr); }
       // Follow-up system: compute due list (lazily stamps new entries, prunes
       // resolved ones) and show the once-a-day checklist if anything is due.
       // Wrapped so a bug here can never block the rest of app startup.
       try{
         computeFollowUps();
-        save(); // persist any newly-stamped entries so they aren't lost on tab close
+        save(); // persist any newly-stamped entries (and the size-sort above) so nothing is lost on tab close
         _maybeShowDailyFollowUpPrompt();
       }catch(fuErr){ console.warn('Follow-up system init failed:', fuErr); }
       _fb.ready = true;
