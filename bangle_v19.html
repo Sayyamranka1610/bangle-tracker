@@ -14772,20 +14772,19 @@ function _confirmDestructiveSave(remote, local){
 }
 // Fire-and-forget hourly snapshot to /appDataBackups/ — a server-side safety
 // net that survives even if a future bug slips past the guard above.
-async function _maybeSnapshotBackup(){
+async function _maybeSnapshotBackup(dataStr, counts){
   if(_isDemoMode()||_readOnly) return;
   try{
     const lastTs = parseInt(localStorage.getItem('bangle_last_backup_ts')||'0',10);
     if(Date.now()-lastTs < 60*60*1000) return; // at most once an hour
     localStorage.setItem('bangle_last_backup_ts', String(Date.now()));
     const key = new Date().toISOString().replace(/[.:]/g,'-');
-    const { stateNoImages } = extractImages({
-      ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
-    }, true);
+    // Reuses the exact payload fbPush() already built moments ago instead of
+    // re-scanning the whole dataset a second time (see call site for why).
     const payload = JSON.stringify({
-      data: JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
+      data: dataStr,
       savedAt: new Date().toISOString(),
-      orders: S.orders.length, vendorOrders: (S.vendorOrders||[]).length
+      orders: counts.orders, vendorOrders: counts.vendorOrders
     });
     await fetch(FB_BACKUPS_ROOT+'/'+key+'.json', {method:'PUT', headers:{'Content-Type':'application/json'}, body:payload});
     // Prune down to the most recent 30 snapshots so this never grows unbounded.
@@ -15008,8 +15007,9 @@ async function fbPush(silent){
       ...S, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]
     }, true);
     // Wrap state as a plain string so Firebase never sees the "/" keys
+    const dataStr = JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]});
     const payload = JSON.stringify({
-      data    : JSON.stringify({...stateNoImages, openOrders:[...S.openOrders], openClients:[...S.openClients], openDesignStages:[...(S.openDesignStages||[])]}),
+      data    : dataStr,
       savedAt : new Date().toISOString(),
       device  : FB_DEVICE_ID
     });
@@ -15031,7 +15031,10 @@ async function fbPush(silent){
     // so incoming remote updates are allowed to apply again.
     _fb.pendingLocal = false;
     _rememberRemoteCounts(localCounts); // this push succeeded — remote now matches local
-    _maybeSnapshotBackup(); // fire-and-forget hourly backup, never blocks the save
+    // Deferred so it never competes with the render() that just happened for CPU
+    // time — this used to re-scan the entire dataset again immediately, which
+    // made an already-heavy startup save feel like a freeze ("Page Unresponsive").
+    setTimeout(()=>_maybeSnapshotBackup(dataStr, localCounts), 4000);
     const t = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     fbSetStatus('connected', 'Live · saved ' + t);
   } catch(e){
