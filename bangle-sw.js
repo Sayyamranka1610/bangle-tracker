@@ -2,7 +2,7 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v174';
+const CACHE_NAME = 'bangle-tracker-v175';
 const APP_SHELL = [
   './bangle_v19.html',
   './',               // cache index.html (the entry redirect page)
@@ -37,7 +37,13 @@ self.addEventListener('activate', (event) => {
 // Fetch strategy:
 // - Firebase RTDB calls → network only (live data, never cache)
 // - R2 image URLs → cache-first (images never change once uploaded)
-// - bangle_v19.html → NETWORK-FIRST: always fetch latest code; fall back to cache only if offline
+// - bangle_v19.html → STALE-WHILE-REVALIDATE: serve the cached copy instantly
+//   (this used to be network-first, meaning every single open re-downloaded the
+//   whole ~1MB app file before anything else could even start — a big chunk of
+//   the "slow loading" complaints). A fresh copy is still fetched in the
+//   background on every load and cached for NEXT time, so updates still reach
+//   everyone automatically within one open/close cycle — just never blocking
+//   the one you're doing right now.
 // - CDN assets (fonts, xlsx) → cache-first (they never change)
 // - Everything else → network with cache fallback
 self.addEventListener('fetch', (event) => {
@@ -46,16 +52,17 @@ self.addEventListener('fetch', (event) => {
   if (url.includes('r2.dev')) return;           // R2 images: handled by browser cache
   if (event.request.method !== 'GET') return;
 
-  // Main HTML file — always fetch fresh so users never see stale code
+  // Main HTML file — serve cache instantly if we have it, refresh in the background
   const isMainHtml = url.includes('bangle_v19.html') || url.endsWith('/') || url.endsWith('/index.html');
   if (isMainHtml) {
     event.respondWith(
-      fetch(event.request).then(response => {
-        if (response.ok) {
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
-        }
-        return response;
-      }).catch(() => caches.match(event.request)) // offline fallback
+      caches.match(event.request).then(cached => {
+        const refresh = fetch(event.request).then(response => {
+          if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+          return response;
+        }).catch(() => cached); // network failed — fall back to whatever we had cached
+        return cached || refresh; // instant if cached; first-ever load still waits on network
+      })
     );
     return;
   }
