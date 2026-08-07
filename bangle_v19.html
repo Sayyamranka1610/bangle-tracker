@@ -1292,10 +1292,22 @@ function scheduleAutosave(){
 }
 
 // ── MANUAL SAVE ───────────────────────────────────────────────────────────────
-function manualSave(){
+// Was showing "Saved!" the instant this ran — but save() only writes to this
+// device's local storage synchronously; the actual cloud write is scheduled
+// ~2s later and wasn't being waited for at all. Anyone who trusted "Saved!"
+// and closed the tab quickly (fatal in Incognito, which has no local backup
+// to fall back on) could lose the write with zero indication anything was
+// wrong. Now it genuinely waits for the cloud write and reports the truth.
+async function manualSave(){
+  if(_readOnly){ showToast('⚠ Read-only mode — cannot save','red'); return; }
   setSaveStatus('saving');
-  save();
-  showToast('💾 Saved!','green');
+  _origSave();
+  await fbPushNow();
+  if(_fb.pendingLocal){
+    showToast('⚠ Saved on this device, but the CLOUD save failed — do not close this tab, it will keep retrying','red',10000);
+  } else {
+    showToast('💾 Saved to cloud!','green');
+  }
 }
 
 // ── INDEXEDDB FOR IMAGES (quota-safe image storage) ──────────────────────────
@@ -15075,14 +15087,14 @@ function fbSchedulePush(){
 // an order) so they reach the cloud immediately and can't be lost if the tab
 // is closed, or wiped by a stale remote sync arriving in the meantime.
 function fbPushNow(){
-  if(_isDemoMode()) return;
+  if(_isDemoMode()) return Promise.resolve();
   // Set pendingLocal BEFORE the ready check so a newly created order is
   // protected from stale SSE overwrites even if Firebase isn't ready yet.
   _fb.pendingLocal = true;
-  if(!_fb.ready) return;
+  if(!_fb.ready) return Promise.resolve(); // caller can check _fb.pendingLocal afterwards
   clearTimeout(_fb.pushTimer);
   _fb.pushTimer = null;
-  fbPush(false);
+  return fbPush(false); // returned so callers like manualSave() can await real completion
 }
 
 // ── USER-EDITING GUARD ───────────────────────────────────────────────────────
