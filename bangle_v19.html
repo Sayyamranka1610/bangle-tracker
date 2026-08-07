@@ -11612,14 +11612,21 @@ function askVendorPrint(oid){
           <input type="radio" name="vimg-pos" value="none" style="width:auto;accent-color:#534AB7">
           <span style="font-size:12px"><strong>No images</strong> — quantities only, smallest printout</span>
         </label>
+        <div style="margin-top:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="vprt-rate" style="width:auto;accent-color:#534AB7">
+            <span style="font-size:12px">Include rate (₹) column</span>
+          </label>
+        </div>
       </div>
       <div class="modal-actions">
         <button onclick="closeModal()">Cancel</button>
         <button class="primary" onclick="
           const pos=document.querySelector('input[name=vimg-pos]:checked').value;
+          const rte=document.getElementById('vprt-rate').checked;
           closeModal();
           const vo=S.vendorOrders.find(o=>o.id==='${oid}');
-          if(vo)openVendorPrintWindow('Vendor Order: '+vo.orderId,[vo],pos);">🖨️ Print</button>
+          if(vo)openVendorPrintWindow('Vendor Order: '+vo.orderId,[vo],pos,rte);">🖨️ Print</button>
       </div>
     </div>
   </div>`;
@@ -11647,14 +11654,21 @@ function printVendorSection(vendor){
           <input type="radio" name="vsect-img-pos" value="none" style="width:auto;accent-color:#534AB7">
           <span style="font-size:12px"><strong>No images</strong> — quantities only, smallest printout</span>
         </label>
+        <div style="margin-top:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="vsprt-rate" style="width:auto;accent-color:#534AB7">
+            <span style="font-size:12px">Include rate (₹) column</span>
+          </label>
+        </div>
       </div>
       <div class="modal-actions">
         <button onclick="closeModal()">Cancel</button>
         <button class="primary" onclick="
           const pos=document.querySelector('input[name=vsect-img-pos]:checked').value;
+          const rte=document.getElementById('vsprt-rate').checked;
           const ven=window._vprintVendor;
           closeModal();
-          openVendorPrintWindow('Vendor: '+ven,S.vendorOrders.filter(o=>o.vendor===ven),pos);">🖨️ Print</button>
+          openVendorPrintWindow('Vendor: '+ven,S.vendorOrders.filter(o=>o.vendor===ven),pos,rte);">🖨️ Print</button>
       </div>
     </div>
   </div>`;
@@ -11663,7 +11677,7 @@ function printVendorSection(vendor){
 // imgMode: 'top' = grouped images below design name (default)
 //          'inline' = image column in table beside quantities
 //          'none' = no images
-function openVendorPrintWindow(title,orders,imgMode){
+function openVendorPrintWindow(title,orders,imgMode,includeRate){
   imgMode=imgMode||'top';
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
 
@@ -11709,6 +11723,7 @@ function openVendorPrintWindow(title,orders,imgMode){
 
       // Build table rows for all design codes in the group
       let trows='';
+      const vRateTd=(r)=>includeRate?`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#555">${r?('₹'+r):'—'}</td>`:'';
       g.items.forEach(d=>{
         const varieties=d.varieties||[];
         const hod=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
@@ -11726,6 +11741,7 @@ function openVendorPrintWindow(title,orders,imgMode){
             +szKeys.map(s=>`<td style="padding:6px 8px;text-align:center">${parseInt(rs[s])||0}</td>`).join('')
             +`<td style="padding:6px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>`
             +`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#777">${esc(unit)}</td>`
+            +vRateTd(hod?(varieties[0].rate||d.rate):d.rate)
           +`</tr>`;
         } else {
           const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
@@ -11738,6 +11754,7 @@ function openVendorPrintWindow(title,orders,imgMode){
             +`<td colspan="${szKeys.length}" style="padding:6px 10px;font-size:12px;color:#6C64CC;font-style:italic">${varieties.length} variet${varieties.length===1?'y':'ies'} below</td>`
             +`<td style="padding:6px 8px;text-align:center"></td>`
             +`<td></td>`
+            +(includeRate?'<td></td>':'')
           +`</tr>`;
           varieties.forEach(v=>{
             const rt=szKeys.reduce((a,s)=>a+(parseInt((v.sizes||{})[s])||0),0);
@@ -11746,6 +11763,7 @@ function openVendorPrintWindow(title,orders,imgMode){
               +szKeys.map(s=>`<td style="padding:5px 8px;text-align:center">${parseInt((v.sizes||{})[s])||0}</td>`).join('')
               +`<td style="padding:5px 8px;text-align:center;font-weight:700;color:#534AB7">${rt}</td>`
               +`<td style="padding:5px 8px;text-align:center;font-size:12px;color:#777">${esc(v.unit||'pcs')}</td>`
+              +vRateTd(v.rate)
             +`</tr>`;
           });
         }
@@ -11757,6 +11775,7 @@ function openVendorPrintWindow(title,orders,imgMode){
         +(imgMode==='inline'?'<td></td>':'')
         +szKeys.map(s=>'<td style="padding:7px 8px;text-align:center">'+(grpTotals[s]||0)+'</td>').join('')
         +'<td style="padding:7px 8px;text-align:center;background:#fff;color:#3C3489">'+footTotal+'</td><td></td>'
+        +(includeRate?'<td></td>':'')
         +'</tr></tfoot>':'';
       const grpHdr='<div style="background:linear-gradient(135deg,#534AB7,#3C3489);color:#fff;padding:10px 16px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">'
         +'<span style="font-size:16px;font-weight:700">🎨 '+esc(g.name)+'</span>'
@@ -11764,13 +11783,14 @@ function openVendorPrintWindow(title,orders,imgMode){
         +'</div>';
       return '<div class="design-block" style="margin-bottom:14px">'
         +grpHdr+imgTopHtml
-        +'<table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #D0CCF5;border-top:none">'
+        +'<table style="width:100%;border-collapse:collapse;font-size:16px;border:1px solid #D0CCF5;border-top:none">'
           +'<thead><tr style="background:#534AB7;color:#fff">'
             +'<th style="padding:7px 10px;text-align:left">Code</th>'
             +(imgMode==='inline'?'<th style="padding:7px 8px;text-align:center">Image</th>':'')
             +szKeys.map(s=>'<th style="padding:7px 8px;text-align:center;white-space:nowrap">'+esc(s)+'</th>').join('')
             +'<th style="padding:7px 8px;text-align:center">Total</th>'
             +'<th style="padding:7px 8px;text-align:center">Unit</th>'
+            +(includeRate?'<th style="padding:7px 8px;text-align:center;font-size:14px">Rate (₹)</th>':'')
           +'</tr></thead>'
           +'<tbody>'+trows+'</tbody>'
           +footer
@@ -11877,10 +11897,14 @@ function askOrderPrint(oid){
           <input type="radio" name="img-pos" value="none" style="width:auto;accent-color:#534AB7">
           <span style="font-size:12px"><strong>No images</strong> — quantities only, smallest printout</span>
         </label>
-        <div style="margin-top:4px">
+        <div style="margin-top:4px;display:flex;flex-direction:column;gap:8px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="prt-stages" style="width:auto;accent-color:#534AB7">
             <span style="font-size:12px">Include production stages</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="prt-rate" style="width:auto;accent-color:#534AB7">
+            <span style="font-size:12px">Include rate (₹) column</span>
           </label>
         </div>
       </div>
@@ -11889,7 +11913,8 @@ function askOrderPrint(oid){
         <button class="primary" onclick="
           const pos=document.querySelector('input[name=img-pos]:checked').value;
           const stg=document.getElementById('prt-stages').checked;
-          closeModal();printOrderById('${oid}',stg,pos)">🖨️ Print</button>
+          const rte=document.getElementById('prt-rate').checked;
+          closeModal();printOrderById('${oid}',stg,pos,rte)">🖨️ Print</button>
       </div>
     </div>
   </div>`;
@@ -12036,21 +12061,25 @@ function showPrintMenu(){
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
     <div class="modal" style="width:460px">
       <div class="modal-header"><div class="modal-icon">🖨️</div><h3>Print options</h3></div>
-      <div style="background:#EEEDFE;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+      <div style="background:#EEEDFE;border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
         <input type="checkbox" id="print-stages-chk" style="width:auto;accent-color:#534AB7;cursor:pointer" checked>
         <label for="print-stages-chk" style="font-size:12px;color:#3C3489;font-weight:600;cursor:pointer">Include production stages in print</label>
       </div>
+      <div style="background:#f7f6ff;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="print-rate-chk" style="width:auto;accent-color:#534AB7;cursor:pointer">
+        <label for="print-rate-chk" style="font-size:12px;color:#3C3489;font-weight:600;cursor:pointer">Include rate (₹) column in print</label>
+      </div>
       <div style="display:flex;flex-direction:column;gap:10px">
-        <button onclick="doPrintAll(document.getElementById('print-stages-chk').checked)" style="text-align:left;padding:12px 16px;font-size:13px">📦 Print all (current view)</button>
+        <button onclick="doPrintAll(document.getElementById('print-stages-chk').checked,document.getElementById('print-rate-chk').checked)" style="text-align:left;padding:12px 16px;font-size:13px">📦 Print all (current view)</button>
         <div style="background:#f7f6f2;border-radius:10px;padding:12px">
           <label style="font-size:11px;color:#777;font-weight:600;display:block;margin-bottom:6px">Client-wise</label>
           <select id="pc-client" style="margin-bottom:8px">${[...new Set(S.orders.map(o=>o.client))].sort().map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
-          <button onclick="printClient(document.getElementById('pc-client').value,document.getElementById('print-stages-chk').checked)" style="width:100%">🖨️ Print selected client</button>
+          <button onclick="printClient(document.getElementById('pc-client').value,document.getElementById('print-stages-chk').checked,document.getElementById('print-rate-chk').checked)" style="width:100%">🖨️ Print selected client</button>
         </div>
         <div style="background:#f7f6f2;border-radius:10px;padding:12px">
           <label style="font-size:11px;color:#777;font-weight:600;display:block;margin-bottom:6px">Design code-wise</label>
           <select id="pc-code" style="margin-bottom:8px">${S.vocabulary.dcodes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
-          <button onclick="printByDesign(document.getElementById('pc-code').value,document.getElementById('print-stages-chk').checked)" style="width:100%">🖨️ Print selected design</button>
+          <button onclick="printByDesign(document.getElementById('pc-code').value,document.getElementById('print-stages-chk').checked,document.getElementById('print-rate-chk').checked)" style="width:100%">🖨️ Print selected design</button>
         </div>
       </div>
       <div class="modal-actions"><button onclick="closeModal()">Cancel</button></div>
@@ -12058,16 +12087,16 @@ function showPrintMenu(){
   </div>`;
 }
 
-function doPrintAll(includeStages){
+function doPrintAll(includeStages,includeRate){
   closeModal();
   const filtered=S.orders.filter(orderMatchesFilter);
   if(!filtered.length){showToast('No orders match the current filters','amber');return;}
-  openPrintWindow('All Orders (current view)',filtered,'all',includeStages!==false);
+  openPrintWindow('All Orders (current view)',filtered,'all',includeStages!==false,'top',includeRate);
 }
 
 // Build printable HTML for an order — mirrors the dashboard table layout exactly.
 // imgMode: 'inline' = image col at right of each row | 'top' = gallery above table | 'none' = no images
-function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
+function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate){
   if(includeStages===undefined)includeStages=true;
   if(!imgMode)imgMode='top';
   const tab=tabOverride||(S.activeTabs[order.id]||'designs');
@@ -12146,6 +12175,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
           const hod=_hasOnlyDefault(d);
           const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
+          const rateTd=(r)=>includeRate?'<td style="padding:5px 7px;text-align:center;font-size:12px;color:#555">'+(r?('₹'+r):'—')+'</td>':'';
           if(isCnc||d.varieties.length===0||hod){
             const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
             const rt=szKeys.reduce((a,sz)=>a+(parseInt(rs[sz])||0),0);
@@ -12154,6 +12184,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
               +szKeys.map(sz=>'<td style="padding:5px 7px;text-align:center">'+(parseInt(rs[sz])||0)+'</td>').join('')
               +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+rt+'</td>'
               +'<td style="padding:5px 7px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
+              +rateTd(hod?(d.varieties[0].rate||d.rate):d.rate)
             +'</tr>';
           } else {
             const ct={};szKeys.forEach(sz=>{ct[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
@@ -12163,6 +12194,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
               +'<td colspan="'+szKeys.length+'" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">'+d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' below</td>'
               +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+dt+'</td>'
               +'<td></td>'
+              +(includeRate?'<td></td>':'')
             +'</tr>';
             d.varieties.forEach(v=>{
               const vt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
@@ -12171,6 +12203,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
                 +szKeys.map(sz=>'<td style="padding:4px 7px;text-align:center">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
                 +'<td style="padding:4px 7px;text-align:center;font-weight:700;color:#534AB7">'+vt+'</td>'
                 +'<td style="padding:4px 7px;text-align:center;font-size:11px;color:#777">'+esc(v.unit||'pcs')+'</td>'
+                +rateTd(v.rate)
               +'</tr>';
             });
           }
@@ -12180,15 +12213,17 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           +szKeys.map(sz=>'<td style="padding:6px 7px;text-align:center">'+(grpTotals[sz]||0)+'</td>').join('')
           +'<td style="padding:6px 7px;text-align:center;background:#fff;color:#3C3489">'+grpTotal+'</td>'
           +'<td></td>'
+          +(includeRate?'<td></td>':'')
         +'</tr>';
         return '<div class="design-block" style="margin-bottom:18px">'
           +grpHeader+gallery
-          +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5;border-top:none">'
+          +'<table style="width:100%;border-collapse:collapse;font-size:15px;border:1px solid #D0CCF5;border-top:none">'
             +'<thead><tr style="background:#534AB7;color:#fff">'
               +'<th style="padding:6px 8px;text-align:left">Code</th>'
               +szKeys.map(sz=>'<th style="padding:6px 7px;text-align:center">'+esc(sz)+'</th>').join('')
               +'<th style="padding:6px 7px;text-align:center">Total</th>'
               +'<th style="padding:6px 7px;text-align:center">Unit</th>'
+              +(includeRate?'<th style="padding:6px 7px;text-align:center;font-size:13px">Rate (₹)</th>':'')
             +'</tr></thead>'
             +'<tbody>'+tbody+'</tbody>'
             +'<tfoot>'+footer+'</tfoot>'
@@ -12204,6 +12239,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
           const hod=_hasOnlyDefault(d);
           const dUnit=d.unit||(d.varieties[0]&&d.varieties[0].unit)||'pcs';
+          const rateTd=(r)=>includeRate?'<td style="padding:5px 7px;text-align:center;font-size:12px;color:#555">'+(r?('₹'+r):'—')+'</td>':'';
           if(isCnc||d.varieties.length===0||hod){
             const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
             const rt=szKeys.reduce((a,sz)=>a+(parseInt(rs[sz])||0),0);
@@ -12212,6 +12248,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
               +szKeys.map(sz=>'<td style="padding:5px 7px;text-align:center">'+(parseInt(rs[sz])||0)+'</td>').join('')
               +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+rt+'</td>'
               +'<td style="padding:5px 7px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
+              +rateTd(hod?(d.varieties[0].rate||d.rate):d.rate)
             +'</tr>';
           } else {
             const ct={};szKeys.forEach(sz=>{ct[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
@@ -12220,6 +12257,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
               +'<td style="padding:5px 8px;font-weight:700;color:#3C3489">'+esc(d.code||'—')+'</td>'
               +'<td colspan="'+szKeys.length+'" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">'+d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' below</td>'
               +'<td style="padding:5px 7px;text-align:center;font-weight:700;color:#534AB7">'+dt+'</td><td></td>'
+              +(includeRate?'<td></td>':'')
             +'</tr>';
             d.varieties.forEach(v=>{
               const vt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
@@ -12228,6 +12266,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
                 +szKeys.map(sz=>'<td style="padding:4px 7px;text-align:center">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
                 +'<td style="padding:4px 7px;text-align:center;font-weight:700;color:#534AB7">'+vt+'</td>'
                 +'<td style="padding:4px 7px;text-align:center;font-size:11px;color:#777">'+esc(v.unit||'pcs')+'</td>'
+                +rateTd(v.rate)
               +'</tr>';
             });
           }
@@ -12236,15 +12275,17 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           +'<td style="padding:6px 8px;text-align:right;font-size:11px">Group total →</td>'
           +szKeys.map(sz=>'<td style="padding:6px 7px;text-align:center">'+(grpTotals[sz]||0)+'</td>').join('')
           +'<td style="padding:6px 7px;text-align:center;background:#fff;color:#3C3489">'+grpTotal+'</td><td></td>'
+          +(includeRate?'<td></td>':'')
         +'</tr>';
         return '<div class="design-block" style="margin-bottom:18px">'
           +grpHeader
-          +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5;border-top:none">'
+          +'<table style="width:100%;border-collapse:collapse;font-size:15px;border:1px solid #D0CCF5;border-top:none">'
             +'<thead><tr style="background:#534AB7;color:#fff">'
               +'<th style="padding:6px 8px;text-align:left">Code</th>'
               +szKeys.map(sz=>'<th style="padding:6px 7px;text-align:center">'+esc(sz)+'</th>').join('')
               +'<th style="padding:6px 7px;text-align:center">Total</th>'
               +'<th style="padding:6px 7px;text-align:center">Unit</th>'
+              +(includeRate?'<th style="padding:6px 7px;text-align:center;font-size:13px">Rate (₹)</th>':'')
             +'</tr></thead>'
             +'<tbody>'+tbody+'</tbody>'
             +'<tfoot>'+footer+'</tfoot>'
@@ -12284,13 +12325,15 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
 
         // Data table (no image column — full width of remaining space)
         let tRows='';
+        const rateTdCard=(r)=>includeRate?'<td style="padding:6px 8px;text-align:center;font-size:12px;color:#555">'+(r?('₹'+r):'—')+'</td>':'';
         if(isCnc||d.varieties.length===0||hod){
           const rs=hod?(d.varieties[0].sizes||{}):(d.sizes||{});
           const rt=szKeys.reduce((a,sz)=>a+(parseInt(rs[sz])||0),0);
           tRows='<tr style="background:#fff">'
-            +szKeys.map(sz=>'<td style="padding:6px 8px;text-align:center;font-size:13px;font-weight:600;color:#222">'+(parseInt(rs[sz])||0)+'</td>').join('')
+            +szKeys.map(sz=>'<td style="padding:6px 8px;text-align:center;font-size:16px;font-weight:600;color:#222">'+(parseInt(rs[sz])||0)+'</td>').join('')
             +'<td style="padding:6px 8px;text-align:center;font-size:14px;font-weight:800;color:#534AB7">'+rt+'</td>'
             +'<td style="padding:6px 8px;text-align:center;font-size:11px;color:#777">'+esc(dUnit)+'</td>'
+            +rateTdCard(hod?(d.varieties[0].rate||d.rate):d.rate)
           +'</tr>';
         } else {
           const ct={};szKeys.forEach(sz=>{ct[sz]=d.varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[sz])||0),0);});
@@ -12300,17 +12343,19 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
             +'<td colspan="'+szKeys.length+'" style="padding:5px 8px;font-size:11px;color:#6C64CC;font-style:italic">'+d.varieties.length+' variet'+(d.varieties.length===1?'y':'ies')+' below</td>'
             +'<td style="padding:5px 8px;text-align:center;font-weight:800;font-size:13px;color:#3C3489">'+dt+'</td>'
             +'<td></td>'
+            +(includeRate?'<td></td>':'')
           +'</tr>';
           d.varieties.forEach(v=>{
             const vt=szKeys.reduce((a,sz)=>a+(parseInt((v.sizes||{})[sz])||0),0);
             // Label row (full width) then data row (sizes only) — keeps column count correct
             tRows+='<tr style="background:#F8F7FF;border-top:1px solid #E8E7FF">'
-              +'<td colspan="'+(szKeys.length+2)+'" style="padding:2px 8px;font-size:10px;color:#6C64CC;font-style:italic">└ '+esc(v.name||'Variety')+'</td>'
+              +'<td colspan="'+(szKeys.length+2+(includeRate?1:0))+'" style="padding:2px 8px;font-size:10px;color:#6C64CC;font-style:italic">└ '+esc(v.name||'Variety')+'</td>'
             +'</tr>';
             tRows+='<tr style="border-bottom:1px solid #F1EFE8;background:#fff">'
-              +szKeys.map(sz=>'<td style="padding:5px 8px;text-align:center;font-size:12px">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
+              +szKeys.map(sz=>'<td style="padding:5px 8px;text-align:center;font-size:15px">'+(parseInt((v.sizes||{})[sz])||0)+'</td>').join('')
               +'<td style="padding:5px 8px;text-align:center;font-weight:700;color:#534AB7">'+vt+'</td>'
               +'<td style="padding:5px 8px;text-align:center;font-size:11px;color:#777">'+esc(v.unit||'pcs')+'</td>'
+              +rateTdCard(v.rate)
             +'</tr>';
           });
         }
@@ -12320,11 +12365,12 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
           +'<div style="background:#EEEDFE;border-radius:6px 6px 0 0;padding:7px 10px;border:1px solid #D0CCF5;border-bottom:none">'
             +'<span style="font-size:15px;font-weight:800;color:#3C3489">'+esc(d.code||'—')+'</span>'
           +'</div>'
-          +'<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #D0CCF5">'
+          +'<table style="width:100%;border-collapse:collapse;font-size:15px;border:1px solid #D0CCF5">'
             +'<thead><tr style="background:#534AB7;color:#fff">'
-              +szKeys.map(sz=>'<th style="padding:5px 8px;text-align:center;font-weight:700;font-size:11px">'+esc(sz)+'</th>').join('')
+              +szKeys.map(sz=>'<th style="padding:5px 8px;text-align:center;font-weight:700;font-size:14px">'+esc(sz)+'</th>').join('')
               +'<th style="padding:5px 8px;text-align:center;font-weight:700">Total</th>'
               +'<th style="padding:5px 8px;text-align:center;font-weight:700">Unit</th>'
+              +(includeRate?'<th style="padding:5px 8px;text-align:center;font-weight:700;font-size:13px">Rate (₹)</th>':'')
             +'</tr></thead>'
             +'<tbody>'+tRows+'</tbody>'
           +'</table>'
@@ -12383,13 +12429,13 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode){
   </div>`;
 }
 
-async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
+async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode,includeRate){
   if(includeStages===undefined)includeStages=true;
   if(!imgMode)imgMode='top';
   // Ensure IDB images are loaded into S before building print HTML
   try{ await loadImagesFromIDB(); }catch(e){}
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
-  const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode)).join('');
+  const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode,includeRate)).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>
       /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
@@ -12419,23 +12465,23 @@ async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode){
   w.document.close();
 }
 
-function printClient(clientName,includeStages){
+function printClient(clientName,includeStages,includeRate){
   if(includeStages===undefined)includeStages=true;
   closeModal();
   const orders=S.orders.filter(o=>o.client===clientName).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
-  openPrintWindow('Client: '+clientName,orders,'all',includeStages);
+  openPrintWindow('Client: '+clientName,orders,'all',includeStages,'top',includeRate);
 }
-function printOrderById(oid,includeStages,imgMode){
+function printOrderById(oid,includeStages,imgMode,includeRate){
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
   // Always use 'all' tab so both Order Details and Designs & Varieties are printed.
   // Production Stages section is shown only when includeStages===true.
-  openPrintWindow(`Order: ${order.orderId}`,[order],'all',includeStages!==false,imgMode||'inline');
+  openPrintWindow(`Order: ${order.orderId}`,[order],'all',includeStages!==false,imgMode||'inline',includeRate);
 }
-function printByDesign(code,includeStages){
+function printByDesign(code,includeStages,includeRate){
   if(includeStages===undefined)includeStages=true;
   closeModal();
   const orders=S.orders.filter(o=>o.designs.some(d=>d.code===code));
-  openPrintWindow('Design code: '+code,orders,'designs',includeStages);
+  openPrintWindow('Design code: '+code,orders,'designs',includeStages,'top',includeRate);
 }
 function printDesignWise(oid,did){
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
