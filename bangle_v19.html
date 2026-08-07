@@ -16370,6 +16370,12 @@ function computeFollowUps(){
     return (parsed>0)?parsed:Date.now();
   };
   const rulePlating=FOLLOWUP_RULES.co_plating, rulePacking=FOLLOWUP_RULES.co_packing, ruleUnimported=FOLLOWUP_RULES.co_karigar_unimported;
+  // Same presence map buildDesignsGroupTable() uses to decide whether to show the
+  // "→ VORD-xxx" badge on a customer order row. The old check here used only
+  // holder.importedToVOId directly — a flag that isn't always written even when
+  // the vendor-order side correctly links back via sourceCoId, which is exactly
+  // why rows with a visible VORD badge were still being flagged for follow-up.
+  const _voPresenceMap=_buildVOPresenceMap();
   (S.orders||[]).forEach(order=>{
     (order.designs||[]).forEach(d=>{
       const hod=_hasOnlyDefault(d);
@@ -16382,6 +16388,7 @@ function computeFollowUps(){
         const keyPlating='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_plating';
         const keyPacking='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_packing';
         const keyUnimported='co_row:'+order.id+':'+d.id+':'+(vri>=0?vri:'flat')+':co_karigar_unimported';
+        const presenceKey=order.id+'|'+(d.code||'')+'|'+(vri>=0?(holder.name||''):'__flat__');
 
         if(order.archived){ drop(keyPlating); drop(keyPacking); drop(keyUnimported); return; }
 
@@ -16399,10 +16406,12 @@ function computeFollowUps(){
         } else drop(keyPacking);
 
         // Karigar assigned but never actually imported into a still-live vendor order.
-        // Skip if the item's already been ticked as received — that means it came
-        // back (e.g. arranged by phone call) even though no formal vendor order was
-        // ever created for it, so there's genuinely nothing left to follow up on.
-        const genuinelyImported=!!_liveVO(holder.importedToVOId,d.code||'');
+        // Checked via the same presence map the "→ VORD-xxx" badge uses (covers the
+        // sourceCoId link too, not just the importedToVOId flag) so a row that visibly
+        // shows a vendor order badge is never flagged as "not imported" here.
+        // Also skipped if the item's already been ticked as received — that means it
+        // came back (e.g. arranged by phone call) even with no formal vendor order.
+        const genuinelyImported=!!(_voPresenceMap[presenceKey]&&_voPresenceMap[presenceKey].length);
         const alreadyReceived=!!(holder.karigarReceived||holder.pipeReceived||holder.platingReceived);
         if(holder.assignedVendor&&!genuinelyImported&&!alreadyReceived){
           dueItem(keyUnimported,ruleUnimported,anchorFor(holder.assignedVendorAt),{
