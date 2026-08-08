@@ -1572,11 +1572,27 @@ async function downloadOrderAttachment(orderId){
 // Returns true if IDB had any data.
 // Uses a session-level cache after the first load to avoid re-reading
 // the full IDB on every Firebase sync (which was a major source of lag).
+// Safety cap for the in-memory IDB image cache below. If a device has
+// accumulated more than this much local photo data (e.g. years of un-migrated
+// full-quality images never cleared), loading it all into memory at once can
+// exceed the tab's memory limit and crash the whole app with "Out of Memory" —
+// this happened in production Aug 2026. Skipping past the cap trades "a few
+// device-local photos don't show until Migrate Images is run" for "the app
+// doesn't crash and you can still log in and see everything else."
+const IDB_MEMORY_SAFETY_CAP = 150*1024*1024; // 150 MB
 async function _injectIDBImages(){
   try{
     if(!_idbSessionCache){
       // First call this session: read from IDB and populate cache
       const all=await idbGetAll();
+      let totalBytes=0;
+      for(const entry of all){ totalBytes += (entry.value&&entry.value.length)||0; }
+      if(totalBytes > IDB_MEMORY_SAFETY_CAP){
+        console.warn('[IDB] Skipped loading local image cache into memory —',(totalBytes/1e6).toFixed(0),'MB exceeds the',(IDB_MEMORY_SAFETY_CAP/1e6).toFixed(0),'MB safety cap. This prevents an Out-of-Memory crash.');
+        showToast('⚠️ Local photo cache on this device is very large ('+(totalBytes/1e6).toFixed(0)+' MB) — some device-only photos are hidden to prevent a crash. Tap "☁️ Migrate Images" from a device that can open this cache, or clear this device\'s site data.','red',20000);
+        _idbSessionCache={};
+        return false;
+      }
       _idbSessionCache={};
       all.forEach(entry=>{_idbSessionCache[entry.key]=entry.value;});
     }
