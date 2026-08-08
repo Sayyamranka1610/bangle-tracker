@@ -1359,6 +1359,18 @@ async function idbGetAll(){
     req.onerror=e=>reject(e.target.error);
   });
 }
+// Cheap version of idbGetAll() — reads only the keys, not the (potentially huge)
+// image data values, so it's safe to call without risking the same memory spike
+// the IDB_MEMORY_SAFETY_CAP above exists to prevent.
+async function idbGetAllKeys(){
+  const db=await idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(IDB_STORE,'readonly');
+    const req=tx.objectStore(IDB_STORE).getAllKeys();
+    req.onsuccess=e=>resolve(e.target.result||[]);
+    req.onerror=e=>reject(e.target.error);
+  });
+}
 async function idbDelete(key){
   if(_idbSessionCache) delete _idbSessionCache[key];
   const db=await idbOpen();
@@ -1497,6 +1509,60 @@ function extractImages(state,forFirebase=false){
   stripped.forEach(([container,field,val])=>{ container[field]=val; });
 
   return{stateNoImages,imageMap};
+}
+
+// Enumerates every IDB key still referenced by CURRENT state — same key scheme
+// as extractImages() above, kept in sync with it deliberately. Includes
+// archived orders/vendor orders on purpose: their photos are still real, kept
+// data, never safe to treat as orphaned. Used by _pruneOrphanedIDBEntries()
+// below to tell "still needed" apart from "leftover from a deleted order."
+function _collectLiveImageKeys(){
+  const keys=new Set();
+  const addImgKeys=(img,key)=>{ if(!img)return; keys.add(key); keys.add(key+'_hq'); };
+  (S.stockItems||[]).forEach(it=>{
+    (it.images||[]).forEach((img,ii)=>addImgKeys(img,`stkimg_${it.id}_${ii}`));
+  });
+  (S.vendorOrders||[]).forEach(o=>{
+    keys.add(`file_vo_${o.id}`);
+    (o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach((img,ii)=>addImgKeys(img,`img_vord_d_${d.id}_${ii}`));
+      (d.varieties||[]).forEach(v=>{
+        (v.images||[]).forEach((img,ii)=>addImgKeys(img,`img_vord_${d.id}_${v.name||ii}_${ii}`));
+      });
+    });
+  });
+  (S.orders||[]).forEach(o=>{
+    keys.add(`file_o_${o.id}`);
+    (o.designs||[]).forEach(d=>{
+      (d.images||[]).forEach((img,ii)=>addImgKeys(img,`img_d_${d.id}_${ii}`));
+      (d.varieties||[]).forEach(v=>{
+        (v.images||[]).forEach((img,ii)=>addImgKeys(img,`img_v_${v.id}_${ii}`));
+      });
+    });
+  });
+  return keys;
+}
+
+// Deletes IDB entries left behind after an order/design/photo was deleted —
+// the actual reason the local image cache grows without bound over months of
+// normal use (nothing ever cleaned these up before). Rate-limited to once a
+// day since it's routine housekeeping, not urgent, and only ever reads KEYS
+// (via idbGetAllKeys, not idbGetAll) so this itself can never cause the
+// Out-of-Memory issue the safety cap above exists to prevent. Deliberately
+// conservative: a key is only deleted if it matches none of the keys
+// _collectLiveImageKeys() says are still in use right now.
+async function _pruneOrphanedIDBEntries(){
+  try{
+    const lastTs=parseInt(localStorage.getItem('bangle_last_idb_prune_ts')||'0',10);
+    if(Date.now()-lastTs < 24*60*60*1000) return; // at most once a day
+    localStorage.setItem('bangle_last_idb_prune_ts', String(Date.now()));
+    const allKeys=await idbGetAllKeys();
+    const liveKeys=_collectLiveImageKeys();
+    const orphans=allKeys.filter(k=>!liveKeys.has(k));
+    if(!orphans.length)return;
+    await Promise.all(orphans.map(k=>idbDelete(k).catch(()=>{})));
+    console.log('[IDB] Pruned',orphans.length,'orphaned local image(s) left over from deleted orders/designs');
+  }catch(e){ console.warn('[IDB] Orphan prune failed:',e.message); }
 }
 
 // Re-inject images from imageMap back into state
@@ -15849,6 +15915,10 @@ async function fbInit(){
       _fb.ready = true;
       try{ fbSchedulePush(); }catch(e){} // push the fresh followUpSnapshot now that Firebase is ready
       fbStartListener();
+      // Clean up local image leftovers from deleted orders/designs — runs well
+      // after startup/migration work so it never competes for resources during
+      // login, and is itself rate-limited to once a day (see function).
+      setTimeout(_pruneOrphanedIDBEntries, 15000);
       // Always check for base64 images in Firebase and migrate to R2 if found.
       // This runs regardless of whether IDB has data — fixes the case where images
       // were uploaded from a different device (IDB empty here but Firebase still bloated).
