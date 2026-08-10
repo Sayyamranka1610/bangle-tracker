@@ -30,6 +30,8 @@ Never skip this. Never assume the owner understands technical terms.
 
 **Lesson learned (OOM crash, May 2026):** A thumbnail repair function fetched full 6 MB HQ images from Firebase and stored them directly in `img.data` (the thumbnail field in global state `S`). With 20 images × 6 MB = 120 MB held permanently in `S`, Chrome crashed with "Out of Memory." The fix was locally correct (image loaded) but globally harmful (stayed in memory forever). This was caught only after it shipped. It would have been caught before shipping by asking Question 2 and Question 3 above.
 
+**Lesson learned (OOM crash recurrence, Aug 2026):** `loadImagesFromIDB()` ran on every single page load (before login) and called `_injectIDBImages()`, which read the *entire* local IndexedDB photo cache into memory in one shot via `idbGetAll()` with no size limit. On a device where that cache had grown large — because deleting an order/design never cleaned up its IDB entries, so orphaned photos piled up silently for 2+ months of production use — this crashed the tab with "Out of Memory" before the login screen even finished loading. Two fixes shipped together: (1) `IDB_MEMORY_SAFETY_CAP` (150 MB) in `_injectIDBImages()` — skip loading into memory rather than crash if the cache is too large; (2) `_pruneOrphanedIDBEntries()` — a once-a-day pass that deletes IDB entries no longer referenced by any current order/design (using `idbGetAllKeys()`, never reading the actual image bytes, so the cleanup itself can't reintroduce the crash). Root-cause lesson: any function that reads "all of IndexedDB" or "all of anything user-generated over months" needs a size cap by default — don't wait for it to actually happen twice.
+
 ---
 
 ## ⚠️ CRITICAL DEPLOYMENT RULE
@@ -197,6 +199,13 @@ Production-management dashboard for a bangles manufacturing business.
 5. **User Management** — Self-service and owner-controlled password management
 6. **Audit Trail** — Activity log for all changes
 7. **Export** — XLSX download via `xlsx.full.min.js` (CDN)
+8. **Follow-up system ("Kya Bola?")** — Rule-based nudges for stuck orders/vendor orders (`FOLLOWUP_RULES`, `computeFollowUps()` in `bangle_v19.html`):
+   - Auto-detects overdue conditions (pipe/karigar not delivered, stuck in plating/packing, unassigned, not dispatched) and surfaces them daily
+   - Marking one done requires picking what was actually said ("Kya Bola?") — a real reason/date/text, never a blank click — logged permanently to `S.followUpLog` (90-day retention)
+   - Picking "Process mein hai, de dega" + a date overrides the recurring interval — next reminder fires on that exact promised date, not the usual cycle
+   - If that promised date passes unresolved, the follow-up card asks about the broken promise specifically ("you said X, why hasn't it arrived?") instead of the generic question, and shows what was said the previous time
+   - Every order/vendor order's own Details tab shows a collapsible "📜 Follow-up Trail" — that entity's full conversation history as a timeline (added Aug 2026)
+   - "📜 Saare Trails" (open to everyone) browses every entity that's ever had a follow-up logged; "📋 Aaj ka Log" (owner-only) shows today's responses grouped by team member
 
 ### Global State & Key Functions
 
