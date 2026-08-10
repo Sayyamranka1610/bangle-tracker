@@ -16873,19 +16873,41 @@ function _followUpTrailHtml(entries){
 // visible to anyone who opens it (unlike "Aaj ka Log" which is owner-only and
 // today-only). Returns '' when there's no history yet, so it adds nothing to
 // the vast majority of orders that never needed a follow-up.
+// Ephemeral, session-only UI state (which trail sections are expanded) — not
+// business data, so deliberately kept out of S/Firebase, same treatment as
+// any other "is this panel open" flag that doesn't need to sync or persist.
+let _openFollowUpTrails=new Set();
+function _toggleFollowUpTrail(kind,id){
+  const k=kind+':'+id;
+  if(_openFollowUpTrails.has(k))_openFollowUpTrails.delete(k);else _openFollowUpTrails.add(k);
+  render();
+}
 function _followUpTrailSectionHtml(kind,id){
   const entries=(S.followUpLog||[]).filter(e=>e.kind===kind && e.key.split(':')[1]===id)
     .sort((a,b)=>a.loggedAt-b.loggedAt);
   if(!entries.length) return '';
-  return `<details style="margin-top:14px;border:1.5px solid #E0DFFF;border-radius:10px;padding:8px 12px;background:#FAFAFF">
-    <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#534AB7">📜 Follow-up Trail (${entries.length})</summary>
-    <div style="margin-top:10px">${_followUpTrailHtml(entries)}</div>
-  </details>`;
+  const trailKey=kind+':'+id;
+  const isOpen=_openFollowUpTrails.has(trailKey);
+  // Whole section is no-print — this is an internal working-notes view for the
+  // team, not something that belongs on a physical order sheet handed to
+  // karigars/vendors (same treatment as the mobile-action-bar buttons).
+  return `<div class="no-print" style="margin-top:14px;border:1.5px solid #E0DFFF;border-radius:10px;background:#FAFAFF;overflow:hidden">
+    <div onclick="_toggleFollowUpTrail('${kind}','${id}')" style="cursor:pointer;padding:8px 12px;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#534AB7;user-select:none">
+      <span class="chevron${isOpen?' open':''}">▶</span><span>📜 Follow-up Trail (${entries.length})</span>
+    </div>
+    ${isOpen?`<div style="padding:0 12px 12px">${_followUpTrailHtml(entries)}</div>`:''}
+  </div>`;
 }
 
 // Global browse view — every entity that's ever had a follow-up logged,
 // grouped, each expandable into its own trail. Open to everyone (not
 // owner-gated) so the whole team can see how any conversation played out.
+// Same ephemeral session-only open/close state pattern as _openFollowUpTrails.
+let _openTrailGroups=new Set();
+function _toggleTrailGroup(groupKey){
+  if(_openTrailGroups.has(groupKey))_openTrailGroups.delete(groupKey);else _openTrailGroups.add(groupKey);
+  openAllFollowUpTrailsModal(); // cheap — this modal already fully rebuilds its own HTML on every interaction
+}
 function openAllFollowUpTrailsModal(){
   const mc=document.getElementById('modal-container');
   if(!mc)return;
@@ -16901,13 +16923,21 @@ function openAllFollowUpTrailsModal(){
     Math.max(...b.entries.map(e=>e.loggedAt))-Math.max(...a.entries.map(e=>e.loggedAt)));
 
   const body=groupList.length?groupList.map(g=>{
+    const groupKey=g.kind+':'+g.id;
+    const isOpen=_openTrailGroups.has(groupKey);
     const sorted=[...g.entries].sort((a,b)=>a.loggedAt-b.loggedAt);
     const openFn=g.kind==='vo'?`_goToVendorOrder('${g.id}')`:`goToOrderFromAnalytics('${g.id}')`;
-    return `<details style="margin-bottom:10px;border:1.5px solid #E0DFFF;border-radius:10px;padding:8px 10px;background:#FAFAFF">
-      <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:#2D2D5F">${g.kind==='vo'?'🏭':'📦'} ${esc(g.title)} <span style="font-size:10px;color:#888;font-weight:600">(${g.entries.length})</span></summary>
-      <div style="margin-top:8px">${_followUpTrailHtml(sorted)}</div>
-      <div style="margin-top:8px"><button class="sm" onclick="closeModal();${openFn}">↗ Kholo</button></div>
-    </details>`;
+    return `<div style="margin-bottom:10px;border:1.5px solid #E0DFFF;border-radius:10px;background:#FAFAFF;overflow:hidden">
+      <div onclick="_toggleTrailGroup('${groupKey}')" style="cursor:pointer;padding:9px 10px;display:flex;align-items:center;gap:6px;user-select:none">
+        <span class="chevron${isOpen?' open':''}">▶</span>
+        <span style="font-size:12.5px;font-weight:700;color:#2D2D5F">${g.kind==='vo'?'🏭':'📦'} ${esc(g.title)}</span>
+        <span style="font-size:10px;color:#888;font-weight:600">(${g.entries.length})</span>
+      </div>
+      ${isOpen?`<div style="padding:0 10px 10px">
+        ${_followUpTrailHtml(sorted)}
+        <div style="margin-top:8px"><button class="sm" onclick="closeModal();${openFn}">↗ Kholo</button></div>
+      </div>`:''}
+    </div>`;
   }).join(''):'<div style="text-align:center;padding:2rem;color:#888">Abhi tak koi follow-up log nahi hua.</div>';
 
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
