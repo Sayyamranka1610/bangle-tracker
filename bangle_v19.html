@@ -4914,7 +4914,8 @@ function buildDetailsPanel(order,oi){
   </div>
   <label style="font-size:11px;color:#777;font-weight:500">Order notes</label>
   <textarea class="notes-area" oninput="S.orders[${oi}].notes=this.value;scheduleAutosave()" placeholder="Notes...">${esc(order.notes||'')}</textarea>
-  ${fileHtml}`;
+  ${fileHtml}
+  ${_followUpTrailSectionHtml('co',order.id)}`;
 }
 
 function buildDesignsPanel(order,oi){
@@ -9880,7 +9881,8 @@ function buildVendorDetailsPanel(vo,vi){
   <div class="field-group"><label>Notes</label>
     <textarea class="notes-area" onchange="upVendorOrder(${vi},'notes',this.value)">${esc(vo.notes||'')}</textarea>
   </div>
-  ${fileHtml}`;
+  ${fileHtml}
+  ${_followUpTrailSectionHtml('vo',vo.id)}`;
 }
 
 function buildVendorDesignsPanel(vo,vi){
@@ -16799,12 +16801,31 @@ function _goToFollowUpTarget(key){
   else goToOrderFromAnalytics(item.orderId);
 }
 
+// Most recent "Kya Bola" log entry for this exact follow-up key, or null if
+// this is the first time it's ever come due. Used to show "what was said last
+// time" so nobody has to remember or dig through logs before calling again.
+function _lastFollowUpLogForKey(key){
+  const entries=(S.followUpLog||[]).filter(e=>e.key===key);
+  if(!entries.length)return null;
+  return entries.reduce((a,b)=>a.loggedAt>b.loggedAt?a:b);
+}
+
 // One item card. showRuleTag=true adds a small pill naming which rule this is —
 // needed in the vendor-grouped view where one vendor can have items from several
 // different rules mixed together (e.g. a karigar order plus an unimported row).
 function _fuItemCardHtml(it,showRuleTag){
   const promiseBadge=it.isBrokenPromise
     ?`<span style="font-size:9px;font-weight:800;background:#FCEBEB;color:#A32D2D;border-radius:20px;padding:1px 8px;white-space:nowrap;border:1px solid #F09595">⚠️ Maal promise kiya${it.promisedDate?' ('+fmtDate(it.promisedDate)+')':''}, diya nahi</span>`
+    :'';
+  // When a specific promised date was broken, ask about THAT broken promise
+  // directly instead of the generic rule question — it's more useful and more
+  // pointed than repeating the same opening question every time.
+  const askText=(it.isBrokenPromise&&it.promisedDate)
+    ?'Pichli baar bola tha ki '+fmtDate(it.promisedDate)+' tak aa jayega — ab tak nahi aaya, kyun?'
+    :it.rule.ask;
+  const lastLog=_lastFollowUpLogForKey(it.key);
+  const lastTimeHtml=lastLog
+    ?`<div style="font-size:11px;color:#666;background:#F7F7FB;border-radius:6px;padding:5px 8px;margin-top:5px">💬 <strong>Last time</strong> (${fmtDate(new Date(lastLog.loggedAt).toISOString().split('T')[0])}): ${esc(lastLog.reasonLabel)}${(lastLog.reasonKey!=='no_pipe'&&lastLog.reasonKey!=='no_pickup')?' — '+esc(lastLog.detail):''}</div>`
     :'';
   return `<div style="background:#fff;border:1.5px solid #F09595;border-radius:10px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
     <div style="flex:1;min-width:180px">
@@ -16814,7 +16835,8 @@ function _fuItemCardHtml(it,showRuleTag){
         ${promiseBadge}
       </div>
       <div style="font-size:11px;color:#888;margin:2px 0 5px">${esc(it.subtitle)}</div>
-      <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(it.rule.ask)}"</div>
+      <div style="font-size:11.5px;color:#A32D2D;font-style:italic">"${esc(askText)}"</div>
+      ${lastTimeHtml}
       ${it.timesFollowedUp?`<div style="font-size:10px;color:#aaa;margin-top:3px">Pehle bhi ${it.timesFollowedUp} baar follow-up ho chuka hai</div>`:''}
     </div>
     <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
@@ -16825,6 +16847,80 @@ function _fuItemCardHtml(it,showRuleTag){
       </div>
     </div>
   </div>`;
+}
+
+// ── FOLLOW-UP TRAIL (visual conversation history) ──────────────────────────
+// Renders every past "Kya Bola" response for one entity as a connected
+// vertical timeline, oldest at top — a trail of how a conversation actually
+// went, not just today's snapshot. `entries` must already be sorted
+// oldest→newest. Read-only; never mutates S.followUpLog.
+function _followUpTrailHtml(entries){
+  if(!entries.length) return '<div style="font-size:11px;color:#aaa;padding:6px 0">Koi follow-up log nahi hai abhi tak.</div>';
+  return `<div style="position:relative;padding-left:18px">
+    <div style="position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:#D0CCF5"></div>
+    ${entries.map((e,i)=>`
+      <div style="position:relative;margin-bottom:${i===entries.length-1?'0':'12'}px">
+        <div style="position:absolute;left:-18px;top:3px;width:10px;height:10px;border-radius:50%;background:#534AB7;border:2px solid #fff;box-shadow:0 0 0 1px #D0CCF5"></div>
+        <div style="font-size:10px;color:#999;margin-bottom:2px">${new Date(e.loggedAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})} · ${new Date(e.loggedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} · ${esc(e.loggedBy)}</div>
+        <div style="font-size:12px;font-weight:600;color:#2D2D5F">${esc(e.subtitle||e.title)}</div>
+        <div style="font-size:11.5px;color:#534AB7;margin-top:2px">🗣️ ${esc(e.reasonLabel)}${(e.reasonKey!=='no_pipe'&&e.reasonKey!=='no_pickup')?' — '+esc(e.detail):''}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+// Small collapsible block embedded directly inside an order's / vendor order's
+// own Details tab — the follow-up conversation history for THIS entity only,
+// visible to anyone who opens it (unlike "Aaj ka Log" which is owner-only and
+// today-only). Returns '' when there's no history yet, so it adds nothing to
+// the vast majority of orders that never needed a follow-up.
+function _followUpTrailSectionHtml(kind,id){
+  const entries=(S.followUpLog||[]).filter(e=>e.kind===kind && e.key.split(':')[1]===id)
+    .sort((a,b)=>a.loggedAt-b.loggedAt);
+  if(!entries.length) return '';
+  return `<details style="margin-top:14px;border:1.5px solid #E0DFFF;border-radius:10px;padding:8px 12px;background:#FAFAFF">
+    <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#534AB7">📜 Follow-up Trail (${entries.length})</summary>
+    <div style="margin-top:10px">${_followUpTrailHtml(entries)}</div>
+  </details>`;
+}
+
+// Global browse view — every entity that's ever had a follow-up logged,
+// grouped, each expandable into its own trail. Open to everyone (not
+// owner-gated) so the whole team can see how any conversation played out.
+function openAllFollowUpTrailsModal(){
+  const mc=document.getElementById('modal-container');
+  if(!mc)return;
+  const log=S.followUpLog||[];
+  const groups={};
+  log.forEach(e=>{
+    const id=e.key.split(':')[1];
+    const groupKey=e.kind+':'+id;
+    if(!groups[groupKey])groups[groupKey]={title:e.title,kind:e.kind,id,entries:[]};
+    groups[groupKey].entries.push(e);
+  });
+  const groupList=Object.values(groups).sort((a,b)=>
+    Math.max(...b.entries.map(e=>e.loggedAt))-Math.max(...a.entries.map(e=>e.loggedAt)));
+
+  const body=groupList.length?groupList.map(g=>{
+    const sorted=[...g.entries].sort((a,b)=>a.loggedAt-b.loggedAt);
+    const openFn=g.kind==='vo'?`_goToVendorOrder('${g.id}')`:`goToOrderFromAnalytics('${g.id}')`;
+    return `<details style="margin-bottom:10px;border:1.5px solid #E0DFFF;border-radius:10px;padding:8px 10px;background:#FAFAFF">
+      <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:#2D2D5F">${g.kind==='vo'?'🏭':'📦'} ${esc(g.title)} <span style="font-size:10px;color:#888;font-weight:600">(${g.entries.length})</span></summary>
+      <div style="margin-top:8px">${_followUpTrailHtml(sorted)}</div>
+      <div style="margin-top:8px"><button class="sm" onclick="closeModal();${openFn}">↗ Kholo</button></div>
+    </details>`;
+  }).join(''):'<div style="text-align:center;padding:2rem;color:#888">Abhi tak koi follow-up log nahi hua.</div>';
+
+  mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" style="width:640px">
+      <div class="modal-header">
+        <div class="modal-icon" style="background:#EEEDFE;color:#534AB7">📜</div>
+        <h3>Saare Follow-up Trails ${groupList.length?`<span style="font-size:12px;font-weight:400;color:#888">(${groupList.length})</span>`:''}</h3>
+      </div>
+      <div style="max-height:65vh;overflow-y:auto;padding-right:2px">${body}</div>
+      <div class="modal-actions"><button class="primary" onclick="closeModal()">Close</button></div>
+    </div>
+  </div>`;
+  _modalDisableBackground();
 }
 
 function openFollowUpsModal(){
@@ -16880,6 +16976,7 @@ function openFollowUpsModal(){
       </div>
       <div style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
       <div class="modal-actions">
+        <button onclick="openAllFollowUpTrailsModal()">📜 Saare Trails</button>
         ${_currentUser&&_currentUser.role==='owner'?`<button onclick="openTodayFollowUpLogModal()">📋 Aaj ka Log</button>`:''}
         <button class="primary" onclick="closeModal()">Band karo</button>
       </div>
