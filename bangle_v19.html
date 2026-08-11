@@ -4167,7 +4167,24 @@ function render(){
   }
 
   // ── RESTORE PAGE SCROLL POSITION ────────────────────────────────────────────
-  if(_scrollY > 0) window.scrollTo(0, _scrollY);
+  // Replacing a whole view's innerHTML leaves the document momentarily short,
+  // so the browser clamps the scroll position (usually right back to 0) before
+  // the new content is laid out — that's the "opening an order throws me back
+  // to the top" jump. Reading scrollHeight first forces a layout flush so the
+  // restore below is measured against the REBUILT page height instead of the
+  // stale short one (otherwise scrollTo silently clamps and lands at the top
+  // anyway, which is why a plain scrollTo here wasn't enough). The next-frame
+  // pass catches anything whose height only settled a frame later.
+  // Safe against the app's own intentional scrolls (_goToVendorOrder,
+  // goToOrderFromAnalytics): those scrollIntoView calls run on a 150–200 ms
+  // setTimeout, well after this frame.
+  if(_scrollY > 0 && window.scrollY !== _scrollY){
+    void document.documentElement.scrollHeight; // force layout flush
+    window.scrollTo(0, _scrollY);
+    requestAnimationFrame(()=>{
+      if(window.scrollY !== _scrollY) window.scrollTo(0, _scrollY);
+    });
+  }
 }
 function renderStats(){
   const all=S.orders;
