@@ -2,7 +2,7 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v183';
+const CACHE_NAME = 'bangle-tracker-v184';
 const APP_SHELL = [
   './bangle_v19',     // the REAL URL the browser actually requests — Cloudflare
                        // redirects "bangle_v19.html" here, so caching that literal
@@ -61,14 +61,32 @@ self.addEventListener('fetch', (event) => {
   // ".html" at all. This substring check was the actual bug in the previous fix.
   const isMainHtml = url.includes('bangle_v19') || url.endsWith('/') || url.endsWith('/index.html');
   if (isMainHtml) {
+    // Start the network revalidation IMMEDIATELY and hand it to waitUntil().
+    //
+    // This used to kick off the background fetch inside respondWith's own
+    // promise chain and never call waitUntil() on it. The moment respondWith
+    // resolved with the cached copy, the browser was free to shut this service
+    // worker down — killing the in-flight ~1 MB fetch and/or the cache.put
+    // before the fresh copy was ever stored. Net effect: the "background
+    // update" frequently never happened at all, so a device could keep serving
+    // a months-old build of the app forever and the only way out was manually
+    // clearing site data. Every deploy silently failing to reach devices is a
+    // far worse bug than the slow loads this cache was added to fix.
+    //
+    // waitUntil() keeps the worker alive until the new copy is actually
+    // written, so the next open genuinely gets the new version.
+    const network = fetch(event.request).then(response => {
+      if (!response.ok) return response;
+      const copy = response.clone();
+      return caches.open(CACHE_NAME)
+        .then(cache => cache.put(event.request, copy))
+        .then(() => response);
+    });
+    event.waitUntil(network.catch(() => {})); // never let a failed refresh reject the event
     event.respondWith(
-      caches.match(event.request).then(cached => {
-        const refresh = fetch(event.request).then(response => {
-          if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
-          return response;
-        }).catch(() => cached); // network failed — fall back to whatever we had cached
-        return cached || refresh; // instant if cached; first-ever load still waits on network
-      })
+      caches.match(event.request).then(cached =>
+        cached || network // instant if cached; first-ever load still waits on network
+      ).catch(() => network)
     );
     return;
   }
