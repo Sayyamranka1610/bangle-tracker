@@ -16963,9 +16963,45 @@ function _followUpTrailSectionHtml(kind,id){
 // _openFollowUpTrails — this is UI state, not business data.
 let _openTrailGroups=new Set();
 let _trailViewKind='co'; // 'co' or 'vo' — which top-level tab is active
+// Expanded body of one trail card, rebuilt from the log on demand so the
+// toggle below never has to re-render the whole modal to show it.
+function _trailGroupBodyHtml(kind,id,ruleKey){
+  const entries=(S.followUpLog||[])
+    .filter(e=>e.kind===kind && e.key.split(':')[1]===id && e.ruleKey===ruleKey)
+    .sort((a,b)=>a.loggedAt-b.loggedAt);
+  const openFn=kind==='vo'?`_goToVendorOrder('${id}')`:`goToOrderFromAnalytics('${id}')`;
+  return `<div class="tg-body" style="padding:0 10px 10px">
+    ${_followUpTrailHtml(entries)}
+    <div style="margin-top:8px"><button class="sm" onclick="closeModal();${openFn}">↗ Kholo</button></div>
+  </div>`;
+}
+// Expand/collapse ONE card in place.
+//
+// This used to re-render the entire modal (mc.innerHTML = …) on every click.
+// That destroyed and recreated the scrolling list, so its scroll position was
+// lost and the modal snapped back to the top every single time a card was
+// opened — you then had to scroll all the way back down to where you were.
+// Now only the clicked card is touched, so the list never moves.
 function _toggleTrailGroup(groupKey){
-  if(_openTrailGroups.has(groupKey))_openTrailGroups.delete(groupKey);else _openTrailGroups.add(groupKey);
-  openAllFollowUpTrailsModal(); // cheap — this modal already fully rebuilds its own HTML on every interaction
+  const card=document.getElementById('tg-'+groupKey);
+  if(!card){ // card not in the DOM (shouldn't happen) — fall back to a full rebuild
+    if(_openTrailGroups.has(groupKey))_openTrailGroups.delete(groupKey);else _openTrailGroups.add(groupKey);
+    openAllFollowUpTrailsModal();
+    return;
+  }
+  const chev=card.querySelector('.chevron');
+  const body=card.querySelector('.tg-body');
+  if(_openTrailGroups.has(groupKey)){
+    _openTrailGroups.delete(groupKey);
+    if(body)body.remove();
+    if(chev)chev.classList.remove('open');
+  } else {
+    _openTrailGroups.add(groupKey);
+    // groupKey is "kind:entityId:ruleKey" — neither id nor ruleKey contains a colon
+    const parts=groupKey.split(':');
+    card.insertAdjacentHTML('beforeend',_trailGroupBodyHtml(parts[0],parts[1],parts[2]));
+    if(chev)chev.classList.add('open');
+  }
 }
 function _setTrailViewKind(kind){
   _trailViewKind=kind;
@@ -16998,21 +17034,20 @@ function openAllFollowUpTrailsModal(){
     Math.max(...b.entries.map(e=>e.loggedAt))-Math.max(...a.entries.map(e=>e.loggedAt))));
   const ruleKeysInOrder=FOLLOWUP_RULE_ORDER.filter(k=>byRule[k]&&byRule[k].length);
 
+  // The card carries an id so _toggleTrailGroup() can expand/collapse it in
+  // place instead of re-rendering (and thus scroll-resetting) the whole modal.
+  // Its open body comes from the same _trailGroupBodyHtml() the toggle uses, so
+  // a card built here and one expanded by a click are byte-for-byte identical.
   const cardHtml=(g)=>{
     const groupKey=g.kind+':'+g.id+':'+g.ruleKey;
     const isOpen=_openTrailGroups.has(groupKey);
-    const sorted=[...g.entries].sort((a,b)=>a.loggedAt-b.loggedAt);
-    const openFn=g.kind==='vo'?`_goToVendorOrder('${g.id}')`:`goToOrderFromAnalytics('${g.id}')`;
-    return `<div style="margin-bottom:8px;border:1.5px solid #E0DFFF;border-radius:10px;background:#FAFAFF;overflow:hidden">
+    return `<div id="tg-${groupKey}" style="margin-bottom:8px;border:1.5px solid #E0DFFF;border-radius:10px;background:#FAFAFF;overflow:hidden">
       <div onclick="_toggleTrailGroup('${groupKey}')" style="cursor:pointer;padding:9px 10px;display:flex;align-items:center;gap:6px;user-select:none">
         <span class="chevron${isOpen?' open':''}">▶</span>
         <span style="font-size:12.5px;font-weight:700;color:#2D2D5F">${g.kind==='vo'?'🏭':'📦'} ${esc(g.title)}</span>
         <span style="font-size:10px;color:#888;font-weight:600">(${g.entries.length})</span>
       </div>
-      ${isOpen?`<div style="padding:0 10px 10px">
-        ${_followUpTrailHtml(sorted)}
-        <div style="margin-top:8px"><button class="sm" onclick="closeModal();${openFn}">↗ Kholo</button></div>
-      </div>`:''}
+      ${isOpen?_trailGroupBodyHtml(g.kind,g.id,g.ruleKey):''}
     </div>`;
   };
 
