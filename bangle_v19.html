@@ -11788,6 +11788,50 @@ function printVendorSection(vendor){
 // imgMode: 'top' = grouped images below design name (default)
 //          'inline' = image column in table beside quantities
 //          'none' = no images
+// ── PRINT: design-name header bonded to its first row of photos ───────────────
+// A design name must never be left stranded at the bottom of a page while its
+// photos start on the next one. Previously the header and the whole photo grid
+// were separate siblings inside a freely-breakable block, so the page could
+// break in the gap right after the header.
+//
+// Fix: the header is bundled with the FIRST ROW of photos (3 across) inside one
+// break-inside:avoid block. The browser treats that bundle as indivisible, so
+// if the space left on the current page can't fit "name + one row of photos"
+// the whole bundle moves to the next page. Remaining rows flow normally after
+// it (each photo cell keeps its own break-inside:avoid so no photo is ever
+// sliced in half).
+//
+// The bundle's height is bounded and small — header (~10 mm) + one 82 mm photo
+// row + label/padding ≈ 105 mm, well under A4's ~257 mm usable height — so it
+// can never become an unbreakable block taller than a page.
+//
+// Passing an empty image list returns just the header, additionally marked
+// break-after:avoid so it still can't be stranded above a table that starts on
+// the next page (the no-photos and inline-photo print modes).
+function _printHeaderWithGallery(headerHtml, imgs){
+  if(!imgs || !imgs.length){
+    return '<div style="break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid">'+headerHtml+'</div>';
+  }
+  const cell=({src,label})=>{
+    const es=String(src).replace(/"/g,'%22');
+    return '<div style="text-align:center;break-inside:avoid">'
+      +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:flex;align-items:center;justify-content:center">'
+        +'<div style="position:absolute;inset:0;transform:scale(1.2);background:url('+es+') center/cover;filter:blur(12px);opacity:0.8"></div>'
+        +'<img src="'+src+'" style="position:relative;z-index:1;max-width:100%;max-height:82mm;display:block">'
+      +'</div>'
+      +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
+    +'</div>';
+  };
+  const GRID='display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5;';
+  const first=imgs.slice(0,3), rest=imgs.slice(3);
+  // The first grid drops its bottom padding when more rows follow — the 4 mm top
+  // padding of the continuation grid then supplies the row gap, so splitting one
+  // grid into two is visually identical to the single grid this replaced.
+  const firstGrid='<div style="'+GRID+'padding:4mm 6mm '+(rest.length?'0':'4mm')+'">'+first.map(cell).join('')+'</div>';
+  const restGrid=rest.length?'<div style="'+GRID+'padding:4mm 6mm">'+rest.map(cell).join('')+'</div>':'';
+  return '<div style="break-inside:avoid;page-break-inside:avoid">'+headerHtml+firstGrid+'</div>'+restGrid;
+}
+
 function openVendorPrintWindow(title,orders,imgMode,includeRate){
   imgMode=imgMode||'top';
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
@@ -11820,17 +11864,8 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate){
         else{(d.images||[]).forEach(img=>{const src=_resolveImgSrc(img);if(src)groupImgs.push({src,label:d.code||d.name});});varieties.forEach(v=>(v.images||[]).forEach(img=>{const src=_resolveImgSrc(img);if(src)groupImgs.push({src,label:v.name||d.code});}));}
       });
 
-      const imgTopHtml=(imgMode==='top'&&groupImgs.length)
-        ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;padding:4mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
-          +groupImgs.map(({src,label})=>{const es=src.replace(/"/g,'%22');return'<div style="text-align:center;break-inside:avoid">'
-            +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:flex;align-items:center;justify-content:center">'
-              +'<div style="position:absolute;inset:0;transform:scale(1.2);background:url('+es+') center/cover;filter:blur(12px);opacity:0.8"></div>'
-              +'<img src="'+src+'" style="position:relative;z-index:1;max-width:100%;max-height:82mm;display:block">'
-            +'</div>'
-            +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
-          +'</div>';}).join('')
-          +'</div>'
-        :'';
+      // Photo grid markup now lives in _printHeaderWithGallery() so the header
+      // and the first row of photos stay welded together across page breaks.
 
       // Build table rows for all design codes in the group
       let trows='';
@@ -11893,7 +11928,7 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate){
         +'<span style="font-size:12px;background:rgba(255,255,255,.2);padding:3px 12px;border-radius:20px">'+g.items.length+' code'+(g.items.length!==1?'s':'')+' · '+footTotal+' '+grpUnit+'</span>'
         +'</div>';
       return '<div class="design-block" style="margin-bottom:14px">'
-        +grpHdr+imgTopHtml
+        +_printHeaderWithGallery(grpHdr, imgMode==='top'?groupImgs:[])
         +'<table style="width:100%;border-collapse:collapse;font-size:16px;border:1px solid #D0CCF5;border-top:none">'
           +'<thead><tr style="background:#534AB7;color:#fff">'
             +'<th style="padding:7px 10px;text-align:left">Code</th>'
@@ -12265,20 +12300,11 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate
           ...(d.images||[]).map(img=>({src:_resolveImgSrc(img),label:d.code||d.name})),
           ...((d.varieties||[])).flatMap(v=>(v.images||[]).map(img=>({src:_resolveImgSrc(img),label:v.name||d.code})))
         ]).filter(({src})=>src);
-        const gallery=allImgs.length
-          // 3-column CSS grid: exactly 9 images (3 rows × 3 cols) fit on one A4 page.
-          // Each image: ~62mm wide, ~82mm tall → 3×62=186mm + 2×4mm gaps = 194mm (fits A4 ~200mm usable width).
-          // Quantities table appears below on the same page or overflows to next page.
-          ?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;padding:4mm 6mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5">'
-            +allImgs.map(({src,label})=>{const es=src.replace(/"/g,'%22');return'<div style="text-align:center;break-inside:avoid">'
-              +'<div style="position:relative;width:100%;height:82mm;overflow:hidden;border-radius:6px;border:1.5px solid #AFA9EC;background:#f0efff;display:flex;align-items:center;justify-content:center">'
-                +'<div style="position:absolute;inset:0;transform:scale(1.2);background:url('+es+') center/cover;filter:blur(12px);opacity:0.8"></div>'
-                +'<img src="'+src+'" style="position:relative;z-index:1;max-width:100%;max-height:82mm;display:block">'
-              +'</div>'
-              +'<div style="font-size:10px;font-weight:700;color:#3C3489;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</div>'
-            +'</div>';}).join('')
-          +'</div>'
-          :'';
+        // 3-column CSS grid: exactly 9 images (3 rows × 3 cols) fit on one A4 page.
+        // Each image: ~62mm wide, ~82mm tall → 3×62=186mm + 2×4mm gaps = 194mm (fits A4 ~200mm usable width).
+        // Quantities table appears below on the same page or overflows to next page.
+        // Markup lives in _printHeaderWithGallery() so the design name and the
+        // first row of photos stay welded together across page breaks.
         // Build table (no image column)
         let tbody='';
         g.items.forEach(d=>{
@@ -12327,7 +12353,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate
           +(includeRate?'<td></td>':'')
         +'</tr>';
         return '<div class="design-block" style="margin-bottom:18px">'
-          +grpHeader+gallery
+          +_printHeaderWithGallery(grpHeader, allImgs)
           +'<table style="width:100%;border-collapse:collapse;font-size:15px;border:1px solid #D0CCF5;border-top:none">'
             +'<thead><tr style="background:#534AB7;color:#fff">'
               +'<th style="padding:6px 8px;text-align:left">Code</th>'
@@ -12389,7 +12415,7 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate
           +(includeRate?'<td></td>':'')
         +'</tr>';
         return '<div class="design-block" style="margin-bottom:18px">'
-          +grpHeader
+          +_printHeaderWithGallery(grpHeader, []) // no photos here — still keeps the name off a page of its own
           +'<table style="width:100%;border-collapse:collapse;font-size:15px;border:1px solid #D0CCF5;border-top:none">'
             +'<thead><tr style="background:#534AB7;color:#fff">'
               +'<th style="padding:6px 8px;text-align:left">Code</th>'
@@ -12499,7 +12525,8 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate
       +'</div>';
 
       return '<div class="design-block" style="margin-bottom:20px;border:1.5px solid #D0CCF5;border-radius:8px">'
-        +grpHeader+cards+footer
+        +_printHeaderWithGallery(grpHeader, []) // photos sit inside each card below, so bond the name to the first card instead
+        +cards+footer
       +'</div>';
     }).join('');
   }
