@@ -237,7 +237,10 @@ async function loadCatalogCached() {
   } catch (_) {}
 
   // Step 2: Check if our cached version matches the server version
-  const cacheKey = "bangle-desc-embeddings-v2";
+  // v3: v2 caches could hold the new version tag next to old catalog data (the
+  // download below used to be served from the browser's HTTP cache). Renaming the
+  // key forces every device to fetch the catalog once, cleanly.
+  const cacheKey = "bangle-desc-embeddings-v3";
   try {
     const cache      = await caches.open(cacheKey);
     const cachedData = await cache.match(WORKER_URL + "/desc-embeddings");
@@ -253,15 +256,21 @@ async function loadCatalogCached() {
   } catch (_) {}
 
   // Step 3: Version mismatch or no cache — download fresh copy
-  setInit("Catalog updated — downloading latest (~10 MB)...", 65);
-  const resp = await fetch(WORKER_URL + "/desc-embeddings");
+  setInit("Catalog updated — downloading latest...", 65);
+  // no-store + version in the URL: we do our own version checking above, so the
+  // browser's HTTP cache must never answer this with a stale catalog.
+  const resp = await fetch(
+    WORKER_URL + "/desc-embeddings?v=" + encodeURIComponent(currentVersion || Date.now()),
+    { cache: "no-store" }
+  );
   if (!resp.ok) throw new Error("Could not load catalog: " + resp.status);
 
   // Step 4: Save to cache with current version tag
   try {
     const cache = await caches.open(cacheKey);
-    // Delete old v1 cache if it exists
+    // Drop superseded caches so old catalogs don't sit on the device forever
     await caches.delete("bangle-desc-embeddings-v1");
+    await caches.delete("bangle-desc-embeddings-v2");
     await cache.put(WORKER_URL + "/desc-embeddings", resp.clone());
     if (currentVersion) {
       await cache.put(WORKER_URL + "/desc-embeddings-version",

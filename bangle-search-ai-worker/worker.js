@@ -40,10 +40,10 @@ Write 60–80 words using those exact terms. Be precise — a specific term like
 is far more useful than a vague phrase like "curved shapes."
 If multiple bangles are visible, start each with "Bangle 1:", "Bangle 2:", etc.`;
 
-// Cache desc-embeddings in memory (reload hourly)
+// Cache desc-embeddings in memory, keyed by the R2 upload time so a freshly
+// uploaded catalog goes live immediately instead of after a timeout.
 let cachedEmbeddings = null;
-let cacheTime = 0;
-const CACHE_TTL = 60 * 60 * 1000;
+let cachedVersion = null;
 
 export default {
   async fetch(request, env) {
@@ -72,19 +72,23 @@ export default {
     // Serve desc-embeddings index from R2 (browser downloads this for search)
     if (url.pathname === "/desc-embeddings") {
       try {
-        if (cachedEmbeddings && Date.now() - cacheTime < CACHE_TTL) {
-          return new Response(cachedEmbeddings, {
-            headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }
-          });
+        // The browser caches this itself and revalidates via /desc-embeddings-version,
+        // so no-store here — an HTTP-cached copy would silently defeat that check.
+        const indexHeaders = { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" };
+
+        const head = await env.BUCKET.head("_search_index/desc_embeddings.json").catch(() => null);
+        const liveVersion = head?.uploaded ? head.uploaded.getTime().toString() : null;
+
+        if (cachedEmbeddings && liveVersion && liveVersion === cachedVersion) {
+          return new Response(cachedEmbeddings, { headers: indexHeaders });
         }
+
         const obj = await env.BUCKET.get("_search_index/desc_embeddings.json");
         if (!obj) return json({ error: "Embedding index not ready. Run generate_desc_embeddings.py first." }, 503);
         const text = await obj.text();
         cachedEmbeddings = text;
-        cacheTime = Date.now();
-        return new Response(text, {
-          headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }
-        });
+        cachedVersion = liveVersion;
+        return new Response(text, { headers: indexHeaders });
       } catch (e) {
         return json({ error: "Failed to load embedding index: " + e.message }, 500);
       }
