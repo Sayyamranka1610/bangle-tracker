@@ -97,7 +97,16 @@ export default {
         const file = form.get("image");
         if (!file) return json({ error: "No image provided" }, 400);
 
-        const imgBytes  = await file.arrayBuffer();
+        const imgBytes = await file.arrayBuffer();
+        if (imgBytes.byteLength === 0) {
+          return json({ error: "That photo came through empty. Please pick it again." }, 400);
+        }
+        // Claude rejects images over 10 MB once base64-encoded (encoding adds ~33%),
+        // so stop oversized photos here with a clear message instead of a raw API error.
+        if (imgBytes.byteLength > 7 * 1024 * 1024) {
+          return json({ error: "Image too large — please use a photo under about 7 MB." }, 413);
+        }
+
         const imgB64    = arrayBufferToBase64(imgBytes);
         const mediaType = file.type || "image/jpeg";
 
@@ -128,7 +137,10 @@ export default {
         }
 
         const claudeData = await claudeResp.json();
-        const rawDesc    = claudeData.content[0].text;
+        const rawDesc    = claudeData?.content?.[0]?.text;
+        if (!rawDesc) {
+          return json({ error: "Claude could not describe that photo. Try a clearer, closer shot." }, 502);
+        }
 
         // Parse multi-bangle descriptions
         const bangles = parseBangleDescriptions(rawDesc);
@@ -162,8 +174,14 @@ function json(data, status = 200) {
 }
 
 function arrayBufferToBase64(buffer) {
+  // Chunked conversion — a byte-at-a-time loop burns enough CPU on multi-MB
+  // photos to risk hitting the Worker CPU limit, which surfaces as a hard
+  // connection failure in the browser rather than a readable error.
   const bytes = new Uint8Array(buffer);
+  const CHUNK = 0x8000;
   let binary  = "";
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
   return btoa(binary);
 }
