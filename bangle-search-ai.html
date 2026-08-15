@@ -189,15 +189,38 @@ let currentFile  = null;
 let selectedCode = null;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+
+// iOS in-app browsers (opening a link inside WhatsApp/Instagram) and private
+// windows expose a `caches` object that throws "Internal error" the moment it is
+// used. transformers.js stores the model there by default, so boot died there.
+// Probe it once up front and simply do without it when it is broken.
+let cacheApiOk = false;
+async function probeCacheStorage() {
+  try {
+    if (typeof caches === "undefined") return false;
+    const c = await caches.open("bt-cache-probe");
+    await c.put("/bt-probe", new Response("1"));
+    await c.match("/bt-probe");
+    await caches.delete("bt-cache-probe");
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function boot() {
   document.getElementById("initBar").classList.add("visible");
   setInit("Loading AI matching model...", 5);
 
+  let step = "model";
   try {
+    cacheApiOk = await probeCacheStorage();
+
     const { pipeline, env } = await import(
       "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.2/dist/transformers.min.js"
     );
     env.allowLocalModels = false;
+    env.useBrowserCache = cacheApiOk;   // off => model re-downloads each visit, but it works
 
     embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
       dtype: "q8",
@@ -211,6 +234,7 @@ async function boot() {
       }
     });
 
+    step = "catalog";
     setInit("Loading design catalog...", 65);
     catalogEmbs = await loadCatalogCached();
     const n = Object.keys(catalogEmbs).length;
@@ -223,9 +247,28 @@ async function boot() {
     document.getElementById("cameraRow").style.display = "block";
 
   } catch (err) {
-    setInit("Error: " + err.message, 0);
-    console.error(err);
+    showBootError(step, err);
   }
+}
+
+// "Error: Internal error" told nobody anything. Say which stage failed, what to
+// try, and keep the exact wording available for whoever has to diagnose it.
+function showBootError(step, err) {
+  console.error("boot failed at step:", step, err);
+  const esc = s => String(s).replace(/[<>&]/g, c => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;" }[c]));
+  const detail = esc((err && err.name ? err.name + ": " : "") + ((err && err.message) || err));
+  const what   = step === "model" ? "the AI matching model" : "the design catalogue";
+  const advice = step === "model"
+    ? 'If you opened this link inside another app (WhatsApp, Instagram), tap the Share or ⋯ button and choose <b>Open in Safari</b> — those built-in browsers block part of what the AI model needs.'
+    : "Check your internet connection and try again — the catalogue is a large download.";
+
+  document.getElementById("initBar").innerHTML = `
+    <div style="flex:1">
+      <div style="color:#ff8080;font-weight:600;margin-bottom:6px">Could not load ${what}</div>
+      <div style="margin-bottom:8px;line-height:1.5">${advice}</div>
+      <div style="font-size:0.72rem;color:#6b64a0;margin-bottom:10px">Technical detail: ${detail}</div>
+      <button class="btn btn-primary" onclick="location.reload()">Try again</button>
+    </div>`;
 }
 
 async function loadCatalogCached() {
@@ -242,6 +285,7 @@ async function loadCatalogCached() {
   // key forces every device to fetch the catalog once, cleanly.
   const cacheKey = "bangle-desc-embeddings-v3";
   try {
+    if (!cacheApiOk) throw new Error("cache storage unavailable");
     const cache      = await caches.open(cacheKey);
     const cachedData = await cache.match(WORKER_URL + "/desc-embeddings");
     const cachedVer  = await cache.match(WORKER_URL + "/desc-embeddings-version");
@@ -267,6 +311,7 @@ async function loadCatalogCached() {
 
   // Step 4: Save to cache with current version tag
   try {
+    if (!cacheApiOk) throw new Error("cache storage unavailable");
     const cache = await caches.open(cacheKey);
     // Drop superseded caches so old catalogs don't sit on the device forever
     await caches.delete("bangle-desc-embeddings-v1");
