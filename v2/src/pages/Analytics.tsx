@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { Order } from '../types';
 import {
@@ -12,7 +13,7 @@ import {
   type BreakdownItem,
 } from '../lib/analyticsUtils';
 import { computeProductionPipeline, computeAllStagesRows, CO_STAGE_DEFS, type CoStageKey } from '../lib/coStageUtils';
-import { computeTurnaroundRows, taAvg, taMedian, taFmt, taGroup, TURNAROUND_TRACKING_SINCE, type TaGroup } from '../lib/turnaroundUtils';
+import { computeTurnaroundRows, taAvg, taMedian, taFmt, taGroup, TURNAROUND_TRACKING_SINCE, type TaGroup, type TurnaroundRow } from '../lib/turnaroundUtils';
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
@@ -150,14 +151,16 @@ function AllStagesView({ orders }: { orders: Order[] }) {
 // How long each dispatched design/variety row actually took from order
 // creation to dispatch, and where along the way the time went.
 
-function TaBarList({ groups, barColor }: { groups: TaGroup[]; barColor: string }) {
+function TaBarList({ groups, barColor, onBarClick, activeKey }: { groups: TaGroup[]; barColor: string; onBarClick?: (key: string) => void; activeKey?: string | null }) {
   if (!groups.length) return <p className="text-xs text-white/30 text-center py-3">Not enough dispatched data yet.</p>;
   const max = Math.max(...groups.map(g => g.avg), 0.01);
   return (
     <div className="space-y-2">
       {groups.map(g => (
-        <div key={g.key} className="flex items-center gap-3">
-          <span className="text-xs text-white/60 w-28 flex-shrink-0 truncate" title={`${g.key} — ${g.n} row${g.n !== 1 ? 's' : ''}`}>{g.key}</span>
+        <div key={g.key}
+          onClick={() => onBarClick?.(g.key)}
+          className={`flex items-center gap-3 ${onBarClick ? 'cursor-pointer rounded-lg -mx-1 px-1 py-0.5 transition-colors' : ''} ${activeKey === g.key ? 'bg-white/10' : onBarClick ? 'hover:bg-white/5' : ''}`}>
+          <span className="text-xs text-white/60 w-28 flex-shrink-0 truncate" title={`${g.key} — ${g.n} row${g.n !== 1 ? 's' : ''} — click to see rows`}>{g.key}</span>
           <div className="flex-1 h-5 bg-white/10 rounded overflow-hidden">
             <div className="h-full flex items-center px-2 text-[10px] font-semibold text-white whitespace-nowrap"
               style={{ width: `${Math.round(g.avg / max * 100)}%`, background: barColor }}>
@@ -170,8 +173,51 @@ function TaBarList({ groups, barColor }: { groups: TaGroup[]; barColor: string }
   );
 }
 
+// ─── Turnaround drilldown panel — mirrors Phase 1's showTurnaroundDrilldown ──
+// Click a bar in any of the ranked lists above to see exactly which dispatched
+// rows make up that average, ranked slowest-first, click a row to jump to it.
+
+type TaDimension = 'client' | 'code' | 'pipeVendor' | 'karigar' | 'platingVendor';
+const TA_DAY_FIELD: Record<TaDimension, keyof TurnaroundRow> = {
+  pipeVendor: 'pipeDays', karigar: 'karigarDays', platingVendor: 'platingDays', client: 'totalDays', code: 'totalDays',
+};
+
+function TaDrilldownPanel({ rows, dim, dimKey, onClose }: { rows: TurnaroundRow[]; dim: TaDimension; dimKey: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const dayField = TA_DAY_FIELD[dim];
+  const matched = rows.filter(r => r[dim] === dimKey);
+  const sorted = [...matched].sort((a, b) => (Number(b[dayField]) || 0) - (Number(a[dayField]) || 0));
+
+  return (
+    <div className="mt-4 bg-white/5 border border-[#534AB7]/40 rounded-xl p-4 max-h-[50vh] overflow-y-auto">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-semibold text-white">{dimKey} — {sorted.length} row{sorted.length !== 1 ? 's' : ''}</span>
+        <button onClick={onClose} className="ml-auto text-white/40 hover:text-white text-sm leading-none">✕</button>
+      </div>
+      <div className="divide-y divide-white/5">
+        {sorted.map((r, i) => (
+          <div key={i}
+            onClick={() => navigate(`/orders?focus=${r.orderDbId}`)}
+            className="flex items-center gap-3 py-2 px-1 cursor-pointer rounded hover:bg-white/5 transition-colors">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-[#a89fff] truncate">{r.code} <span className="font-normal text-white/60">· {r.client}</span></p>
+              {r.orderLabel && <p className="text-[10px] text-white/30">{r.orderLabel}</p>}
+            </div>
+            <span className="text-xs font-semibold text-red-400 whitespace-nowrap">{taFmt(Number(r[dayField]))}</span>
+            <span className="text-[10px] text-[#a89fff] flex-shrink-0">→</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TurnaroundSection({ orders }: { orders: Order[] }) {
   const rows = useMemo(() => computeTurnaroundRows(orders), [orders]);
+  const [drilldown, setDrilldown] = useState<{ dim: TaDimension; key: string } | null>(null);
+  function toggleDrilldown(dim: TaDimension, key: string) {
+    setDrilldown(d => (d && d.dim === dim && d.key === key) ? null : { dim, key });
+  }
 
   if (!rows.length) {
     return (
@@ -249,15 +295,32 @@ function TurnaroundSection({ orders }: { orders: Order[] }) {
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card title="Slowest Clients" subtitle="Top 8 by average total turnaround"><TaBarList groups={byClient} barColor="#534AB7" /></Card>
-        <Card title="Slowest Design Codes" subtitle="Top 8 by average total turnaround"><TaBarList groups={byCode} barColor="#0F6E56" /></Card>
+        <Card title="Slowest Clients" subtitle="Top 8 by average total turnaround · click to see rows">
+          <TaBarList groups={byClient} barColor="#534AB7" onBarClick={k => toggleDrilldown('client', k)} activeKey={drilldown?.dim === 'client' ? drilldown.key : null} />
+        </Card>
+        <Card title="Slowest Design Codes" subtitle="Top 8 by average total turnaround · click to see rows">
+          <TaBarList groups={byCode} barColor="#0F6E56" onBarClick={k => toggleDrilldown('code', k)} activeKey={drilldown?.dim === 'code' ? drilldown.key : null} />
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card title="By Pipe Vendor"><TaBarList groups={byPipeVendor} barColor="#1565C0" /><p className="text-[10px] text-white/25 mt-2">Vendors with fewer than 3 dispatched rows aren't ranked yet.</p></Card>
-        <Card title="By Karigar"><TaBarList groups={byKarigar} barColor="#4A148C" /><p className="text-[10px] text-white/25 mt-2">Vendors with fewer than 3 dispatched rows aren't ranked yet.</p></Card>
-        <Card title="By Plating Vendor"><TaBarList groups={byPlatingVendor} barColor="#BF360C" /><p className="text-[10px] text-white/25 mt-2">Vendors with fewer than 3 dispatched rows aren't ranked yet.</p></Card>
-      </div>
+      <Card title="Vendor performance" subtitle="Average days per stage, slowest first · click a vendor to see affected orders">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-[11px] font-bold text-[#1565C0] uppercase tracking-wide mb-1.5">🔩 Pipe vendors</p>
+            <TaBarList groups={byPipeVendor} barColor="#1565C0" onBarClick={k => toggleDrilldown('pipeVendor', k)} activeKey={drilldown?.dim === 'pipeVendor' ? drilldown.key : null} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-[#4A148C] uppercase tracking-wide mb-1.5">🛠️ Karigars</p>
+            <TaBarList groups={byKarigar} barColor="#4A148C" onBarClick={k => toggleDrilldown('karigar', k)} activeKey={drilldown?.dim === 'karigar' ? drilldown.key : null} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-[#BF360C] uppercase tracking-wide mb-1.5">🪙 Plating vendors</p>
+            <TaBarList groups={byPlatingVendor} barColor="#BF360C" onBarClick={k => toggleDrilldown('platingVendor', k)} activeKey={drilldown?.dim === 'platingVendor' ? drilldown.key : null} />
+          </div>
+        </div>
+        <p className="text-[10px] text-white/25 mt-2">Vendors with fewer than 3 dispatched rows aren't ranked yet.</p>
+        {drilldown && <TaDrilldownPanel rows={rows} dim={drilldown.dim} dimKey={drilldown.key} onClose={() => setDrilldown(null)} />}
+      </Card>
 
       <Card title="Monthly Trend" subtitle="Average total days per dispatch month">
         {monthKeys.length <= 1 ? (

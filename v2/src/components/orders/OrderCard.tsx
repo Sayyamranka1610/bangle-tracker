@@ -15,6 +15,7 @@ interface Props {
   dcodes: string[];
   vendorOrders: VendorOrder[];
   archivedView?: boolean;
+  autoExpand?: boolean;
   onUpdate: (updated: Order) => void;
   onEdit: (order: Order) => void;
   onDelete: (order: Order) => void;
@@ -28,9 +29,9 @@ const priorityColors: Record<string, string> = {
 };
 
 export default function OrderCard({
-  order, canEdit, dnames, dcodes, vendorOrders, archivedView, onUpdate, onEdit, onDelete, onArchive, onRestore, onDuplicate,
+  order, canEdit, dnames, dcodes, vendorOrders, archivedView, autoExpand, onUpdate, onEdit, onDelete, onArchive, onRestore, onDuplicate,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!!autoExpand);
   const [activeTab, setActiveTab] = useState<Tab>('designs');
 
   const status = archivedView ? 'archived' : orderStatus(order); // 'done' | 'pending' | 'archived'
@@ -122,7 +123,7 @@ export default function OrderCard({
       : { label: 'Pending', color: 'text-red-300', bg: 'bg-red-500/15' };
 
   return (
-    <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-[#534AB7]/50' : 'border-white/10'} ${archivedView ? 'opacity-80' : ''}`}>
+    <div id={`oc-${order.id}`} className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-[#534AB7]/50' : 'border-white/10'} ${archivedView ? 'opacity-80' : ''}`}>
       {/* ── Card header ── */}
       <button
         onClick={() => setExpanded(e => !e)}

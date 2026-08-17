@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { Order, AppData } from '../types';
 import { computeStats, renumberOrders } from '../lib/orderUtils';
@@ -26,6 +27,13 @@ export default function Orders() {
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [saving, setSaving]           = useState(false);
 
+  // ── Jump-to-order from Analytics turnaround drilldown (?focus=<orderId>) ─────
+  // Mirrors Phase 1's goToOrderFromAnalytics: switch to the right view/client,
+  // then auto-expand and scroll to that specific order card.
+  const [searchParams] = useSearchParams();
+  const [focusOrderId] = useState<string | null>(() => searchParams.get('focus'));
+  const focusAppliedRef = useRef(false);
+
   const stats  = useMemo(() => computeStats(allOrders), [allOrders]);
   const clients = useMemo(() => data.vocabulary?.clients ?? [], [data.vocabulary]);
   const dnames  = useMemo(() => data.vocabulary?.dnames  ?? [], [data.vocabulary]);
@@ -46,6 +54,28 @@ export default function Orders() {
   const clientNames = useMemo(() => [...clientMap.keys()].sort(), [clientMap]);
 
   const effectiveClient = clientMap.has(selectedClient) ? selectedClient : (clientNames[0] ?? '');
+
+  // Apply the focus target once its order is available: route to the Archived
+  // tab if that order was archived (otherwise it wouldn't appear in the
+  // default Active list and the scroll-to would fail silently).
+  useEffect(() => {
+    if (!focusOrderId || focusAppliedRef.current) return;
+    const order = allOrders.find(o => o.id === focusOrderId);
+    if (!order) return;
+    focusAppliedRef.current = true;
+    setViewMode(order.archived ? 'archived' : 'active');
+    if (!order.archived) setSelectedClient(order.client);
+    setSearch('');
+    setStatusFilter('');
+  }, [focusOrderId, allOrders]);
+
+  useEffect(() => {
+    if (!focusOrderId || !focusAppliedRef.current) return;
+    const t = setTimeout(() => {
+      document.getElementById(`oc-${focusOrderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [focusOrderId, viewMode, effectiveClient]);
 
   const q = search.trim().toLowerCase();
   const isGlobalSearch = q.length > 0;
@@ -311,6 +341,7 @@ export default function Orders() {
                     dcodes={dcodes}
                     vendorOrders={vendorOrders}
                     archivedView={viewMode === 'archived'}
+                    autoExpand={order.id === focusOrderId}
                     onUpdate={handleUpdate}
                     onEdit={o => setModalOrder(o)}
                     onDelete={o => setDeleteTarget(o)}
