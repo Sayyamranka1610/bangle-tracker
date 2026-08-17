@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 
 export default function Login() {
-  const { login, showToast } = useApp();
+  const { login, devLogin, showToast } = useApp();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -69,6 +69,16 @@ export default function Login() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        {import.meta.env.DEV && (
+          <button
+            type="button"
+            onClick={() => { devLogin(); navigate('/orders', { replace: true }); }}
+            className="w-full mt-3 text-xs text-white/40 hover:text-white/70 underline text-center"
+          >
+            Skip login (dev preview only — read-only)
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1,13 +1,15 @@
 import type { AuditEntry } from '../types';
-import { db, PATHS } from './firebase';
 
-// Mirrors Phase 1 audit() — appends to appData.auditLog, caps at 500 entries
-export async function writeAudit(
+// Mirrors Phase 1 audit() — prepends an entry, caps at 500.
+// Pure — the caller merges the result into a single saveAppData() call so the
+// whole appData envelope (orders + auditLog + vocabulary, ...) is written
+// atomically, exactly like Phase 1's single fbPush() per action.
+export function buildAuditLog(
   action: string,
   detail: string,
   username: string,
   currentLog: AuditEntry[],
-): Promise<void> {
+): AuditEntry[] {
   const entry: AuditEntry = {
     id: crypto.randomUUID(),
     ts: new Date().toISOString(),
@@ -15,10 +17,5 @@ export async function writeAudit(
     detail,
     user: username,
   };
-  const next = [entry, ...currentLog].slice(0, 500);
-  try {
-    await db.set(`${PATHS.appData}/auditLog`, next);
-  } catch {
-    // audit failure is non-fatal
-  }
+  return [entry, ...currentLog].slice(0, 500);
 }

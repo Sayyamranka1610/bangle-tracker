@@ -1,8 +1,8 @@
 import type { Order, Vocabulary } from '../types';
-import { db, PATHS } from './firebase';
 
 // Mirrors Phase 1 rebuildVocab() — re-derives vocabulary from all orders,
-// merges with manual entries, and persists.
+// merges with manual entries. Pure — the caller merges the result into a
+// single saveAppData() call alongside the orders it was derived from.
 export function rebuildVocab(orders: Order[], manual: Vocabulary): Vocabulary {
   const clients  = new Set<string>(manual.clients ?? []);
   const dnames   = new Set<string>(manual.dnames  ?? []);
@@ -27,12 +27,4 @@ export function rebuildVocab(orders: Order[], manual: Vocabulary): Vocabulary {
     vendors:  [...vendors].sort(),
     units:    manual.units ?? ['pcs', 'pairs', 'jotta'],
   };
-}
-
-export async function saveVocab(vocab: Vocabulary): Promise<void> {
-  try {
-    await db.set(`${PATHS.appData}/vocabulary`, vocab);
-  } catch {
-    // vocab save failure is non-fatal
-  }
 }

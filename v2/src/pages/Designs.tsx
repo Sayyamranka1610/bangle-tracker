@@ -2,11 +2,10 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../store/AppContext';
 import type { Order, DesignStage } from '../types';
 import { buildCodeMap } from '../lib/designUtils';
-import { db, PATHS } from '../lib/firebase';
 import DesignGroupCard from '../components/designs/DesignGroupCard';
 
 export default function Designs() {
-  const { state, showToast } = useApp();
+  const { state, showToast, saveAppData } = useApp();
   const { data, session, hasLock } = state;
 
   const orders: Order[] = useMemo(() => data.orders ?? [], [data.orders]);
@@ -65,7 +64,7 @@ export default function Designs() {
 
     setSaving(true);
     try {
-      await db.set(`${PATHS.appData}/orders`, nextOrders);
+      await saveAppData({ orders: nextOrders });
       showToast('Stage updated', 'success');
     } catch {
       showToast('Failed to save — check your connection', 'error');

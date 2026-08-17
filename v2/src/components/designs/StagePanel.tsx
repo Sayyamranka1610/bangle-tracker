@@ -55,8 +55,8 @@ export default function StagePanel({ design, order: _order, canEdit, onStageUpda
     if (groupStages.length > 0) {
       const firstQty = groupStages[0].qty!;
       const rejection = firstQty - qty;
-      if (Math.abs(rejection) > 0 && editing.stageNote.trim().length < 5) {
-        setError(`Quantities differ from first stage (${firstQty} pcs vs ${qty} pcs). A reason is required (min 5 characters).`);
+      if (Math.abs(rejection) > 0 && editing.stageNote.trim().length < 3) {
+        setError(`Quantities differ from first stage (${firstQty} pcs vs ${qty} pcs). A reason is required (min 3 characters).`);
         return;
       }
     }

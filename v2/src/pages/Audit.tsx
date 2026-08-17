@@ -21,6 +21,8 @@ const ACTION_COLORS: Record<string, { bg: string; text: string }> = {
   'Backup':         { bg: 'bg-white/10',       text: 'text-white/60' },
   'Restore':        { bg: 'bg-orange-500/15', text: 'text-orange-400' },
   'Add stage':      { bg: 'bg-purple-500/15', text: 'text-purple-400' },
+  'Archive order':  { bg: 'bg-white/10',       text: 'text-white/60' },
+  'Restore order':  { bg: 'bg-orange-500/15', text: 'text-orange-400' },
 };
 
 function actionStyle(action: string) {

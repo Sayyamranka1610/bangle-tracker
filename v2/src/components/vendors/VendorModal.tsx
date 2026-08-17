@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import type { VendorOrder, Priority, VendorStatus } from '../../types';
+import type { VendorOrder, Priority, VendorStatus, VendorOrderType } from '../../types';
 import { ALL_STATUSES, STATUS_LABELS, genVendorOrderId } from '../../lib/vendorUtils';
 
 interface Props {
@@ -22,6 +22,7 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
   const isEdit = order !== null;
 
   const [vendor, setVendor]           = useState(order?.vendor ?? '');
+  const [type, setType]               = useState<VendorOrderType>(order?.type ?? 'karigar');
   const [startDate, setStartDate]     = useState(order?.startDate ?? todayStr());
   const [deliveryDate, setDeliveryDate] = useState(order?.deliveryDate ?? '');
   const [priority, setPriority]       = useState<Priority>(order?.priority ?? 'normal');
@@ -50,6 +51,7 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
         designs: [],
       }),
       vendor: vendor.trim(),
+      type,
       startDate,
       deliveryDate: deliveryDate || undefined,
       priority,
@@ -94,6 +96,20 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
                 ))}
               </ul>
             )}
+          </div>
+
+          {/* Order type */}
+          <div>
+            <label className="block text-xs text-white/60 mb-1">Order type</label>
+            <select
+              value={type}
+              onChange={e => setType(e.target.value as VendorOrderType)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm"
+            >
+              <option value="karigar">🛠️ Karigar</option>
+              <option value="pipe">🔩 Pipe</option>
+              <option value="plating">🪙 Plating</option>
+            </select>
           </div>
 
           {/* Dates */}

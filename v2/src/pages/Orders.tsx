@@ -1,76 +1,97 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../store/AppContext';
-import type { Order } from '../types';
-import { orderAlert, computeStats, renumberOrders } from '../lib/orderUtils';
-import { db, PATHS } from '../lib/firebase';
-import { writeAudit } from '../lib/auditUtils';
-import { rebuildVocab, saveVocab } from '../lib/vocabUtils';
-import { syncInventoryForOrder } from '../lib/inventoryAutoSync';
+import type { Order, AppData } from '../types';
+import { computeStats, renumberOrders } from '../lib/orderUtils';
+import { orderStatus } from '../lib/coStageUtils';
+import { buildAuditLog } from '../lib/auditUtils';
+import { rebuildVocab } from '../lib/vocabUtils';
+import { uid } from '../lib/orderUtils';
 import StatCards from '../components/orders/StatCards';
 import OrderCard from '../components/orders/OrderCard';
 import OrderModal from '../components/orders/OrderModal';
 
-type FilterKey = 'all' | 'ok' | 'warn' | 'late' | 'done';
-
 export default function Orders() {
-  const { state, showToast } = useApp();
+  const { state, showToast, saveAppData } = useApp();
   const { data, session, hasLock } = state;
 
-  const orders: Order[]    = useMemo(() => data.orders    ?? [], [data.orders]);
+  const allOrders: Order[] = useMemo(() => data.orders ?? [], [data.orders]);
+  const vendorOrders = data.vendorOrders ?? [];
   const canEdit = session?.role === 'owner' && hasLock;
 
-  const [filter, setFilter]           = useState<FilterKey>('all');
+  const [viewMode, setViewMode]       = useState<'active' | 'archived'>('active');
+  const [statusFilter, setStatusFilter] = useState<'' | 'pending' | 'done'>('');
   const [search, setSearch]           = useState('');
+  const [selectedClient, setSelectedClient] = useState<string>('');
   const [modalOrder, setModalOrder]   = useState<Order | null | undefined>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [saving, setSaving]           = useState(false);
 
-  const stats  = useMemo(() => computeStats(orders), [orders]);
+  const stats  = useMemo(() => computeStats(allOrders), [allOrders]);
   const clients = useMemo(() => data.vocabulary?.clients ?? [], [data.vocabulary]);
   const dnames  = useMemo(() => data.vocabulary?.dnames  ?? [], [data.vocabulary]);
   const dcodes  = useMemo(() => data.vocabulary?.dcodes  ?? [], [data.vocabulary]);
 
-  const filtered = useMemo(() => {
-    let list = orders;
-    if (filter !== 'all') list = list.filter(o => orderAlert(o) === filter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(o =>
-        o.client.toLowerCase().includes(q) ||
-        o.orderId.toLowerCase().includes(q) ||
-        o.notes?.toLowerCase().includes(q) ||
-        o.designs.some(d => d.name.toLowerCase().includes(q) || d.code?.toLowerCase().includes(q)),
-      );
-    }
-    return [...list].sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
-  }, [orders, filter, search]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Order[]>();
-    filtered.forEach(o => {
-      const key = o.client || '(unknown)';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(o);
+  // ── Client sidebar (active, non-archived orders only) — mirrors Phase 1 ──────
+  const clientMap = useMemo(() => {
+    const map = new Map<string, { orders: Order[]; done: number; pending: number }>();
+    allOrders.forEach(o => {
+      if (o.archived) return;
+      if (!map.has(o.client)) map.set(o.client, { orders: [], done: 0, pending: 0 });
+      const cd = map.get(o.client)!;
+      cd.orders.push(o);
+      orderStatus(o) === 'done' ? cd.done++ : cd.pending++;
     });
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [filtered]);
+    return map;
+  }, [allOrders]);
+  const clientNames = useMemo(() => [...clientMap.keys()].sort(), [clientMap]);
+
+  const effectiveClient = clientMap.has(selectedClient) ? selectedClient : (clientNames[0] ?? '');
+
+  const q = search.trim().toLowerCase();
+  const isGlobalSearch = q.length > 0;
+  const archivedCount = allOrders.filter(o => o.archived).length;
+  const completedUnarchivedCount = allOrders.filter(o => !o.archived && orderStatus(o) === 'done').length;
+
+  // ── Which orders are visible right now ────────────────────────────────────────
+  const { visibleOrders, sectionTitle, sectionMeta } = useMemo(() => {
+    let list: Order[];
+    let title = '';
+    let meta = '';
+    if (viewMode === 'archived') {
+      list = allOrders.filter(o => o.archived);
+      if (q) list = list.filter(o => matchesSearch(o, q));
+      title = '📦 Archived orders';
+      meta = `${list.length} order${list.length !== 1 ? 's' : ''} · hidden from active view, still counted in analytics`;
+    } else if (isGlobalSearch) {
+      list = allOrders.filter(o => !o.archived && matchesSearch(o, q));
+      if (statusFilter) list = list.filter(o => orderStatus(o) === statusFilter);
+      title = `🔍 Results for "${search}"`;
+      meta = `${list.length} order${list.length !== 1 ? 's' : ''} across all clients`;
+    } else {
+      const cd = clientMap.get(effectiveClient) ?? { orders: [], done: 0, pending: 0 };
+      list = [...cd.orders];
+      if (statusFilter) list = list.filter(o => orderStatus(o) === statusFilter);
+      title = effectiveClient ? `👤 ${effectiveClient}` : '';
+      meta = `${cd.orders.length} order${cd.orders.length !== 1 ? 's' : ''} · ${cd.pending} pending · ${cd.done} completed`;
+    }
+    return { visibleOrders: [...list].sort((a, b) => a.startDate < b.startDate ? -1 : 1), sectionTitle: title, sectionMeta: meta };
+  }, [viewMode, allOrders, q, isGlobalSearch, statusFilter, clientMap, effectiveClient, search]);
 
   // ── Persist helpers ──────────────────────────────────────────────────────────
-  async function persistOrders(next: Order[], auditAction?: string, auditDetail?: string) {
+  // Structural changes (create/delete/archive) push immediately, like Phase 1's
+  // fbPushNow() — they can't wait behind the normal 2s debounce.
+  async function persistOrders(next: Order[], auditAction?: string, auditDetail?: string, immediate = true) {
     const numbered = renumberOrders(next);
+    const patch: Partial<AppData> = {
+      orders: numbered,
+      vocabulary: rebuildVocab(numbered, data.vocabularyManual ?? {}),
+    };
+    if (auditAction && session?.username) {
+      patch.auditLog = buildAuditLog(auditAction, auditDetail ?? '', session.username, data.auditLog ?? []);
+    }
     setSaving(true);
     try {
-      await db.set(`${PATHS.appData}/orders`, numbered);
-
-      // Audit
-      if (auditAction && session?.username) {
-        await writeAudit(auditAction, auditDetail ?? '', session.username, data.auditLog ?? []);
-      }
-
-      // Vocabulary rebuild
-      const vocab = rebuildVocab(numbered, data.vocabularyManual ?? {});
-      await saveVocab(vocab);
-
+      await saveAppData(patch, { immediate });
     } catch {
       showToast('Failed to save — check your connection', 'error');
     } finally {
@@ -80,47 +101,38 @@ export default function Orders() {
 
   // ── Order-level CRUD ─────────────────────────────────────────────────────────
   async function handleSave(saved: Order) {
-    const exists = orders.some(o => o.id === saved.id);
-    const next = exists ? orders.map(o => o.id === saved.id ? saved : o) : [saved, ...orders];
+    const exists = allOrders.some(o => o.id === saved.id);
+    const next = exists ? allOrders.map(o => o.id === saved.id ? saved : o) : [saved, ...allOrders];
     setModalOrder(undefined);
     showToast(exists ? 'Order updated' : 'Order created', 'success');
     const action = exists ? 'Edit order' : 'Create order';
     const detail = exists
       ? `Order ${saved.orderId} updated`
       : `New order for ${saved.client} (${saved.bangleType}) with ${saved.designs.length} design(s)`;
+    if (!exists) setSelectedClient(saved.client);
     await persistOrders(next, action, detail);
   }
 
-  // ── Inline order update (from expanded card — details/designs/stages tabs) ───
+  // ── Inline order update (from expanded card — details/designs/vendor tabs) ───
   async function handleUpdate(updated: Order) {
-    const prev = orders.find(o => o.id === updated.id);
-    const next = orders.map(o => o.id === updated.id ? updated : o);
+    const prev = allOrders.find(o => o.id === updated.id);
+    const next = allOrders.map(o => o.id === updated.id ? updated : o);
 
-    // Auto-sync inventory from any stage changes
-    const orderIndex = next.findIndex(o => o.id === updated.id);
-    const syncedLedger = syncInventoryForOrder(next, orderIndex, data.invLedger ?? []);
-    const hasLedgerChange = syncedLedger.length !== (data.invLedger ?? []).length;
+    const patch: Partial<AppData> = {
+      orders: renumberOrders(next),
+      vocabulary: rebuildVocab(next, data.vocabularyManual ?? {}),
+    };
+    if (session?.username) {
+      let auditDetail = `Order ${updated.orderId}`;
+      if (prev && prev.client !== updated.client) auditDetail += `: client changed`;
+      else if (prev && JSON.stringify(prev.designs) !== JSON.stringify(updated.designs)) auditDetail += `: designs/stages updated`;
+      patch.auditLog = buildAuditLog('Edit order', auditDetail, session.username, data.auditLog ?? []);
+    }
 
     setSaving(true);
     try {
-      await db.set(`${PATHS.appData}/orders`, renumberOrders(next));
-
-      if (hasLedgerChange) {
-        await db.set(`${PATHS.appData}/invLedger`, syncedLedger);
-      }
-
-      if (session?.username) {
-        // Determine what changed for audit
-        let auditDetail = `Order ${updated.orderId}`;
-        if (prev && prev.client !== updated.client) auditDetail += `: client changed`;
-        else if (prev && JSON.stringify(prev.designs) !== JSON.stringify(updated.designs)) auditDetail += `: designs/stages updated`;
-
-        await writeAudit('Edit order', auditDetail, session.username, data.auditLog ?? []);
-      }
-
-      const vocab = rebuildVocab(next, data.vocabularyManual ?? {});
-      await saveVocab(vocab);
-
+      // Inline field edits can debounce (2s) like Phase 1's fbSchedulePush.
+      await saveAppData(patch);
     } catch {
       showToast('Failed to save — check your connection', 'error');
     } finally {
@@ -130,21 +142,68 @@ export default function Orders() {
 
   async function handleDelete() {
     if (!deleteTarget) return;
-    const next = orders.filter(o => o.id !== deleteTarget.id);
+    const next = allOrders.filter(o => o.id !== deleteTarget.id);
     const detail = `Order ${deleteTarget.orderId} (${deleteTarget.client}) deleted`;
     setDeleteTarget(null);
     showToast(`Deleted ${deleteTarget.orderId}`, 'info');
     await persistOrders(next, 'Delete order', detail);
   }
 
+  // ── Archive / Restore / Duplicate (mirrors Phase 1 exactly) ──────────────────
+  async function handleArchive(order: Order) {
+    if (orderStatus(order) !== 'done' && !confirm('This order is not completed yet. Do you still want to archive it?')) return;
+    const next = allOrders.map(o => o.id === order.id ? { ...o, archived: true, archivedAt: Date.now() } : o);
+    showToast(`📦 ${order.orderId} archived — still counted in analytics`, 'success');
+    await persistOrders(next, 'Archive order', `Order ${order.orderId} (${order.client}) archived`);
+  }
+
+  async function handleRestore(order: Order) {
+    const next = allOrders.map(o => o.id === order.id ? { ...o, archived: false, archivedAt: undefined } : o);
+    setViewMode('active');
+    showToast(`↩ ${order.orderId} restored to active orders`, 'success');
+    await persistOrders(next, 'Restore order', `Order ${order.orderId} (${order.client}) restored from archive`);
+  }
+
+  async function handleArchiveAllCompleted() {
+    const targets = allOrders.filter(o => !o.archived && orderStatus(o) === 'done');
+    if (!targets.length) { showToast('No completed orders to archive.', 'info'); return; }
+    if (!confirm(`Archive ${targets.length} completed order${targets.length !== 1 ? 's' : ''}?\n\nThey'll be hidden from the active view but kept for analytics. You can restore any of them later from the Archived tab.`)) return;
+    const now = Date.now();
+    const targetIds = new Set(targets.map(o => o.id));
+    const next = allOrders.map(o => targetIds.has(o.id) ? { ...o, archived: true, archivedAt: now } : o);
+    showToast(`📦 ${targets.length} order${targets.length !== 1 ? 's' : ''} archived`, 'success');
+    await persistOrders(next, 'Archive order', `Bulk-archived ${targets.length} completed order(s)`);
+  }
+
+  async function handleDuplicate(order: Order) {
+    const copy: Order = {
+      ...JSON.parse(JSON.stringify(order)),
+      id: uid(),
+      orderId: '',
+      createdAt: new Date().toISOString(),
+      archived: false,
+      archivedAt: undefined,
+    };
+    const next = [copy, ...allOrders];
+    showToast(`Duplicated as new order for ${copy.client}`, 'success');
+    await persistOrders(next, 'Create order', `Order duplicated from ${order.orderId} for ${copy.client}`);
+  }
+
+  function selectClient(name: string) {
+    setSelectedClient(name);
+    setSearch('');
+    setStatusFilter('');
+    setViewMode('active');
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Orders</h1>
-          <p className="text-sm text-white/40 mt-0.5">{orders.length} total order{orders.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-white/40 mt-0.5">{stats.total} active order{stats.total !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-3">
           {saving && <span className="text-xs text-yellow-300 animate-pulse">Saving…</span>}
@@ -163,46 +222,106 @@ export default function Orders() {
         </div>
       </div>
 
-      <StatCards stats={stats} activeFilter={filter} onFilter={f => setFilter(f as FilterKey)} />
+      <StatCards stats={stats} activeFilter={viewMode === 'archived' ? 'archived' : (statusFilter || 'all')}
+        onFilter={f => {
+          if (f === 'archived') { setViewMode('archived'); return; }
+          setViewMode('active');
+          setStatusFilter(f === 'all' ? '' : (f as 'pending' | 'done'));
+        }} />
 
-      <div className="mb-4">
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search by client, order ID, design name or code…"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm" />
-      </div>
-
-      {filtered.length === 0 ? (
+      {allOrders.length === 0 ? (
         <div className="text-center py-16 text-white/30">
-          {orders.length === 0
-            ? canEdit ? 'No orders yet — click "New Order" to create one.' : 'No orders yet.'
-            : 'No orders match your filter.'}
+          {canEdit ? 'No orders yet — click "New Order" to create one.' : 'No orders yet.'}
         </div>
       ) : (
-        <div className="space-y-6">
-          {grouped.map(([clientName, clientOrders]) => (
-            <div key={clientName}>
-              <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-2 px-1">
-                {clientName}
-                <span className="ml-2 text-white/30 font-normal normal-case">
-                  {clientOrders.length} order{clientOrders.length !== 1 ? 's' : ''}
-                </span>
-              </h2>
+        <div className="flex gap-5">
+          {/* ── Client sidebar ── */}
+          <div className="w-56 shrink-0 border border-white/10 rounded-xl overflow-hidden self-start">
+            <div className="px-3 py-2 text-xs font-semibold text-white/40 uppercase tracking-wider bg-white/5 border-b border-white/10">
+              Clients ({clientNames.length})
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto">
+              {clientNames.map(name => {
+                const cd = clientMap.get(name)!;
+                const active = !isGlobalSearch && viewMode === 'active' && name === effectiveClient;
+                return (
+                  <button key={name} onClick={() => selectClient(name)}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-white/5 transition-colors ${
+                      active ? 'bg-[#534AB7]/20 text-white' : 'text-white/60 hover:bg-white/5 hover:text-white'
+                    }`}>
+                    <span className="truncate">👤 {name}</span>
+                    <span className="flex items-center gap-1 text-[10px] shrink-0">
+                      {cd.done > 0 && <span className="text-green-400 font-semibold">{cd.done}●</span>}
+                      {cd.pending > 0 && <span className="text-red-400 font-semibold">{cd.pending}●</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Main panel ── */}
+          <div className="flex-1 min-w-0">
+            {/* Top bar */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search client, order ID, design code…"
+                className="flex-1 min-w-[200px] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm" />
+              <button onClick={() => setStatusFilter('')}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${!statusFilter ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}>All</button>
+              <button onClick={() => setStatusFilter('pending')}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${statusFilter === 'pending' ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}>🔴 Pending</button>
+              <button onClick={() => setStatusFilter('done')}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${statusFilter === 'done' ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}>✅ Completed</button>
+              <div className="flex items-center gap-1 ml-auto bg-white/5 rounded-lg p-0.5">
+                <button onClick={() => setViewMode('active')}
+                  className={`text-xs px-3 py-1.5 rounded-md transition-colors ${viewMode === 'active' ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'}`}>Active</button>
+                <button onClick={() => setViewMode('archived')}
+                  className={`text-xs px-3 py-1.5 rounded-md transition-colors ${viewMode === 'archived' ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'}`}>📦 Archived ({archivedCount})</button>
+              </div>
+              {viewMode === 'active' && canEdit && (
+                <button onClick={handleArchiveAllCompleted} disabled={!completedUnarchivedCount}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-white/5 text-white/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  📦 Archive completed ({completedUnarchivedCount})
+                </button>
+              )}
+            </div>
+
+            {/* Section header */}
+            {sectionTitle && (
+              <div className="mb-3">
+                <p className="text-white font-semibold">{sectionTitle}</p>
+                <p className="text-xs text-white/40">{sectionMeta}</p>
+              </div>
+            )}
+
+            {/* Cards */}
+            {visibleOrders.length === 0 ? (
+              <div className="text-center py-16 text-white/30">
+                {viewMode === 'archived' ? 'No archived orders.' : q ? `No orders found for "${search}"` : 'No orders for this client'}
+              </div>
+            ) : (
               <div className="space-y-2">
-                {clientOrders.map(order => (
+                {visibleOrders.map(order => (
                   <OrderCard
                     key={order.id}
                     order={order}
                     canEdit={canEdit}
                     dnames={dnames}
                     dcodes={dcodes}
+                    vendorOrders={vendorOrders}
+                    archivedView={viewMode === 'archived'}
                     onUpdate={handleUpdate}
                     onEdit={o => setModalOrder(o)}
                     onDelete={o => setDeleteTarget(o)}
+                    onArchive={handleArchive}
+                    onRestore={handleRestore}
+                    onDuplicate={handleDuplicate}
                   />
                 ))}
               </div>
-            </div>
-          ))}
+            )}
+          </div>
         </div>
       )}
 
@@ -238,3 +357,13 @@ export default function Orders() {
     </div>
   );
 }
+
+function matchesSearch(o: Order, q: string): boolean {
+  return (
+    o.orderId.toLowerCase().includes(q) ||
+    o.client.toLowerCase().includes(q) ||
+    (o.notes ?? '').toLowerCase().includes(q) ||
+    o.designs.some(d => (d.code ?? '').toLowerCase().includes(q) || d.name.toLowerCase().includes(q))
+  );
+}
+

@@ -1,22 +1,122 @@
 import { useState } from 'react';
-import type { Order, EmbeddedDesign, DesignVariety } from '../../types';
+import type { Order, EmbeddedDesign, DesignVariety, DesignImage, VendorOrder, VendorPipelineFields } from '../../types';
 import { uid } from '../../lib/orderUtils';
 import { DEFAULT_SIZES } from '../../lib/designUtils';
+import { dedupedVendorsOfType, setPipeVendor, setKarigarVendor, setPlatingVendor, toggleReceived, toggleVarietyDone } from '../../lib/coStageUtils';
+import PhotoPickerModal from '../designs/PhotoPickerModal';
+
+// Small thumbnail strip + "add from library" button — shared by the design
+// header (flat/CNC images) and each variety row (dye-gold images).
+function PhotoStrip({ images, canEdit, onAdd, onRemove }: {
+  images: DesignImage[];
+  canEdit: boolean;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {images.map((img, i) => (
+        <div key={i} className="relative group flex-shrink-0">
+          <img src={img.data} alt={img.name ?? ''} className="w-8 h-8 rounded object-cover border border-white/10" />
+          {canEdit && (
+            <button onClick={() => onRemove(i)} title="Remove photo"
+              className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+          )}
+        </div>
+      ))}
+      {canEdit && (
+        <button onClick={onAdd} title="Add photo from library or upload new"
+          className="w-8 h-8 rounded border border-dashed border-white/20 text-white/40 hover:text-white hover:border-white/40 flex items-center justify-center text-sm flex-shrink-0 transition-colors">+</button>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   order: Order;
   canEdit: boolean;
   dnames: string[];
   dcodes: string[];
+  vendorOrders: VendorOrder[];
   onDesignChange: (designIndex: number, design: EmbeddedDesign) => void;
   onAddDesign: () => void;
   onRemoveDesign: (designIndex: number) => void;
 }
 
-export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignChange, onAddDesign, onRemoveDesign }: Props) {
+// Compact Pipe/Karigar/Plating assignment cell — mirrors Phase 1's _coVendorCells
+// (dropdown of vendors of that type + a "received" toggle), simplified to plain
+// React controls rather than the exact spreadsheet-cell markup.
+function VendorCell({
+  label, vendorField, receivedField, vendors, holder, onChange, canEdit,
+}: {
+  label: string;
+  vendorField: 'pipeVendor' | 'assignedVendor' | 'platingVendor';
+  receivedField: 'pipeReceived' | 'karigarReceived' | 'platingReceived';
+  vendors: string[];
+  holder: VendorPipelineFields;
+  onChange: (next: VendorPipelineFields) => void;
+  canEdit: boolean;
+}) {
+  const selected = holder[vendorField] || '';
+  const received = !!holder[receivedField];
+  const setter = vendorField === 'pipeVendor' ? setPipeVendor : vendorField === 'platingVendor' ? setPlatingVendor : setKarigarVendor;
+  const stage = vendorField === 'pipeVendor' ? 'pipe' : vendorField === 'platingVendor' ? 'plating' : 'karigar';
+
+  return (
+    <div className="flex flex-col gap-0.5 min-w-[90px]">
+      <span className="text-[9px] font-bold uppercase tracking-wide text-white/30">{label}</span>
+      <div className="flex items-center gap-1">
+        <select
+          disabled={!canEdit}
+          value={selected === '__own__' ? '__own__' : (vendors.includes(selected) ? selected : selected || '')}
+          onChange={e => onChange(setter(holder, e.target.value))}
+          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none focus:border-[#534AB7]"
+        >
+          <option value="">—</option>
+          <option value="__own__">Own</option>
+          {selected && selected !== '__own__' && !vendors.includes(selected) && <option value={selected}>{selected}</option>}
+          {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <button type="button" disabled={!canEdit}
+          onClick={() => onChange(toggleReceived(holder, stage))}
+          title={received ? `Unmark ${label.toLowerCase()} received` : `Mark ${label.toLowerCase()} received`}
+          className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${
+            received ? 'bg-green-500/20 text-green-400 border border-green-500/40' : 'bg-white/5 text-white/20 border border-white/10'
+          }`}
+        >✓</button>
+      </div>
+    </div>
+  );
+}
+
+export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrders, onDesignChange, onAddDesign, onRemoveDesign }: Props) {
+  const pipeVendors = dedupedVendorsOfType(vendorOrders, 'pipe');
+  const karigarVendors = dedupedVendorsOfType(vendorOrders, 'karigar');
+  const platingVendors = dedupedVendorsOfType(vendorOrders, 'plating');
   const [editingName, setEditingName] = useState<{ di: number; value: string } | null>(null);
   const [editingCode, setEditingCode] = useState<{ di: number; value: string } | null>(null);
   const [editingVarName, setEditingVarName] = useState<{ di: number; vi: number; value: string } | null>(null);
+  const [picker, setPicker] = useState<{ di: number; vi: number | null } | null>(null);
+
+  function attachImage(di: number, vi: number | null, image: DesignImage) {
+    const d = order.designs[di];
+    if (vi === null) {
+      onDesignChange(di, { ...d, images: [...(d.images ?? []), image] });
+    } else {
+      const varieties = d.varieties!.map((v, i) => i === vi ? { ...v, images: [...(v.images ?? []), image] } : v);
+      onDesignChange(di, { ...d, varieties });
+    }
+  }
+
+  function removeImage(di: number, vi: number | null, index: number) {
+    const d = order.designs[di];
+    if (vi === null) {
+      onDesignChange(di, { ...d, images: (d.images ?? []).filter((_, i) => i !== index) });
+    } else {
+      const varieties = d.varieties!.map((v, i) => i === vi ? { ...v, images: (v.images ?? []).filter((_, j) => j !== index) } : v);
+      onDesignChange(di, { ...d, varieties });
+    }
+  }
 
   function commitName(di: number, value: string) {
     const d = order.designs[di];
@@ -49,6 +149,12 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
     const aggSizes: Record<string, number> = {};
     szKeys.forEach(sz => { aggSizes[sz] = varieties.reduce((a, v) => a + (Number(v.sizes[sz]) || 0), 0); });
     onDesignChange(di, { ...d, varieties, sizes: aggSizes });
+  }
+
+  function updateVarietyFields(di: number, vi: number, patch: VendorPipelineFields) {
+    const d = order.designs[di];
+    const varieties = d.varieties!.map((v, i) => i === vi ? { ...v, ...patch } : v);
+    onDesignChange(di, { ...d, varieties });
   }
 
   function addVariety(di: number) {
@@ -127,16 +233,31 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
               )}
             </div>
 
+            {/* Design-level photos (flat/CNC rows use these; dye-gold rows use per-variety photos below) */}
+            <div className="px-4 py-2 border-b border-white/5">
+              <PhotoStrip
+                images={design.images ?? []}
+                canEdit={canEdit}
+                onAdd={() => setPicker({ di, vi: null })}
+                onRemove={i => removeImage(di, null, i)}
+              />
+            </div>
+
             {/* Size / variety grid */}
             <div className="p-4 overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-white/10">
                     <th className="text-left pr-3 py-1.5 text-white/40 font-normal">Variety</th>
+                    <th className="text-left px-2 py-1.5 text-white/30 font-normal">Photo</th>
                     {sizeKeys.map(sz => (
                       <th key={sz} className="text-center px-2 py-1.5 text-white/40 font-normal">{sz}</th>
                     ))}
                     <th className="text-center pl-2 py-1.5 text-[#a89fff] font-normal">Total</th>
+                    <th className="text-center px-2 py-1.5 text-white/30 font-normal">Pipe</th>
+                    <th className="text-center px-2 py-1.5 text-white/30 font-normal">Karigar</th>
+                    <th className="text-center px-2 py-1.5 text-white/30 font-normal">Plating</th>
+                    <th className="text-center px-1 py-1.5 text-white/30 font-normal">Done</th>
                     {canEdit && <th className="w-6" />}
                   </tr>
                 </thead>
@@ -161,6 +282,14 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
                             >{v.name}</span>
                           )}
                         </td>
+                        <td className="px-2 py-1.5">
+                          <PhotoStrip
+                            images={v.images ?? []}
+                            canEdit={canEdit}
+                            onAdd={() => setPicker({ di, vi })}
+                            onRemove={i => removeImage(di, vi, i)}
+                          />
+                        </td>
                         {sizeKeys.map(sz => (
                           <td key={sz} className="text-center px-1 py-1.5">
                             {canEdit ? (
@@ -175,6 +304,31 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
                           </td>
                         ))}
                         <td className="text-center pl-2 py-1.5 font-semibold text-[#a89fff]">{total}</td>
+                        <td className="px-1 py-1.5">
+                          <VendorCell label="Pipe" vendorField="pipeVendor" receivedField="pipeReceived"
+                            vendors={pipeVendors} holder={v} canEdit={canEdit}
+                            onChange={patch => updateVarietyFields(di, vi, patch)} />
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <VendorCell label="Karigar" vendorField="assignedVendor" receivedField="karigarReceived"
+                            vendors={karigarVendors} holder={v} canEdit={canEdit}
+                            onChange={patch => updateVarietyFields(di, vi, patch)} />
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <VendorCell label="Plating" vendorField="platingVendor" receivedField="platingReceived"
+                            vendors={platingVendors} holder={v} canEdit={canEdit}
+                            onChange={patch => updateVarietyFields(di, vi, patch)} />
+                        </td>
+                        <td className="text-center px-1 py-1.5">
+                          <button
+                            disabled={!canEdit}
+                            onClick={() => updateVarietyFields(di, vi, toggleVarietyDone(v))}
+                            title={v.done ? 'Undo dispatched' : 'Mark this variety dispatched'}
+                            className={`w-6 h-6 rounded text-xs font-bold flex items-center justify-center mx-auto transition-colors ${
+                              v.done ? 'bg-green-500/20 text-green-400 border border-green-500/40' : 'bg-white/5 text-white/20 border border-white/10'
+                            }`}
+                          >✓</button>
+                        </td>
                         {canEdit && (
                           <td className="pl-1 py-1.5">
                             {varieties.length > 1 && (
@@ -189,6 +343,7 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
                   {/* Totals row */}
                   <tr className="border-t border-white/10">
                     <td className="pr-3 py-1.5 text-white/30 text-xs">Total</td>
+                    <td />
                     {sizeKeys.map(sz => {
                       const t = varieties.reduce((a, v) => a + (Number(v.sizes?.[sz]) || 0), 0);
                       return <td key={sz} className="text-center px-2 py-1.5 font-semibold text-white">{t}</td>;
@@ -196,6 +351,7 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
                     <td className="text-center pl-2 py-1.5 font-bold text-[#a89fff]">
                       {varieties.reduce((a, v) => a + sizeKeys.reduce((b, sz) => b + (Number(v.sizes?.[sz]) || 0), 0), 0)}
                     </td>
+                    <td /><td /><td /><td />
                     {canEdit && <td />}
                   </tr>
                 </tbody>
@@ -217,6 +373,14 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, onDesignCha
           className="w-full py-2 border border-dashed border-white/20 rounded-xl text-white/40 hover:text-white hover:border-white/40 text-sm transition-colors">
           + Add design
         </button>
+      )}
+
+      {picker && (
+        <PhotoPickerModal
+          designCode={order.designs[picker.di]?.code ?? ''}
+          onAttach={image => attachImage(picker.di, picker.vi, image)}
+          onClose={() => setPicker(null)}
+        />
       )}
     </div>
   );

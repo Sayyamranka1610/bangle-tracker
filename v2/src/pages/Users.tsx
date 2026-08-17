@@ -15,11 +15,13 @@ interface UserRecord {
 type ModalMode =
   | { kind: 'add' }
   | { kind: 'changePassword'; user: UserRecord; index: number }
-  | { kind: 'delete'; user: UserRecord; index: number };
+  | { kind: 'delete'; user: UserRecord; index: number }
+  | { kind: 'myPassword' };
 
 export default function Users() {
   const { state, showToast } = useApp();
   const currentUser = state.session?.username;
+  const isOwner = state.session?.role === 'owner';
 
   const [users, setUsers]       = useState<UserRecord[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -92,6 +94,19 @@ export default function Users() {
     await persistUsers(next);
   }
 
+  // ── Change my own password (requires current password) — mirrors Phase 1's
+  // doMyPasswordChange(), which every non-owner is limited to.
+  async function handleChangeMyPassword(current: string, next: string): Promise<string | null> {
+    const me = users.find(u => u.username === currentUser);
+    const correctPw = me?.password;
+    if (current !== correctPw) return 'Current password is incorrect.';
+    const updated = users.map(u => u.username === currentUser ? { ...u, password: next } : u);
+    setModal(null);
+    showToast('Password changed successfully', 'success');
+    await persistUsers(updated);
+    return null;
+  }
+
   if (loading) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
@@ -101,7 +116,27 @@ export default function Users() {
     );
   }
 
-  const ownerCount = users.filter(u => u.role === 'owner').length;
+  // Non-owners can never see or manage other accounts (mirrors Phase 1's
+  // Masters → Users tab, which shows a bare "Change my password" card to
+  // anyone who isn't an owner — matching that is a real security boundary,
+  // not just cosmetic parity).
+  if (!isOwner) {
+    return (
+      <div className="p-6 max-w-md mx-auto">
+        <h1 className="text-2xl font-bold text-white mb-1">My Account</h1>
+        <p className="text-sm text-white/40 mb-6">Change your login password. Contact the owner to change your username or role.</p>
+        <button
+          onClick={() => setModal({ kind: 'myPassword' })}
+          className="flex items-center gap-2 bg-[#534AB7] hover:bg-[#6259c8] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          🔑 Change my password
+        </button>
+        {modal?.kind === 'myPassword' && (
+          <MyPasswordModal onSave={handleChangeMyPassword} onClose={() => setModal(null)} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -140,8 +175,10 @@ export default function Users() {
             <tbody className="divide-y divide-white/5">
               {users.map((user, i) => {
                 const isMe = user.username === currentUser;
-                const isLastOwner = user.role === 'owner' && ownerCount <= 1;
-                const canDelete = !isMe && !isLastOwner;
+                // Mirrors Phase 1 exactly: the delete button never appears for
+                // yourself or for ANY owner account (not just "the last one") —
+                // removing an owner has to happen by changing their role first.
+                const canDelete = !isMe && user.role !== 'owner';
                 const isRevealed = revealIdx === i;
 
                 return (
@@ -205,7 +242,7 @@ export default function Users() {
                           </button>
                         ) : (
                           <span className="px-2.5 py-1 text-xs text-white/20">
-                            {isMe ? 'Cannot remove self' : 'Last owner'}
+                            {isMe ? 'Cannot remove self' : 'Owners are protected'}
                           </span>
                         )}
                       </div>
@@ -373,6 +410,90 @@ function ChangePwModal({ user, onSave, onClose }: { user: UserRecord; onSave: (p
                 {showPw ? '🙈' : '👁'}
               </button>
             </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+            <button type="submit" className="flex-1 py-2 rounded-lg bg-[#534AB7] hover:bg-[#6259c8] text-white font-medium text-sm transition-colors">Save Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── My Password Modal (self-service, requires current password) ────────────
+// Mirrors Phase 1's openMyPasswordModal/doMyPasswordChange exactly.
+
+function MyPasswordModal({ onSave, onClose }: { onSave: (current: string, next: string) => Promise<string | null>; onClose: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPw, setShowPw]   = useState(false);
+  const [error, setError]     = useState('');
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!current) { setError('Please enter your current password.'); return; }
+    if (!password || password.length < 4) { setError('New password must be at least 4 characters.'); return; }
+    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    const err = await onSave(current, password);
+    if (err) setError(err);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+          <h2 className="text-white font-semibold">Change My Password</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div>
+            <label className="block text-xs text-white/60 mb-1">Current password *</label>
+            <input
+              type="password"
+              value={current}
+              onChange={e => setCurrent(e.target.value)}
+              placeholder="Enter current password"
+              autoFocus
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-white/60 mb-1">New password * (min 4 chars)</label>
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="New password"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              />
+              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-white/40 hover:text-white/80">
+                {showPw ? '🙈' : '👁'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-white/60 mb-1">Confirm new password *</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="Confirm new password"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+            />
           </div>
 
           <div className="flex gap-2 pt-1">

@@ -1,35 +1,43 @@
 import { useState } from 'react';
-import type { Order, EmbeddedDesign, DesignStage } from '../../types';
-import { orderAlert, orderPct, orderTotalQty, ALERT_CONFIG, PRIORITY_LABELS, BANGLE_TYPE_LABELS } from '../../lib/orderUtils';
-import { uid } from '../../lib/orderUtils';
+import type { Order, EmbeddedDesign, VendorOrder } from '../../types';
+import { orderStatus, orderPct, orderTotalQty, PRIORITY_LABELS, BANGLE_TYPE_LABELS, uid } from '../../lib/orderUtils';
+import { coOrderStageCounts, CO_STAGE_DEFS, markDesignCompleteFields } from '../../lib/coStageUtils';
 import { makeStageFresh, DEFAULT_SIZES } from '../../lib/designUtils';
-import StagesTab from './StagesTab';
 import DesignsTab from './DesignsTab';
+import VendorSummaryTab from './VendorSummaryTab';
 
-type Tab = 'details' | 'designs' | 'stages';
+type Tab = 'details' | 'designs' | 'vendor';
 
 interface Props {
   order: Order;
   canEdit: boolean;
   dnames: string[];
   dcodes: string[];
+  vendorOrders: VendorOrder[];
+  archivedView?: boolean;
   onUpdate: (updated: Order) => void;
   onEdit: (order: Order) => void;
   onDelete: (order: Order) => void;
+  onArchive: (order: Order) => void;
+  onRestore: (order: Order) => void;
+  onDuplicate: (order: Order) => void;
 }
 
 const priorityColors: Record<string, string> = {
   normal: 'text-white/40', urgent: 'text-orange-400', critical: 'text-red-400',
 };
 
-export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, onEdit, onDelete }: Props) {
+export default function OrderCard({
+  order, canEdit, dnames, dcodes, vendorOrders, archivedView, onUpdate, onEdit, onDelete, onArchive, onRestore, onDuplicate,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('designs');
 
-  const alert = orderAlert(order);
-  const pct   = orderPct(order);
-  const qty   = orderTotalQty(order);
-  const { label, color, bg } = ALERT_CONFIG[alert];
+  const status = archivedView ? 'archived' : orderStatus(order); // 'done' | 'pending' | 'archived'
+  const pct    = orderPct(order);
+  const qty    = orderTotalQty(order);
+  const stageCts = coOrderStageCounts(order);
+  const stageTotal = Object.values(stageCts).reduce((a, b) => a + b, 0);
 
   // ── Inline field edits (details tab) ────────────────────────────────────────
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -38,15 +46,6 @@ export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, on
   function commitField(field: string, value: string) {
     onUpdate({ ...order, [field]: value });
     setEditingField(null);
-  }
-
-  // ── Stage change ────────────────────────────────────────────────────────────
-  function handleStageChange(di: number, si: number, patch: Partial<DesignStage>) {
-    const designs = order.designs.map((d, i) => {
-      if (i !== di) return d;
-      return { ...d, stages: d.stages.map((s, j) => j === si ? { ...s, ...patch } : s) };
-    });
-    onUpdate({ ...order, designs });
   }
 
   // ── Design changes ──────────────────────────────────────────────────────────
@@ -74,10 +73,17 @@ export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, on
     onUpdate({ ...order, designs: order.designs.filter((_, i) => i !== di) });
   }
 
+  function handleMarkDesignComplete(di: number) {
+    const stages = order.designs[di]?.stages ?? [];
+    if (!confirm(`Mark all ${stages.length} production stage${stages.length !== 1 ? 's' : ''} as Done?\n\nUse this when the design is dispatched.`)) return;
+    const designs = order.designs.map((d, i) => i === di ? markDesignCompleteFields(d) : d);
+    onUpdate({ ...order, designs });
+  }
+
   const TABS: { id: Tab; label: string }[] = [
     { id: 'details', label: 'Order Details' },
-    { id: 'designs', label: `Designs (${order.designs.length})` },
-    { id: 'stages',  label: 'Production Stages' },
+    { id: 'designs', label: `Designs & Varieties (${order.designs.length})` },
+    { id: 'vendor',  label: 'Vendor Summary' },
   ];
 
   function InlineField({ field, value, type = 'text', options }: { field: string; value: string; type?: string; options?: { value: string; label: string }[] }) {
@@ -109,8 +115,14 @@ export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, on
     );
   }
 
+  const statusBadge = status === 'archived'
+    ? { label: '📦 Archived', color: 'text-white/50', bg: 'bg-white/10' }
+    : status === 'done'
+      ? { label: '✅ Done', color: 'text-indigo-300', bg: 'bg-indigo-500/15' }
+      : { label: 'Pending', color: 'text-red-300', bg: 'bg-red-500/15' };
+
   return (
-    <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-[#534AB7]/50' : 'border-white/10'}`}>
+    <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-[#534AB7]/50' : 'border-white/10'} ${archivedView ? 'opacity-80' : ''}`}>
       {/* ── Card header ── */}
       <button
         onClick={() => setExpanded(e => !e)}
@@ -119,7 +131,7 @@ export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, on
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-mono text-white/40">{order.orderId}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${color} ${bg}`}>{label}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge.color} ${statusBadge.bg}`}>{statusBadge.label}</span>
             {order.priority !== 'normal' && (
               <span className={`text-xs font-medium ${priorityColors[order.priority]}`}>
                 ⚡ {PRIORITY_LABELS[order.priority]}
@@ -132,29 +144,54 @@ export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, on
             <span>{BANGLE_TYPE_LABELS[order.bangleType]}</span>
             <span>{order.designs.length} design{order.designs.length !== 1 ? 's' : ''}</span>
             {qty > 0 && <span>{qty} pcs</span>}
+            {archivedView && order.archivedAt && <span>Archived {new Date(order.archivedAt).toISOString().slice(0, 10)}</span>}
           </div>
         </div>
         <div className="flex-shrink-0 flex flex-col items-end gap-2">
           <div className="flex gap-1">
-            {canEdit && (
+            {canEdit && !archivedView && (
               <>
                 <button onClick={e => { e.stopPropagation(); onEdit(order); }}
-                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">✏️</button>
-                <button onClick={e => { e.stopPropagation(); onDelete(order); }}
-                  className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm">🗑️</button>
+                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm" title="Edit">✏️</button>
+                <button onClick={e => { e.stopPropagation(); onDuplicate(order); }}
+                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm" title="Duplicate">⎘</button>
+                <button onClick={e => { e.stopPropagation(); onArchive(order); }}
+                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm" title="Archive">📦</button>
               </>
+            )}
+            {canEdit && archivedView && (
+              <button onClick={e => { e.stopPropagation(); onRestore(order); }}
+                className="px-2 py-1 text-xs text-[#a89fff] hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors" title="Restore">↩ Restore</button>
+            )}
+            {canEdit && (
+              <button onClick={e => { e.stopPropagation(); onDelete(order); }}
+                className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm" title="Delete">🗑️</button>
             )}
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full ${alert === 'done' ? 'bg-indigo-500' : alert === 'late' ? 'bg-red-500' : alert === 'warn' ? 'bg-yellow-500' : 'bg-green-500'}`}
-                style={{ width: `${pct}%` }} />
+              <div className={`h-full rounded-full ${status === 'done' ? 'bg-indigo-500' : 'bg-white/30'}`} style={{ width: `${pct}%` }} />
             </div>
             <span className="text-xs text-white/30">{pct}%</span>
             <span className={`text-white/30 text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>▾</span>
           </div>
         </div>
       </button>
+
+      {/* ── Stage bar + pills (mirrors Phase 1's _coStageBarHTML/_coStagePillsHTML) ── */}
+      {stageTotal > 0 && (
+        <div className="px-4 pb-2 flex flex-wrap items-center gap-1.5">
+          <div className="flex gap-px h-1.5 rounded-full overflow-hidden w-full max-w-[220px]">
+            {CO_STAGE_DEFS.filter(s => stageCts[s.k] > 0).map(s => (
+              <div key={s.k} style={{ flex: stageCts[s.k], background: s.bg }} title={`${s.lbl}: ${stageCts[s.k]}`} />
+            ))}
+          </div>
+          {CO_STAGE_DEFS.filter(s => stageCts[s.k] > 0).map(s => (
+            <span key={s.k} className="text-[10px] px-1.5 py-0.5 rounded font-semibold whitespace-nowrap"
+              style={{ background: s.bg, color: s.tx }}>{s.lbl}: {stageCts[s.k]}</span>
+          ))}
+        </div>
+      )}
 
       {/* ── Expanded content ── */}
       {expanded && (
@@ -233,21 +270,27 @@ export default function OrderCard({ order, canEdit, dnames, dcodes, onUpdate, on
                 canEdit={canEdit}
                 dnames={dnames}
                 dcodes={dcodes}
+                vendorOrders={vendorOrders}
                 onDesignChange={handleDesignChange}
                 onAddDesign={handleAddDesign}
                 onRemoveDesign={handleRemoveDesign}
               />
             )}
 
-            {/* ── Production Stages tab ── */}
-            {activeTab === 'stages' && (
-              <StagesTab
-                order={order}
-                canEdit={canEdit}
-                onStageChange={handleStageChange}
-              />
-            )}
+            {/* ── Vendor Summary tab ── */}
+            {activeTab === 'vendor' && <VendorSummaryTab order={order} vendorOrders={vendorOrders} />}
           </div>
+
+          {canEdit && !archivedView && activeTab === 'designs' && (
+            <div className="px-4 pb-4 flex flex-wrap gap-2">
+              {order.designs.map((d, di) => (
+                <button key={d.id} onClick={() => handleMarkDesignComplete(di)}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+                  ✓ Mark "{d.code || d.name || `Design ${di + 1}`}" dispatched
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

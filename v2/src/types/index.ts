@@ -41,9 +41,38 @@ export interface DesignImage {
   name?: string;
 }
 
+// ─── Vendor-pipeline linkage (mirrors Phase 1's _coStage system) ────────────
+// Lives on either a design (flat/CNC rows) or a variety (dye-gold rows) — the
+// same fields Phase 1 calls "holder" fields, set via setCOPipeVo/setCOPlatingVo/
+// upDesignVendor/upVarietyVendor/toggleCOStageRcvd. This is what ACTUALLY
+// drives an order's production status — the design.stages[] 9-step checklist
+// below is a separate, mostly-cosmetic per-row deadline badge, not this.
+export interface VendorPipelineFields {
+  pipeVendor?: string;       // vendor name, or '__own__' for in-house stock
+  pipeVendorAt?: number;
+  pipeReceived?: boolean;
+  pipeReceivedAt?: number;
+  assignedVendor?: string;   // karigar vendor name, or '__own__'
+  assignedVendorAt?: number;
+  karigarReceived?: boolean;
+  karigarReceivedAt?: number;
+  platingVendor?: string;
+  platingVendorAt?: number;
+  platingReceived?: boolean;
+  platingReceivedAt?: number;
+  importedToVOId?: string | null; // which VendorOrder this row was added to
+  // Dispatch shortcut fields — set together by "mark complete", at EITHER the
+  // design level (markDesignComplete, flat/CNC rows) or the variety level
+  // (markVarietyDone, dye-gold rows) — both are real, independent toggles.
+  receivedFromKarigar?: boolean;
+  dispatchedToClient?: boolean;
+  dispatchedAt?: number;
+  done?: boolean;
+}
+
 // ─── Variety (sub-design per code) ───────────────────────────────────────────
 
-export interface DesignVariety {
+export interface DesignVariety extends VendorPipelineFields {
   id: string;
   name: string;
   sizes: Record<string, number>;  // e.g. { "2/2": 50, "2/4": 100 }
@@ -54,7 +83,7 @@ export interface DesignVariety {
 
 // ─── Design embedded inside an order ─────────────────────────────────────────
 
-export interface EmbeddedDesign {
+export interface EmbeddedDesign extends VendorPipelineFields {
   id: string;
   name: string;
   code?: string;
@@ -81,6 +110,8 @@ export interface Order {
   bangleType: BangleType;
   designs: EmbeddedDesign[];
   attachedFile?: { name: string; type: string; data?: string } | null;
+  archived?: boolean;
+  archivedAt?: number;
 }
 
 // ─── Inventory ledger entry ───────────────────────────────────────────────────
@@ -134,15 +165,23 @@ export type VendorStatus =
   | 'delivered';
 
 export interface VendorDesign {
+  id: string;
   name?: string;
   code?: string;
+  sizesLocked?: boolean;
+  sizes?: Record<string, number>;
+  images?: DesignImage[];
   varieties?: DesignVariety[];
+  unit?: string;
 }
+
+export type VendorOrderType = 'pipe' | 'karigar' | 'plating';
 
 export interface VendorOrder {
   id: string;
   orderId: string;          // VORD-01, VORD-02...
   vendor: string;
+  type?: VendorOrderType;   // defaults to 'karigar' when absent (Phase 1 behavior)
   startDate: string;        // YYYY-MM-DD
   deliveryDate?: string;    // YYYY-MM-DD — absence means no deadline
   priority: Priority;
@@ -160,6 +199,7 @@ export interface AppData {
   auditLog?: AuditEntry[];
   vocabulary?: Vocabulary;
   vocabularyManual?: Vocabulary;
+  vendorTypes?: Record<string, VendorOrderType>; // vendor name -> default segment (Masters page)
 }
 
 // ─── Edit lock ───────────────────────────────────────────────────────────────

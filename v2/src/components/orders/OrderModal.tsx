@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import type { Order, EmbeddedDesign, DesignVariety, Priority, BangleType } from '../../types';
 import { uid } from '../../lib/orderUtils';
 import { DEFAULT_SIZES, makeStageFresh } from '../../lib/designUtils';
+import { parseOrderFile, fileToDataUrl, downloadOrderTemplate, type ParsedDesign } from '../../lib/orderImportUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,28 @@ function emptyDesign(): ModalDesign {
     sizes,
     varieties: [emptyVariety(sizes, 'Variety 1')],
   };
+}
+
+// Converts a bulk-import result into modal state — mirrors how Phase 1's
+// openNewOrderModal(prefill) seeds window._modalSizes/_modalVarieties from a
+// parsed file.
+function parsedDesignsToModal(parsed: ParsedDesign[]): ModalDesign[] {
+  return parsed.map(d => {
+    const sizeSet = new Set<string>();
+    d.varieties.forEach(v => Object.keys(v.sizes).forEach(sz => sizeSet.add(sz)));
+    const sizes = sizeSet.size ? [...sizeSet] : [...DEFAULT_SIZES];
+    return {
+      id: uid(),
+      name: d.name,
+      code: d.code,
+      sizes,
+      varieties: d.varieties.map(v => ({
+        id: uid(),
+        name: v.name,
+        sizes: Object.fromEntries(sizes.map(s => [s, v.sizes[s] ?? 0])),
+      })),
+    };
+  });
 }
 
 // Build EmbeddedDesign from modal state — mirrors Phase 1 buildDesignFromModal
@@ -215,7 +238,7 @@ function DesignSection({
           )}
         </div>
         <div className="relative">
-          <label className="block text-xs text-white/50 mb-1">Design code</label>
+          <label className="block text-xs text-white/50 mb-1">Design code *</label>
           <input
             value={design.code}
             onChange={e => { onChange({ ...design, code: e.target.value }); setDcodeAc(true); }}
@@ -309,6 +332,9 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
   const [notes, setNotes]       = useState(order?.notes ?? '');
   const [clientAc, setClientAc] = useState(false);
   const [error, setError]       = useState('');
+  const [attachedFile, setAttachedFile] = useState<Order['attachedFile']>(order?.attachedFile ?? null);
+  const [importStatus, setImportStatus] = useState('');
+  const [importing, setImporting] = useState(false);
 
   // Designs state — start with one empty design for new orders,
   // or convert existing designs to modal state for edits
@@ -339,11 +365,48 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
+  // Bulk import from a filled-in Excel/CSV template — mirrors Phase 1's
+  // processOrderFile(): auto-fills client/date/notes/bangle-type/designs.
+  // Only offered on create — editing an existing order doesn't re-import.
+  async function handleFileImport(file: File) {
+    setImporting(true);
+    setImportStatus('');
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setAttachedFile({ name: file.name, type: file.type, data: dataUrl });
+
+      const parsed = await parseOrderFile(file);
+      if (!parsed) {
+        setImportStatus('⚠️ Could not read that file — check it matches the template format.');
+        return;
+      }
+      if (parsed.client) setClient(parsed.client);
+      if (parsed.startDate) setStartDate(parsed.startDate);
+      if (parsed.notes) setNotes(parsed.notes);
+      if (parsed.bangleType) setBangleType(parsed.bangleType);
+      if (parsed.designs.length) setDesigns(parsedDesignsToModal(parsed.designs));
+
+      const dCount = parsed.designs.length;
+      const vCount = parsed.designs.reduce((a, d) => a + d.varieties.length, 0);
+      setImportStatus(dCount
+        ? `✅ Parsed — ${dCount} design${dCount === 1 ? '' : 's'}, ${vCount} variet${vCount === 1 ? 'y' : 'ies'} loaded.`
+        : '⚠️ File read, but no design rows were found.');
+    } catch {
+      setImportStatus('⚠️ Could not read that file — check it matches the template format.');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!client.trim())    { setError('Client name is required.'); return; }
     if (!startDate)        { setError('Start date is required.'); return; }
     if (designs.some(d => !d.name.trim())) { setError('All designs need a name.'); return; }
+    if (designs.some(d => !d.code.trim())) { setError('All designs need a design code.'); return; }
+    // Mirrors Phase 1's createOrder(): every design needs at least one non-zero quantity.
+    const hasQty = (d: ModalDesign) => d.varieties.some(v => d.sizes.some(sz => (Number(v.sizes[sz]) || 0) > 0));
+    if (designs.some(d => !hasQty(d))) { setError('Each design needs at least one variety with a non-zero quantity.'); return; }
 
     const embeddedDesigns = designs.map(buildEmbeddedDesign);
 
@@ -359,6 +422,7 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
       bangleType,
       notes: notes.trim() || undefined,
       designs: embeddedDesigns,
+      attachedFile,
     };
     onSave(saved);
   }
@@ -375,6 +439,32 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {error && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+
+          {/* ── Bulk import (create mode only) — mirrors Phase 1's file-drop zone ── */}
+          {!isEdit && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-xs font-semibold text-[#a89fff]">📤 Import from file <span className="font-normal text-white/40">— auto-fills all fields</span></p>
+                <button type="button" onClick={downloadOrderTemplate}
+                  className="text-xs bg-[#534AB7] hover:bg-[#6259c8] text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                  📥 Download Excel Template
+                </button>
+              </div>
+              <label
+                className={`block border-2 border-dashed rounded-xl px-4 py-5 text-center cursor-pointer transition-colors ${
+                  importing ? 'border-white/10 opacity-50' : 'border-white/20 hover:border-[#534AB7]'
+                }`}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFileImport(f); }}
+              >
+                <p className="text-sm text-white/60">📂 Drop the filled Excel template here, or click to browse</p>
+                <p className="text-xs text-white/30 mt-0.5">.xlsx · .csv</p>
+                <input type="file" accept=".xlsx,.xls,.csv" disabled={importing} className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFileImport(f); }} />
+              </label>
+              {importStatus && <p className="text-xs text-green-400 bg-green-500/10 px-3 py-1.5 rounded-lg">{importStatus}</p>}
+            </div>
+          )}
 
           {/* ── Order Info ── */}
           <div className="space-y-4">

@@ -1,82 +1,11 @@
-import type { Order, EmbeddedDesign, DesignStage, AlertLevel, Priority } from '../types';
-import { getTemplate } from './designUtils';
+import type { Order, EmbeddedDesign, Priority } from '../types';
+import { orderStatus } from './coStageUtils';
 
-// ─── Date helpers ─────────────────────────────────────────────────────────────
+export { orderStatus, orderPct, coOrderStageCounts, CO_STAGE_DEFS } from './coStageUtils';
 
-function today(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+// ─── Quantities ───────────────────────────────────────────────────────────────
 
-function parseDate(s: string): Date {
-  return new Date(s + 'T00:00:00');
-}
-
-// ─── Stage deadline ───────────────────────────────────────────────────────────
-
-function getEffDays(order: Order, design: EmbeddedDesign, stageIndex: number): number {
-  const stage = design.stages[stageIndex];
-  if (stage.days != null) return stage.days;  // custom override stored on the stage instance
-  const tmpl = getTemplate(stage.stageId);
-  if (!tmpl) return 1;
-  return order.priority === 'urgent' || order.priority === 'critical'
-    ? tmpl.urgDays
-    : tmpl.days;
-}
-
-function stageDeadline(order: Order, design: EmbeddedDesign, stageIndex: number): Date {
-  const base = parseDate(order.startDate);
-  let days = 0;
-  for (let i = 0; i <= stageIndex; i++) days += getEffDays(order, design, i);
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-// ─── Alert computation (mirrors Phase 1 exactly) ──────────────────────────────
-
-function stageAlert(order: Order, design: EmbeddedDesign, i: number): AlertLevel {
-  const stage: DesignStage = design.stages[i];
-  if (stage.status === 'done') return 'done';
-  if (stage.completionDate) {
-    const cd = parseDate(stage.completionDate);
-    if (cd < today()) return 'late';
-  }
-  const diff = Math.ceil((stageDeadline(order, design, i).getTime() - today().getTime()) / 864e5);
-  if (diff < 0) return 'late';
-  if (diff <= 1) return 'warn';
-  return 'ok';
-}
-
-export function designAlert(order: Order, design: EmbeddedDesign): AlertLevel {
-  if (!design.stages?.length) return 'ok';
-  const alerts = design.stages.map((_, i) => stageAlert(order, design, i));
-  if (alerts.includes('late')) return 'late';
-  if (alerts.includes('warn')) return 'warn';
-  if (alerts.every(x => x === 'done')) return 'done';
-  return 'ok';
-}
-
-export function orderAlert(order: Order): AlertLevel {
-  if (!order.designs?.length) return 'ok';
-  const alerts = order.designs.map(d => designAlert(order, d));
-  if (alerts.includes('late')) return 'late';
-  if (alerts.includes('warn')) return 'warn';
-  if (alerts.every(x => x === 'done')) return 'done';
-  return 'ok';
-}
-
-export function orderPct(order: Order): number {
-  let total = 0, done = 0;
-  order.designs.forEach(d => {
-    total += d.stages.length;
-    done += d.stages.filter(s => s.status === 'done').length;
-  });
-  return total ? Math.round(done / total * 100) : 0;
-}
-
-export function designQty(design: EmbeddedDesign): number {
+function designQty(design: EmbeddedDesign): number {
   if (design.varieties?.length) {
     return design.varieties.reduce((acc: number, v) =>
       acc + Object.values(v.sizes ?? {}).reduce((x: number, q) => x + (parseInt(String(q)) || 0), 0), 0);
@@ -103,26 +32,24 @@ export function renumberOrders(orders: Order[]): Order[] {
   return orders.map(o => sorted.find(s => s.id === o.id)!);
 }
 
-// ─── Stats summary ────────────────────────────────────────────────────────────
+// ─── Stats summary (mirrors Phase 1's renderStats — Total/Pending/Completed/Archived) ─
 
 export interface OrderStats {
-  total: number;
-  onTrack: number;
-  soon: number;
-  late: number;
+  total: number;     // active (non-archived) orders
+  pending: number;
   done: number;
+  archived: number;
 }
 
-export function computeStats(orders: Order[]): OrderStats {
-  const stats: OrderStats = { total: orders.length, onTrack: 0, soon: 0, late: 0, done: 0 };
-  orders.forEach(o => {
-    const a = orderAlert(o);
-    if (a === 'ok') stats.onTrack++;
-    else if (a === 'warn') stats.soon++;
-    else if (a === 'late') stats.late++;
-    else if (a === 'done') stats.done++;
-  });
-  return stats;
+export function computeStats(allOrders: Order[]): OrderStats {
+  const active = allOrders.filter(o => !o.archived);
+  const done = active.filter(o => orderStatus(o) === 'done').length;
+  return {
+    total: active.length,
+    pending: active.length - done,
+    done,
+    archived: allOrders.length - active.length,
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -137,13 +64,6 @@ export const BANGLE_TYPE_LABELS: Record<string, string> = {
   dye_gold: 'Dye Gold',
   cnc: 'CNC',
   both: 'Both',
-};
-
-export const ALERT_CONFIG: Record<AlertLevel, { label: string; color: string; bg: string }> = {
-  ok:   { label: 'On Track',  color: 'text-green-400',  bg: 'bg-green-500/15' },
-  warn: { label: 'Due Soon',  color: 'text-yellow-400', bg: 'bg-yellow-500/15' },
-  late: { label: 'Late',      color: 'text-red-400',    bg: 'bg-red-500/15' },
-  done: { label: 'Done',      color: 'text-indigo-400', bg: 'bg-indigo-500/15' },
 };
 
 export function uid(): string {

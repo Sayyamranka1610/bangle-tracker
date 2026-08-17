@@ -1,16 +1,15 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../store/AppContext';
-import type { VendorOrder, VendorStatus } from '../types';
+import type { VendorOrder, VendorStatus, AppData } from '../types';
 import { vendorAlert, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
-import { db, PATHS } from '../lib/firebase';
-import { writeAudit } from '../lib/auditUtils';
+import { buildAuditLog } from '../lib/auditUtils';
 import VendorOrderCard from '../components/vendors/VendorOrderCard';
 import VendorModal from '../components/vendors/VendorModal';
 
 type FilterKey = 'all' | 'ok' | 'warn' | 'late' | 'done';
 
 export default function Vendors() {
-  const { state, showToast } = useApp();
+  const { state, showToast, saveAppData } = useApp();
   const { data, session, hasLock } = state;
 
   const vendorOrders: VendorOrder[] = useMemo(() => data.vendorOrders ?? [], [data.vendorOrders]);
@@ -59,13 +58,17 @@ export default function Vendors() {
 
   // ── Persist helpers ───────────────────────────────────────────────────────────
 
-  async function persist(next: VendorOrder[], auditAction?: string, auditDetail?: string) {
+  // Create/delete push immediately (Phase 1's fbPushNow — structural changes
+  // can't wait behind the normal 2s debounce). Field edits use the default
+  // debounce.
+  async function persist(next: VendorOrder[], auditAction?: string, auditDetail?: string, immediate = true) {
+    const patch: Partial<AppData> = { vendorOrders: next };
+    if (auditAction && session?.username) {
+      patch.auditLog = buildAuditLog(auditAction, auditDetail ?? '', session.username, data.auditLog ?? []);
+    }
     setSaving(true);
     try {
-      await db.set(`${PATHS.appData}/vendorOrders`, next);
-      if (auditAction && session?.username) {
-        await writeAudit(auditAction, auditDetail ?? '', session.username, data.auditLog ?? []);
-      }
+      await saveAppData(patch, { immediate });
     } catch {
       showToast('Failed to save — check your connection', 'error');
     } finally {
@@ -85,7 +88,7 @@ export default function Vendors() {
 
   async function handleStatusChange(order: VendorOrder, status: VendorStatus) {
     const next = vendorOrders.map(o => o.id === order.id ? { ...o, status } : o);
-    await persist(next, 'Edit vendor order', `${order.orderId} status → ${status}`);
+    await persist(next, 'Edit vendor order', `${order.orderId} status → ${status}`, false);
   }
 
   async function handleDelete() {

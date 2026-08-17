@@ -2,21 +2,18 @@
 
 const R2_WORKER_URL = 'https://bt-image-upload.sayyamranka09.workers.dev';
 const R2_UPLOAD_KEY = 'BT2026_sB9mK3xQpR7wN2vL5jH8cF4dA';
-const R2_PUBLIC_URL = 'https://pub-0df3d745e87346ad8148f93b28cc4bac.r2.dev';
 
-export function r2PublicUrl(key: string): string {
-  return `${R2_PUBLIC_URL}/${key}`;
-}
-
-export async function uploadToR2(file: File, key: string): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('key', key);
-
+// Matches the real bt-image-upload Worker's contract exactly (bangle_v19.html's
+// uploadToR2): POST JSON { data: base64DataUrl, type }, X-Upload-Key header,
+// response { url }. The Worker only understands this shape — NOT multipart
+// FormData, which is what this function used to send (would have failed
+// against the real Worker; never actually wired into any UI, so never caught).
+export async function uploadToR2(base64DataUrl: string): Promise<string> {
+  const type = (base64DataUrl.split(';')[0] || '').replace('data:', '') || 'image/jpeg';
   const res = await fetch(R2_WORKER_URL, {
     method: 'POST',
-    headers: { 'X-Upload-Key': R2_UPLOAD_KEY },
-    body: formData,
+    headers: { 'Content-Type': 'application/json', 'X-Upload-Key': R2_UPLOAD_KEY },
+    body: JSON.stringify({ data: base64DataUrl, type }),
   });
 
   if (!res.ok) {
@@ -24,7 +21,9 @@ export async function uploadToR2(file: File, key: string): Promise<string> {
     throw new Error(`R2 upload failed: ${res.status} ${text}`);
   }
 
-  return r2PublicUrl(key);
+  const json = await res.json() as { url?: string };
+  if (!json.url) throw new Error('R2 upload succeeded but returned no URL');
+  return json.url;
 }
 
 // Compress an image to a thumbnail (for display / Firebase inline storage)

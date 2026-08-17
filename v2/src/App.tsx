@@ -5,11 +5,13 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Orders from './pages/Orders';
 import Designs from './pages/Designs';
-import Inventory from './pages/Inventory';
 import Analytics from './pages/Analytics';
 import Audit from './pages/Audit';
 import Users from './pages/Users';
 import Vendors from './pages/Vendors';
+import Masters from './pages/Masters';
+import Assign from './pages/Assign';
+import Library from './pages/Library';
 
 export default function App() {
   return (
@@ -23,7 +25,9 @@ export default function App() {
               <Route path="/orders"    element={<Orders />} />
               <Route path="/designs"   element={<Designs />} />
               <Route path="/vendors"   element={<Vendors />} />
-              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/masters"   element={<Masters />} />
+              <Route path="/assign"    element={<Assign />} />
+              <Route path="/library"   element={<Library />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/audit"     element={<Audit />} />
               <Route element={<ProtectedRoute requiredRole="owner" />}>

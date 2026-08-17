@@ -1,41 +1,45 @@
-import type { Order, EmbeddedDesign, DesignStage } from '../types';
-import { orderAlert, orderPct } from './orderUtils';
-import { designTotalQty, DEFAULT_STAGES, stageGroup, stageName } from './designUtils';
+import type { Order, EmbeddedDesign } from '../types';
+import { orderStatus, orderPct } from './coStageUtils';
+import { designTotalQty } from './designUtils';
 
-// ─── KPI summary ─────────────────────────────────────────────────────────────
+// ─── KPI summary (mirrors Phase 1's renderAnalytics "Key metrics" card) ──────
+// Phase 1's own KPI card always shows "Overdue orders" = 0 — it calls the
+// real 2-state orderAlert() (done/pending) expecting a 4-state answer, a
+// dead-code leftover from before that function was simplified. Rather than
+// bug-for-bug mirror that, this shows "Pending orders" instead — same
+// underlying real data, just not a permanently-meaningless field.
 
 export interface KpiSummary {
   totalOrders: number;
-  activeOrders: number;       // not 'done'
   totalDesigns: number;
   totalPieces: number;
-  onTimeRate: number;         // % of non-done orders that are 'ok'
+  avgCompletionPct: number;
   completedOrders: number;
+  pendingOrders: number;
 }
 
 export function computeKpis(orders: Order[]): KpiSummary {
   const totalOrders = orders.length;
-  const completedOrders = orders.filter(o => orderAlert(o) === 'done').length;
-  const activeOrders = totalOrders - completedOrders;
+  const completedOrders = orders.filter(o => orderStatus(o) === 'done').length;
+  const pendingOrders = totalOrders - completedOrders;
   const totalDesigns = orders.reduce((a, o) => a + (o.designs?.length ?? 0), 0);
   const totalPieces = orders.reduce((a, o) =>
     a + (o.designs ?? []).reduce((b, d) => b + designTotalQty(d), 0), 0);
-  const nonDone = orders.filter(o => orderAlert(o) !== 'done');
-  const onTrack = nonDone.filter(o => orderAlert(o) === 'ok').length;
-  const onTimeRate = nonDone.length ? Math.round((onTrack / nonDone.length) * 100) : 100;
+  const avgCompletionPct = totalOrders ? Math.round(orders.reduce((a, o) => a + orderPct(o), 0) / totalOrders) : 0;
 
-  return { totalOrders, activeOrders, completedOrders, totalDesigns, totalPieces, onTimeRate };
+  return { totalOrders, totalDesigns, totalPieces, avgCompletionPct, completedOrders, pendingOrders };
 }
 
 // ─── Client leaderboard ───────────────────────────────────────────────────────
+// Not a direct Phase 1 port (Phase 1's Analytics only has a simple "orders by
+// client" bar chart) — kept as a Phase 2 addition, but grounded in the real
+// done/pending status instead of the dead-quirk 4-state alert it used before.
 
 export interface ClientRow {
   client: string;
   orderCount: number;
   totalPieces: number;
-  onTrack: number;
-  soon: number;
-  late: number;
+  pending: number;
   done: number;
   latestStart: string;
 }
@@ -46,73 +50,16 @@ export function computeClientLeaderboard(orders: Order[]): ClientRow[] {
   orders.forEach(o => {
     const key = o.client || '(unknown)';
     if (!map.has(key)) {
-      map.set(key, { client: key, orderCount: 0, totalPieces: 0, onTrack: 0, soon: 0, late: 0, done: 0, latestStart: '' });
+      map.set(key, { client: key, orderCount: 0, totalPieces: 0, pending: 0, done: 0, latestStart: '' });
     }
     const row = map.get(key)!;
     row.orderCount++;
     row.totalPieces += (o.designs ?? []).reduce((a, d) => a + designTotalQty(d), 0);
-    const alert = orderAlert(o);
-    if (alert === 'ok')   row.onTrack++;
-    if (alert === 'warn') row.soon++;
-    if (alert === 'late') row.late++;
-    if (alert === 'done') row.done++;
+    orderStatus(o) === 'done' ? row.done++ : row.pending++;
     if (o.startDate > row.latestStart) row.latestStart = o.startDate;
   });
 
   return [...map.values()].sort((a, b) => b.orderCount - a.orderCount);
-}
-
-// ─── Active stage per design (where is each order right now) ─────────────────
-
-export interface ActiveStageRow {
-  orderId: string;
-  client: string;
-  startDate: string;
-  alert: string;
-  pct: number;
-  designName: string;
-  designCode: string;
-  currentStageName: string;
-  currentStageGroup: string;
-  stagesTotal: number;
-  stagesDone: number;
-}
-
-function currentStageOf(stages: DesignStage[]): DesignStage | null {
-  // First pending or delayed stage after all done ones
-  return stages.find(s => s.status !== 'done') ?? null;
-}
-
-export function computeActiveStages(orders: Order[]): ActiveStageRow[] {
-  const rows: ActiveStageRow[] = [];
-
-  orders.forEach(o => {
-    const alert = orderAlert(o);
-    if (alert === 'done') return; // skip completed
-    const pct = orderPct(o);
-
-    (o.designs ?? []).forEach(d => {
-      const current = currentStageOf(d.stages ?? []);
-      const done = (d.stages ?? []).filter(s => s.status === 'done').length;
-      rows.push({
-        orderId: o.orderId,
-        client: o.client,
-        startDate: o.startDate,
-        alert,
-        pct,
-        designName: d.name || '—',
-        designCode: d.code || '—',
-        currentStageName: current ? stageName(current.stageId) : 'Complete',
-        currentStageGroup: current ? stageGroup(current.stageId) : 'finished',
-        stagesTotal: d.stages?.length ?? 0,
-        stagesDone: done,
-      });
-    });
-  });
-
-  // Sort: late first, then warn, then ok
-  const order = { late: 0, warn: 1, ok: 2, done: 3 };
-  return rows.sort((a, b) => (order[a.alert as keyof typeof order] ?? 9) - (order[b.alert as keyof typeof order] ?? 9));
 }
 
 // ─── Design popularity ────────────────────────────────────────────────────────
@@ -147,51 +94,6 @@ export function computeDesignPopularity(orders: Order[]): DesignPopularityRow[] 
   return [...map.values()]
     .map(r => ({ ...r, avgPieces: r.timesOrdered ? Math.round(r.totalPieces / r.timesOrdered) : 0 }))
     .sort((a, b) => b.timesOrdered - a.timesOrdered);
-}
-
-// ─── Stage bottlenecks ────────────────────────────────────────────────────────
-
-export interface StageBottleneckRow {
-  stageId: string;
-  stageName: string;
-  group: string;
-  pendingCount: number;   // designs currently waiting at this exact stage
-  doneCount: number;      // designs that have passed this stage
-  totalCount: number;     // total designs that have this stage
-}
-
-export function computeBottlenecks(orders: Order[]): StageBottleneckRow[] {
-  const map = new Map<string, StageBottleneckRow>();
-
-  DEFAULT_STAGES.forEach(t => {
-    map.set(t.id, {
-      stageId: t.id,
-      stageName: t.name,
-      group: t.group,
-      pendingCount: 0,
-      doneCount: 0,
-      totalCount: 0,
-    });
-  });
-
-  orders.forEach(o => {
-    (o.designs ?? []).forEach(d => {
-      (d.stages ?? []).forEach(s => {
-        const row = map.get(s.stageId);
-        if (!row) return;
-        row.totalCount++;
-        if (s.status === 'done') row.doneCount++;
-        else {
-          // It's "pending at this stage" only if all previous stages are done
-          const idx = (d.stages ?? []).indexOf(s);
-          const allPrevDone = (d.stages ?? []).slice(0, idx).every(prev => prev.status === 'done');
-          if (allPrevDone) row.pendingCount++;
-        }
-      });
-    });
-  });
-
-  return [...map.values()];
 }
 
 // ─── Bangle type + priority breakdown ────────────────────────────────────────
