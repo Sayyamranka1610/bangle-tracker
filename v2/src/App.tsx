@@ -12,6 +12,7 @@ import Users from './pages/Users';
 import Vendors from './pages/Vendors';
 import Masters from './pages/Masters';
 import Assign from './pages/Assign';
+import Pooling from './pages/Pooling';
 import Library from './pages/Library';
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
               <Route path="/vendors"   element={<Vendors />} />
               <Route path="/masters"   element={<Masters />} />
               <Route path="/assign"    element={<Assign />} />
+              <Route path="/pooling"   element={<Pooling />} />
               <Route path="/library"   element={<Library />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/audit"     element={<Audit />} />

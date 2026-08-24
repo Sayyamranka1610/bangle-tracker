@@ -43,7 +43,7 @@ export default function FamiliesTab() {
   function toggle(fam: string) {
     setOpen(prev => {
       const next = new Set(prev);
-      next.has(fam) ? next.delete(fam) : next.add(fam);
+      if (next.has(fam)) next.delete(fam); else next.add(fam);
       return next;
     });
   }

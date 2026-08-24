@@ -138,9 +138,18 @@ function ItemCard({ item }: { item: DashItem }) {
   );
 }
 
+// Memory guard. Design photos on R2 are full-size (~500 KB each), so a client
+// with 100+ items would pull ~50 MB into memory as you scroll — the same
+// pattern behind the May and Aug 2026 out-of-memory crashes. Render a bounded
+// page of cards by default and let the user ask for the rest.
+const ITEMS_PER_PAGE = 24;
+
 function OrderBlock({ dash, stageFilter }: { dash: DashOrder; stageFilter: CoStageKey | null }) {
   const navigate = useNavigate();
-  const shown = stageFilter ? dash.items.filter(i => i.stage === stageFilter) : dash.items;
+  const [showAll, setShowAll] = useState(false);
+  const filtered = stageFilter ? dash.items.filter(i => i.stage === stageFilter) : dash.items;
+  const shown = showAll ? filtered : filtered.slice(0, ITEMS_PER_PAGE);
+  const hidden = filtered.length - shown.length;
 
   return (
     <div className="border border-white/10 rounded-xl overflow-hidden mb-3">
@@ -179,10 +188,18 @@ function OrderBlock({ dash, stageFilter }: { dash: DashOrder; stageFilter: CoSta
       </div>
 
       {shown.length ? (
-        <div className="p-2.5 grid gap-2"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
-          {shown.map(i => <ItemCard key={`${i.designId}-${i.varietyId ?? 'flat'}`} item={i} />)}
-        </div>
+        <>
+          <div className="p-2.5 grid gap-2"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+            {shown.map(i => <ItemCard key={`${i.designId}-${i.varietyId ?? 'flat'}`} item={i} />)}
+          </div>
+          {hidden > 0 && (
+            <button onClick={() => setShowAll(true)}
+              className="w-full py-2 text-[11px] text-[#a89fff] hover:bg-white/5 border-t border-white/10 transition-colors">
+              Show {hidden} more item{hidden !== 1 ? 's' : ''} ({filtered.length} in this order)
+            </button>
+          )}
+        </>
       ) : (
         <p className="px-3 py-4 text-center text-[11px] text-white/25">No items at this stage in this order</p>
       )}

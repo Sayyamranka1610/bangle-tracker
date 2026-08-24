@@ -9,6 +9,7 @@ const navItems = [
   { to: '/vendors',   label: 'Vendors',   icon: '🏭' },
   { to: '/masters',   label: 'Masters',   icon: '📋' },
   { to: '/assign',    label: 'Assign',    icon: '↔️' },
+  { to: '/pooling',   label: 'Pooling',   icon: '🧲' },
   { to: '/library',   label: 'Library',   icon: '🖼️' },
   { to: '/analytics', label: 'Analytics', icon: '📊' },
   { to: '/audit',     label: 'Audit',     icon: '🔍' },

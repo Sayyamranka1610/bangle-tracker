@@ -196,6 +196,10 @@ export interface VendorDesign {
   // Extra pieces deliberately made beyond customer demand, per size.
   bufferSizes?: Record<string, number>;  // cover for rejections
   stockSizes?: Record<string, number>;   // speculative / for stock
+  // What the vendor actually returned for this line, per size (cumulative
+  // across several part-deliveries).
+  recvQty?: Record<string, number>;
+  rejQty?: Record<string, number>;
 }
 
 // One customer's contribution to a pooled vendor-order line.

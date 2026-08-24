@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import type { VendorOrder, VendorStatus } from '../../types';
+import ReceiveModal from './ReceiveModal';
+import { receivableDesigns } from '../../lib/receiveUtils';
 import { vendorAlert, STATUS_PCT, STATUS_LABELS, ALL_STATUSES, ALERT_CONFIG } from '../../lib/vendorUtils';
 
 interface Props {
@@ -20,6 +23,8 @@ const priorityLabels: Record<string, string> = {
 };
 
 export default function VendorOrderCard({ order, canEdit, onEdit, onDelete, onStatusChange }: Props) {
+  const [receiving, setReceiving] = useState(false);
+  const pooledCount = receivableDesigns(order).length;
   const alert = vendorAlert(order);
   const pct   = STATUS_PCT[order.status];
   const { label: alertLabel, color, bg, bar } = ALERT_CONFIG[alert];
@@ -66,7 +71,22 @@ export default function VendorOrderCard({ order, canEdit, onEdit, onDelete, onSt
         {(order.designs?.length ?? 0) > 0 && (
           <span>🎨 {order.designs!.length} design{order.designs!.length !== 1 ? 's' : ''}</span>
         )}
+        {pooledCount > 0 && (
+          <span className="text-[#a89fff]" title="Lines pooled from several customer orders">
+            🧲 {pooledCount} pooled
+          </span>
+        )}
       </div>
+
+      {/* Receiving — only for batches that were pooled from customer orders */}
+      {pooledCount > 0 && (
+        <button
+          onClick={() => setReceiving(true)}
+          className="w-full mb-3 py-1.5 rounded-lg bg-[#534AB7]/20 hover:bg-[#534AB7]/35 border border-[#534AB7]/50 text-[#c9c3ff] text-xs font-medium transition-colors">
+          📥 Receive &amp; split back to customers
+        </button>
+      )}
+      {receiving && <ReceiveModal vo={order} onClose={() => setReceiving(false)} />}
 
       {/* Status selector + progress */}
       <div className="space-y-2">
