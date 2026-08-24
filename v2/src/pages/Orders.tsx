@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { Order, AppData } from '../types';
@@ -32,12 +32,17 @@ export default function Orders() {
   // then auto-expand and scroll to that specific order card.
   const [searchParams] = useSearchParams();
   const [focusOrderId] = useState<string | null>(() => searchParams.get('focus'));
-  const focusAppliedRef = useRef(false);
+  const [focusApplied, setFocusApplied] = useState(false);
 
   const stats  = useMemo(() => computeStats(allOrders), [allOrders]);
   const clients = useMemo(() => data.vocabulary?.clients ?? [], [data.vocabulary]);
   const dnames  = useMemo(() => data.vocabulary?.dnames  ?? [], [data.vocabulary]);
   const dcodes  = useMemo(() => data.vocabulary?.dcodes  ?? [], [data.vocabulary]);
+  // Cohort tags already in use anywhere, for the new-order tag suggestions
+  const knownTags = useMemo(
+    () => [...new Set((data.orders ?? []).flatMap(o => o.tags ?? []))].sort(),
+    [data.orders],
+  );
 
   // ── Client sidebar (active, non-archived orders only) — mirrors Phase 1 ──────
   const clientMap = useMemo(() => {
@@ -47,7 +52,7 @@ export default function Orders() {
       if (!map.has(o.client)) map.set(o.client, { orders: [], done: 0, pending: 0 });
       const cd = map.get(o.client)!;
       cd.orders.push(o);
-      orderStatus(o) === 'done' ? cd.done++ : cd.pending++;
+      if (orderStatus(o) === 'done') cd.done++; else cd.pending++;
     });
     return map;
   }, [allOrders]);
@@ -57,25 +62,28 @@ export default function Orders() {
 
   // Apply the focus target once its order is available: route to the Archived
   // tab if that order was archived (otherwise it wouldn't appear in the
-  // default Active list and the scroll-to would fail silently).
-  useEffect(() => {
-    if (!focusOrderId || focusAppliedRef.current) return;
+  // default Active list and the scroll-to would fail silently). Adjusted
+  // directly during render (React's recommended pattern for deriving state
+  // from a prop/param change) rather than in an effect, since it's a one-time
+  // reaction to data becoming available, not a subscription to an external system.
+  if (focusOrderId && !focusApplied) {
     const order = allOrders.find(o => o.id === focusOrderId);
-    if (!order) return;
-    focusAppliedRef.current = true;
-    setViewMode(order.archived ? 'archived' : 'active');
-    if (!order.archived) setSelectedClient(order.client);
-    setSearch('');
-    setStatusFilter('');
-  }, [focusOrderId, allOrders]);
+    if (order) {
+      setFocusApplied(true);
+      setViewMode(order.archived ? 'archived' : 'active');
+      if (!order.archived) setSelectedClient(order.client);
+      setSearch('');
+      setStatusFilter('');
+    }
+  }
 
   useEffect(() => {
-    if (!focusOrderId || !focusAppliedRef.current) return;
+    if (!focusOrderId || !focusApplied) return;
     const t = setTimeout(() => {
       document.getElementById(`oc-${focusOrderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 200);
     return () => clearTimeout(t);
-  }, [focusOrderId, viewMode, effectiveClient]);
+  }, [focusOrderId, focusApplied, viewMode, effectiveClient]);
 
   const q = search.trim().toLowerCase();
   const isGlobalSearch = q.length > 0;
@@ -85,8 +93,8 @@ export default function Orders() {
   // ── Which orders are visible right now ────────────────────────────────────────
   const { visibleOrders, sectionTitle, sectionMeta } = useMemo(() => {
     let list: Order[];
-    let title = '';
-    let meta = '';
+    let title: string;
+    let meta: string;
     if (viewMode === 'archived') {
       list = allOrders.filter(o => o.archived);
       if (q) list = list.filter(o => matchesSearch(o, q));
@@ -362,6 +370,7 @@ export default function Orders() {
           clients={clients}
           dnames={dnames}
           dcodes={dcodes}
+          knownTags={knownTags}
           onSave={handleSave}
           onClose={() => setModalOrder(undefined)}
         />

@@ -68,6 +68,16 @@ export interface VendorPipelineFields {
   dispatchedToClient?: boolean;
   dispatchedAt?: number;
   done?: boolean;
+  // ── Retail additions (Aug 2026) — all optional, older rows simply lack them ──
+  // Free-text special request for this exact row ("wants lighter weight").
+  // Surfaced as a tap-to-open badge; never silently truncated.
+  note?: string;
+  // Per-size quantities actually received back GOOD (after rejections).
+  // The existing pipe/karigar/platingReceived booleans keep working exactly as
+  // before — this is an extra detail layer, not a replacement.
+  recvQty?: Record<string, number>;
+  // Per-size quantities rejected by QC on arrival.
+  rejQty?: Record<string, number>;
 }
 
 // ─── Variety (sub-design per code) ───────────────────────────────────────────
@@ -112,6 +122,10 @@ export interface Order {
   attachedFile?: { name: string; type: string; data?: string } | null;
   archived?: boolean;
   archivedAt?: number;
+  // ── Retail additions (Aug 2026) — all optional ──
+  promisedDate?: string;   // YYYY-MM-DD — what you told the customer
+  phone?: string;          // customer contact
+  tags?: string[];         // cohorts, e.g. ["Exhibition Aug 2026", "Retail"]
 }
 
 // ─── Inventory ledger entry ───────────────────────────────────────────────────
@@ -173,6 +187,39 @@ export interface VendorDesign {
   images?: DesignImage[];
   varieties?: DesignVariety[];
   unit?: string;
+  // ── Retail additions (Aug 2026) ──
+  // WHERE the pooled quantity came from. Without this, clubbing several
+  // customers into one batch loses track of who is owed what — see
+  // PoolSource below. Absent on every pre-existing vendor order, which is
+  // fine: those were always one-order-to-one-vendor.
+  sources?: PoolSource[];
+  // Extra pieces deliberately made beyond customer demand, per size.
+  bufferSizes?: Record<string, number>;  // cover for rejections
+  stockSizes?: Record<string, number>;   // speculative / for stock
+}
+
+// One customer's contribution to a pooled vendor-order line.
+export interface PoolSource {
+  orderDbId: string;         // Order.id
+  orderLabel: string;        // ORD-014 / RET-003, for display
+  client: string;
+  designId: string;
+  varietyId: string | null;  // null = flat/CNC row
+  sizes: Record<string, number>;
+}
+
+// ─── Finished-goods stock ─────────────────────────────────────────────────────
+// Created by the retail work (Aug 2026). Phase 1 has an empty `stockItems`
+// array that was never used; this is a fresh, real implementation.
+export interface StockItem {
+  id: string;
+  code: string;
+  name: string;
+  family?: string;
+  finish?: string;
+  sizes: Record<string, number>;
+  images?: DesignImage[];
+  updatedAt: number;
 }
 
 export type VendorOrderType = 'pipe' | 'karigar' | 'plating';
@@ -200,6 +247,10 @@ export interface AppData {
   vocabulary?: Vocabulary;
   vocabularyManual?: Vocabulary;
   vendorTypes?: Record<string, VendorOrderType>; // vendor name -> default segment (Masters page)
+  // ── Retail additions (Aug 2026) — all optional ──
+  designFamilies?: Record<string, string>; // UPPERCASED design code -> family name
+  familyNotes?: Record<string, string>;    // family name -> standing notes
+  stockItems?: StockItem[];                // finished-goods stock
 }
 
 // ─── Edit lock ───────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Order, EmbeddedDesign, VendorOrder } from '../../types';
-import { orderStatus, orderPct, orderTotalQty, PRIORITY_LABELS, BANGLE_TYPE_LABELS, uid } from '../../lib/orderUtils';
+import { orderStatus, orderPct, orderTotalQty, PRIORITY_LABELS, BANGLE_TYPE_LABELS, uid, isOrderOverdue } from '../../lib/orderUtils';
 import { coOrderStageCounts, CO_STAGE_DEFS, markDesignCompleteFields } from '../../lib/coStageUtils';
 import { makeStageFresh, DEFAULT_SIZES } from '../../lib/designUtils';
 import DesignsTab from './DesignsTab';
@@ -27,6 +27,41 @@ interface Props {
 const priorityColors: Record<string, string> = {
   normal: 'text-white/40', urgent: 'text-orange-400', critical: 'text-red-400',
 };
+
+function InlineField({ field, value, type = 'text', options, canEdit, editingField, fieldValue, onStartEdit, onChangeValue, onCommit }: {
+  field: string; value: string; type?: string; options?: { value: string; label: string }[];
+  canEdit: boolean; editingField: string | null; fieldValue: string;
+  onStartEdit: (field: string, value: string) => void;
+  onChangeValue: (value: string) => void;
+  onCommit: (field: string, value: string) => void;
+}) {
+  if (!canEdit) return <span className="text-white">{value || '—'}</span>;
+  if (editingField === field) {
+    if (options) {
+      return (
+        <select autoFocus value={fieldValue}
+          onChange={e => onChangeValue(e.target.value)}
+          onBlur={() => onCommit(field, fieldValue)}
+          className="bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none">
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      );
+    }
+    return (
+      <input autoFocus type={type} value={fieldValue}
+        onChange={e => onChangeValue(e.target.value)}
+        onBlur={() => onCommit(field, fieldValue)}
+        onKeyDown={e => e.key === 'Enter' && onCommit(field, fieldValue)}
+        className={`bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none ${type === 'date' ? '[color-scheme:dark]' : ''}`} />
+    );
+  }
+  return (
+    <span className="text-white cursor-pointer hover:text-[#a89fff] transition-colors"
+      onClick={() => onStartEdit(field, value)}>
+      {value || <span className="text-white/30 italic">click to edit</span>}
+    </span>
+  );
+}
 
 export default function OrderCard({
   order, canEdit, dnames, dcodes, vendorOrders, archivedView, autoExpand, onUpdate, onEdit, onDelete, onArchive, onRestore, onDuplicate,
@@ -87,33 +122,9 @@ export default function OrderCard({
     { id: 'vendor',  label: 'Vendor Summary' },
   ];
 
-  function InlineField({ field, value, type = 'text', options }: { field: string; value: string; type?: string; options?: { value: string; label: string }[] }) {
-    if (!canEdit) return <span className="text-white">{value || '—'}</span>;
-    if (editingField === field) {
-      if (options) {
-        return (
-          <select autoFocus value={fieldValue}
-            onChange={e => setFieldValue(e.target.value)}
-            onBlur={() => commitField(field, fieldValue)}
-            className="bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none">
-            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        );
-      }
-      return (
-        <input autoFocus type={type} value={fieldValue}
-          onChange={e => setFieldValue(e.target.value)}
-          onBlur={() => commitField(field, fieldValue)}
-          onKeyDown={e => e.key === 'Enter' && commitField(field, fieldValue)}
-          className={`bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none ${type === 'date' ? '[color-scheme:dark]' : ''}`} />
-      );
-    }
-    return (
-      <span className="text-white cursor-pointer hover:text-[#a89fff] transition-colors"
-        onClick={() => { setEditingField(field); setFieldValue(value); }}>
-        {value || <span className="text-white/30 italic">click to edit</span>}
-      </span>
-    );
+  function startFieldEdit(field: string, value: string) {
+    setEditingField(field);
+    setFieldValue(value);
   }
 
   const statusBadge = status === 'archived'
@@ -138,10 +149,25 @@ export default function OrderCard({
                 ⚡ {PRIORITY_LABELS[order.priority]}
               </span>
             )}
+            {isOrderOverdue(order) && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium text-red-300 bg-red-500/20"
+                title={`Promised ${order.promisedDate} — not all items dispatched`}>
+                ⚠ Overdue
+              </span>
+            )}
+            {(order.tags ?? []).map(t => (
+              <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[#534AB7]/30 text-[#c9c3ff]">{t}</span>
+            ))}
           </div>
           <p className="text-white font-semibold mt-0.5 truncate">{order.client}</p>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/40 mt-0.5">
             <span>📅 {order.startDate}</span>
+            {order.promisedDate && (
+              <span className={isOrderOverdue(order) ? 'text-red-300' : ''}>
+                🎯 promised {order.promisedDate}
+              </span>
+            )}
+            {order.phone && <span>📞 {order.phone}</span>}
             <span>{BANGLE_TYPE_LABELS[order.bangleType]}</span>
             <span>{order.designs.length} design{order.designs.length !== 1 ? 's' : ''}</span>
             {qty > 0 && <span>{qty} pcs</span>}
@@ -218,15 +244,21 @@ export default function OrderCard({
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                   <div>
                     <p className="text-xs text-white/40 mb-0.5">Client</p>
-                    <InlineField field="client" value={order.client} />
+                    <InlineField field="client" value={order.client}
+                      canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
+                      onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField} />
                   </div>
                   <div>
                     <p className="text-xs text-white/40 mb-0.5">Start date</p>
-                    <InlineField field="startDate" value={order.startDate} type="date" />
+                    <InlineField field="startDate" value={order.startDate} type="date"
+                      canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
+                      onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField} />
                   </div>
                   <div>
                     <p className="text-xs text-white/40 mb-0.5">Priority</p>
                     <InlineField field="priority" value={order.priority}
+                      canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
+                      onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField}
                       options={[
                         { value: 'normal', label: 'Normal' },
                         { value: 'urgent', label: 'Urgent' },
@@ -236,6 +268,8 @@ export default function OrderCard({
                   <div>
                     <p className="text-xs text-white/40 mb-0.5">Bangle type</p>
                     <InlineField field="bangleType" value={order.bangleType}
+                      canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
+                      onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField}
                       options={[
                         { value: 'dye_gold', label: 'Dye Gold' },
                         { value: 'cnc', label: 'CNC' },

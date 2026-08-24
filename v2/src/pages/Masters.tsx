@@ -3,13 +3,15 @@ import { useApp } from '../store/AppContext';
 import type { VendorOrderType } from '../types';
 import { addMasterEntry, deleteMasterEntry, renameMasterEntry, setVendorTypeMaster, vendorTypeOf, type MasterListKey } from '../lib/mastersUtils';
 import { buildAuditLog } from '../lib/auditUtils';
+import FamiliesTab from '../components/masters/FamiliesTab';
 
-type Tab = 'clients' | 'vendors' | 'designs' | 'units';
+type Tab = 'clients' | 'vendors' | 'designs' | 'families' | 'units';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'clients', label: 'Clients',      icon: '👤' },
   { id: 'vendors', label: 'Vendors',      icon: '🏭' },
   { id: 'designs', label: 'Design Names & Codes', icon: '🎨' },
+  { id: 'families', label: 'Families',     icon: '🧩' },
   { id: 'units',   label: 'Units',        icon: '📏' },
 ];
 
@@ -27,7 +29,7 @@ export default function Masters() {
   const [tab, setTab] = useState<Tab>('clients');
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className={`p-6 mx-auto ${tab === 'families' ? 'max-w-5xl' : 'max-w-4xl'}`}>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Masters</h1>
         <p className="text-sm text-white/40 mt-0.5">
@@ -54,6 +56,7 @@ export default function Masters() {
           <MasterList label="Design code" listKey="dcodes" data={data} canEdit={canEdit} saveAppData={saveAppData} showToast={showToast} auditUser={session?.username} />
         </div>
       )}
+      {tab === 'families' && <FamiliesTab />}
       {tab === 'units' && <MasterList label="Unit" listKey="units" data={data} canEdit={canEdit} saveAppData={saveAppData} showToast={showToast} auditUser={session?.username} />}
     </div>
   );

@@ -96,6 +96,9 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
   const [editingName, setEditingName] = useState<{ di: number; value: string } | null>(null);
   const [editingCode, setEditingCode] = useState<{ di: number; value: string } | null>(null);
   const [editingVarName, setEditingVarName] = useState<{ di: number; vi: number; value: string } | null>(null);
+  // Special-request note editor (retail addition, Aug 2026)
+  const [noteEdit, setNoteEdit] = useState<{ di: number; vi: number } | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
   const [picker, setPicker] = useState<{ di: number; vi: number | null } | null>(null);
 
   function attachImage(di: number, vi: number | null, image: DesignImage) {
@@ -257,6 +260,7 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Pipe</th>
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Karigar</th>
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Plating</th>
+                    <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Special request for this row">Note</th>
                     <th className="text-center px-1 py-1.5 text-white/30 font-normal">Done</th>
                     {canEdit && <th className="w-6" />}
                   </tr>
@@ -321,6 +325,22 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
                         </td>
                         <td className="text-center px-1 py-1.5">
                           <button
+                            onClick={() => {
+                              const open = noteEdit?.di === di && noteEdit.vi === vi;
+                              if (open) { setNoteEdit(null); return; }
+                              setNoteEdit({ di, vi });
+                              setNoteDraft(v.note ?? '');
+                            }}
+                            title={v.note || 'Add a special request for this row'}
+                            className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
+                              v.note
+                                ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                                : 'text-white/20 hover:text-white/60 border border-transparent'
+                            }`}
+                          >{v.note ? '📌' : '+'}</button>
+                        </td>
+                        <td className="text-center px-1 py-1.5">
+                          <button
                             disabled={!canEdit}
                             onClick={() => updateVarietyFields(di, vi, toggleVarietyDone(v))}
                             title={v.done ? 'Undo dispatched' : 'Mark this variety dispatched'}
@@ -340,6 +360,46 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
                       </tr>
                     );
                   })}
+                  {/* Special-request note editor — opens under the row it belongs to */}
+                  {noteEdit?.di === di && (
+                    <tr className="bg-amber-400/5">
+                      <td colSpan={99} className="px-3 py-2">
+                        <div className="flex items-start gap-2">
+                          <span className="text-amber-300 text-xs pt-1.5">📌</span>
+                          <div className="flex-1">
+                            <label className="block text-[10px] uppercase tracking-wide text-amber-300/70 mb-1">
+                              Special request — {varieties[noteEdit.vi]?.name || 'this row'}
+                            </label>
+                            {canEdit ? (
+                              <textarea
+                                autoFocus
+                                rows={2}
+                                value={noteDraft}
+                                onChange={e => setNoteDraft(e.target.value)}
+                                placeholder="e.g. wants slightly lighter weight — confirmed on call"
+                                className="w-full bg-white/5 border border-amber-400/30 rounded-lg px-3 py-2 text-white placeholder-white/25 text-xs focus:outline-none focus:border-amber-400"
+                              />
+                            ) : (
+                              <p className="text-xs text-white/70">{varieties[noteEdit.vi]?.note || '—'}</p>
+                            )}
+                            {canEdit && (
+                              <div className="flex gap-2 mt-1.5">
+                                <button
+                                  onClick={() => {
+                                    const vi = noteEdit.vi;
+                                    updateVarietyFields(di, vi, { ...varieties[vi], note: noteDraft.trim() || undefined });
+                                    setNoteEdit(null);
+                                  }}
+                                  className="px-2.5 py-1 rounded bg-[#534AB7] hover:bg-[#6259c8] text-white text-xs font-medium">Save note</button>
+                                <button onClick={() => setNoteEdit(null)}
+                                  className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-white/60 text-xs">Cancel</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {/* Totals row */}
                   <tr className="border-t border-white/10">
                     <td className="pr-3 py-1.5 text-white/30 text-xs">Total</td>

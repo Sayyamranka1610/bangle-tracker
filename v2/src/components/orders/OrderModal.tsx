@@ -25,6 +25,7 @@ interface Props {
   clients: string[];
   dnames: string[];          // design name autocomplete
   dcodes: string[];          // design code autocomplete
+  knownTags: string[];       // existing cohort tags, for suggestions
   onSave: (order: Order) => void;
   onClose: () => void;
 }
@@ -321,7 +322,7 @@ function DesignSection({
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
-export default function OrderModal({ order, clients, dnames, dcodes, onSave, onClose }: Props) {
+export default function OrderModal({ order, clients, dnames, dcodes, knownTags, onSave, onClose }: Props) {
   const isEdit = order !== null;
 
   // Order-level fields
@@ -331,6 +332,11 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
   const [bangleType, setBangleType] = useState<BangleType>(order?.bangleType ?? 'dye_gold');
   const [notes, setNotes]       = useState(order?.notes ?? '');
   const [clientAc, setClientAc] = useState(false);
+  // Retail additions (Aug 2026)
+  const [promisedDate, setPromisedDate] = useState(order?.promisedDate ?? '');
+  const [phone, setPhone]       = useState(order?.phone ?? '');
+  const [tags, setTags]         = useState<string[]>(order?.tags ?? []);
+  const [tagDraft, setTagDraft] = useState('');
   const [error, setError]       = useState('');
   const [attachedFile, setAttachedFile] = useState<Order['attachedFile']>(order?.attachedFile ?? null);
   const [importStatus, setImportStatus] = useState('');
@@ -423,6 +429,9 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
       notes: notes.trim() || undefined,
       designs: embeddedDesigns,
       attachedFile,
+      promisedDate: promisedDate || undefined,
+      phone: phone.trim() || undefined,
+      tags: tags.length ? tags : undefined,
     };
     onSave(saved);
   }
@@ -513,6 +522,61 @@ export default function OrderModal({ order, clients, dnames, dcodes, onSave, onC
                   {BANGLE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
+            </div>
+
+            {/* Promised date + phone (retail) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-white/60 mb-1">
+                  Promised to customer
+                  <span className="text-white/30 ml-1">— drives the overdue warnings</span>
+                </label>
+                <input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
+              </div>
+              <div>
+                <label className="block text-xs text-white/60 mb-1">Customer phone</label>
+                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Optional"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+              </div>
+            </div>
+
+            {/* Tags / cohorts */}
+            <div>
+              <label className="block text-xs text-white/60 mb-1">
+                Tags <span className="text-white/30">— e.g. "Exhibition Aug 2026", "Retail"</span>
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {tags.map(t => (
+                  <span key={t} className="inline-flex items-center gap-1 bg-[#534AB7]/30 border border-[#534AB7]/50 text-[#c9c3ff] rounded-full px-2.5 py-0.5 text-xs">
+                    {t}
+                    <button type="button" onClick={() => setTags(tags.filter(x => x !== t))}
+                      className="text-[#c9c3ff]/60 hover:text-white leading-none">×</button>
+                  </span>
+                ))}
+              </div>
+              <input
+                value={tagDraft}
+                onChange={e => setTagDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    const v = tagDraft.trim();
+                    if (v && !tags.includes(v)) setTags([...tags, v]);
+                    setTagDraft('');
+                  }
+                }}
+                onBlur={() => {
+                  const v = tagDraft.trim();
+                  if (v && !tags.includes(v)) setTags([...tags, v]);
+                  setTagDraft('');
+                }}
+                list="bt-tag-options"
+                placeholder="Type a tag and press Enter…"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+              <datalist id="bt-tag-options">
+                {knownTags.map(t => <option key={t} value={t} />)}
+              </datalist>
             </div>
 
             {/* Notes */}

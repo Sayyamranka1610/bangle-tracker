@@ -69,3 +69,26 @@ export const BANGLE_TYPE_LABELS: Record<string, string> = {
 export function uid(): string {
   return crypto.randomUUID();
 }
+
+// ─── Promised-date helpers (retail additions, Aug 2026) ──────────────────────
+// An order is overdue when the date you promised the customer has passed and
+// at least one row has still not been dispatched. Orders with no promised date
+// are never overdue — the field is optional and most older orders lack it.
+
+export function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function isOrderOverdue(order: Order, today: string = todayISO()): boolean {
+  if (!order.promisedDate) return false;
+  if (order.archived) return false;
+  if (order.promisedDate >= today) return false;
+  return orderStatus(order) !== 'done';
+}
+
+/** Negative = days late, positive = days remaining, null = no promised date. */
+export function daysUntilPromised(order: Order, today: string = todayISO()): number | null {
+  if (!order.promisedDate) return null;
+  const ms = new Date(order.promisedDate + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime();
+  return Math.round(ms / 86400000);
+}

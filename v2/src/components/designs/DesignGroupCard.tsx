@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { DesignEntry } from '../../lib/designUtils';
 import type { DesignStage } from '../../types';
-import { designTotalQty, designPct, STATUS_CONFIG, stageGroup, aggreagatedSizes } from '../../lib/designUtils';
+import { designTotalQty, designPct, STATUS_CONFIG, stageGroup, aggreagatedSizes, exportDesignCSV, printDesignGroup } from '../../lib/designUtils';
 import SizeTable from './SizeTable';
 import StagePanel from './StagePanel';
 
@@ -62,6 +62,18 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
         <div className="text-xs text-white/40 flex-shrink-0">
           {entries.length} order{entries.length !== 1 ? 's' : ''}
         </div>
+        <button
+          onClick={() => exportDesignCSV(code, entries)}
+          className="text-[10px] font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded px-2 py-1 flex-shrink-0 transition-colors"
+        >
+          📥 Export
+        </button>
+        <button
+          onClick={() => printDesignGroup(code, entries)}
+          className="text-[10px] font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded px-2 py-1 flex-shrink-0 transition-colors"
+        >
+          🖨️ Print
+        </button>
       </div>
 
       {/* One entry per order */}

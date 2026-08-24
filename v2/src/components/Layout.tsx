@@ -3,6 +3,7 @@ import { useApp } from '../store/AppContext';
 import ToastContainer from './ToastContainer';
 
 const navItems = [
+  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
   { to: '/orders',    label: 'Orders',    icon: '📋' },
   { to: '/designs',   label: 'Designs',   icon: '🎨' },
   { to: '/vendors',   label: 'Vendors',   icon: '🏭' },

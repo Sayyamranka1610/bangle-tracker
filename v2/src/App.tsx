@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Orders from './pages/Orders';
+import Dashboard from './pages/Dashboard';
 import Designs from './pages/Designs';
 import Analytics from './pages/Analytics';
 import Audit from './pages/Audit';
@@ -22,6 +23,7 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route index element={<Navigate to="/orders" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/orders"    element={<Orders />} />
               <Route path="/designs"   element={<Designs />} />
               <Route path="/vendors"   element={<Vendors />} />
