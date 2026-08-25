@@ -3819,6 +3819,7 @@ function openDataHealthModal(){
 
       <div class="modal-actions">
         <button onclick="if(confirm('Clear all audit log entries?')){S.auditLog=[];save();render();closeModal();showToast('Audit log cleared','amber')}">🗑 Clear audit log</button>
+        <button onclick="btPhotoStorage()">📷 Photo storage</button>
         <button onclick="backupToFile();closeModal()">📤 Download backup</button>
         <button class="primary" onclick="closeModal()">Close</button>
       </div>
@@ -17936,6 +17937,178 @@ function btUnitFixerRender(){
       '<div style="overflow:auto;flex:1;min-height:0">'+body+'</div>'+
       '<div class="modal-actions"><button onclick="closeModal()">Done</button></div>'+
     '</div></div>';
+}
+
+/* ── 9. PHOTO STORAGE ───────────────────────────────────────────
+   The local photo cache is read in full on every startup, so a big one makes
+   the app slow to open. Clearing site data empties it and feels like a fix,
+   but any photo that had not reached the cloud yet is destroyed with it.
+
+   Worse, the 150 MB safety cap skips LOADING the cache - and because the
+   upload step only ran after a successful load, the very devices holding the
+   most unsaved photos were the ones that never uploaded any. That is fixed
+   here: migration now works straight off the IDB keys and never needs the
+   whole cache in memory.                                                    */
+
+// Sizes only, one record at a time via a cursor. Never holds the image bytes,
+// so this is safe to run on a cache far too big for idbGetAll().
+async function btIdbScanSizes(){
+  const db=await idbOpen();
+  return new Promise((resolve,reject)=>{
+    const out=[];
+    const tx=db.transaction(IDB_STORE,'readonly');
+    const req=tx.objectStore(IDB_STORE).openCursor();
+    req.onsuccess=e=>{
+      const cur=e.target.result;
+      if(!cur){resolve(out);return;}
+      const v=cur.value&&cur.value.value;
+      out.push({key:cur.key,size:(typeof v==='string'?v.length:0)});
+      cur.continue();
+    };
+    req.onerror=e=>reject(e.target.error);
+  });
+}
+
+// Every image object held in state, wherever it lives.
+function btAllStateImages(){
+  const out=[];
+  const add=arr=>(arr||[]).forEach(i=>{if(i)out.push(i);});
+  (S.orders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    add(d.images);(d.varieties||[]).forEach(v=>add(v.images));}));
+  (S.vendorOrders||[]).forEach(o=>(o.designs||[]).forEach(d=>{
+    add(d.images);(d.varieties||[]).forEach(v=>add(v.images));}));
+  (S.stockItems||[]).forEach(it=>add(it.images));
+  return out;
+}
+const btIsCloud=img=>typeof img.data==='string'&&/^https?:/.test(img.data);
+const btIsLocal=img=>typeof img.data==='string'&&(img.data.startsWith('__IDB__')||img.data.startsWith('data:'));
+
+async function btStorageReport(){
+  const entries=await btIdbScanSizes();
+  const bytes=entries.reduce((a,e)=>a+e.size,0);
+  const imgs=btAllStateImages();
+  const cloud=imgs.filter(btIsCloud).length;
+  const local=imgs.filter(btIsLocal).length;
+  return {entries:entries.length, bytes:bytes, mb:bytes/1048576,
+    overCap:bytes>IDB_MEMORY_SAFETY_CAP, capMB:IDB_MEMORY_SAFETY_CAP/1048576,
+    photos:imgs.length, inCloud:cloud, notInCloud:local};
+}
+
+// Uploads every photo that is not yet in the cloud, working from the IDB key
+// when state still holds an __IDB__ reference (which is exactly the case on an
+// over-cap device). Batched, and never loads the whole cache.
+async function btMigrateAllToCloud(onProgress){
+  if(typeof R2_WORKER_URL==='undefined'||!R2_WORKER_URL||!R2_UPLOAD_KEY)
+    return {done:0,failed:0,skipped:true};
+  if(_readOnly) return {done:0,failed:0,readOnly:true};
+  try{ _fb.pendingLocal=true; }catch(e){}
+  const targets=btAllStateImages().filter(btIsLocal);
+  let done=0,failed=0;const usedKeys=[];
+  for(let i=0;i<targets.length;i++){
+    const img=targets[i];
+    try{
+      let b64=img.data,key=null;
+      if(b64.startsWith('__IDB__')){
+        key=b64.slice(7);
+        b64=await idbGet(key);              // one record, not the whole store
+        if(!b64||!String(b64).startsWith('data:')){failed++;continue;}
+      } else if(_idbSessionCache){
+        key=Object.keys(_idbSessionCache).find(k=>_idbSessionCache[k]===b64)||null;
+      }
+      const compressed=await compressImageToThumb(b64,1200);
+      const url=await uploadToR2(compressed);
+      if(url){ img.data=url; if(key)usedKeys.push(key); done++; } else failed++;
+    }catch(e){ failed++; }
+    if(onProgress&&(i%3===0||i===targets.length-1))onProgress(i+1,targets.length,done,failed);
+    if(i%3===2)await new Promise(r=>setTimeout(r,60));  // let the UI breathe
+  }
+  if(done>0){
+    save();
+    try{ await fbPush(true); }catch(e){}
+    for(const k of usedKeys){ try{ await idbDelete(k); }catch(e){} }
+  } else { try{ _fb.pendingLocal=false; }catch(e){} }
+  return {done:done,failed:failed};
+}
+
+// Migrate anything still local, then drop cache entries nothing refers to.
+async function btFreeUpSpace(){
+  const btn=document.getElementById('bt-free-btn');
+  // Look the status box up every time: refreshing the panel replaces it, and a
+  // cached reference would leave the final message written to a dead element.
+  const say=t=>{ const el=document.getElementById('bt-free-status'); if(el)el.innerHTML=t; };
+  if(btn){btn.disabled=true;btn.style.opacity='.6';}
+  try{
+    const before=await btStorageReport();
+    if(before.notInCloud>0){
+      say('Uploading '+before.notInCloud+' photo(s) to the cloud\u2026');
+      const r=await btMigrateAllToCloud((i,n,d,f)=>say('Uploading photo '+i+' of '+n+'\u2026 ('+d+' saved'+(f?', '+f+' failed':'')+')'));
+      if(r.skipped){ say('<b style="color:#A32D2D">Cloud upload is not configured, so nothing was cleared.</b>'); return; }
+      if(r.readOnly){ say('<b style="color:#A32D2D">This device is read-only, so nothing was changed.</b>'); return; }
+      if(r.failed>0){
+        await btPhotoStorageRefresh();
+        say('<b style="color:#A32D2D">'+r.failed+' photo(s) could not be uploaded \u2014 nothing was deleted.</b>'+
+            '<div style="margin-top:4px">Check your internet and try again. Your photos are still safe on this device.</div>');
+        return;
+      }
+    }
+    say('Tidying up the local cache\u2026');
+    try{ await _pruneOrphanedIDBEntries(); }catch(e){}
+    const after=await btStorageReport();
+    const freed=Math.max(0,before.mb-after.mb);
+    audit('Photo storage','Freed '+freed.toFixed(0)+' MB; '+before.notInCloud+' photo(s) uploaded to cloud');
+    await btPhotoStorageRefresh();
+    say('<b style="color:#0F6E56">\u2705 Done \u2014 every photo is in the cloud'+
+        (freed>=1?(' and '+freed.toFixed(0)+' MB was freed on this device'):'')+'.</b>'+
+        '<div style="margin-top:4px">It is now safe to clear site data if you ever need to, and the app should open faster.</div>');
+  }catch(e){
+    say('<b style="color:#A32D2D">Could not finish: '+esc(e.message||String(e))+'</b>');
+  }finally{
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+  }
+}
+
+async function btPhotoStorageRefresh(){
+  const box=document.getElementById('bt-storage-body'); if(!box)return;
+  box.innerHTML='<p style="font-size:12px;color:#6b6478;padding:8px 0">Checking this device\u2026</p>';
+  let r;
+  try{ r=await btStorageReport(); }
+  catch(e){ box.innerHTML='<p style="font-size:12px;color:#A32D2D">Could not read local storage: '+esc(e.message||'')+'</p>'; return; }
+  const risk=r.notInCloud>0;
+  const row=(label,value,color)=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #F1EFE8;font-size:12px">'+
+    '<span style="color:#6b6478">'+label+'</span><b style="color:'+(color||'#2A2458')+'">'+value+'</b></div>';
+  box.innerHTML=
+    (risk?'<div style="background:#FCEBEB;border:1.5px solid #F5A0A0;border-radius:9px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.65">'+
+      '<b style="color:#A32D2D">\u26A0 '+r.notInCloud+' photo(s) exist only on this device.</b><br>'+
+      'If you clear site data now, those photos are gone for good. Tap the button below first \u2014 it puts them in the cloud, then frees the space safely.</div>'
+     :'<div style="background:#E1F5EE;border:1.5px solid #9FE1CB;border-radius:9px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.65">'+
+      '<b style="color:#0F6E56">\u2705 Every photo is safely in the cloud.</b><br>'+
+      'Nothing here is device-only, so clearing site data cannot lose a photo.</div>')+
+    row('Photos in this app', r.photos)+
+    row('Saved in the cloud', r.inCloud, '#0F6E56')+
+    row('Only on this device', r.notInCloud, risk?'#A32D2D':'#0F6E56')+
+    row('Local cache size', r.mb.toFixed(1)+' MB', r.mb>60?'#BA7517':'#2A2458')+
+    row('Cached items', r.entries)+
+    (r.overCap?'<div style="background:#FAEEDA;border:1.5px solid #E8C98A;border-radius:9px;padding:9px 11px;margin-top:9px;font-size:11.5px;line-height:1.6">'+
+      'This cache is over the '+r.capMB+' MB limit, so the app skips loading it at startup and some photos may not show on this device. '+
+      'Freeing the space below fixes that.</div>':'')+
+    '<div style="font-size:11.5px;color:#6b6478;margin-top:10px;line-height:1.6">'+
+      'The app re-reads this cache every time it opens, so a large cache is the usual reason it feels slow to start.</div>'+
+    '<div id="bt-free-status" style="font-size:12px;color:#3C3489;margin-top:10px;line-height:1.6"></div>';
+}
+
+function btPhotoStorage(){
+  const mc=document.getElementById('modal-container'); if(!mc)return;
+  mc.innerHTML='<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'+
+    '<div class="modal" style="width:520px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">'+
+      '<div class="modal-header"><div class="modal-icon" style="background:#EDEBFC;color:#4A3AAE">\uD83D\uDCF7</div>'+
+        '<h3>Photo storage</h3></div>'+
+      '<div id="bt-storage-body" style="overflow:auto;flex:1;min-height:0"></div>'+
+      '<div class="modal-actions">'+
+        '<button id="bt-free-btn" class="primary" onclick="btFreeUpSpace()">\u2601 Save photos to cloud &amp; free space</button>'+
+        '<button onclick="closeModal()">Close</button>'+
+      '</div>'+
+    '</div></div>';
+  btPhotoStorageRefresh();
 }
 
 /* ── 4. CLIENT DASHBOARD ─────────────────────────────────────────────────────
