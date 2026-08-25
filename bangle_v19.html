@@ -8036,12 +8036,12 @@ function _buildDropdownXLSX(partyNames, dnames, dcodes, units, isVendor){
   s1.push(`<row r="5">${sc(0,5,'Notes (Optional)')}</row>`);
   if(isVendor)s1.push(`<row r="6">${sc(0,6,'Order Type (pipe / karigar / plating)')}</row>`);
   s1.push(`<row r="7">${sc(0,7,'CNC DESIGNS & QUANTITIES')}</row>`);
-  const cncHdr=['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit'];
+  const cncHdr=['Design Name','Design Code','2/2','2/4','2/6','2/8','2/10','Total','Unit','Rate (₹)','Note'];
   s1.push(`<row r="8">${cncHdr.map((h,i)=>sc(i,8,h)).join('')}</row>`);
   // CNC data rows 9-21: Total column H = SUM of sizes C:G (2/2 thru 2/10)
   for(let r=9;r<=21;r++) s1.push(`<row r="${r}">${fc(7,r,`SUM(C${r}:G${r})`)}</row>`);
   s1.push(`<row r="22">${sc(0,22,'DYE GOLD DESIGNS & VARIETIES')}</row>`);
-  const dyeHdr=['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit'];
+  const dyeHdr=['Design Name','Design Code','Variety','2/2','2/4','2/6','2/8','2/10','2/12','Row Total','Unit','Rate (₹)','Note'];
   s1.push(`<row r="23">${dyeHdr.map((h,i)=>sc(i,23,h)).join('')}</row>`);
   // Dye Gold data rows 24-53: Row Total column J = SUM of sizes D:I (2/2 thru 2/12)
   for(let r=24;r<=53;r++) s1.push(`<row r="${r}">${fc(9,r,`SUM(D${r}:I${r})`)}</row>`);
@@ -8249,6 +8249,7 @@ function processOrderFile(file){
   const status=document.getElementById('import-status');
   if(!status)return;
   const name=file.name.toLowerCase();
+  window._btImportUnitIssues=[];
 
   // Store file for later download under Order details
   const fileReader=new FileReader();
@@ -8360,7 +8361,8 @@ function processOrderFile(file){
         // 'Default' variety holding that code's quantities.
         // Dye Gold rows → rows sharing the same name+code are grouped as
         // multiple varieties under that one design.
-        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx)=>{
+        const groupIntoDesigns=(dataRows,dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx,rIdx,nIdx)=>{
+          if(rIdx===undefined)rIdx=-1; if(nIdx===undefined)nIdx=-1;
           const designMap=[];
           const byKey={};
           let lastDN='',lastDC='';
@@ -8388,8 +8390,16 @@ function processOrderFile(file){
             if(existingNames.includes(finalVName)){let n=2;while(existingNames.includes(finalVName+' '+n))n++;finalVName=finalVName+' '+n;}
             const sizes={};
             allSizes.forEach(sz=>{sizes[sz]=parseInt(row[szIdxMap[sz]])||0;});
-            const unit=uIdx>=0?String(row[uIdx]||'').trim()||'pcs':'pcs';
-            design.varieties.push({id:uid(),name:finalVName,sizes,images:[],unit});
+            const unit=uIdx>=0?String(row[uIdx]||'').trim():'';
+            const _v={id:uid(),name:finalVName,sizes,images:[],unit:unit||'pcs'};
+            // Unit is compulsory: rate is per unit, so a blank one makes the
+            // order value meaningless. Collected here and refused by the caller.
+            if(!unit)window._btImportUnitIssues.push((lastDN||'?')+(lastDC?' ('+lastDC+')':'')+' \u2014 '+finalVName);
+            const _rate=rIdx>=0?parseFloat(row[rIdx]):NaN;
+            if(isFinite(_rate)&&_rate>0)_v.rate=_rate;
+            const _note=nIdx>=0?String(row[nIdx]||'').trim():'';
+            if(_note)_v.note=_note;
+            design.varieties.push(_v);
           });
           return designMap.filter(d=>d.name&&d.varieties.length>0);
         };
@@ -8415,7 +8425,9 @@ function processOrderFile(file){
             const szColSet=new Set(Object.values(szIdxMap));
             const vIdx=forceNoVariety?-1:hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
             const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
-            return groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx);
+            const rIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^rate/i.test(h));
+            const nIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^note$/i.test(h));
+            return groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx,rIdx,nIdx);
           };
 
           // ── Detect two-section template (CNC + Dye Gold) ───────────────────
@@ -8437,6 +8449,7 @@ function processOrderFile(file){
             }
             const dCount=allDesigns.length,vCount=allDesigns.reduce((a,d)=>a+d.varieties.length,0);
             const btLabel=detectedBT==='both'?'CNC + Dye Gold':detectedBT==='cnc'?'CNC':'Dye Gold';
+            if(btImportBlockedByUnit(status))return;
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded (${btLabel}).`;
             status.style.display='block';
             _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:allDesigns.length?allDesigns:undefined,bangleType:detectedBT||'dye_gold'},false);
@@ -8453,8 +8466,11 @@ function processOrderFile(file){
             const szColSet=new Set(Object.values(szIdxMap));
             const vIdx=hdr.findIndex((h,i)=>i>dcIdx&&!szColSet.has(i)&&/variety/i.test(h));
             const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
-            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx);
+            const rIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^rate/i.test(h));
+            const nIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^note$/i.test(h));
+            const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx,rIdx,nIdx);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
+            if(btImportBlockedByUnit(status))return;
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
             status.style.display='block';
             _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined},false);
@@ -8479,10 +8495,13 @@ function processOrderFile(file){
           headers.forEach((h,i)=>{if(/^\d+\/\d+$/.test(h)){szIdxMap[h]=i;allSizes.push(h);}});
           const szColSetG=new Set(Object.values(szIdxMap));
           const uIdxG=headers.findIndex((h,i)=>!szColSetG.has(i)&&/^unit$/i.test(h));
+          const rIdxG=headers.findIndex((h,i)=>!szColSetG.has(i)&&/^rate/i.test(h));
+          const nIdxG=headers.findIndex((h,i)=>!szColSetG.has(i)&&/^note$/i.test(h));
 
           if(dnIdx>=0){
-            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes,uIdxG);
+            const designs=groupIntoDesigns(rows.slice(1),dnIdx,dcIdx>=0?dcIdx:dnIdx,vIdx,szIdxMap,allSizes,uIdxG,rIdxG,nIdxG);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
+            if(btImportBlockedByUnit(status))return;
             status.textContent=`✅ Excel parsed — ${dCount} design${dCount===1?'':'s'}, ${vCount} variet${vCount===1?'y':'ies'} loaded.`;
             status.style.display='block';
             _openOrderWithNameCheck({orderId,client,startDate:startDate||new Date().toISOString().split('T')[0],notes,designs:designs.length?designs:undefined},false);
@@ -17691,6 +17710,25 @@ function btEditRowNote(oi,di,vi){
   audit('Row note',(d.code||d.name||'row')+': '+(txt?'"'+txt.slice(0,60)+'"':'removed'));
   scheduleAutosave();
   render();
+}
+
+/* ── 7. UNIT IS COMPULSORY ON IMPORT ───────────────────────────────
+   A rate is per the row's unit, so importing rows with no unit would quietly
+   produce meaningless order values. The sheet is refused instead, naming the
+   rows to fix. Rates and notes stay optional.                               */
+function btImportBlockedByUnit(status){
+  const issues=window._btImportUnitIssues||[];
+  if(!issues.length)return false;
+  const shown=issues.slice(0,6).map(x=>'\u2022 '+x).join('<br>');
+  const more=issues.length>6?('<br>\u2026and '+(issues.length-6)+' more'):'';
+  status.innerHTML='<b style="color:#C62828">\u26A0 Import stopped \u2014 '+issues.length+' row'+(issues.length!==1?'s have':' has')+' no Unit.</b>'+
+    '<div style="margin-top:5px;font-size:11.5px;line-height:1.7">Every row needs a Unit (pcs / pairs / jotta / Set), because the Rate is per unit. '+
+    'Fill the Unit column in your sheet and drop it again \u2014 nothing has been imported.'+
+    '<div style="margin-top:6px;color:#8A5100">'+shown+more+'</div></div>';
+  status.style.display='block';
+  status.style.color='#C62828';
+  window._btImportUnitIssues=[];
+  return true;
 }
 
 /* ── 4. CLIENT DASHBOARD ─────────────────────────────────────────────────────
