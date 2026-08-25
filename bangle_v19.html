@@ -957,17 +957,19 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   </div>
   <div class="stats" id="stats-bar"></div>
   <div class="main-tabs no-print">
-    <div class="main-tab active" onclick="switchMain('orders')">📦 Customer Orders</div>
-    <div class="main-tab" onclick="switchMain('design')">🎨 Design view</div>
-    <div class="main-tab" onclick="switchMain('analytics')">📊 Analytics</div>
-    <div class="main-tab" onclick="switchMain('inventory')">🗄️ Inventory</div>
-    <div class="main-tab" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
-    <div class="main-tab" onclick="switchMain('masters')">📋 Masters</div>
-    <div class="main-tab" onclick="switchMain('library')">🖼️ Library</div>
+    <div class="main-tab" data-view="dashboard" onclick="switchMain('dashboard')">📊 Dashboard</div>
+    <div class="main-tab" data-view="pooling" onclick="switchMain('pooling')">🧲 Pooling</div>
+    <div class="main-tab active" data-view="orders" onclick="switchMain('orders')">📦 Customer Orders</div>
+    <div class="main-tab" data-view="design" onclick="switchMain('design')">🎨 Design view</div>
+    <div class="main-tab" data-view="analytics" onclick="switchMain('analytics')">📊 Analytics</div>
+    <div class="main-tab" data-view="inventory" onclick="switchMain('inventory')">🗄️ Inventory</div>
+    <div class="main-tab" data-view="vendor" onclick="switchMain('vendor')">🏭 Vendor Orders</div>
+    <div class="main-tab" data-view="masters" onclick="switchMain('masters')">📋 Masters</div>
+    <div class="main-tab" data-view="library" onclick="switchMain('library')">🖼️ Library</div>
     <!-- Dispatch tab hidden (June 2026) — its functions (karigar assign, received/dispatched ticks)
          now live inline in the customer order table. Remove the comment wrapper to restore. -->
-    <div class="main-tab" onclick="switchMain('dispatch')" style="display:none">🔗 Dispatch</div>
-    <div class="main-tab" onclick="switchMain('assign')">↔ Assign</div>
+    <div class="main-tab" data-view="dispatch" onclick="switchMain('dispatch')" style="display:none">🔗 Dispatch</div>
+    <div class="main-tab" data-view="assign" onclick="switchMain('assign')">↔ Assign</div>
   </div>
   <div class="filter-bar no-print" id="filter-bar">
     <label style="font-size:12px;font-weight:600;color:#534AB7;align-self:center">Filters</label>
@@ -991,6 +993,8 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <div id="view-library" style="display:none"></div>
   <div id="view-dispatch" style="display:none"></div>
   <div id="view-assign" style="display:none"></div>
+  <div id="view-dashboard" style="display:none"></div>
+  <div id="view-pooling" style="display:none"></div>
   <div id="empty-msg" class="empty-state" style="display:none">
     <div style="font-size:32px;margin-bottom:8px">○</div>
     <div style="font-size:14px;font-weight:600;color:#888">No orders yet</div>
@@ -4069,8 +4073,7 @@ function orderMatchesFilter(order){
 // ── RENDER CORE ────────────────────────────────────────────────────────────────
 function switchMain(view){
   S.mainView=view;
-  const views=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign'];
-  document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',views[i]===view);});
+  document.querySelectorAll('.main-tab').forEach(t=>{t.classList.toggle('active',t.dataset.view===view);});
   document.getElementById('view-orders').style.display=view==='orders'?'':'none';
   document.getElementById('view-vendor').style.display=view==='vendor'?'':'none';
   document.getElementById('view-design').style.display=view==='design'?'':'none';
@@ -4080,10 +4083,12 @@ function switchMain(view){
   document.getElementById('view-library').style.display=view==='library'?'':'none';
   document.getElementById('view-dispatch').style.display=view==='dispatch'?'':'none';
   document.getElementById('view-assign').style.display=view==='assign'?'':'none';
-  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders'||view==='dispatch')?'none':'';
+  document.getElementById('view-dashboard').style.display=view==='dashboard'?'':'none';
+  document.getElementById('view-pooling').style.display=view==='pooling'?'':'none';
+  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders'||view==='dispatch'||view==='dashboard'||view==='pooling')?'none':'';
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
-  if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library'||view==='dispatch')?'none':'';
+  if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library'||view==='dispatch'||view==='dashboard'||view==='pooling')?'none':'';
   if(view==='orders')renderOrdersView();
   if(view==='analytics')renderAnalytics();
   if(view==='inventory')renderInventory();
@@ -4092,6 +4097,8 @@ function switchMain(view){
   if(view==='library')openLibraryView();
   if(view==='dispatch')renderDispatchView();
   if(view==='assign')renderAssign();
+  if(view==='dashboard')renderDashboardView();
+  if(view==='pooling')renderPoolingView();
   scheduleAutosave();
 }
 function render(){
@@ -4137,14 +4144,16 @@ function render(){
   else if(S.mainView==='library')renderLibrary();
   else if(S.mainView==='dispatch')renderDispatchView();
   else if(S.mainView==='assign')renderAssign();
+  else if(S.mainView==='dashboard')renderDashboardView();
+  else if(S.mainView==='pooling')renderPoolingView();
   else renderAnalytics();
   scheduleAutosave();
   // Sync view div visibility + tab highlights with S.mainView.
   {const _mv=S.mainView||'orders';
-  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign'];
+  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign','dashboard','pooling'];
   _vn.forEach(v=>{const el=document.getElementById('view-'+v);if(el)el.style.display=_mv===v?'':'none';});
   const _fb=document.getElementById('filter-bar');if(_fb)_fb.style.display=_mv==='design'?'':'none';
-  document.querySelectorAll('.main-tab').forEach((t,i)=>{t.classList.toggle('active',_vn[i]===_mv);});}
+  document.querySelectorAll('.main-tab').forEach(t=>{t.classList.toggle('active',t.dataset.view===_mv);});}
 
   // ── RESTORE FOCUS + VALUE + SELECTION ──────────────────────────────────────
   if(focusInfo){
@@ -17263,6 +17272,553 @@ function openMobileMenu(){
     muts.forEach(m=>m.addedNodes.forEach(n=>replaceInNode(n)));
   }).observe(document.body||document.documentElement,{childList:true,subtree:true});
 })();
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════════════════════════
+   RETAIL / EXHIBITION FEATURES  (added Aug 2026)
+   - Design families, driven by your code-series rules
+   - Pooling Board: club the same design across customers into one vendor batch
+   - Client Dashboard: every client, order and item with photos and sizes
+   Self-contained: adds new views only, touches no existing function.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. DESIGN FAMILIES ──────────────────────────────────────────────────────
+   Owner's real numbering scheme. A "family" is what a vendor treats as the
+   same product, so batches can be pooled across codes.                        */
+const BT_FAM_PREFIX=[
+  [/^1203(\.|$)/,'12MM CNC KADA'],
+  [/^1408(\.|$)/,'8MM CNC KADA'],
+  [/^1049(\.|$)/,'CNC LOCK KADA'],
+];
+const BT_FAM_RANGE=[
+  [3000,3999,'3MM CNC'],
+  [6000,6999,'6MM CNC'],
+  [8000,8999,'8MM CNC'],
+  [10000,10999,'10MM CNC'],
+  [12000,12999,'12MM CNC'],
+  [1501,1699,'15MM CNC'],
+  [1701,2000,'CNC EXCLUSIVE'],
+];
+// Fallback for older codes that predate the series scheme — guess from the name.
+const BT_FAM_NAME=[
+  [/SARDAR\s*KADA/,'Sardar Kada'],[/JAGUAR\s*KADA/,'Jaguar Kada'],[/BALL\s*KADA/,'Ball Kada'],
+  [/\bKADA\b/,'Kada'],[/DOUBLE\s*DECKER|\bD\s*\/\s*D\b/,'Double Decker'],
+  [/EXCLUSIVE\s*PAIR|EXLUSIVE\s*PAIR/,'Exclusive Pair'],[/GOLD\s*MIX/,'Gold Mix'],
+  [/JOTTA/,'Jotta'],[/KATAR/,'Katar'],[/CARTIER/,'Cartier'],[/CHANNAL/,'Channal'],
+  [/JALI/,'Jali'],[/MINDI|MINDA/,'Mindi'],[/PRINT/,'Print'],[/LASER/,'Laser'],
+  [/SQUARE/,'Square'],[/\bHOLE\b/,'Hole'],[/\bMATE\b/,'Mate'],[/LINING/,'Lining'],[/\bCNC\b/,'CNC'],
+];
+function btFamilyKey(code){return String(code||'').trim().toUpperCase();}
+function btFamilyAuto(code,name){
+  const c=String(code||'').trim();
+  for(const[re,fam]of BT_FAM_PREFIX)if(re.test(c))return fam;
+  const base=parseInt(c.split('.')[0],10);
+  if(!isNaN(base))for(const[lo,hi,fam]of BT_FAM_RANGE)if(base>=lo&&base<=hi)return fam;
+  const u=String(name||'').toUpperCase();
+  const mm=u.match(/(\d+)\s*MM/);
+  let type='Other';
+  for(const[re,t]of BT_FAM_NAME){if(re.test(u)){type=t;break;}}
+  return mm?(mm[1]+'MM '+type):type;
+}
+function btFamilyOf(code,name){
+  const manual=(S.designFamilies||{})[btFamilyKey(code)];
+  if(manual&&manual.trim())return manual.trim();
+  return btFamilyAuto(code,name);
+}
+function btSetFamily(code,fam){
+  if(!S.designFamilies)S.designFamilies={};
+  const k=btFamilyKey(code); if(!k)return;
+  if(fam&&fam.trim())S.designFamilies[k]=fam.trim(); else delete S.designFamilies[k];
+  audit('Set family',k+' → '+(fam||'(auto)'));
+  save();try{fbPushNow();}catch(e){}
+}
+// The plating colour lives in the NAME; the CODE is the physical piece.
+function btFinishOf(name){
+  const u=String(name||'').toUpperCase(),p=[];
+  if(/3\s*TONE/.test(u))p.push('3 Tone'); else if(/2\s*TONE/.test(u))p.push('2 Tone');
+  if(/\bROSE\b/.test(u)||/\bR\s*:/.test(u)||/\bR\s+/.test(u))p.push('Rose');
+  if((/\bG\s*:/.test(u)||/\bG\s+/.test(u)||/\bGOLD\b/.test(u))&&!/GOLD\s*MIX/.test(u))p.push('Gold');
+  if(/SILVER/.test(u))p.push('Silver');
+  return p.join(' ')||'—';
+}
+
+/* ── 2. CATALOGUE: every design/variety row across live orders ────────────── */
+function btSum(o){return Object.values(o||{}).reduce((a,v)=>a+(Number(v)||0),0);}
+function btRowsOfOrder(order){
+  const out=[];
+  (order.designs||[]).forEach(d=>{
+    const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
+    const hod=_hasOnlyDefault(d);
+    const isFlat=isCnc||!(d.varieties||[]).length||hod;
+    const base={orderId:order.id,orderLabel:order.orderId,client:order.client,
+      designId:d.id,code:d.code||'',name:d.name||'',
+      family:btFamilyOf(d.code,d.name),finish:btFinishOf(d.name),unit:d.unit||'pcs'};
+    if(isFlat){
+      const sizes=hod?((d.varieties[0]||{}).sizes||{}):(d.sizes||{});
+      out.push(Object.assign({},base,{varietyId:null,varName:null,holder:d,
+        sizes:sizes,qty:btSum(sizes),images:d.images||[],note:d.note||'',recvQty:d.recvQty||{}}));
+    }else{
+      (d.varieties||[]).forEach((v,vi)=>{
+        out.push(Object.assign({},base,{varietyId:v.id,varName:v.name||('Variety '+(vi+1)),holder:v,
+          sizes:v.sizes||{},qty:btSum(v.sizes),images:(v.images&&v.images.length?v.images:(d.images||[])),
+          note:v.note||'',recvQty:v.recvQty||{}}));
+      });
+    }
+  });
+  return out;
+}
+function btAllRows(){
+  return (S.orders||[]).filter(o=>!o.archived).reduce((a,o)=>a.concat(btRowsOfOrder(o)),[]);
+}
+const BT_SIZE_ORDER=['2/2','2/4','2/6','2/8','2/10','2/12','2/14','2/16'];
+function btSortSizes(keys){
+  return keys.slice().sort((a,b)=>{
+    const ia=BT_SIZE_ORDER.indexOf(a),ib=BT_SIZE_ORDER.indexOf(b);
+    if(ia!==-1&&ib!==-1)return ia-ib; if(ia!==-1)return -1; if(ib!==-1)return 1;
+    return a.localeCompare(b);
+  });
+}
+
+/* ── 3. POOLING BOARD ────────────────────────────────────────────────────────
+   Clubs the same design wanted by several customers into one batch.
+   Karigar/pipe pool by CODE (gold and rose are the same physical piece);
+   plating pools by CODE + FINISH, because that is exactly what differs.      */
+let _poolMode='karigar';
+let _poolExtras={};      // key -> {buffer:{size:n}, stock:{size:n}}  (not persisted)
+let _poolSel={};         // key -> true
+let _poolMultiOnly=false;
+let _poolSearch='';
+let _poolOpenWho={};
+
+function btPoolable(row){
+  const h=row.holder;
+  if(h.importedToVOId)return false;
+  return _coStage(h)==='notStarted';
+}
+function btPoolGroups(){
+  const g={};
+  (S.orders||[]).filter(o=>!o.archived).forEach(o=>{
+    btRowsOfOrder(o).forEach(r=>{
+      if(!btPoolable(r)||r.qty<=0)return;
+      const key=_poolMode==='plating'?(r.code+'||'+r.finish):(r.code||('?'+r.name));
+      if(!g[key])g[key]={key:key,code:r.code||'(no code)',family:r.family,names:[],finishes:[],
+        image:'',ordered:{},total:0,rows:[],clients:[],unit:r.unit};
+      const G=g[key];
+      if(r.name&&G.names.indexOf(r.name)<0)G.names.push(r.name);
+      if(r.finish&&r.finish!=='—'&&G.finishes.indexOf(r.finish)<0)G.finishes.push(r.finish);
+      if(!G.image&&r.images[0]&&r.images[0].data)G.image=r.images[0].data;
+      if(G.clients.indexOf(r.client)<0)G.clients.push(r.client);
+      Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0;if(n>0)G.ordered[sz]=(G.ordered[sz]||0)+n;});
+      G.rows.push(r);
+    });
+  });
+  const list=Object.keys(g).map(k=>{g[k].total=btSum(g[k].ordered);return g[k];});
+  return list.sort((a,b)=>b.total-a.total);
+}
+function btExtras(key){
+  if(!_poolExtras[key])_poolExtras[key]={buffer:{},stock:{}};
+  return _poolExtras[key];
+}
+function btMakeQty(G){
+  const e=btExtras(G.key),out={};
+  [G.ordered,e.buffer,e.stock].forEach(src=>Object.keys(src||{}).forEach(sz=>{
+    const n=Number(src[sz])||0; if(n>0)out[sz]=(out[sz]||0)+n;}));
+  return out;
+}
+function btPoolSetExtra(key,kind,size,val){
+  const e=btExtras(key),n=Number(val);
+  if(!String(val).trim()||!isFinite(n)||n<=0)delete e[kind][size]; else e[kind][size]=n;
+  renderPoolingView();
+  const again=document.querySelector('[data-pk="'+key+'|'+kind+'|'+size+'"]');
+  if(again){try{again.focus();}catch(e2){}}
+}
+function btPoolToggle(key){ if(_poolSel[key])delete _poolSel[key]; else _poolSel[key]=true; renderPoolingView(); }
+function btPoolSetMode(m){ _poolMode=m; _poolSel={}; renderPoolingView(); }
+function btPoolToggleWho(key){ if(_poolOpenWho[key])delete _poolOpenWho[key]; else _poolOpenWho[key]=true; renderPoolingView(); }
+function btPoolSearch(v){ _poolSearch=v; renderPoolingView(); const i=document.getElementById('pool-search'); if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);} }
+function btPoolToggleMulti(){ _poolMultiOnly=!_poolMultiOnly; renderPoolingView(); }
+function btPoolEditFamily(code){
+  const cur=btFamilyOf(code,'');
+  const v=prompt('Family for code '+code+'\n\nLeave blank to go back to the automatic rule.',cur);
+  if(v===null)return;
+  btSetFamily(code,v);
+  renderPoolingView();
+}
+
+function btPoolCardHTML(G){
+  const e=btExtras(G.key),make=btMakeQty(G);
+  const sizes=btSortSizes(Object.keys(Object.assign({},G.ordered,e.buffer,e.stock)));
+  const makeTot=btSum(make),bufTot=btSum(e.buffer),stkTot=btSum(e.stock);
+  const sel=!!_poolSel[G.key];
+  const K=esc(G.key);
+  const cell=(sz,kind)=>'<td style="padding:3px;text-align:center"><input type="number" min="0" data-pk="'+K+'|'+kind+'|'+esc(sz)+'" value="'+
+    (e[kind][sz]!==undefined?e[kind][sz]:'')+'" placeholder="—" style="width:46px;text-align:center;padding:3px;border:1px solid #ddd;border-radius:5px;font-size:12px" '+
+    'oninput="btPoolSetExtra(this.dataset.pk.split(\'|\')[0],\''+kind+'\',\''+esc(sz)+'\',this.value)"></td>';
+  return '<div style="border:1.5px solid '+(sel?'#534AB7':'#E0DFFF')+';border-radius:12px;margin-bottom:10px;overflow:hidden;background:'+(sel?'#F7F6FF':'#fff')+'">'+
+    '<div style="display:flex;gap:10px;padding:10px;align-items:flex-start;border-bottom:1px solid #EFEDFF">'+
+      '<input type="checkbox" '+(sel?'checked':'')+' onchange="btPoolToggle(this.dataset.k)" data-k="'+K+'" style="margin-top:4px;width:17px;height:17px;accent-color:#534AB7">'+
+      (G.image?'<img src="'+esc(G.image)+'" loading="lazy" style="width:52px;height:52px;border-radius:9px;object-fit:cover;border:1px solid #E0DFFF" onerror="this.style.visibility=\'hidden\'">':'<div style="width:52px;height:52px;border-radius:9px;background:#F0EFFA"></div>')+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:800;color:#2A2458">'+esc(G.code)+'</div>'+
+        '<div style="font-size:11px;color:#8A87A8;margin-top:1px">'+esc(G.names.join(' · ')||G.family)+'</div>'+
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+
+          G.finishes.map(f=>'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#EDEBFF;color:#534AB7">'+esc(f)+'</span>').join('')+
+          (G.finishes.length>1&&_poolMode!=='plating'?'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#E8F5E9;color:#2E7D32" title="Same physical piece — the karigar makes them together">✓ '+G.finishes.length+' colours merged</span>':'')+
+          '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#EDEBFF;color:#534AB7">'+G.clients.length+' customer'+(G.clients.length!==1?'s':'')+'</span>'+
+        '</div>'+
+      '</div>'+
+      '<div style="text-align:right;flex-shrink:0">'+
+        '<div style="font-size:20px;font-weight:800;color:#534AB7;line-height:1">'+makeTot+'</div>'+
+        '<div style="font-size:9px;color:#8A87A8;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">to make</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;min-width:420px;border-collapse:collapse;font-size:12px">'+
+      '<tr style="background:#FCFBFF"><th style="text-align:left;padding:5px 10px;font-size:10px;color:#8A87A8;font-weight:700">SIZE</th>'+
+        sizes.map(s=>'<th style="padding:5px;font-size:10px;color:#8A87A8;font-weight:700">'+esc(s)+'</th>').join('')+
+        '<th style="padding:5px 10px;font-size:10px;color:#534AB7;font-weight:700;border-left:1px solid #E0DFFF">TOTAL</th></tr>'+
+      '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">Ordered by customers</td>'+
+        sizes.map(s=>'<td style="text-align:center;padding:5px">'+(G.ordered[s]||0)+'</td>').join('')+
+        '<td style="text-align:center;font-weight:800;color:#534AB7;border-left:1px solid #E0DFFF">'+G.total+'</td></tr>'+
+      '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">+ Buffer for rejections</td>'+
+        sizes.map(s=>cell(s,'buffer')).join('')+
+        '<td style="text-align:center;color:#8A87A8;border-left:1px solid #E0DFFF">'+(bufTot||'—')+'</td></tr>'+
+      '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">+ Extra for stock</td>'+
+        sizes.map(s=>cell(s,'stock')).join('')+
+        '<td style="text-align:center;color:#8A87A8;border-left:1px solid #E0DFFF">'+(stkTot||'—')+'</td></tr>'+
+      '<tr style="background:#F3F1FF"><td style="padding:6px 10px;font-weight:800;color:#3C3489">MAKE</td>'+
+        sizes.map(s=>'<td style="text-align:center;font-weight:800;color:#3C3489;padding:6px">'+(make[s]||0)+'</td>').join('')+
+        '<td style="text-align:center;font-weight:800;color:#534AB7;border-left:1px solid #E0DFFF">'+makeTot+'</td></tr>'+
+    '</table></div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#FCFBFF;border-top:1px solid #EFEDFF;flex-wrap:wrap">'+
+      '<span><a href="#" data-k="'+K+'" onclick="btPoolToggleWho(this.dataset.k);return false" style="font-size:12px;font-weight:700;color:#534AB7;text-decoration:none">'+
+        (_poolOpenWho[G.key]?'▾':'▸')+' Who ordered this ('+G.rows.length+')</a>'+
+        ' &nbsp;<a href="#" data-c="'+esc(G.code)+'" onclick="btPoolEditFamily(this.dataset.c);return false" style="font-size:11px;color:#8A87A8;text-decoration:none" title="Change which family this code belongs to">✎ '+esc(G.family)+'</a></span>'+
+    '</div>'+
+    (_poolOpenWho[G.key]?'<div style="padding:4px 12px 10px;background:#FBFAFF;border-top:1px dashed #E0DFFF">'+
+      G.rows.map(r=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #F0EFFA;font-size:12px">'+
+        '<div><b style="color:#3C3489">'+esc(r.client)+'</b>'+(r.note?' <span title="'+esc(r.note)+'">📌</span>':'')+
+        '<div style="font-size:10px;color:#8A87A8">'+esc(r.orderLabel)+(r.varName?' · '+esc(r.varName):'')+' · '+esc(r.finish)+' · '+
+        btSortSizes(Object.keys(r.sizes)).map(s=>esc(s)+'×'+r.sizes[s]).join(', ')+'</div></div>'+
+        '<b style="color:#534AB7">'+r.qty+'</b></div>').join('')+
+      ((bufTot||stkTot)?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px"><div><b style="color:#2E7D32">Buffer / stock</b><div style="font-size:10px;color:#8A87A8">not promised to anyone — stays with you</div></div><b style="color:#2E7D32">'+(bufTot+stkTot)+'</b></div>':'')+
+    '</div>':'')+
+  '</div>';
+}
+
+function renderPoolingView(){
+  const el=document.getElementById('view-pooling'); if(!el)return;
+  const all=btPoolGroups();
+  let groups=all.slice();
+  const q=_poolSearch.trim().toLowerCase();
+  if(_poolMultiOnly)groups=groups.filter(g=>g.clients.length>=2);
+  if(q)groups=groups.filter(g=>(g.code+' '+g.family+' '+g.names.join(' ')+' '+g.clients.join(' ')).toLowerCase().indexOf(q)>=0);
+
+  const fams={};
+  groups.forEach(g=>{(fams[g.family]=fams[g.family]||[]).push(g);});
+  const famNames=Object.keys(fams).sort((a,b)=>
+    fams[b].reduce((x,g)=>x+g.total,0)-fams[a].reduce((x,g)=>x+g.total,0));
+
+  const selKeys=Object.keys(_poolSel).filter(k=>groups.some(g=>g.key===k));
+  const selMake=selKeys.reduce((a,k)=>{const g=groups.find(x=>x.key===k);return a+(g?btSum(btMakeQty(g)):0);},0);
+  const looseTotal=all.reduce((a,g)=>a+g.total,0);
+  const modeBtn=(m,label)=>'<div class="main-tab'+(_poolMode===m?' active':'')+'" style="padding:7px 14px;font-size:12px" onclick="btPoolSetMode(\''+m+'\')">'+label+'</div>';
+
+  el.innerHTML=
+   '<div style="max-width:1250px">'+
+    '<h2 style="font-size:17px;color:#3C3489;margin:0 0 4px">🧲 Pooling Board</h2>'+
+    '<p style="font-size:12px;color:#8A87A8;margin:0 0 12px;line-height:1.6">The same design wanted by several customers, added together into one batch worth sending. '+
+      'Only items not yet given to any vendor appear here, so nothing can be sent twice.</p>'+
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
+      '<span style="font-size:12px;color:#8A87A8">Sending to:</span>'+
+      '<div style="display:flex;gap:4px">'+modeBtn('pipe','🔩 Pipe')+modeBtn('karigar','🛠️ Karigar')+modeBtn('plating','🪙 Plating')+'</div>'+
+      '<span style="font-size:11px;color:#A5A2C0">'+(_poolMode==='plating'
+        ?'Pooled by code + colour — each finish is its own batch'
+        :'Pooled by design code — gold and rose merge into one batch')+'</span>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
+      '<input id="pool-search" value="'+esc(_poolSearch)+'" placeholder="Search code, family, design or client…" '+
+        'oninput="btPoolSearch(this.value)" style="flex:1;min-width:220px;padding:8px 11px;border:1.5px solid #E0DFFF;border-radius:9px;font-size:13px">'+
+      '<div class="main-tab'+(_poolMultiOnly?' active':'')+'" style="padding:8px 14px;font-size:12px" onclick="btPoolToggleMulti()">Only where 2+ customers want it</div>'+
+    '</div>'+
+    '<div style="font-size:12px;color:#8A87A8;margin-bottom:10px">'+groups.length+' batch'+(groups.length!==1?'es':'')+
+      ' · '+looseTotal.toLocaleString()+' pieces not yet with any vendor</div>'+
+    '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:320px">'+
+        (groups.length?famNames.map(f=>
+          '<div style="margin-bottom:16px">'+
+            '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">'+
+              '<b style="font-size:13px;color:#534AB7">'+esc(f)+'</b>'+
+              '<span style="font-size:11px;color:#A5A2C0">'+fams[f].length+' batch'+(fams[f].length!==1?'es':'')+
+              ' · '+fams[f].reduce((a,g)=>a+g.total,0).toLocaleString()+' pcs ordered</span>'+
+            '</div>'+
+            ((S.familyNotes||{})[f]?'<div style="font-size:11px;color:#6B6797;background:#F7F6FF;border:1px solid #E0DFFF;border-radius:8px;padding:7px 10px;margin-bottom:8px"><b style="color:#3C3489">Family note:</b> '+esc(S.familyNotes[f])+'</div>':'')+
+            fams[f].map(btPoolCardHTML).join('')+
+          '</div>').join('')
+        :'<div style="border:1.5px solid #E0DFFF;border-radius:12px;padding:26px;text-align:center;color:#8A87A8;font-size:13px">'+
+          (all.length===0?'Nothing to pool — every item is already with a vendor.'
+            :'No design here is wanted by 2 or more customers.<br><span style="font-size:11px;color:#A5A2C0">That is normal: most designs are one-offs. The Buffer and Stock rows are what get a batch to a workable size.</span>')+'</div>')+
+      '</div>'+
+      '<div style="width:280px;flex-shrink:0">'+
+        '<div style="border:1.5px solid #E0DFFF;border-radius:12px;overflow:hidden;background:#fff;position:sticky;top:10px">'+
+          '<div style="background:#534AB7;color:#fff;padding:9px 13px;font-size:13px;font-weight:700">Create vendor order</div>'+
+          '<div style="padding:12px">'+
+            '<div style="font-size:12px;color:#8A87A8;margin-bottom:9px">'+selKeys.length+' batch'+(selKeys.length!==1?'es':'')+
+              ' selected · <b style="color:#534AB7">'+selMake+'</b> pcs to make</div>'+
+            '<label style="font-size:11px;color:#8A87A8">Vendor *</label>'+
+            '<input id="pool-vendor" list="pool-vendor-list" placeholder="Vendor name" style="width:100%;padding:7px 9px;border:1.5px solid #E0DFFF;border-radius:8px;font-size:13px;margin-bottom:8px">'+
+            '<datalist id="pool-vendor-list">'+((S.vocabulary&&S.vocabulary.vendors)||[]).map(v=>'<option value="'+esc(v)+'">').join('')+'</datalist>'+
+            '<div style="display:flex;gap:6px;margin-bottom:8px">'+
+              '<div style="flex:1"><label style="font-size:11px;color:#8A87A8">Start</label>'+
+                '<input type="date" id="pool-start" value="'+new Date().toISOString().slice(0,10)+'" style="width:100%;padding:6px;border:1.5px solid #E0DFFF;border-radius:8px;font-size:12px"></div>'+
+              '<div style="flex:1"><label style="font-size:11px;color:#8A87A8">Wanted by</label>'+
+                '<input type="date" id="pool-delivery" style="width:100%;padding:6px;border:1.5px solid #E0DFFF;border-radius:8px;font-size:12px"></div>'+
+            '</div>'+
+            '<label style="font-size:11px;color:#8A87A8">Notes</label>'+
+            '<textarea id="pool-notes" rows="2" placeholder="Anything the vendor should know…" style="width:100%;padding:7px 9px;border:1.5px solid #E0DFFF;border-radius:8px;font-size:12px;resize:vertical;margin-bottom:10px"></textarea>'+
+            '<button class="primary" style="width:100%" onclick="btPoolCreate()">Create vendor order →</button>'+
+            '<p style="font-size:11px;color:#A5A2C0;line-height:1.6;margin:9px 0 0">Every piece stays linked to the customer who ordered it, so when the goods come back the app knows exactly who gets what.</p>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+   '</div>';
+}
+
+function btPoolCreate(){
+  const vendor=((document.getElementById('pool-vendor')||{}).value||'').trim();
+  const groups=btPoolGroups();
+  const chosen=groups.filter(g=>_poolSel[g.key]);
+  if(!chosen.length){showToast('Tick at least one batch first','warn');return;}
+  if(!vendor){showToast('Please enter a vendor name','red');return;}
+
+  const designs=[],touched=[];
+  chosen.forEach(G=>{
+    const e=btExtras(G.key);
+    designs.push({
+      id:'d_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      name:G.names[0]||G.code, code:(G.code==='(no code)'?'':G.code),
+      sizes:btMakeQty(G), sizesLocked:false,
+      images:G.image?[{data:G.image}]:[], varieties:[], unit:G.unit||'pcs',
+      // provenance — which customer is owed how much out of this pooled line
+      sources:G.rows.map(r=>({orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
+        designId:r.designId,varietyId:r.varietyId,sizes:Object.assign({},r.sizes)})),
+      bufferSizes:Object.keys(e.buffer).length?Object.assign({},e.buffer):undefined,
+      stockSizes:Object.keys(e.stock).length?Object.assign({},e.stock):undefined
+    });
+    G.rows.forEach(r=>touched.push(r));
+  });
+
+  const vo={id:'vo_'+Date.now(),orderId:genVendorOrderId(),vendor:vendor,
+    type:_poolMode,startDate:(document.getElementById('pool-start')||{}).value||'',
+    deliveryDate:(document.getElementById('pool-delivery')||{}).value||'',
+    priority:'normal',status:'pending',
+    notes:(document.getElementById('pool-notes')||{}).value||'',designs:designs};
+
+  if(!S.vendorOrders)S.vendorOrders=[];
+  S.vendorOrders.push(vo);
+  // lock every source row so it can never be pooled or sent twice
+  touched.forEach(r=>{r.holder.importedToVOId=vo.id;});
+  const pcs=designs.reduce((a,d)=>a+btSum(d.sizes),0);
+  audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+pcs+' pcs from '+touched.length+' customer row(s)');
+  _poolSel={};_poolExtras={};
+  save();try{fbPushNow();}catch(e){}
+  showToast('✅ '+vo.orderId+' created for '+vendor+' — '+pcs+' pcs','green',3800);
+  renderPoolingView();
+}
+
+/* ── 4. CLIENT DASHBOARD ─────────────────────────────────────────────────────
+   Every client, their orders, and exactly where each item is — with photos,
+   per-size quantities and how much has actually come back.                    */
+let _dashClient=null;
+let _dashStage=null;
+let _dashSearch='';
+let _dashShowAll={};      // orderId -> true  (memory guard, see ITEMS_PER_PAGE)
+const BT_ITEMS_PER_PAGE=24;
+
+function btOrderOverdue(o){
+  if(!o.promisedDate||o.archived)return false;
+  const today=new Date().toISOString().slice(0,10);
+  if(o.promisedDate>=today)return false;
+  const c=_coOrderStageCounts(o),t=Object.values(c).reduce((a,b)=>a+b,0);
+  return !(t&&c.dispatched===t);
+}
+function btDaysLeft(o){
+  if(!o.promisedDate)return null;
+  const today=new Date().toISOString().slice(0,10);
+  return Math.round((new Date(o.promisedDate+'T00:00:00')-new Date(today+'T00:00:00'))/86400000);
+}
+function btStageEnteredAt(h,stage){
+  const p=k=>(typeof h[k]==='number'?h[k]:null);
+  if(stage==='pipe')return p('pipeVendorAt');
+  if(stage==='karigar')return p('assignedVendorAt');
+  if(stage==='plating')return p('platingVendorAt');
+  if(stage==='packing')return p('platingReceivedAt');
+  if(stage==='dispatched')return p('dispatchedAt');
+  return null;
+}
+function btDashClients(){
+  const q=_dashSearch.trim().toLowerCase();
+  const by={};
+  (S.orders||[]).filter(o=>!o.archived).forEach(o=>{
+    const rows=btRowsOfOrder(o).map(r=>{
+      const st=_coStage(r.holder);
+      const at=btStageEnteredAt(r.holder,st);
+      return Object.assign({},r,{stage:st,
+        days:at?Math.max(0,Math.floor((Date.now()-at)/86400000)):null,
+        received:btSum(r.recvQty)});
+    });
+    if(q){
+      const hit=(o.client||'').toLowerCase().indexOf(q)>=0
+        ||String(o.orderId||'').toLowerCase().indexOf(q)>=0
+        ||rows.some(r=>(r.code+' '+r.name+' '+r.family).toLowerCase().indexOf(q)>=0);
+      if(!hit)return;
+    }
+    const counts={notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0};
+    rows.forEach(r=>{counts[r.stage]++;});
+    const c=by[o.client]=by[o.client]||{client:o.client,orders:[],items:0,pcs:0,
+      counts:{notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0},
+      overdue:0,soonest:null,phone:''};
+    c.orders.push({o:o,rows:rows,counts:counts,overdue:btOrderOverdue(o),daysLeft:btDaysLeft(o)});
+    c.items+=rows.length; c.pcs+=rows.reduce((a,r)=>a+r.qty,0);
+    Object.keys(counts).forEach(k=>c.counts[k]+=counts[k]);
+    if(btOrderOverdue(o))c.overdue++;
+    if(o.phone&&!c.phone)c.phone=o.phone;
+    if(o.promisedDate&&(!c.soonest||o.promisedDate<c.soonest))c.soonest=o.promisedDate;
+  });
+  const list=Object.keys(by).map(k=>by[k]);
+  list.forEach(c=>{c.pct=c.items?Math.round(c.counts.dispatched/c.items*100):0;
+    c.orders.sort((a,b)=>String(a.o.promisedDate||'9999').localeCompare(String(b.o.promisedDate||'9999')));});
+  return list.sort((a,b)=>(b.overdue-a.overdue)
+    ||String(a.soonest||'9999').localeCompare(String(b.soonest||'9999'))
+    ||(b.items-a.items));
+}
+function btStageBar(counts,total){
+  if(!total)return '';
+  return '<div style="display:flex;height:7px;border-radius:20px;overflow:hidden;background:#F0EFFA;margin-top:7px">'+
+    _CO_STAGE_DEFS.map(s=>counts[s.k]?'<div style="flex:'+counts[s.k]+';background:'+s.bg+'" title="'+s.lbl+': '+counts[s.k]+'"></div>':'').join('')+
+    '</div>';
+}
+function btDashSetClient(c){ _dashClient=(_dashClient===c?null:c); renderDashboardView();
+  if(_dashClient){const el=document.getElementById('dash-drill'); if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});} }
+function btDashSetStage(k){ _dashStage=(_dashStage===k?null:k); renderDashboardView(); }
+function btDashSearch(v){ _dashSearch=v; renderDashboardView();
+  const i=document.getElementById('dash-search'); if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);} }
+function btDashShowAll(id){ _dashShowAll[id]=true; renderDashboardView(); }
+
+function btItemCardHTML(r){
+  const def=_CO_STAGE_DEFS.find(s=>s.k===r.stage)||_CO_STAGE_DEFS[0];
+  const img=(r.images[0]||{}).data||'';
+  const sizes=btSortSizes(Object.keys(r.sizes||{}).filter(s=>(Number(r.sizes[s])||0)>0));
+  const chips=sizes.map(sz=>{
+    const ord=Number(r.sizes[sz])||0,got=Number((r.recvQty||{})[sz])||0;
+    if(got>=ord&&got>0)return '<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:5px;background:#E8F5E9;border:1px solid #A5D6A7;color:#2E7D32" title="all '+ord+' back">'+esc(sz)+' <b>×'+ord+'</b> ✓</span>';
+    if(got>0)return '<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:5px;background:#FFF4E5;border:1px solid #FFCC80;color:#8A5100" title="'+got+' of '+ord+' back">'+esc(sz)+' <b>×'+got+'</b> of '+ord+'</span>';
+    return '<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:5px;background:#F3F1FF;border:1px solid #E4E1FA;color:#6B6797">'+esc(sz)+' <b>×'+ord+'</b></span>';
+  }).join(' ');
+  const back=r.received,ordered=r.qty;
+  return '<div style="border:1px solid #EFEDFF;border-radius:10px;overflow:hidden;background:#fff">'+
+    (img?'<img src="'+esc(img)+'" loading="lazy" style="width:100%;height:88px;object-fit:cover;background:#F0EFFA" onerror="this.style.visibility=\'hidden\'">'
+        :'<div style="width:100%;height:88px;background:#F0EFFA"></div>')+
+    '<div style="padding:6px 7px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#2A2458">'+esc(r.code||'(no code)')+'</div>'+
+      '<div style="font-size:10px;color:#8A87A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(r.name)+'">'+
+        (r.varName?esc(r.varName)+' · ':'')+esc(r.finish!=='—'?r.finish:r.family)+'</div>'+
+      '<div style="font-size:10px;color:#534AB7;margin-top:2px">'+ordered+' pcs · '+sizes.length+' size'+(sizes.length!==1?'s':'')+'</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">'+chips+'</div>'+
+      (back>0?'<div style="font-size:10px;font-weight:700;margin-top:4px;color:'+(back>=ordered?'#2E7D32':'#8A5100')+'">'+
+        (back>=ordered?'✓ all '+ordered+' back':back+' of '+ordered+' back · '+(ordered-back)+' still to come')+'</div>':'')+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;margin-top:5px">'+
+        '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:'+def.bg+';color:'+def.tx+'">'+def.lbl+'</span>'+
+        (r.days!==null?'<span style="font-size:9.5px;color:#A5A2C0">'+r.days+'d</span>':'')+
+      '</div>'+
+      (r.note?'<div style="margin-top:5px;font-size:10px;background:#FFF9E8;border:1px solid #FFCC80;border-radius:6px;padding:4px 6px;color:#6B4A00">📌 '+esc(r.note)+'</div>':'')+
+    '</div></div>';
+}
+
+function renderDashboardView(){
+  const el=document.getElementById('view-dashboard'); if(!el)return;
+  const clients=btDashClients();
+  const tot={clients:clients.length,orders:0,items:0,pcs:0,overdue:0,
+    counts:{notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0}};
+  clients.forEach(c=>{tot.orders+=c.orders.length;tot.items+=c.items;tot.pcs+=c.pcs;tot.overdue+=c.overdue;
+    Object.keys(tot.counts).forEach(k=>tot.counts[k]+=c.counts[k]);});
+
+  const tile=(n,l,alert)=>'<div style="background:#fff;border:1.5px solid #E0DFFF;border-radius:12px;padding:10px 13px">'+
+    '<div style="font-size:21px;font-weight:800;line-height:1;color:'+(alert?'#C62828':'#534AB7')+'">'+n+'</div>'+
+    '<div style="font-size:9.5px;color:#8A87A8;text-transform:uppercase;letter-spacing:.4px;margin-top:5px">'+l+'</div></div>';
+
+  const active=_dashClient?clients.find(c=>c.client===_dashClient):null;
+
+  el.innerHTML=
+   '<div style="max-width:1250px">'+
+    '<h2 style="font-size:17px;color:#3C3489;margin:0 0 4px">📊 Dashboard</h2>'+
+    '<p style="font-size:12px;color:#8A87A8;margin:0 0 12px">Every client, every order, and exactly where each item is. Click a client to open them up.</p>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px;margin-bottom:12px">'+
+      tile(tot.clients,'Clients')+tile(tot.orders,'Orders')+tile(tot.items,'Items')+
+      tile(tot.pcs.toLocaleString(),'Pieces')+tile(tot.counts.dispatched+' / '+tot.items,'Dispatched')+
+      tile(tot.overdue,'Orders overdue',tot.overdue>0)+
+    '</div>'+
+    '<input id="dash-search" value="'+esc(_dashSearch)+'" placeholder="Search client, order or design code…" '+
+      'oninput="btDashSearch(this.value)" style="width:100%;max-width:420px;padding:8px 11px;border:1.5px solid #E0DFFF;border-radius:9px;font-size:13px;margin-bottom:10px">'+
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">'+
+      _CO_STAGE_DEFS.map(s=>'<span onclick="btDashSetStage(\''+s.k+'\')" style="cursor:pointer;font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:'+s.bg+';color:'+s.tx+
+        ';opacity:'+((_dashStage&&_dashStage!==s.k)?'.35':'1')+'">'+s.lbl+' · '+tot.counts[s.k]+'</span>').join('')+
+      (_dashStage?'<span onclick="btDashSetStage(null)" style="cursor:pointer;font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:#EDEBFF;color:#534AB7">✕ show all</span>':'')+
+    '</div>'+
+    (clients.length?'':'<p style="text-align:center;color:#8A87A8;font-size:13px;padding:26px">No clients match that search.</p>')+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:9px">'+
+      clients.map(c=>'<div onclick="btDashSetClient(this.dataset.c)" data-c="'+esc(c.client)+'" style="cursor:pointer;border:1.5px solid '+
+        (_dashClient===c.client?'#534AB7':'#E0DFFF')+';background:'+(_dashClient===c.client?'#F7F6FF':'#fff')+
+        ';border-radius:12px;padding:10px 12px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">'+
+          '<b style="font-size:13px;color:#2A2458;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.client)+'</b>'+
+          '<b style="font-size:12px;color:#534AB7">'+c.pct+'%</b></div>'+
+        '<div style="font-size:11px;color:#8A87A8;margin-top:2px">'+c.orders.length+' order'+(c.orders.length!==1?'s':'')+
+          ' · '+c.items+' items · '+c.pcs.toLocaleString()+' pcs'+(c.soonest?' · due '+esc(c.soonest):'')+'</div>'+
+        btStageBar(c.counts,c.items)+
+        (c.overdue?'<div style="margin-top:6px;display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:#FFEBEE;color:#C62828">⚠ '+c.overdue+' order'+(c.overdue!==1?'s':'')+' overdue</div>':'')+
+      '</div>').join('')+
+    '</div>'+
+    (active?btDashDrillHTML(active):'')+
+   '</div>';
+}
+
+function btDashDrillHTML(c){
+  return '<div id="dash-drill" style="margin-top:16px">'+
+    '<div style="background:#534AB7;color:#fff;border-radius:12px 12px 0 0;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+
+      '<b style="font-size:15px">'+esc(c.client)+'</b>'+
+      '<span style="font-size:11.5px;opacity:.85">'+(c.phone?'📞 '+esc(c.phone)+' · ':'')+c.items+' items · '+c.pcs.toLocaleString()+' pcs</span>'+
+      '<span style="flex:1"></span>'+
+      '<span onclick="btDashSetClient(null)" style="cursor:pointer;background:rgba(255,255,255,.2);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700">✕ close</span>'+
+    '</div>'+
+    '<div style="border:1.5px solid #E0DFFF;border-top:0;border-radius:0 0 12px 12px;padding:11px;background:#fff">'+
+      c.orders.map(od=>{
+        const shown0=_dashStage?od.rows.filter(r=>r.stage===_dashStage):od.rows;
+        const showAll=!!_dashShowAll[od.o.id];
+        const shown=showAll?shown0:shown0.slice(0,BT_ITEMS_PER_PAGE);
+        const hidden=shown0.length-shown.length;
+        return '<div style="border:1.5px solid #E0DFFF;border-radius:11px;margin-bottom:10px;overflow:hidden">'+
+          '<div style="background:#FCFBFF;padding:8px 11px;border-bottom:1px solid #EFEDFF;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+
+            '<div style="flex:1;min-width:170px">'+
+              '<b style="font-size:12.5px;color:#534AB7">'+esc(od.o.orderId||'')+'</b>'+
+              (od.overdue?' <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:#FFEBEE;color:#C62828">⚠ overdue</span>':'')+
+              '<div style="font-size:11px;color:#8A87A8;margin-top:1px">'+
+                (od.o.promisedDate?'promised '+esc(od.o.promisedDate)+
+                  (od.daysLeft!==null?' <span style="color:'+(od.daysLeft<0?'#C62828':'#8A87A8')+'">('+(od.daysLeft<0?(-od.daysLeft)+'d late':od.daysLeft+'d left')+')</span>':'')
+                 :'<span style="color:#C6C3E0">no promised date</span>')+
+                ' · '+od.counts.dispatched+' of '+od.rows.length+' dispatched</div>'+
+            '</div>'+
+            '<div style="width:150px">'+btStageBar(od.counts,od.rows.length)+'</div>'+
+          '</div>'+
+          (shown.length?'<div style="padding:9px;display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px">'+
+            shown.map(btItemCardHTML).join('')+'</div>'+
+            (hidden>0?'<div onclick="btDashShowAll(this.dataset.o)" data-o="'+esc(od.o.id)+'" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:#534AB7;border-top:1px solid #EFEDFF">Show '+hidden+' more item'+(hidden!==1?'s':'')+' ('+shown0.length+' in this order)</div>':'')
+           :'<p style="text-align:center;color:#C6C3E0;font-size:11px;padding:14px">No items at this stage in this order</p>')+
+        '</div>';
+      }).join('')+
+    '</div></div>';
+}
 
 </script>
 </html>
