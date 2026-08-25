@@ -5178,8 +5178,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +' tabindex="0"></td>'
       ).join('');
       // Unit: read from d.unit first, then fall back to first variety's unit (for CNC / legacy data)
-      const flatUnit=d.unit||(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'pcs';
-      const unitOpts=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnit?' selected':'')+'>'+u+'</option>').join('');
+      const flatUnitStored=d.unit||(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'';
+      const unitOpts='<option value=""'+(flatUnitStored?'':' selected')+'>\u2014 not set \u2014</option>'+(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnitStored?' selected':'')+'>'+u+'</option>').join('');
       const codeEmpty=!(d.code||'').trim();
       const allStagesDone=(d.stages||[]).length>0&&(d.stages||[]).every(st=>st.status==='done');
       const tickSty=allStagesDone?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0';
@@ -5262,7 +5262,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +'</div>'
         ).join('');
         const addVarImg='<button class="variety-img-add no-print" onclick="openLibraryPicker('+oi+','+di+','+vi+')" title="Choose from library or upload new photo" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;line-height:1">+</span></button>';
-        const unitOpts2=(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===(v.unit||'pcs')?' selected':'')+'>'+u+'</option>').join('');
+        const unitStored2=v.unit||'';
+        const unitOpts2='<option value=""'+(unitStored2?'':' selected')+'>\u2014 not set \u2014</option>'+(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===unitStored2?' selected':'')+'>'+u+'</option>').join('');
         const szCells2=szKeys.map((sz,szI)=>
           '<td><input type="number" class="qty-inp" min="0" value="'+(parseInt((v.sizes||{})[sz])||0)+'"'
           +' oninput="upVarietySizeSilent('+oi+','+di+','+vi+',\''+esc(sz)+'\',this.value);this._dirty=true"'
@@ -17373,9 +17374,13 @@ function btRowsOfOrder(order){
     const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
     const hod=_hasOnlyDefault(d);
     const isFlat=isCnc||!(d.varieties||[]).length||hod;
+    const _flatU=(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'';
     const base={orderId:order.id,orderLabel:order.orderId,client:order.client,
       designId:d.id,code:d.code||'',name:d.name||'',
-      family:btFamilyOf(d.code,d.name),finish:btFinishOf(d.name),unit:d.unit||'pcs',rawUnit:d.unit||''};
+      family:btFamilyOf(d.code,d.name),finish:btFinishOf(d.name),
+      // A flat/CNC design may carry its unit on the design OR on its single
+      // 'Default' variety - the rest of the app reads both (see flatUnit).
+      unit:(d.unit||_flatU||'pcs'),rawUnit:(d.unit||_flatU||'')};
     if(isFlat){
       const sizes=hod?((d.varieties[0]||{}).sizes||{}):(d.sizes||{});
       out.push(Object.assign({},base,{varietyId:null,varName:null,holder:d,
