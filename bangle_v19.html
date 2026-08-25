@@ -5180,6 +5180,9 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       ).join('');
       // Unit: read from d.unit first, then fall back to first variety's unit (for CNC / legacy data)
       const flatUnitStored=d.unit||(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'';
+      const _v0=(d.varieties&&d.varieties[0])||null;
+      const flatRateStored=(d.rate!=null&&d.rate!==''&&d.rate!==0)?d.rate
+        :((_v0&&_v0.rate!=null&&_v0.rate!==''&&_v0.rate!==0)?_v0.rate:'');
       const unitOpts='<option value=""'+(flatUnitStored?'':' selected')+'>\u2014 not set \u2014</option>'+(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnitStored?' selected':'')+'>'+u+'</option>').join('');
       const codeEmpty=!(d.code||'').trim();
       const allStagesDone=(d.stages||[]).length>0&&(d.stages||[]).every(st=>st.status==='done');
@@ -5204,15 +5207,15 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<td class="total-col">'+rowTotal+'</td>'
         +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
-        +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
-        +btNoteCell(oi,di,-1,d.note)
+        +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(flatRateStored||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
+        +btNoteCell(oi,di,-1,_btFlatNote(d))
         +_coVendorCells(d,di,-1)
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Dispatch — auto-ticks all stages">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
-      +'</tr>'+btNoteRow(d.note);
+      +'</tr>'+btNoteRow(_btFlatNote(d));
 
     } else {
       // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS ───────────────────────────
@@ -6370,7 +6373,14 @@ function addVariety(oi,di){
 }
 function upVarietyUnit(oi,di,vi,val){S.orders[oi].designs[di].varieties[vi].unit=val;scheduleAutosave();}
 function upVarietyRate(oi,di,vi,val){S.orders[oi].designs[di].varieties[vi].rate=parseFloat(val)||0;scheduleAutosave();}
-function upDesignRate(oi,di,val){S.orders[oi].designs[di].rate=parseFloat(val)||0;scheduleAutosave();}
+function upDesignRate(oi,di,val){
+  const d=S.orders[oi].designs[di];
+  d.rate=parseFloat(val)||0;
+  // Mirror into the varieties so the value survives a reload and matches the
+  // shape the Excel importer writes.
+  (d.varieties||[]).forEach(v=>{v.rate=d.rate;});
+  scheduleAutosave();
+}
 function removeVariety(oi,di,vi){
   if(!confirm('Remove this variety?'))return;
   S.orders[oi].designs[di].varieties.splice(vi,1);
@@ -17461,6 +17471,18 @@ function btFinishOf(name){
 
 /* ── 2. CATALOGUE: every design/variety row across live orders ────────────── */
 function btSum(o){return Object.values(o||{}).reduce((a,v)=>a+(Number(v)||0),0);}
+// A flat/CNC design keeps its rate on itself or on its single Default variety;
+// the importer only writes the latter. Read both, like the Design view does.
+function _btFlatNote(d){
+  const a=(d.note!=null&&String(d.note).trim())?String(d.note):'';
+  if(a)return a;
+  const v0=d.varieties&&d.varieties[0];
+  return (v0&&v0.note!=null&&String(v0.note).trim())?String(v0.note):'';
+}
+function _btFlatRate(d){
+  const pick=x=>(x!=null&&x!==''&&Number(x)>0)?Number(x):null;
+  return pick(d.rate) ?? pick((d.varieties&&d.varieties[0]&&d.varieties[0].rate));
+}
 function btRowsOfOrder(order){
   const out=[];
   (order.designs||[]).forEach(d=>{
@@ -17477,8 +17499,8 @@ function btRowsOfOrder(order){
     if(isFlat){
       const sizes=hod?((d.varieties[0]||{}).sizes||{}):(d.sizes||{});
       out.push(Object.assign({},base,{varietyId:null,varName:null,holder:d,
-        sizes:sizes,qty:btSum(sizes),images:d.images||[],note:d.note||'',recvQty:d.recvQty||{},
-        rate:(d.rate!=null&&d.rate!==''?Number(d.rate):null)}));
+        sizes:sizes,qty:btSum(sizes),images:d.images||[],note:_btFlatNote(d),recvQty:d.recvQty||{},
+        rate:_btFlatRate(d)}));
     }else{
       (d.varieties||[]).forEach((v,vi)=>{
         out.push(Object.assign({},base,{varietyId:v.id,varName:v.name||('Variety '+(vi+1)),holder:v,
@@ -17807,6 +17829,9 @@ function btEditRowNote(oi,di,vi){
   if(v===null)return;
   const txt=String(v).trim();
   if(txt)holder.note=txt; else delete holder.note;
+  // Flat/CNC rows: mirror onto the varieties too, so it matches the shape the
+  // Excel importer writes and survives a reload.
+  if(vi<0){ (d.varieties||[]).forEach(v=>{ if(txt)v.note=txt; else delete v.note; }); }
   audit('Row note',(d.code||d.name||'row')+': '+(txt?'"'+txt.slice(0,60)+'"':'removed'));
   scheduleAutosave();
   render();
