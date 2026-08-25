@@ -4372,7 +4372,7 @@ function buildOrderCard(order,oi,archivedView){
       <div class="oh-icon ${al==='done'?'oh-icon-done':al==='archived'?'oh-icon-done':'oh-icon-late'}">●</div>
       <div class="oh-left">
         <div class="oh-title">${esc(order.orderId)} · ${esc(order.client)}</div>
-        <div class="oh-sub">${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}${archivedView&&order.archivedAt?' · Archived '+fmtDate(new Date(order.archivedAt).toISOString().split('T')[0]):''}</div>
+        <div class="oh-sub">${btOrderValueHTML(order)} ${qtyStr} · ${order.designs.length} design${order.designs.length!==1?'s':''} · ${p}% done · Started ${fmtDate(order.startDate)}${archivedView&&order.archivedAt?' · Archived '+fmtDate(new Date(order.archivedAt).toISOString().split('T')[0]):''}</div>
       </div>
       <div class="oh-right">
         ${prioBadge(order.priority)}
@@ -5204,13 +5204,14 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
         +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(d.rate||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
+        +btNoteCell(oi,di,-1,d.note)
         +_coVendorCells(d,di,-1)
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Dispatch — auto-ticks all stages">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
-      +'</tr>';
+      +'</tr>'+btNoteRow(d.note);
 
     } else {
       // ── DESIGN-CODE HEADER ROW + VARIETY SUB-ROWS ───────────────────────────
@@ -5285,12 +5286,13 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +'<td><select style="font-size:11px;padding:3px 4px;border-radius:5px;border:1px solid #AFA9EC;background:#f7f6ff;color:#3C3489;width:100%"'
             +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVarietyRate('+oi+','+di+','+vi+',this.value)"></td>'
+          +btNoteCell(oi,di,vi,v.note)
           +_coVendorCells(v,di,vi)
           +'<td class="no-print"><div style="display:flex;gap:3px">'
             +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as dispatched (auto-ticks stages)':'Mark variety dispatched')+'">✓</button>'
             +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
           +'</div></td>'
-        +'</tr>';
+        +'</tr>'+btNoteRow(v.note);
       });
     }
   });
@@ -5324,6 +5326,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +'<th style="min-width:70px">Total</th>'
         +'<th style="min-width:72px">Unit</th>'
         +'<th style="min-width:72px">Rate (₹)</th>'
+        +'<th style="min-width:48px" class="no-print">Note</th>'
         +'<th style="min-width:105px" class="no-print">Pipe</th>'
         +'<th style="min-width:105px" class="no-print">Karigar</th>'
         +'<th style="min-width:105px" class="no-print">Plating</th>'
@@ -17353,16 +17356,18 @@ function btRowsOfOrder(order){
     const isFlat=isCnc||!(d.varieties||[]).length||hod;
     const base={orderId:order.id,orderLabel:order.orderId,client:order.client,
       designId:d.id,code:d.code||'',name:d.name||'',
-      family:btFamilyOf(d.code,d.name),finish:btFinishOf(d.name),unit:d.unit||'pcs'};
+      family:btFamilyOf(d.code,d.name),finish:btFinishOf(d.name),unit:d.unit||'pcs',rawUnit:d.unit||''};
     if(isFlat){
       const sizes=hod?((d.varieties[0]||{}).sizes||{}):(d.sizes||{});
       out.push(Object.assign({},base,{varietyId:null,varName:null,holder:d,
-        sizes:sizes,qty:btSum(sizes),images:d.images||[],note:d.note||'',recvQty:d.recvQty||{}}));
+        sizes:sizes,qty:btSum(sizes),images:d.images||[],note:d.note||'',recvQty:d.recvQty||{},
+        rate:(d.rate!=null&&d.rate!==''?Number(d.rate):null)}));
     }else{
       (d.varieties||[]).forEach((v,vi)=>{
         out.push(Object.assign({},base,{varietyId:v.id,varName:v.name||('Variety '+(vi+1)),holder:v,
           sizes:v.sizes||{},qty:btSum(v.sizes),images:(v.images&&v.images.length?v.images:(d.images||[])),
-          note:v.note||'',recvQty:v.recvQty||{}}));
+          note:v.note||'',recvQty:v.recvQty||{},rawUnit:v.unit||d.unit||'',
+          rate:(v.rate!=null&&v.rate!==''?Number(v.rate):(d.rate!=null&&d.rate!==''?Number(d.rate):null))}));
       });
     }
   });
@@ -17625,6 +17630,67 @@ function btPoolCreate(){
   save();try{fbPushNow();}catch(e){}
   showToast('✅ '+vo.orderId+' created for '+vendor+' — '+pcs+' pcs','green',3800);
   renderPoolingView();
+}
+
+/* ── 5. ORDER VALUE ──────────────────────────────────────────────────────────
+   Rate lives on the order row and is per that row's UNIT, so a unit is
+   required before anything can be totalled ("Option B"): a wrong order value
+   is worse than a missing one. Rates and notes stay optional.                */
+function btOrderValue(order){
+  const rows=btRowsOfOrder(order).filter(r=>r.qty>0);
+  if(!rows.length)return{state:'empty'};
+  const noUnit=rows.filter(r=>!String(r.rawUnit||'').trim()).length;
+  if(noUnit)return{state:'nounit',noUnit:noUnit,rows:rows.length};
+  const priced=rows.filter(r=>r.rate!=null&&r.rate>0).length;
+  if(priced<rows.length)return{state:'pending',priced:priced,rows:rows.length};
+  return{state:'ok',total:rows.reduce((a,r)=>a+r.rate*r.qty,0),rows:rows.length};
+}
+function btMoney(n){return '\u20B9 '+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
+function btOrderValueHTML(order){
+  const v=btOrderValue(order);
+  const chip=(bg,tx,txt,title)=>' <span title="'+esc(title||'')+'" style="background:'+bg+';color:'+tx+
+    ';border-radius:10px;padding:2px 8px;font-size:10px;font-weight:800;white-space:nowrap">'+txt+'</span>';
+  if(v.state==='ok')     return chip('#E8F5E9','#2E7D32',btMoney(v.total),'All '+v.rows+' rows priced');
+  if(v.state==='pending')return chip('#FFF4E5','#B25000','Rates pending '+v.priced+'/'+v.rows,
+      'Add a rate to every row to see the order value');
+  if(v.state==='nounit') return chip('#FFEBEE','#C62828','Unit missing on '+v.noUnit+' row'+(v.noUnit!==1?'s':''),
+      'Rate is per unit, so every row needs a unit before the order can be valued');
+  return '';
+}
+
+/* ── 6. PER-ROW SPECIAL-REQUEST NOTES ───────────────────────────────
+   A note shows on its own line directly under its item row and is ALWAYS
+   visible — a special request hidden behind a hover or a click is one that
+   gets missed. The line is pinned left so it stays readable when the table is
+   scrolled sideways on a phone.                                             */
+function btNoteCell(oi,di,vi,note){
+  const has=!!(note&&String(note).trim());
+  return '<td class="no-print" style="text-align:center">'+
+    '<button class="icon-btn sm" title="'+(has?esc(String(note)):'Add a note for this row')+'" '+
+    'style="'+(has?'background:#FFF4E5;color:#B25000;border-color:#FFCC80':'color:#bbb')+';font-weight:700;padding:2px 7px" '+
+    'onclick="btEditRowNote('+oi+','+di+','+vi+')">'+(has?'📌':'+')+'</button></td>';
+}
+function btNoteRow(note){
+  if(!note||!String(note).trim())return'';
+  return '<tr class="bt-noterow"><td colspan="99" style="background:#FFFBF2;padding:0;border-bottom:1px solid #F1EFE8">'+
+    '<div style="position:sticky;left:0;max-width:calc(100vw - 60px);display:flex;gap:7px;align-items:flex-start;'+
+    'padding:6px 12px;border-left:3px solid #FFB74D">'+
+    '<span style="font-size:11px;line-height:1.5">📌</span>'+
+    '<span style="font-size:11px;color:#6B4A00;line-height:1.55"><b>Special request:</b> '+esc(String(note))+'</span>'+
+    '</div></td></tr>';
+}
+function btEditRowNote(oi,di,vi){
+  const order=S.orders[oi]; if(!order)return;
+  const d=order.designs[di]; if(!d)return;
+  const holder=(vi<0)?d:((d.varieties||[])[vi]); if(!holder)return;
+  const cur=holder.note||'';
+  const v=prompt('Special request for this item row\n\nShows under the row here, on the Dashboard card, and next to your name on the Pooling Board.\n\nLeave blank to remove it.',cur);
+  if(v===null)return;
+  const txt=String(v).trim();
+  if(txt)holder.note=txt; else delete holder.note;
+  audit('Row note',(d.code||d.name||'row')+': '+(txt?'"'+txt.slice(0,60)+'"':'removed'));
+  scheduleAutosave();
+  render();
 }
 
 /* ── 4. CLIENT DASHBOARD ─────────────────────────────────────────────────────
