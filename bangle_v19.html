@@ -17672,8 +17672,10 @@ function btOrderValueHTML(order){
   if(v.state==='ok')     return chip('#E8F5E9','#2E7D32',btMoney(v.total),'All '+v.rows+' rows priced');
   if(v.state==='pending')return chip('#FFF4E5','#B25000','Rates pending '+v.priced+'/'+v.rows,
       'Add a rate to every row to see the order value');
-  if(v.state==='nounit') return chip('#FFEBEE','#C62828','Unit missing on '+v.noUnit+' row'+(v.noUnit!==1?'s':''),
-      'Rate is per unit, so every row needs a unit before the order can be valued');
+  if(v.state==='nounit') return ' <span onclick="event.stopPropagation();btUnitFixer(\''+order.id+'\')" '+
+    'title="Rate is per unit — click to set the missing units" '+
+    'style="background:#FFEBEE;color:#C62828;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline">'+
+    'Unit missing on '+v.noUnit+' row'+(v.noUnit!==1?'s':'')+'</span>';
   return '';
 }
 
@@ -17729,6 +17731,114 @@ function btImportBlockedByUnit(status){
   status.style.color='#C62828';
   window._btImportUnitIssues=[];
   return true;
+}
+
+/* ── 8. BULK UNIT FIXER ─────────────────────────────────────────
+   Units became compulsory, but a lot of older rows never had one. Fixing them
+   one dropdown at a time would be miserable, so this lists every row with no
+   unit and sets them in bulk — all of them, a whole order, or one row.      */
+let _unitFixScope=null;   // null = every order, or one order id
+let _unitFixShowAll=false;
+
+function btUnitList(){
+  const out=[];
+  // archived orders are skipped in the all-orders view, but still reachable
+  // when you click the chip on one specific order
+  (S.orders||[]).filter(o=>!o.archived||o.id===_unitFixScope).forEach(o=>{
+    if(_unitFixScope&&o.id!==_unitFixScope)return;
+    btRowsOfOrder(o).forEach(r=>{
+      if(r.qty<=0)return;
+      const missing=!String(r.rawUnit||'').trim();
+      if(missing||_unitFixShowAll)out.push(Object.assign({},r,{missing:missing}));
+    });
+  });
+  return out;
+}
+function btSetRowUnit(orderId,designId,varietyId,unit){
+  const o=(S.orders||[]).find(x=>x.id===orderId); if(!o)return false;
+  const d=(o.designs||[]).find(x=>x.id===designId); if(!d)return false;
+  if(varietyId){const v=(d.varieties||[]).find(x=>x.id===varietyId); if(!v)return false; v.unit=unit;}
+  else d.unit=unit;
+  return true;
+}
+function btUnitFixSetRow(orderId,designId,varietyId,unit){
+  if(!unit)return;
+  btSetRowUnit(orderId,designId,varietyId||null,unit);
+  audit('Set unit','1 row \u2192 '+unit);
+  scheduleAutosave(); btUnitFixerRender(); render();
+}
+function btUnitFixApply(scopeOrderId){
+  const sel=document.getElementById(scopeOrderId?('ufx-o-'+scopeOrderId):'ufx-all');
+  const unit=sel?sel.value:'';
+  if(!unit){showToast('Pick a unit first','warn');return;}
+  const rows=btUnitList().filter(r=>r.missing&&(!scopeOrderId||r.orderId===scopeOrderId));
+  if(!rows.length){showToast('Nothing to set','warn');return;}
+  if(!confirm('Set '+rows.length+' row'+(rows.length!==1?'s':'')+' to "'+unit+'"?\n\nThis only fills rows that currently have no unit. Nothing already set is changed.'))return;
+  let n=0; rows.forEach(r=>{ if(btSetRowUnit(r.orderId,r.designId,r.varietyId,unit))n++; });
+  audit('Set unit',n+' rows \u2192 '+unit+(scopeOrderId?(' (one order)'):(' (all orders)')));
+  scheduleAutosave();
+  showToast('\u2705 '+n+' row'+(n!==1?'s':'')+' set to '+unit,'green');
+  btUnitFixerRender(); render();
+}
+function btUnitFixToggleAll(){ _unitFixShowAll=!_unitFixShowAll; btUnitFixerRender(); }
+function btUnitFixer(orderId){ _unitFixScope=orderId||null; _unitFixShowAll=false; btUnitFixerRender(); }
+
+function btUnitFixerRender(){
+  const mc=document.getElementById('modal-container'); if(!mc)return;
+  const rows=btUnitList();
+  const units=(S.vocabulary.units||['pcs','pairs','jotta']);
+  const opts=sel=>'<option value="">\u2014</option>'+units.map(u=>'<option value="'+esc(u)+'"'+(u===sel?' selected':'')+'>'+esc(u)+'</option>').join('');
+  const missingCount=rows.filter(r=>r.missing).length;
+  const byOrder={};
+  rows.forEach(r=>{(byOrder[r.orderId]=byOrder[r.orderId]||{label:r.orderLabel,client:r.client,rows:[]}).rows.push(r);});
+  const orderIds=Object.keys(byOrder);
+  const scopeNote=_unitFixScope?('Order '+esc((byOrder[_unitFixScope]||{}).label||'')) : (orderIds.length+' order'+(orderIds.length!==1?'s':''));
+
+  const body = rows.length===0
+    ? '<p style="padding:18px;text-align:center;color:#0F6E56;font-size:13px">\u2705 Every row has a unit. Nothing to fix.</p>'
+    : orderIds.map(oid=>{
+        const g=byOrder[oid];
+        const miss=g.rows.filter(r=>r.missing).length;
+        return '<div style="border:1px solid #E0DFFF;border-radius:10px;margin-bottom:10px;overflow:hidden">'+
+          '<div style="background:#FCFBFF;padding:7px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #EFEDFF">'+
+            '<b style="font-size:12px;color:#3C3489">'+esc(g.label||'')+'</b>'+
+            '<span style="font-size:11px;color:#8A87A8">'+esc(g.client||'')+'</span>'+
+            (miss?'<span style="font-size:10px;font-weight:800;background:#FFEBEE;color:#C62828;border-radius:10px;padding:2px 7px">'+miss+' missing</span>':'')+
+            '<span style="flex:1"></span>'+
+            (miss?('<select id="ufx-o-'+esc(oid)+'" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px">'+opts('')+'</select>'+
+              '<button class="icon-btn sm" onclick="btUnitFixApply(\''+esc(oid)+'\')">Set all in this order</button>'):'')+
+          '</div>'+
+          '<div style="max-height:none">'+g.rows.map(r=>
+            '<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;border-bottom:1px solid #F4F3FC;font-size:12px">'+
+              '<div style="flex:1;min-width:0">'+
+                '<b style="color:#2A2458">'+esc(r.code||'(no code)')+'</b> '+
+                '<span style="color:#8A87A8">'+esc(r.name||'')+(r.varName?(' \u00B7 '+esc(r.varName)):'')+'</span>'+
+                '<div style="font-size:10px;color:#A5A2C0">'+r.qty+' pcs</div>'+
+              '</div>'+
+              (r.missing?'<span style="font-size:10px;font-weight:800;color:#C62828">no unit</span>':'<span style="font-size:10px;color:#0F6E56">'+esc(r.rawUnit)+'</span>')+
+              '<select style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;min-width:76px" '+
+                'onchange="btUnitFixSetRow(\''+esc(r.orderId)+'\',\''+esc(r.designId)+'\',\''+esc(r.varietyId||'')+'\',this.value)">'+opts(r.rawUnit||'')+'</select>'+
+            '</div>').join('')+
+          '</div></div>';
+      }).join('');
+
+  mc.innerHTML='<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'+
+    '<div class="modal" style="width:660px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">'+
+      '<div class="modal-header"><div class="modal-icon" style="background:#FFF4E5;color:#B25000">\u2696</div>'+
+        '<h3>Set units</h3></div>'+
+      '<p style="font-size:12px;color:#6b6478;line-height:1.6;margin:0 0 10px">'+
+        'A rate is per unit, so an order can only be valued once every row has one. '+
+        '<b>'+missingCount+' row'+(missingCount!==1?'s':'')+'</b> still need a unit across '+scopeNote+'.</p>'+
+      (missingCount?('<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;background:#F7F6FF;border:1px solid #E0DFFF;border-radius:9px;padding:8px 10px;margin-bottom:10px">'+
+        '<b style="font-size:12px;color:#3C3489">Set every missing row to</b>'+
+        '<select id="ufx-all" style="font-size:12px;padding:4px 6px;border:1px solid #AFA9EC;border-radius:6px">'+opts('')+'</select>'+
+        '<button class="primary" style="padding:5px 12px;font-size:12px" onclick="btUnitFixApply(null)">Apply to all '+missingCount+'</button>'+
+        '<span style="flex:1"></span>'+
+        '<label style="font-size:11px;color:#6b6478;cursor:pointer"><input type="checkbox" '+(_unitFixShowAll?'checked':'')+' onchange="btUnitFixToggleAll()"> show rows that already have one</label>'+
+      '</div>'):'')+
+      '<div style="overflow:auto;flex:1;min-height:0">'+body+'</div>'+
+      '<div class="modal-actions"><button onclick="closeModal()">Done</button></div>'+
+    '</div></div>';
 }
 
 /* ── 4. CLIENT DASHBOARD ─────────────────────────────────────────────────────
