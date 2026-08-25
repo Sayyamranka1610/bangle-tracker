@@ -8427,7 +8427,7 @@ function processOrderFile(file){
             const vIdx=forceNoVariety?-1:hdr.findIndex((h,i)=>i>1&&!szColSet.has(i)&&/variety/i.test(h));
             const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
             const rIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^rate/i.test(h));
-            const nIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^note$/i.test(h));
+            const nIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^notes?\b/i.test(h));
             return groupIntoDesigns(rows.slice(hdrIdx+1,endRowIdx),0,1,vIdx,szIdxMap,allSizes,uIdx,rIdx,nIdx);
           };
 
@@ -8468,7 +8468,7 @@ function processOrderFile(file){
             const vIdx=hdr.findIndex((h,i)=>i>dcIdx&&!szColSet.has(i)&&/variety/i.test(h));
             const uIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^unit$/i.test(h));
             const rIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^rate/i.test(h));
-            const nIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^note$/i.test(h));
+            const nIdx=hdr.findIndex((h,i)=>!szColSet.has(i)&&/^notes?\b/i.test(h));
             const designs=groupIntoDesigns(rows.slice(tblHdrIdx+1),dnIdx,dcIdx,vIdx,szIdxMap,allSizes,uIdx,rIdx,nIdx);
             const dCount=designs.length,vCount=designs.reduce((a,d)=>a+d.varieties.length,0);
             if(btImportBlockedByUnit(status))return;
@@ -16191,8 +16191,100 @@ window.addEventListener('beforeunload', (e) => {
 if('serviceWorker' in navigator && !_isDemoMode()){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('bangle-sw.js')
-      .then(reg=>{ console.log('SW registered:', reg.scope); })
+      .then(reg=>{ console.log('SW registered:', reg.scope); btStartAutoUpdate(reg); })
       .catch(err=>{ console.warn('SW registration failed:', err); });
+  });
+}
+
+// ── AUTOMATIC UPDATE ────────────────────────────────────────────────────────
+// The app file is served stale-while-revalidate: the cached copy loads
+// instantly and the new one is only downloaded for NEXT time. That makes the
+// app fast but always leaves you one open behind a deploy, which meant real
+// fixes appeared to be missing. This closes that gap.
+//
+// How it decides: it asks the running service worker which build it is, and
+// compares that against a no-store fetch of bangle-sw.js (a few KB). The
+// version already gets bumped on every deploy, so there is nothing extra to
+// remember and no separate version file to keep in sync.
+//
+// Reloading uses a ?v= cache-buster, which the worker's cache lookup cannot
+// match, so the reload is guaranteed to come from the network rather than
+// serving the same stale copy again.
+let _btUpdTimer=null, _btUpdBusy=false;
+
+function _btLiveSWVersion(){
+  return new Promise(resolve=>{
+    const sw=navigator.serviceWorker.controller;
+    if(!sw)return resolve(null);
+    const ch=new MessageChannel();
+    let done=false;
+    const finish=v=>{ if(!done){done=true;resolve(v);} };
+    ch.port1.onmessage=e=>finish(e.data&&e.data.btVersion);
+    const onMsg=e=>{ if(e.data&&e.data.btVersion){navigator.serviceWorker.removeEventListener('message',onMsg);finish(e.data.btVersion);} };
+    navigator.serviceWorker.addEventListener('message',onMsg);
+    try{ sw.postMessage('BT_WHICH_VERSION',[ch.port2]); }catch(e){ return finish(null); }
+    setTimeout(()=>finish(null),2500);
+  });
+}
+
+async function btAutoUpdateCheck(){
+  if(_btUpdBusy||_isDemoMode()||!navigator.onLine)return;
+  if(!navigator.serviceWorker||!navigator.serviceWorker.controller)return;
+  _btUpdBusy=true;
+  try{
+    const res=await fetch('bangle-sw.js',{cache:'no-store'});
+    if(!res.ok)return;
+    const m=(await res.text()).match(/CACHE_NAME\s*=\s*'([^']+)'/);
+    if(!m)return;
+    const latest=m[1];
+    const live=await _btLiveSWVersion();
+    if(!live||live===latest)return;              // already on the newest build
+    if(sessionStorage.getItem('bt_upd_to')===latest)return;  // tried once already; never loop
+    sessionStorage.setItem('bt_upd_to',latest);
+
+    // Never interrupt typing — try again shortly instead.
+    const ae=document.activeElement;
+    if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.isContentEditable)){
+      sessionStorage.removeItem('bt_upd_to');
+      return;
+    }
+    // Flush anything unsaved before swapping the page out from under it.
+    try{ save(); }catch(e){}
+    try{ await Promise.race([fbPushNow(),new Promise(r=>setTimeout(r,1500))]); }catch(e){}
+
+    try{
+      const reg=await navigator.serviceWorker.getRegistration();
+      if(reg){ await reg.update(); _btPromoteWaiting(reg); }
+    }catch(e){}
+    const u=new URL(location.href);
+    u.searchParams.set('v',latest.replace(/[^A-Za-z0-9]/g,''));
+    location.replace(u.toString());
+  }catch(e){ /* offline or blocked — try again next time */ }
+  finally{ _btUpdBusy=false; }
+}
+
+// Tell a worker that is sitting in 'waiting' to take over straight away.
+function _btPromoteWaiting(reg){
+  try{ if(reg&&reg.waiting)reg.waiting.postMessage('BT_SKIP_WAITING'); }catch(e){}
+}
+
+function btStartAutoUpdate(reg){
+  // If a new build is already downloaded and waiting, take it now.
+  try{
+    if(reg){
+      _btPromoteWaiting(reg);
+      reg.addEventListener('updatefound',()=>{
+        const nw=reg.installing;
+        if(!nw)return;
+        nw.addEventListener('statechange',()=>{ if(nw.state==='installed')_btPromoteWaiting(reg); });
+      });
+    }
+  }catch(e){}
+  clearInterval(_btUpdTimer);
+  setTimeout(btAutoUpdateCheck,4000);                 // shortly after startup
+  _btUpdTimer=setInterval(btAutoUpdateCheck,10*60*1000); // and every 10 minutes
+  document.addEventListener('visibilitychange',()=>{   // and whenever you come back to it
+    if(document.visibilityState==='visible')btAutoUpdateCheck();
   });
 }
 

@@ -2,7 +2,7 @@
 // Provides offline support + faster repeat loads by caching the app shell.
 // Firebase data is fetched live (not cached) so cross-device sync still works.
 
-const CACHE_NAME = 'bangle-tracker-v190';
+const CACHE_NAME = 'bangle-tracker-v192';
 const APP_SHELL = [
   './bangle_v19',     // the REAL URL the browser actually requests — Cloudflare
                        // redirects "bangle_v19.html" here, so caching that literal
@@ -35,6 +35,17 @@ self.addEventListener('activate', (event) => {
       ))
       .then(() => self.clients.claim())
   );
+});
+
+// Lets the page ask which build this worker is, so it can tell whether the
+// copy it is running is already out of date and reload itself.
+self.addEventListener('message', (event) => {
+  // A freshly installed worker can sit in 'waiting' even with skipWaiting()
+  // in install. The page asks for it explicitly so an update is never stuck.
+  if (event.data === 'BT_SKIP_WAITING') { self.skipWaiting(); return; }
+  if (event.data === 'BT_WHICH_VERSION' && event.source) {
+    event.source.postMessage({ btVersion: CACHE_NAME });
+  }
 });
 
 // Fetch strategy:
