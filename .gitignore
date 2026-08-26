@@ -41,3 +41,6 @@ catalogue/generated/
 catalogue/final_catalogue/
 catalogue/backdrops/
 catalogue/enhanced_bangles/
+
+# Local preview helper (Claude verification server, not for deploy)
+.preview-server.js

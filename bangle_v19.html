@@ -1309,6 +1309,11 @@ async function manualSave(){
   await fbPushNow();
   if(_fb.pendingLocal){
     showToast('⚠ Saved on this device, but the CLOUD save failed — do not close this tab, it will keep retrying','red',10000);
+  } else if(_lastSaveError){
+    // Cloud write succeeded but this device could not keep its offline copy.
+    // Saying a flat "Saved to cloud!" here contradicted the status bar and left
+    // it looking like the app was lying about one of the two.
+    showToast('☁️ Saved to cloud — but this device kept no offline copy. Tap 🩺 Health for why.','amber',9000);
   } else {
     showToast('💾 Saved to cloud!','green');
   }
@@ -1761,32 +1766,59 @@ async function _autoMigrateToR2(){
 function _isDemoMode(){
   try{ return new URLSearchParams(location.search).get('demo')==='1'; }catch(e){return false;}
 }
+// Why the last local write failed (null when it succeeded). The status bar, the
+// Health modal and the manual-save toast all read this, so they report ONE true
+// reason instead of each guessing. The old code swallowed the error and always
+// blamed "localStorage blocked" — which is wrong most of the time; a full 5 MB
+// quota is the far more common cause once an account has a few dozen orders.
+let _lastSaveError = null;
+function _isQuotaError(e){
+  if(!e) return false;
+  return e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED'
+      || e.code===22 || e.code===1014 || /quota|exceeded/i.test(e.message||'');
+}
+// The legacy keys (bangle_v10/v9/v7/v6) each held a FULL duplicate of the same
+// JSON — doubling localStorage use for no benefit, and risking an ancient
+// snapshot being loaded if the canonical key ever went missing. Clearing them
+// first frees that space on every save.
+function _writeLocal(data){
+  ['bangle_v10','bangle_v9','bangle_v7','bangle_v6'].forEach(k=>{try{localStorage.removeItem(k);}catch(_){}});
+  localStorage.setItem('bangle_prod_tracker',data);
+  localStorage.setItem('bangle_saved_at', new Date().toISOString());
+}
 function save(){
   // Demo mode: never persist anything (preserves real user data on shared devices)
   if(_isDemoMode()){
     setSaveStatus('saved','🎬 Demo mode — changes not saved');
     return;
   }
+  // Extract images to save separately in IndexedDB
+  const{stateNoImages,imageMap}=extractImages({...S,openOrders:[...S.openOrders],openClients:[...S.openClients],openDesignStages:[...(S.openDesignStages||[])]});
+  // Save text data (no images) to localStorage — stays well under 5MB
+  const data=JSON.stringify(stateNoImages);
+  // Images go to IndexedDB whether or not localStorage works — IDB has its own,
+  // far larger quota and is unaffected by a full localStorage.
+  Object.entries(imageMap).forEach(([key,val])=>{idbPut(key,val).catch(e=>console.warn('IDB write fail:',e));});
   try{
-    // Extract images to save separately in IndexedDB
-    const{stateNoImages,imageMap}=extractImages({...S,openOrders:[...S.openOrders],openClients:[...S.openClients],openDesignStages:[...(S.openDesignStages||[])]});
-    // Save text data (no images) to localStorage — stays well under 5MB
-    const data=JSON.stringify(stateNoImages);
-    localStorage.setItem('bangle_prod_tracker',data);
-    localStorage.setItem('bangle_v10',data); // legacy key
-    localStorage.setItem('bangle_saved_at', new Date().toISOString());
-    // Save images to IndexedDB (no size limit)
-    Object.entries(imageMap).forEach(([key,val])=>{idbPut(key,val).catch(e=>console.warn('IDB write fail:',e));});
+    _writeLocal(data);
+    _lastSaveError=null;
     setSaveStatus('saved');
   }catch(e){
-    // If localStorage still fails (e.g. private mode), try sessionStorage as fallback
+    _lastSaveError=e;
+    console.error('[save] localStorage write failed:',e&&e.name,'—',e&&e.message,
+                  '· payload '+(new Blob([data]).size/1024).toFixed(0)+' KB');
+    // Fall back to sessionStorage using the SAME image-stripped payload, so the
+    // fallback is never larger than the write that just failed. (The old code
+    // fell back to the full state WITH images — bigger than what already
+    // overflowed.) sessionStorage survives reloads but dies with the tab.
     try{
-      const data=JSON.stringify({...S,openOrders:[...S.openOrders],openClients:[...S.openClients],openDesignStages:[...(S.openDesignStages||[])]});
       sessionStorage.setItem('bangle_session_fallback',data);
-      setSaveStatus('saved','⚠ Saved (session only — localStorage blocked)');
+      setSaveStatus('saved', _isQuotaError(e)
+        ? '⚠ In cloud · offline copy full (this tab only)'
+        : '⚠ In cloud · this browser blocks storage (this tab only)');
     }catch(e2){
-      setSaveStatus('error','⚠ Save failed — storage blocked');
-      showToast('⚠ Save failed: '+e.message+'. Try a different browser.','red');
+      setSaveStatus('error','⚠ No offline copy — cloud only');
+      showToast('⚠ This device cannot keep an offline copy ('+(e.name||e.message)+'). Your data still goes to the cloud — do not close this tab until the top bar says "Live · saved".','red',12000);
     }
   }
   updateUndoRedoBtns();
@@ -1846,8 +1878,12 @@ function exportImageManifest(){
   });
 
   // Image Library (central photo database)
+  // Library entries store their URL as `r2url`, never `url` — so this test was
+  // false for every single entry and the manifest, billed as "the safest backup
+  // for images", silently contained none of the library at all.
   (_imageLibrary||[]).forEach((e,i)=>{
-    if(e.url)rows.push(['Library','—','—',e.designName||'',e.designCode||'',e.folder||'',i+1,e.url,'✅ Cloud (R2)']);
+    const u=e.r2url||e.url;
+    if(u)rows.push(['Library','—','—',e.designName||'',e.designCode||'',e.folder||'',i+1,u,'✅ Cloud (R2)']);
   });
 
   if(rows.length<=1){showToast('No images found — upload photos first','orange',4000);return;}
@@ -2361,7 +2397,10 @@ function renderLibrary(){
         <div style="font-size:16px;font-weight:700;color:#534AB7">🖼️ Image Library</div>
         <div style="font-size:12px;color:#888;margin-top:2px">${_imageLibrary.length.toLocaleString()} photos permanently in cloud — organized by segment</div>
       </div>
-      <button onclick="openImageRecovery()" style="background:#185FA5;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📸 Upload &amp; Assign to Orders</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="btOpenPhotoCoverage()" style="background:#A32D2D;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📷 What still needs a photo?</button>
+        <button onclick="openImageRecovery()" style="background:#185FA5;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📸 Upload &amp; Assign to Orders</button>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
       ${LIB_SEGMENTS.map(seg=>{
@@ -3728,21 +3767,39 @@ function doResetAll(){
 
 // ── DATA HEALTH MODAL ─────────────────────────────────────────────────────────
 function openDataHealthModal(){
-  // Live storage test
-  let lsWorks=false, lsSize=0;
+  // Live storage test. Writing a 1-byte probe told us almost nothing: on a device
+  // whose quota is full, the probe still succeeds and this modal cheerfully said
+  // "Storage is working correctly" while every real save was failing. So we test
+  // with a payload the size of the ACTUAL state, and trust the last real save
+  // result over any probe.
+  let lsWorks=false, lsSize=0, lsBlocked=false, lsFull=false;
   try{
-    const TEST='__t__'; localStorage.setItem(TEST,'1'); lsWorks=localStorage.getItem(TEST)==='1'; localStorage.removeItem(TEST);
     const data=localStorage.getItem('bangle_prod_tracker')||''; lsSize=new Blob([data]).size;
-  }catch(e){lsWorks=false;}
+  }catch(e){}
+  try{
+    const TEST='__t__';
+    // Probe with a realistic payload: current state size, or 200 KB if nothing
+    // is stored yet. Removed immediately either way.
+    localStorage.setItem(TEST,'x'.repeat(Math.max(lsSize,200*1024)));
+    lsWorks=true;
+    localStorage.removeItem(TEST);
+  }catch(e){
+    try{localStorage.removeItem('__t__');}catch(_){}
+    lsWorks=false; lsFull=_isQuotaError(e); lsBlocked=!lsFull;
+  }
+  // The last real save is the authority — a probe can pass where a save failed.
+  if(_lastSaveError){ lsWorks=false; lsFull=_isQuotaError(_lastSaveError); lsBlocked=!lsFull; }
   const idbWorks=typeof indexedDB!=='undefined';
-  const isPrivate=!lsWorks; // best indicator we have
+  const isPrivate=lsBlocked; // best indicator we have
   const totalOrders=S.orders.length;
   const totalDesigns=S.orders.reduce((a,o)=>a+(o.designs||[]).length,0);
   const totalImages=S.orders.reduce((a,o)=>o.designs.reduce((b,d)=>(b+(d.images||[]).length+(d.varieties||[]).reduce((c,v)=>c+(v.images||[]).length,0)),a),0);
   const auditEntries=S.auditLog.length;
   const invEntries=S.invLedger.length;
   const lsSizeKB=(lsSize/1024).toFixed(1);
-  const lsSizePct=Math.min(Math.round(lsSize/51200*100),100);
+  // 51200 bytes is already 1% of the ~5 MB quota the label quotes, so the extra
+  // ×100 made this bar read 100% full for any dataset over 50 KB.
+  const lsSizePct=Math.min(Math.round(lsSize/51200),100);
   const healthColor=!lsWorks?'#A32D2D':lsSizePct>80?'#A32D2D':lsSizePct>50?'#BA7517':'#0F6E56';
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -3751,18 +3808,24 @@ function openDataHealthModal(){
 
       <!-- Storage status -->
       <div style="background:${lsWorks?'#E1F5EE':'#FCEBEB'};border-radius:10px;padding:12px 14px;margin-bottom:12px;border:1.5px solid ${lsWorks?'#9FE1CB':'#F09595'}">
-        <div style="font-size:12px;font-weight:700;color:${lsWorks?'#0F6E56':'#A32D2D'};margin-bottom:6px">${lsWorks?'✅ Storage is working correctly':'⚠ Storage is BLOCKED — data will not persist'}</div>
+        <div style="font-size:12px;font-weight:700;color:${lsWorks?'#0F6E56':'#A32D2D'};margin-bottom:6px">${lsWorks?'✅ Storage is working correctly':lsFull?'⚠ This device’s offline copy is FULL — your data is safe in the cloud':'⚠ This browser BLOCKS storage — your data is safe in the cloud'}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <span style="font-size:11px;background:${lsWorks?'#E1F5EE':'#FCEBEB'};padding:2px 8px;border-radius:5px;color:${lsWorks?'#0F6E56':'#A32D2D'}">localStorage: ${lsWorks?'✓ Working':'✗ Blocked'}</span>
+          <span style="font-size:11px;background:${lsWorks?'#E1F5EE':'#FCEBEB'};padding:2px 8px;border-radius:5px;color:${lsWorks?'#0F6E56':'#A32D2D'}">localStorage: ${lsWorks?'✓ Working':lsFull?'✗ Full (quota)':'✗ Blocked'}</span>
           <span style="font-size:11px;background:${idbWorks?'#E1F5EE':'#FAEEDA'};padding:2px 8px;border-radius:5px;color:${idbWorks?'#0F6E56':'#854F0B'}">IndexedDB (images): ${idbWorks?'✓ Available':'✗ Not available'}</span>
           <span style="font-size:11px;background:#f7f6f2;padding:2px 8px;border-radius:5px;color:#534AB7">Loaded from storage: ${window._loadedFromStorage?'✓ Yes':'✗ No (first run or blocked)'}</span>
         </div>
-        ${!lsWorks?`<div style="font-size:11px;color:#A32D2D;margin-top:8px;line-height:1.6">
-          <strong>How to fix:</strong> This usually happens when the file is opened in <strong>Private/Incognito mode</strong>, or when your browser has strict privacy settings.
-          <br>→ Close this window and reopen the file in a <strong>normal (non-private)</strong> browser tab.
-          <br>→ Use Chrome or Edge for best compatibility.
-          <br>→ Until fixed, use <strong>📤 Backup</strong> to save your data manually.
-        </div>`:''}
+        ${_lastSaveError?`<div style="font-size:10px;color:#A32D2D;margin-top:6px;font-family:monospace">Last save error: ${esc((_lastSaveError.name||'')+' — '+(_lastSaveError.message||''))}</div>`:''}
+        ${!lsWorks?(lsFull?`<div style="font-size:11px;color:#A32D2D;margin-top:8px;line-height:1.6">
+          <strong>What this means:</strong> every change is still saving to the cloud — nothing is lost, and other devices see it. What is missing is this device’s offline copy, so this browser has to re-download everything on each launch and cannot open your orders without internet.
+          <br><strong>How to fix:</strong> this browser has given the tracker its ~5 MB limit and the data has outgrown it.
+          <br>→ Take a <strong>📤 Backup</strong> first, then use <strong>📦 Archive</strong> on completed orders to shrink the live data.
+          <br>→ Or clear this site’s storage in your browser settings and reload — the cloud copy will download fresh.
+        </div>`:`<div style="font-size:11px;color:#A32D2D;margin-top:8px;line-height:1.6">
+          <strong>What this means:</strong> every change is still saving to the cloud — nothing is lost. This browser just refuses to keep an offline copy, so closing the tab loses anything that had not reached the cloud yet.
+          <br><strong>How to fix:</strong> this usually happens in <strong>Private/Incognito mode</strong>, or with strict privacy settings.
+          <br>→ Reopen the tracker in a <strong>normal (non-private)</strong> Chrome or Edge tab.
+          <br>→ Until then, watch the top bar — do not close the tab unless it says <strong>"Live · saved"</strong>, and take a <strong>📤 Backup</strong>.
+        </div>`):''}
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
@@ -3829,11 +3892,14 @@ function openDataHealthModal(){
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
 let _toastTimer=null;
-function showToast(msg, type='green'){
+// The third argument was being passed at ~20 call sites (e.g. the 20-second
+// "photo upload failed" and 10-second "CLOUD save failed" warnings) but never
+// read — every toast, however urgent, vanished after 2.8s. Now it is honoured.
+function showToast(msg, type='green', ms){
   const el=document.getElementById('toast-el'); if(!el) return;
   el.textContent=msg; el.className='toast '+(type||'green'); el.style.display='block'; el.style.opacity='1';
   clearTimeout(_toastTimer);
-  _toastTimer=setTimeout(()=>{el.style.opacity='0';setTimeout(()=>{el.style.display='none';},400);},2800);
+  _toastTimer=setTimeout(()=>{el.style.opacity='0';setTimeout(()=>{el.style.display='none';},400);}, ms>0?ms:2800);
 }
 function audit(action,detail){
   histPush(); // snapshot state before this change for undo
@@ -18327,6 +18393,324 @@ function btDashDrillHTML(c){
         '</div>';
       }).join('')+
     '</div></div>';
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHOTO COVERAGE — which design codes still have no photograph?
+   ---------------------------------------------------------------------------
+   Answers the shop-floor question: "what do I actually need to go and shoot?"
+
+   A code counts as covered if EITHER a photo is attached to it somewhere in
+   the app, OR the Image Library holds an entry carrying that design code.
+   Those are two different jobs and must not be lumped together:
+
+     ❌ shoot   — nothing anywhere. Find the piece in the shop and photograph it.
+     🔗 attach  — the Library already has it; no shop trip, just attach it.
+     🟡 partial — attached on some rows, still blank on others.
+     ✅ done    — every row that uses this code shows a photo.
+
+   The family a code belongs to (btFamilyOf) doubles as the Library folder name
+   the photo should eventually land in — '8MM CNC', '12MM CNC' and so on are
+   already both. The report surfaces that as "Suggested folder" so the
+   auto-filing mechanism has somewhere obvious to hook into later.
+
+   Self-contained: adds a modal + report. Touches no existing function.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Same normalisation the family map uses, so '8001 ', '8001' and '8001' from
+// three different orders collapse into one physical product.
+function btPcKey(code){return String(code||'').trim().toUpperCase();}
+// An image entry counts only if it actually carries data — an https R2 url, a
+// base64 blob, or an __IDB__ device-local pointer. Empty slots do not count.
+function btPcHasImg(arr){return (arr||[]).some(im=>im&&im.data&&String(im.data).trim());}
+
+function btPhotoCoverage(opts){
+  opts=opts||{};
+  const inclArchived=!!opts.includeArchived;
+  const map=Object.create(null);
+  function rec(code,name){
+    const key=btPcKey(code);
+    if(!key)return null;                    // a blank code is not a product to photograph
+    let R=map[key];
+    if(!R)R=map[key]={key:key,code:String(code).trim(),names:[],family:'',clients:[],
+      orders:[],sources:[],rows:0,attached:0,qty:0,libCount:0,libUrl:'',libFolder:''};
+    if(name){const n=String(name).trim();if(n&&R.names.indexOf(n)<0)R.names.push(n);}
+    return R;
+  }
+  // Count one design/variety row: does THIS row show a picture, and how many pcs?
+  function tally(R,imgs,fallbackImgs,sizes){
+    R.rows++;
+    if(btPcHasImg(imgs)||btPcHasImg(fallbackImgs))R.attached++;
+    R.qty+=btSum(sizes);
+  }
+  function walkDesigns(designs,pick){
+    (designs||[]).forEach(d=>{
+      const R=pick(d); if(!R)return;
+      const dImgs=d.images||[];
+      const vars=d.varieties||[];
+      // A variety with no photo of its own inherits the design's — the same rule
+      // the Design view and the pooling board use, so these counts agree with
+      // what is actually on screen.
+      if(vars.length) vars.forEach(v=>tally(R,v.images,dImgs,v.sizes));
+      else tally(R,dImgs,null,d.sizes);
+    });
+  }
+
+  // ── Customer orders ──────────────────────────────────────────────────────
+  (S.orders||[]).forEach(o=>{
+    if(o.archived&&!inclArchived)return;
+    walkDesigns(o.designs,d=>{
+      const R=rec(d.code,d.name); if(!R)return null;
+      if(R.sources.indexOf('Customer order')<0)R.sources.push('Customer order');
+      if(o.client&&R.clients.indexOf(o.client)<0)R.clients.push(o.client);
+      const lbl=String(o.orderId||'').trim()+(o.archived?' (archived)':'');
+      if(lbl&&R.orders.indexOf(lbl)<0)R.orders.push(lbl);
+      return R;
+    });
+  });
+  // ── Vendor orders ────────────────────────────────────────────────────────
+  (S.vendorOrders||[]).forEach(vo=>{
+    walkDesigns(vo.designs,d=>{
+      const R=rec(d.code,d.name); if(!R)return null;
+      if(R.sources.indexOf('Vendor order')<0)R.sources.push('Vendor order');
+      return R;
+    });
+  });
+  // ── Stock on hand — the easiest to shoot, the piece is right there ────────
+  (S.stockItems||[]).forEach(it=>{
+    const R=rec(it.designCode,it.designName); if(!R)return;
+    if(R.sources.indexOf('In stock')<0)R.sources.push('In stock');
+    R.rows++;
+    if(btPcHasImg(it.images))R.attached++;
+  });
+
+  // ── What the Library already holds, keyed by code ─────────────────────────
+  const libByCode=Object.create(null);
+  const libFolders=Object.create(null);
+  (_imageLibrary||[]).forEach(e=>{
+    const f=String(e.folder||'').trim();
+    if(f)libFolders[f.toUpperCase()]=true;
+    const k=btPcKey(e.designCode);
+    if(!k)return;
+    let L=libByCode[k];
+    if(!L)L=libByCode[k]={n:0,url:'',folder:''};
+    L.n++;
+    if(!L.url&&e.r2url){L.url=e.r2url;L.folder=f;}
+  });
+
+  const list=Object.keys(map).map(k=>{
+    const R=map[k], L=libByCode[k];
+    if(L){R.libCount=L.n;R.libUrl=L.url;R.libFolder=L.folder;}
+    R.family=btFamilyOf(R.code,R.names[0]||'');
+    R.folderExists=!!libFolders[R.family.toUpperCase()];
+    R.status = R.attached===0 ? (R.libCount?'attach':'shoot')
+             : (R.attached<R.rows?'partial':'done');
+    return R;
+  }).sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true,sensitivity:'base'}));
+
+  const stats={total:list.length,shoot:0,attach:0,partial:0,done:0,shootQty:0,shootFams:0};
+  const shootFamSet=Object.create(null);
+  list.forEach(R=>{
+    stats[R.status]++;
+    if(R.status==='shoot'){stats.shootQty+=R.qty;shootFamSet[R.family]=true;}
+  });
+  stats.shootFams=Object.keys(shootFamSet).length;
+  // Photos filed under a code that no order or stock record has ever mentioned —
+  // usually a typo in the file name, so worth flagging, but not a shoot job.
+  stats.orphanLib=Object.keys(libByCode).filter(k=>!map[k]).length;
+  return {list:list,stats:stats};
+}
+
+/* ── REPORT UI ────────────────────────────────────────────────────────────── */
+const BT_PC_DEFS=[
+  {k:'shoot',  lbl:'❌ Needs photo', bg:'#FCEBEB',tx:'#A32D2D',bdr:'#F09595'},
+  {k:'attach', lbl:'🔗 In library',  bg:'#E6F1FB',tx:'#185FA5',bdr:'#A8CBEA'},
+  {k:'partial',lbl:'🟡 Partly done', bg:'#FAEEDA',tx:'#854F0B',bdr:'#EBCB94'},
+  {k:'done',   lbl:'✅ Covered',     bg:'#E1F5EE',tx:'#0F6E56',bdr:'#9FE1CB'}
+];
+let _pcState={filter:'shoot',q:'',archived:false,openFams:{},data:null};
+
+async function btOpenPhotoCoverage(){
+  await _ensureLibraryLoaded();
+  const old=document.getElementById('pc-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='pc-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:8px';
+  wrap.innerHTML='<div style="background:#fff;border-radius:16px;width:min(1050px,98vw);height:92vh;display:flex;flex-direction:column;padding:16px 18px;gap:11px;overflow:hidden">'
+    +'<div id="pc-head" style="flex-shrink:0"></div>'
+    +'<div id="pc-body" style="flex:1;overflow-y:auto;min-height:0"></div>'
+    +'<div id="pc-foot" style="flex-shrink:0;padding-top:9px;border-top:1px solid #eee;display:flex;align-items:center;gap:9px;flex-wrap:wrap"></div>'
+    +'</div>';
+  document.body.appendChild(wrap);
+  btPcReload();
+}
+function btPcClose(){const m=document.getElementById('pc-modal');if(m)m.remove();}
+function btPcReload(){
+  _pcState.data=btPhotoCoverage({includeArchived:_pcState.archived});
+  btPcRender();
+}
+function btPcSetFilter(f){_pcState.filter=f;btPcRender();}
+function btPcSearch(v){_pcState.q=v;btPcRender();}
+function btPcToggleArchived(on){_pcState.archived=!!on;_pcState.openFams={};btPcReload();}
+function btPcToggleFam(f){_pcState.openFams[f]=(_pcState.openFams[f]===false);btPcRender();}
+
+// Rows currently on screen, after the status chip and the search box. Export and
+// print both read this, so what you carry to the shop is exactly what you see.
+function btPcVisible(){
+  const d=_pcState.data; if(!d)return [];
+  const q=_pcState.q.trim().toLowerCase();
+  return d.list.filter(R=>{
+    if(_pcState.filter!=='all'&&R.status!==_pcState.filter)return false;
+    if(!q)return true;
+    return (R.code+' '+R.family+' '+R.names.join(' ')+' '+R.clients.join(' ')).toLowerCase().indexOf(q)>=0;
+  });
+}
+function btPcGroupByFamily(rows){
+  const g={};
+  rows.forEach(R=>{(g[R.family]=g[R.family]||[]).push(R);});
+  return Object.keys(g).sort((a,b)=>g[b].length-g[a].length||a.localeCompare(b))
+    .map(f=>({family:f,rows:g[f]}));
+}
+
+function btPcRender(){
+  const d=_pcState.data; if(!d)return;
+  const s=d.stats;
+  const tile=(n,l,clr,active,key)=>'<div onclick="btPcSetFilter(\''+key+'\')" style="cursor:pointer;flex:1;min-width:104px;background:'+(active?clr.bg:'#f7f6f2')
+    +';border:1.5px solid '+(active?clr.bdr:'#E8E7E0')+';border-radius:10px;padding:9px 12px;transition:all .13s">'
+    +'<div style="font-size:21px;font-weight:800;color:'+(active?clr.tx:'#555')+'">'+n+'</div>'
+    +'<div style="font-size:11px;color:'+(active?clr.tx:'#888')+';margin-top:1px">'+l+'</div></div>';
+
+  document.getElementById('pc-head').innerHTML=
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">'
+     +'<div>'
+       +'<div style="font-size:15px;font-weight:700;color:#534AB7">📷 Photo coverage — what still needs shooting</div>'
+       +'<div style="font-size:11.5px;color:#666;margin-top:3px">'
+         +'<strong>'+s.shoot.toLocaleString()+'</strong> of '+s.total.toLocaleString()+' design codes have no photo anywhere'
+         +(s.shoot?' · across <strong>'+s.shootFams+'</strong> famil'+(s.shootFams!==1?'ies':'y')+' · '+s.shootQty.toLocaleString()+' pcs on order':'')
+       +'</div>'
+     +'</div>'
+     +'<button onclick="btPcClose()" style="background:#f5f4f2;border:1px solid #ccc;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;flex-shrink:0">✕ Close</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px">'
+      +BT_PC_DEFS.map(D=>tile(s[D.k].toLocaleString(),D.lbl,D,_pcState.filter===D.k,D.k)).join('')
+      +tile(s.total.toLocaleString(),'All codes',{bg:'#EDEBFF',tx:'#534AB7',bdr:'#AFA9EC'},_pcState.filter==='all','all')
+    +'</div>'
+    +'<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:10px">'
+      +'<input id="pc-search" value="'+esc(_pcState.q)+'" oninput="btPcSearch(this.value)" '
+        +'placeholder="Search code, family, design or client…" '
+        +'style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid #E0DFFF;border-radius:9px;font-size:13px">'
+      +'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#555;cursor:pointer;white-space:nowrap">'
+        +'<input type="checkbox" '+(_pcState.archived?'checked':'')+' onchange="btPcToggleArchived(this.checked)" style="width:auto;margin:0"> '
+        +'Include archived orders</label>'
+    +'</div>'
+    +(s.orphanLib?'<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border:1px solid #EBCB94;border-radius:8px;padding:6px 10px;margin-top:8px">'
+      +'⚠ '+s.orphanLib+' library photo code'+(s.orphanLib!==1?'s':'')+' match'+(s.orphanLib!==1?'':'es')+' no design in any order or stock record — usually a typo in the file name.</div>':'');
+
+  const rows=btPcVisible();
+  const groups=btPcGroupByFamily(rows);
+  const body=document.getElementById('pc-body');
+  if(!rows.length){
+    body.innerHTML='<div style="text-align:center;padding:56px;color:#8A87A8;font-size:13px">'
+      +(_pcState.q?'No design codes match that search.':'Nothing in this group — every code here is covered. 🎉')+'</div>';
+  } else {
+    body.innerHTML=groups.map(G=>{
+      const open=_pcState.openFams[G.family]!==false; // families start expanded
+      return '<div style="border:1.5px solid #E0DFFF;border-radius:11px;margin-bottom:9px;overflow:hidden">'
+       +'<div onclick="btPcToggleFam(this.dataset.f)" data-f="'+esc(G.family)+'" style="cursor:pointer;background:#F7F6FF;padding:9px 13px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">'
+         +'<span style="font-size:11px;color:#8A87A8;width:10px">'+(open?'▾':'▸')+'</span>'
+         +'<b style="font-size:13px;color:#3C3489">'+esc(G.family)+'</b>'
+         +'<span style="font-size:11px;color:#8A87A8">'+G.rows.length+' code'+(G.rows.length!==1?'s':'')+'</span>'
+         +'<span style="flex:1"></span>'
+         +'<span style="font-size:10.5px;color:#6B6797">Suggested library folder: <b>'+esc(G.family)+'</b>'
+           +(G.rows[0]&&G.rows[0].folderExists?' <span style="color:#0F6E56">✓ exists</span>':' <span style="color:#B07C1E">· not created yet</span>')+'</span>'
+       +'</div>'
+       +(open?'<div>'+G.rows.map(btPcRowHTML).join('')+'</div>':'')
+      +'</div>';
+    }).join('');
+  }
+
+  const csvN=rows.length;
+  document.getElementById('pc-foot').innerHTML=
+     '<button onclick="btPcExportCSV()" style="background:#0F6E56;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📄 Export list ('+csvN+') to Excel</button>'
+    +'<button onclick="btPcPrint()" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">🖨 Print shoot list</button>'
+    +'<button onclick="btPcClose();switchMain(\'library\');openLibraryImport()" style="background:#f0efff;color:#534AB7;border:1.5px solid #AFA9EC;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:600;cursor:pointer">📤 Upload photos to library</button>'
+    +'<span style="flex:1"></span>'
+    +'<span style="font-size:11px;color:#aaa">Covered = a photo is attached in the app, or the Library holds that code</span>';
+}
+
+function btPcRowHTML(R){
+  const D=BT_PC_DEFS.filter(x=>x.k===R.status)[0]||BT_PC_DEFS[0];
+  const thumb=R.libUrl
+    ? '<img src="'+esc(R.libUrl)+'" loading="lazy" style="width:44px;height:44px;object-fit:cover;border-radius:7px;border:1.5px solid #E0DFFF;flex-shrink:0">'
+    : '<div style="width:44px;height:44px;border-radius:7px;border:1.5px dashed #D9D7EC;display:flex;align-items:center;justify-content:center;font-size:16px;color:#C6C3E0;flex-shrink:0">📷</div>';
+  const who=R.clients.length?R.clients.slice(0,3).join(', ')+(R.clients.length>3?' +'+(R.clients.length-3):''):'';
+  return '<div style="display:flex;align-items:center;gap:10px;padding:8px 13px;border-top:1px solid #EFEDFF">'
+    +thumb
+    +'<div style="min-width:0;flex:1">'
+      +'<div style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap">'
+        +'<b style="font-size:13px;color:#2A2458">'+esc(R.code)+'</b>'
+        +'<span style="font-size:10px;font-weight:700;padding:1.5px 7px;border-radius:20px;background:'+D.bg+';color:'+D.tx+'">'+D.lbl+'</span>'
+        +(R.libCount?'<span style="font-size:10px;color:#185FA5">'+R.libCount+' in library'+(R.libFolder?' · '+esc(R.libFolder):'')+'</span>':'')
+      +'</div>'
+      +'<div style="font-size:11px;color:#8A87A8;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+        +esc(R.names.slice(0,2).join(' · ')||'—')
+        +(who?' · '+esc(who):'')
+        +' · '+esc(R.sources.join(', '))
+      +'</div>'
+    +'</div>'
+    +'<div style="text-align:right;flex-shrink:0">'
+      +'<div style="font-size:12px;font-weight:700;color:#534AB7">'+R.qty.toLocaleString()+'</div>'
+      +'<div style="font-size:10px;color:#aaa">pcs · '+R.attached+'/'+R.rows+' shown</div>'
+    +'</div>'
+  +'</div>';
+}
+
+function btPcExportCSV(){
+  const rows=btPcVisible();
+  if(!rows.length){showToast('Nothing to export in this view','amber',3500);return;}
+  const head=['Design Code','Family','Suggested library folder','Folder exists','Status',
+    'Design name(s)','Pieces on order','Rows with photo','Rows total','Photos in library',
+    'Clients','Orders','Found in'];
+  const label={shoot:'NEEDS PHOTO',attach:'IN LIBRARY - ATTACH',partial:'PARTLY DONE',done:'COVERED'};
+  const out=[head].concat(rows.map(R=>[R.code,R.family,R.family,R.folderExists?'Yes':'No',
+    label[R.status]||R.status,R.names.join(' | '),R.qty,R.attached,R.rows,R.libCount,
+    R.clients.join(' | '),R.orders.join(' | '),R.sources.join(' | ')]));
+  const csv=out.map(r=>r.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  downloadCSV(csv,'photo_shoot_list_'+new Date().toISOString().split('T')[0]+'.csv');
+  showToast('📄 '+rows.length+' design code'+(rows.length!==1?'s':'')+' exported','green',4000);
+  audit('Photo coverage','Exported '+rows.length+' codes ('+_pcState.filter+')');
+}
+
+function btPcPrint(){
+  const rows=btPcVisible();
+  if(!rows.length){showToast('Nothing to print in this view','amber',3500);return;}
+  const groups=btPcGroupByFamily(rows);
+  const w=window.open('','_blank','width=980,height=780');
+  if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
+  const label={shoot:'Needs photo',attach:'In library — attach',partial:'Partly done',done:'Covered',all:'All codes'};
+  const when=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  w.document.write('<!DOCTYPE html><html><head><title>Photo shoot list</title><style>'
+    +'body{font-family:system-ui;margin:0;padding:10mm 12mm;color:#1a1916;font-size:12px}'
+    +'h1{font-size:17px;margin:0 0 2px}.sub{font-size:11px;color:#666;margin-bottom:10px}'
+    +'.fam{margin-top:12px;page-break-inside:avoid}'
+    +'.famh{background:#EDEBFF;border-radius:6px;padding:5px 9px;font-weight:700;font-size:12.5px;margin-bottom:5px}'
+    +'.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 12px}'
+    +'.it{display:flex;align-items:baseline;gap:6px;font-size:11.5px;padding:2px 0;border-bottom:1px dotted #ddd}'
+    +'.bx{display:inline-block;width:11px;height:11px;border:1.4px solid #666;border-radius:2px;flex-shrink:0}'
+    +'.cd{font-weight:700;min-width:52px}.nm{color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    +'@media print{@page{margin:10mm}}</style></head><body>'
+    +'<h1>📷 Photo shoot list</h1>'
+    +'<div class="sub">'+rows.length+' design code'+(rows.length!==1?'s':'')+' · '+esc(label[_pcState.filter]||'All codes')
+    +' · '+groups.length+' famil'+(groups.length!==1?'ies':'y')+' · '+when
+    +(_pcState.archived?' · includes archived orders':'')+'</div>'
+    +groups.map(G=>'<div class="fam"><div class="famh">'+esc(G.family)+' — '+G.rows.length+' code'+(G.rows.length!==1?'s':'')+'</div>'
+      +'<div class="grid">'+G.rows.map(R=>'<div class="it"><span class="bx"></span><span class="cd">'+esc(R.code)+'</span>'
+        +'<span class="nm">'+esc((R.names[0]||'').slice(0,28))+'</span></div>').join('')+'</div></div>').join('')
+    +'</body></html>');
+  w.document.close();
+  setTimeout(()=>{try{w.print();}catch(e){}},350);
+  audit('Photo coverage','Printed shoot list — '+rows.length+' codes');
 }
 
 </script>

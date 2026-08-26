@@ -1,0 +1,40 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mockup",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "serve",
+        "-p",
+        "4321",
+        "."
+      ],
+      "port": 4321
+    },
+    {
+      "name": "live-app",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        ".preview-server.js",
+        ".",
+        "4399"
+      ],
+      "port": 4399
+    },
+    {
+      "name": "v2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "v2",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173"
+      ],
+      "port": 5173
+    }
+  ]
+}
