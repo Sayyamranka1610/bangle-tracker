@@ -4,8 +4,10 @@ import {
   LIB_SEGMENTS, LIB_SEG_META, type LibSegment, type LibEntry, type LibFolderReg,
   fetchLibrary, fetchFolderRegistry, addLibraryEntry, deleteLibraryEntry,
   registerFolder, unregisterFolder, getFoldersForSegment,
+  moveLibraryEntries, copyLibraryEntries,
 } from '../lib/imageLibrary';
 import { uploadToR2, compressImage } from '../lib/r2';
+import MoveCopyModal from '../components/library/MoveCopyModal';
 
 export default function Library() {
   const { state, showToast } = useApp();
@@ -18,9 +20,15 @@ export default function Library() {
   const [folder, setFolder] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [moveModal, setMoveModal] = useState<'move' | 'copy' | null>(null);
 
+  // NOTE: this still trips eslint's react-hooks/set-state-in-effect rule
+  // (it flags any setState reachable from an effect, even post-await) — this
+  // is the standard "fetch once on mount" pattern and pre-dates this session's
+  // changes; left as pre-existing lint debt, tracked in the spawned cleanup
+  // task rather than restructured here (see PHASE2_TRACKER.md).
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [lib, regs] = await Promise.all([fetchLibrary(), fetchFolderRegistry()]);
       setEntries(lib);
@@ -34,10 +42,18 @@ export default function Library() {
 
   useEffect(() => { load(); }, [load]);
 
-  function goRoot() { setSegment(null); setFolder(null); setSearch(''); }
-  function goSegment() { setFolder(null); setSearch(''); }
-  function selectSegment(seg: LibSegment) { setSegment(seg); setFolder(null); setSearch(''); }
-  function selectFolder(name: string) { setFolder(name); setSearch(''); }
+  function goRoot() { setSegment(null); setFolder(null); setSearch(''); setSelected(new Set()); }
+  function goSegment() { setFolder(null); setSearch(''); setSelected(new Set()); }
+  function selectSegment(seg: LibSegment) { setSegment(seg); setFolder(null); setSearch(''); setSelected(new Set()); }
+  function selectFolder(name: string) { setFolder(name); setSearch(''); setSelected(new Set()); }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   async function handleNewFolder(seg: LibSegment) {
     const name = prompt('New folder name:');
@@ -136,6 +152,44 @@ export default function Library() {
     const filtered = q ? items.filter(e => e.designCode.toLowerCase().includes(q) || e.fileName.toLowerCase().includes(q)) : items;
     return [...filtered].sort((a, b) => (a.designCode || a.fileName).localeCompare(b.designCode || b.fileName, undefined, { numeric: true }));
   }, [entries, segment, folder, search]);
+
+  function toggleSelectAll() {
+    setSelected(prev => prev.size === folderItems.length ? new Set() : new Set(folderItems.map(e => e._id)));
+  }
+
+  async function handleMoveOrCopy(toSeg: LibSegment, toFolder: string) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setMoveModal(null);
+    try {
+      if (moveModal === 'move') {
+        await moveLibraryEntries(ids, toSeg, toFolder);
+        setEntries(prev => prev.map(e => ids.includes(e._id) ? { ...e, segment: toSeg, folder: toFolder } : e));
+        showToast(`📂 ${ids.length} photo${ids.length !== 1 ? 's' : ''} moved to ${toSeg} › ${toFolder}`, 'success');
+      } else {
+        const copies = await copyLibraryEntries(ids, toSeg, toFolder, entries);
+        setEntries(prev => [...prev, ...copies]);
+        showToast(`📋 ${copies.length} photo${copies.length !== 1 ? 's' : ''} copied to ${toSeg} › ${toFolder}`, 'success');
+      }
+      setSelected(new Set());
+    } catch {
+      showToast(moveModal === 'move' ? 'Move failed' : 'Copy failed', 'error');
+    }
+  }
+
+  async function handleDeleteSelected() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} selected photo${ids.length !== 1 ? 's' : ''}?\n\nThis cannot be undone.`)) return;
+    try {
+      await Promise.all(ids.map(id => deleteLibraryEntry(id)));
+      setEntries(prev => prev.filter(e => !ids.includes(e._id)));
+      setSelected(new Set());
+      showToast(`🗑️ ${ids.length} photo${ids.length !== 1 ? 's' : ''} deleted`, 'success');
+    } catch {
+      showToast('Delete failed', 'error');
+    }
+  }
 
   if (loading) {
     return <div className="p-6 text-center text-white/40 animate-pulse">Loading library…</div>;
@@ -238,7 +292,19 @@ export default function Library() {
       {segment && folder && (
         <div>
           <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-            <span className="text-sm font-semibold text-white">{folderItems.length} photo{folderItems.length !== 1 ? 's' : ''}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-white">{folderItems.length} photo{folderItems.length !== 1 ? 's' : ''}</span>
+              {canEdit && folderItems.length > 0 && (
+                <>
+                  <button onClick={toggleSelectAll} className="text-[11px] font-semibold bg-[#534AB7]/15 text-[#a89fff] border border-[#534AB7]/40 rounded-lg px-2.5 py-1">
+                    {selected.size === folderItems.length ? '☑ Deselect All' : '☐ Select All'}
+                  </button>
+                  {selected.size > 0 && (
+                    <button onClick={() => setSelected(new Set())} className="text-[11px] bg-white/5 text-white/60 border border-white/10 rounded-lg px-2.5 py-1">✕ Clear</button>
+                  )}
+                </>
+              )}
+            </div>
             {canEdit && (
               <label className={`text-xs font-semibold rounded-lg px-3 py-1.5 cursor-pointer transition-colors ${uploading ? 'bg-white/10 text-white/40' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
                 {uploading ? 'Uploading…' : '+ Upload Here'}
@@ -247,6 +313,17 @@ export default function Library() {
               </label>
             )}
           </div>
+
+          {/* Bulk action bar — appears once at least one photo is selected */}
+          {canEdit && selected.size > 0 && (
+            <div className="flex items-center gap-2 mb-3 bg-[#534AB7]/10 border border-[#534AB7]/30 rounded-lg px-3 py-2">
+              <span className="text-xs font-semibold text-[#a89fff]">{selected.size} selected</span>
+              <button onClick={() => setMoveModal('move')} className="ml-auto text-[11px] font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5">📂 Move</button>
+              <button onClick={() => setMoveModal('copy')} className="text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5">📋 Copy</button>
+              <button onClick={handleDeleteSelected} className="text-[11px] font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-1.5">🗑️ Delete</button>
+            </div>
+          )}
+
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search in ${folder}…`}
             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm mb-4 focus:outline-none focus:border-[#534AB7]" />
 
@@ -254,22 +331,46 @@ export default function Library() {
             <p className="text-center py-10 text-white/30 text-sm">No photos{search ? ` matching "${search}"` : ''} in this folder.</p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-              {folderItems.map(e => (
-                <div key={e._id} className="border border-white/10 rounded-lg overflow-hidden bg-white/5">
-                  <a href={e.r2url} target="_blank" rel="noreferrer" className="block h-20 bg-white/5">
-                    <img src={e.r2url} className="w-full h-full object-cover" alt={e.designCode || e.fileName} loading="lazy" />
-                  </a>
-                  <div className="px-1.5 py-1.5">
-                    <p className="text-[10px] font-semibold text-white truncate" title={e.designCode || e.fileName}>{e.designCode || e.fileName || '—'}</p>
-                    {canEdit && (
-                      <button onClick={() => handleDeletePhoto(e._id)} className="mt-1 w-full text-[9px] bg-red-500/10 border border-red-500/30 rounded px-1 py-0.5 text-red-400">Delete</button>
-                    )}
+              {folderItems.map(e => {
+                const isSel = selected.has(e._id);
+                return (
+                  <div key={e._id} className={`border rounded-lg overflow-hidden bg-white/5 ${isSel ? 'border-[#534AB7] ring-1 ring-[#534AB7]' : 'border-white/10'}`}>
+                    <div className="relative h-20 bg-white/5">
+                      {canEdit && (
+                        <button onClick={() => toggleSelect(e._id)}
+                          className={`absolute top-1 left-1 z-10 w-4.5 h-4.5 rounded flex items-center justify-center text-[10px] font-bold ${isSel ? 'bg-[#534AB7] text-white' : 'bg-black/50 text-white/60 border border-white/30'}`}
+                          style={{ width: 18, height: 18 }}>
+                          {isSel ? '✓' : ''}
+                        </button>
+                      )}
+                      <a href={e.r2url} target="_blank" rel="noreferrer" className="block h-full">
+                        <img src={e.r2url} className="w-full h-full object-cover" alt={e.designCode || e.fileName} loading="lazy" />
+                      </a>
+                    </div>
+                    <div className="px-1.5 py-1.5">
+                      <p className="text-[10px] font-semibold text-white truncate" title={e.designCode || e.fileName}>{e.designCode || e.fileName || '—'}</p>
+                      {canEdit && (
+                        <button onClick={() => handleDeletePhoto(e._id)} className="mt-1 w-full text-[9px] bg-red-500/10 border border-red-500/30 rounded px-1 py-0.5 text-red-400">Delete</button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
+      )}
+
+      {moveModal && segment && (
+        <MoveCopyModal
+          mode={moveModal}
+          count={selected.size}
+          defaultSegment={segment}
+          entries={entries}
+          registry={registry}
+          onConfirm={handleMoveOrCopy}
+          onClose={() => setMoveModal(null)}
+        />
       )}
     </div>
   );

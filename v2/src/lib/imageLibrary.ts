@@ -80,6 +80,29 @@ export interface FolderTile {
   regId: string | null;
 }
 
+// ─── Bulk move / copy (ports Phase 1's _libExecuteMove()) ────────────────────
+// Move: a single multi-path PATCH updates segment+folder on every selected
+// entry in one round trip (mirrors Phase 1's root-level PATCH with
+// "imageLibrary/<id>/segment" style keys). Copy: creates new entries pointing
+// at the same r2url (photos live permanently in R2 either way — a "copy" is
+// just a second index row, no re-upload).
+export async function moveLibraryEntries(ids: string[], toSeg: LibSegment, toFolder: string): Promise<void> {
+  const updates: Record<string, unknown> = {};
+  ids.forEach(id => {
+    updates[`${LIB_PATH}/${id}/segment`] = toSeg;
+    updates[`${LIB_PATH}/${id}/folder`] = toFolder;
+  });
+  await db.update('', updates);
+}
+
+export async function copyLibraryEntries(ids: string[], toSeg: LibSegment, toFolder: string, entries: LibEntry[]): Promise<LibEntry[]> {
+  const toCopy = ids.map(id => entries.find(e => e._id === id)).filter((e): e is LibEntry => !!e);
+  const copies = await Promise.all(toCopy.map(e => addLibraryEntry({
+    designCode: e.designCode || '', folder: toFolder, segment: toSeg, r2url: e.r2url, fileName: e.fileName || '',
+  })));
+  return copies;
+}
+
 export function getFoldersForSegment(entries: LibEntry[], registry: LibFolderReg[], seg: LibSegment): FolderTile[] {
   const map = new Map<string, FolderTile>();
   entries.filter(e => e.segment === seg).forEach(e => {
