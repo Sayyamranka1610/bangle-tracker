@@ -8,6 +8,9 @@ import {
 } from '../lib/imageLibrary';
 import { uploadToR2, compressImage } from '../lib/r2';
 import MoveCopyModal from '../components/library/MoveCopyModal';
+import ImportFolderModal from '../components/library/ImportFolderModal';
+import SyncR2Modal from '../components/library/SyncR2Modal';
+import RcloneGuideModal from '../components/library/RcloneGuideModal';
 
 export default function Library() {
   const { state, showToast } = useApp();
@@ -22,6 +25,9 @@ export default function Library() {
   const [uploading, setUploading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveModal, setMoveModal] = useState<'move' | 'copy' | null>(null);
+  const [importModal, setImportModal] = useState(false);
+  const [syncModal, setSyncModal] = useState(false);
+  const [rcloneGuide, setRcloneGuide] = useState(false);
 
   // NOTE: this still trips eslint's react-hooks/set-state-in-effect rule
   // (it flags any setState reachable from an effect, even post-await) — this
@@ -256,7 +262,12 @@ export default function Library() {
               {LIB_SEG_META[segment].icon} {segment} — {folders.length} folder{folders.length !== 1 ? 's' : ''}
             </span>
             {canEdit && (
-              <button onClick={() => handleNewFolder(segment)} className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5">➕ New Folder</button>
+              <div className="flex gap-1.5 flex-wrap">
+                <button onClick={() => handleNewFolder(segment)} className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5">➕ New Folder</button>
+                <button onClick={() => setImportModal(true)} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-3 py-1.5">📁 Import Folder</button>
+                <button onClick={() => setSyncModal(true)} className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5">🔄 Sync from R2</button>
+                <button onClick={() => setRcloneGuide(true)} className="text-xs font-semibold bg-[#534AB7]/15 text-[#a89fff] border border-[#534AB7]/40 rounded-lg px-3 py-1.5">📖 rclone Guide</button>
+              </div>
             )}
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search folders in ${segment}…`}
@@ -372,6 +383,27 @@ export default function Library() {
           onClose={() => setMoveModal(null)}
         />
       )}
+
+      {importModal && segment && (
+        <ImportFolderModal
+          seg={segment}
+          onImported={imported => {
+            setEntries(prev => [...prev, ...imported]);
+            showToast(`✅ ${imported.length.toLocaleString()} photo${imported.length !== 1 ? 's' : ''} imported`, 'success');
+          }}
+          onClose={() => setImportModal(false)}
+        />
+      )}
+
+      {syncModal && (
+        <SyncR2Modal
+          entries={entries}
+          onSynced={synced => setEntries(prev => [...prev, ...synced])}
+          onClose={() => setSyncModal(false)}
+        />
+      )}
+
+      {rcloneGuide && <RcloneGuideModal onClose={() => setRcloneGuide(false)} />}
     </div>
   );
 }

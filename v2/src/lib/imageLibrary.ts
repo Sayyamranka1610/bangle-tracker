@@ -60,6 +60,62 @@ export async function deleteLibraryEntry(id: string): Promise<void> {
   await db.delete(`${LIB_PATH}/${id}`);
 }
 
+// Bulk-add many entries in one round trip (ports Phase 1's _batchAddLibraryEntries()
+// exactly — a single multi-path PATCH instead of N individual writes). Used by
+// both folder import and R2 sync, which can add hundreds/thousands of rows.
+export async function batchAddLibraryEntries(
+  entries: Array<{ designCode: string; folder: string; segment: LibSegment; r2url: string; fileName: string; uploadedAt?: number }>,
+): Promise<LibEntry[]> {
+  if (!entries.length) return [];
+  const updates: Record<string, unknown> = {};
+  const created: LibEntry[] = [];
+  entries.forEach(e => {
+    const id = newKey();
+    const full = { ...e, uploadedAt: e.uploadedAt ?? Date.now() };
+    updates[`${LIB_PATH}/${id}`] = full;
+    created.push({ ...full, _id: id });
+  });
+  await db.update('', updates);
+  return created;
+}
+
+// Phase 1 defines _LIB_SKIP_FOLDERS/_LIB_SKIP_FILES regexes (Picasa originals,
+// thumbs.db, .DS_Store, etc) but — per its own UI copy ("Nothing is filtered
+// or skipped", bangle_v19.html ~L3081/3119) and a code trace confirming
+// neither regex is ever actually referenced anywhere — they're dead code: the
+// real live behavior is upload everything you select, no filtering. Matched
+// here rather than the unused regexes, so this behaves like the real app.
+export interface ImportPlanItem { file: File; folder: string; designCode: string; fileName: string }
+
+// Turns a FileList (from a webkitdirectory or plain multi-file <input>) into
+// an upload plan — one item per file, with its target library folder and
+// design code derived from the folder structure. Ports Phase 1's
+// _libImportFiles() planning step exactly.
+export function planLibraryImport(files: FileList, forceFolder: string | null): ImportPlanItem[] {
+  const plan: ImportPlanItem[] = [];
+  Array.from(files).forEach(f => {
+    const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+    const parts = rel.split('/');
+
+    let folder: string, designCode: string;
+    if (forceFolder) {
+      folder = forceFolder;
+      designCode = f.name.replace(/\.[^.]+$/, '').trim();
+    } else if (parts.length >= 3) {
+      folder = parts.slice(1, -1).join('/');
+      designCode = parts[parts.length - 1].replace(/\.[^.]+$/, '').trim();
+    } else if (parts.length === 2) {
+      folder = 'General';
+      designCode = parts[1].replace(/\.[^.]+$/, '').trim();
+    } else {
+      folder = 'General';
+      designCode = f.name.replace(/\.[^.]+$/, '').trim();
+    }
+    plan.push({ file: f, folder, designCode, fileName: f.name });
+  });
+  return plan;
+}
+
 export async function registerFolder(seg: LibSegment, name: string): Promise<LibFolderReg> {
   const id = newKey();
   const entry = { name, segment: seg, createdAt: Date.now() };
