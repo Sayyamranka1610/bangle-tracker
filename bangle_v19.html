@@ -12159,7 +12159,11 @@ function askOrderPrint(oid){
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="prt-rate" style="width:auto;accent-color:#534AB7">
-            <span style="font-size:12px">Include rate (₹) column</span>
+            <span style="font-size:12px">Include rate (₹) column <span style="font-size:10px;color:#6b6478">— also prints the order total</span></span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="prt-notes" style="width:auto;accent-color:#534AB7">
+            <span style="font-size:12px">Include special-request notes</span>
           </label>
         </div>
       </div>
@@ -12169,7 +12173,8 @@ function askOrderPrint(oid){
           const pos=document.querySelector('input[name=img-pos]:checked').value;
           const stg=document.getElementById('prt-stages').checked;
           const rte=document.getElementById('prt-rate').checked;
-          closeModal();printOrderById('${oid}',stg,pos,rte)">🖨️ Print</button>
+          const nts=document.getElementById('prt-notes').checked;
+          closeModal();printOrderById('${oid}',stg,pos,rte,nts)">🖨️ Print</button>
       </div>
     </div>
   </div>`;
@@ -12351,7 +12356,7 @@ function doPrintAll(includeStages,includeRate){
 
 // Build printable HTML for an order — mirrors the dashboard table layout exactly.
 // imgMode: 'inline' = image col at right of each row | 'top' = gallery above table | 'none' = no images
-function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate){
+function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate,includeNotes){
   if(includeStages===undefined)includeStages=true;
   if(!imgMode)imgMode='top';
   const tab=tabOverride||(S.activeTabs[order.id]||'designs');
@@ -12669,20 +12674,49 @@ function buildPrintableOrder(order,tabOverride,includeStages,imgMode,includeRate
       </div>`).join('');
   }
 
+  // Ticking "rate" also prints the order's total value, the same figure shown
+  // on the order card. Only a complete price is printed: if any row is still
+  // missing a rate or a unit, a half-finished number on paper is worse than none.
+  let valueLine='';
+  if(includeRate){
+    try{
+      const v=btOrderValue(order);
+      if(v.state==='ok')valueLine=' &nbsp;·&nbsp; <strong>Order value:</strong> <span style="font-weight:700;color:#0F6E56">'+btMoney(v.total)+'</span>';
+      else if(v.state==='pending')valueLine=' &nbsp;·&nbsp; <span style="color:#8A5100">Order value: rates filled on '+v.priced+' of '+v.rows+' rows</span>';
+      else if(v.state==='nounit')valueLine=' &nbsp;·&nbsp; <span style="color:#A32D2D">Order value: unit missing on '+v.noUnit+' row'+(v.noUnit!==1?'s':'')+'</span>';
+    }catch(e){}
+  }
+  // Special requests, printed as their own block. The design tables have three
+  // different layouts with computed colspans, so adding rows inside them is a
+  // good way to break the column alignment on paper.
+  let notesBlock='';
+  if(includeNotes){
+    try{
+      const withNotes=btRowsOfOrder(order).filter(r=>r.note&&String(r.note).trim());
+      if(withNotes.length){
+        notesBlock='<div style="margin-top:10px;border:1.5px solid #FFCC80;border-radius:8px;background:#FFFBF2;padding:8px 12px;break-inside:avoid">'+
+          '<div style="font-size:12px;font-weight:700;color:#B25000;margin-bottom:5px">📌 Special requests</div>'+
+          withNotes.map(r=>'<div style="font-size:11.5px;color:#6B4A00;line-height:1.6;margin-bottom:3px">'+
+            '<strong>'+esc(r.code||r.name||'Row')+'</strong>'+(r.varName?(' · '+esc(r.varName)):'')+
+            ' — '+esc(String(r.note))+'</div>').join('')+
+        '</div>';
+      }
+    }catch(e){}
+  }
   return `<div class="order-block" style="border:1.5px solid #534AB7;border-radius:8px;padding:12px 14px;margin-bottom:16px">
     <h2 style="font-size:17px;margin-bottom:3px;color:#3C3489;font-weight:700">${esc(order.orderId)} · <span style="color:#534AB7">${esc(order.client)}</span></h2>
-    <p style="font-size:12px;color:#555;margin-bottom:10px"><strong>Start:</strong> ${fmtDate(order.startDate)} &nbsp;·&nbsp; <strong>Priority:</strong> ${esc(order.priority)} &nbsp;·&nbsp; <strong>Total:</strong> <span style="font-weight:700;color:#534AB7">${qtyStr}</span>${order.notes?` &nbsp;·&nbsp; <em>${esc(order.notes)}</em>`:''}</p>
-    ${content}
+    <p style="font-size:12px;color:#555;margin-bottom:10px"><strong>Start:</strong> ${fmtDate(order.startDate)} &nbsp;·&nbsp; <strong>Priority:</strong> ${esc(order.priority)} &nbsp;·&nbsp; <strong>Total:</strong> <span style="font-weight:700;color:#534AB7">${qtyStr}</span>${order.notes?` &nbsp;·&nbsp; <em>${esc(order.notes)}</em>`:''}${valueLine}</p>
+    ${content}${notesBlock}
   </div>`;
 }
 
-async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode,includeRate){
+async function openPrintWindow(title,orders,tabOverride,includeStages,imgMode,includeRate,includeNotes){
   if(includeStages===undefined)includeStages=true;
   if(!imgMode)imgMode='top';
   // Ensure IDB images are loaded into S before building print HTML
   try{ await loadImagesFromIDB(); }catch(e){}
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
-  const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode,includeRate)).join('');
+  const body=orders.map(o=>buildPrintableOrder(o,tabOverride,includeStages,imgMode,includeRate,includeNotes)).join('');
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>
       /* margin:0 removes Chrome's default "about:blank" URL footer and date header.
@@ -12718,11 +12752,11 @@ function printClient(clientName,includeStages,includeRate){
   const orders=S.orders.filter(o=>o.client===clientName).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
   openPrintWindow('Client: '+clientName,orders,'all',includeStages,'top',includeRate);
 }
-function printOrderById(oid,includeStages,imgMode,includeRate){
+function printOrderById(oid,includeStages,imgMode,includeRate,includeNotes){
   const order=S.orders.find(o=>o.id===oid);if(!order)return;
   // Always use 'all' tab so both Order Details and Designs & Varieties are printed.
   // Production Stages section is shown only when includeStages===true.
-  openPrintWindow(`Order: ${order.orderId}`,[order],'all',includeStages!==false,imgMode||'inline',includeRate);
+  openPrintWindow(`Order: ${order.orderId}`,[order],'all',includeStages!==false,imgMode||'inline',includeRate,includeNotes);
 }
 function printByDesign(code,includeStages,includeRate){
   if(includeStages===undefined)includeStages=true;
