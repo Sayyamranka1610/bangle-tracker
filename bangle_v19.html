@@ -17993,7 +17993,7 @@ function btPoolCardHTML(G){
   return '<div style="border:1.5px solid '+(sel?'#534AB7':'#E0DFFF')+';border-radius:12px;margin-bottom:10px;overflow:hidden;background:'+(sel?'#F7F6FF':'#fff')+'">'+
     '<div style="display:flex;gap:10px;padding:10px;align-items:flex-start;border-bottom:1px solid #EFEDFF">'+
       '<input type="checkbox" '+(sel?'checked':'')+' onchange="btPoolToggle(this.dataset.k)" data-k="'+K+'" style="margin-top:4px;width:17px;height:17px;accent-color:#534AB7">'+
-      (G.image?'<img src="'+esc(G.image)+'" loading="lazy" style="width:52px;height:52px;border-radius:9px;object-fit:cover;border:1px solid #E0DFFF" onerror="this.style.visibility=\'hidden\'">':'<div style="width:52px;height:52px;border-radius:9px;background:#F0EFFA"></div>')+
+      (G.image?'<img src="'+esc(G.image)+'" loading="lazy" style="width:84px;height:84px;border-radius:9px;object-fit:cover;border:1px solid #E0DFFF;cursor:zoom-in" onclick="openLbDirect(\''+G.image.replace(/'/g,"\\'")+'\')" onerror="this.style.visibility=\'hidden\'">':'<div style="width:84px;height:84px;border-radius:9px;background:#F0EFFA"></div>')+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:14px;font-weight:800;color:#2A2458">'+esc(G.code)+'</div>'+
         '<div style="font-size:11px;color:#8A87A8;margin-top:1px">'+esc(G.names.join(' · ')||G.family)+'</div>'+
