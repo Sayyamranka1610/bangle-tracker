@@ -11999,12 +11999,34 @@ function exportVendorSectionCSV(vendor){
 }
 
 // ── Print option modal for a single vendor order ─────────────────────────────
+// Shared "Print for" toggle — Vendor copy (today's default, never shows a
+// customer name) vs Internal copy (adds a small table under each row showing
+// which customer(s) it's for, so goods coming back from karigar can be sorted
+// without guessing). radioName must be unique per modal instance.
+function _vprintPurposeHTML(radioName){
+  return `<label style="font-size:12px;font-weight:600;color:#534AB7">Print for</label>
+      <div style="display:flex;gap:8px;margin-bottom:2px">
+        <label style="flex:1;cursor:pointer;padding:10px 9px;border-radius:9px;border:2px solid #534AB7;background:#EEEDFE;text-align:center">
+          <input type="radio" name="${radioName}" value="vendor" checked style="width:auto;accent-color:#534AB7">
+          <div style="font-size:16px">🏭</div>
+          <div style="font-size:11.5px;font-weight:700;color:#3C3489">For the vendor</div>
+          <div style="font-size:9.5px;color:#888;margin-top:2px;line-height:1.35">Design codes &amp; quantities only</div>
+        </label>
+        <label style="flex:1;cursor:pointer;padding:10px 9px;border-radius:9px;border:1.5px solid #E0DFFF;background:#fafafd;text-align:center">
+          <input type="radio" name="${radioName}" value="internal" style="width:auto;accent-color:#534AB7">
+          <div style="font-size:16px">🏠</div>
+          <div style="font-size:11.5px;font-weight:700;color:#3C3489">For internal use</div>
+          <div style="font-size:9.5px;color:#888;margin-top:2px;line-height:1.35">Same sheet, plus which customer(s)</div>
+        </label>
+      </div>`;
+}
 function askVendorPrint(oid){
   const mc=document.getElementById('modal-container');
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
     <div class="modal" style="width:400px">
       <div class="modal-header"><div class="modal-icon">🖨️</div><h3>Print options</h3></div>
       <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+        ${_vprintPurposeHTML('vprt-purpose')}
         <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #534AB7;background:#EEEDFE">
           <input type="radio" name="vimg-pos" value="top" checked style="width:auto;accent-color:#534AB7">
@@ -12030,9 +12052,10 @@ function askVendorPrint(oid){
         <button class="primary" onclick="
           const pos=document.querySelector('input[name=vimg-pos]:checked').value;
           const rte=document.getElementById('vprt-rate').checked;
+          const intl=document.querySelector('input[name=vprt-purpose]:checked').value==='internal';
           closeModal();
           const vo=S.vendorOrders.find(o=>o.id==='${oid}');
-          if(vo)openVendorPrintWindow('Vendor Order: '+vo.orderId,[vo],pos,rte);">🖨️ Print</button>
+          if(vo)openVendorPrintWindow('Vendor Order: '+vo.orderId,[vo],pos,rte,intl);">🖨️ Print</button>
       </div>
     </div>
   </div>`;
@@ -12047,6 +12070,7 @@ function printVendorSection(vendor){
     <div class="modal" style="width:400px">
       <div class="modal-header"><div class="modal-icon">🖨️</div><h3>Print options</h3></div>
       <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+        ${_vprintPurposeHTML('vsect-purpose')}
         <label style="font-size:12px;font-weight:600;color:#534AB7">Image placement</label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid #534AB7;background:#EEEDFE">
           <input type="radio" name="vsect-img-pos" value="top" checked style="width:auto;accent-color:#534AB7">
@@ -12072,9 +12096,10 @@ function printVendorSection(vendor){
         <button class="primary" onclick="
           const pos=document.querySelector('input[name=vsect-img-pos]:checked').value;
           const rte=document.getElementById('vsprt-rate').checked;
+          const intl=document.querySelector('input[name=vsect-purpose]:checked').value==='internal';
           const ven=window._vprintVendor;
           closeModal();
-          openVendorPrintWindow('Vendor: '+ven,S.vendorOrders.filter(o=>o.vendor===ven),pos,rte);">🖨️ Print</button>
+          openVendorPrintWindow('Vendor: '+ven,S.vendorOrders.filter(o=>o.vendor===ven),pos,rte,intl);">🖨️ Print</button>
       </div>
     </div>
   </div>`;
@@ -12127,7 +12152,50 @@ function _printHeaderWithGallery(headerHtml, imgs){
   return '<div style="break-inside:avoid;page-break-inside:avoid">'+headerHtml+firstGrid+'</div>'+restGrid;
 }
 
-function openVendorPrintWindow(title,orders,imgMode,includeRate){
+// Internal-copy only: the small table that goes under a design/variety row
+// showing which customer(s) it's for. Mirrors the "Who is this row for?"
+// popup (_openVOWhoModal) so the same numbers appear on paper as on screen.
+//   sources        — vd.sources[] (pooled, 1+ customers), or null
+//   bufferSizes/stockSizes — vd.bufferSizes / vd.stockSizes (flat rows only)
+//   sourceCoId/sourceCoNum — the older single-customer manual link, if that's all this row has
+function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum){
+  const qtyOf=sizes=>Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+  if(sources&&sources.length){
+    const szTotals={};szKeys.forEach(sz=>szTotals[sz]=0);
+    let rows='';
+    const addRow=(label,sizes,italic)=>{
+      szKeys.forEach(sz=>{szTotals[sz]+=(parseInt((sizes||{})[sz])||0);});
+      rows+='<tr'+(italic?' style="font-style:italic;color:#7A7768"':'')+'>'
+        +'<td style="padding:3px 6px;text-align:left;font-weight:700;color:'+(italic?'#7A7768':'#6B5215')+'">'+esc(label)+'</td>'
+        +szKeys.map(sz=>'<td style="padding:3px 6px;text-align:center">'+(parseInt((sizes||{})[sz])||0)+'</td>').join('')
+        +'<td style="padding:3px 6px;text-align:center;font-weight:700">'+qtyOf(sizes)+'</td></tr>';
+    };
+    sources.forEach(s=>addRow((s.orderLabel||'CO')+' · '+(s.client||''),s.sizes,false));
+    if(qtyOf(bufferSizes)>0)addRow('Buffer (rejection cover)',bufferSizes,true);
+    if(qtyOf(stockSizes)>0)addRow('Stock (top-up)',stockSizes,true);
+    const rowTotal=Object.values(szTotals).reduce((a,v)=>a+v,0);
+    return '<div style="font-size:8.5px;font-weight:700;color:#8A6D2F;text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px">For</div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:10px">'
+        +'<thead><tr style="background:#EADCB8;color:#5C4114">'
+          +'<th style="padding:3px 6px;text-align:left">Customer</th>'
+          +szKeys.map(sz=>'<th style="padding:3px 6px;text-align:center">'+esc(sz)+'</th>').join('')
+          +'<th style="padding:3px 6px;text-align:center">Qty</th></tr></thead>'
+        +'<tbody style="background:#fffdf7">'+rows+'</tbody>'
+        +'<tfoot><tr style="background:#EADCB8;font-weight:700;color:#5C4114">'
+          +'<td style="padding:3px 6px;text-align:left">Row total</td>'
+          +szKeys.map(sz=>'<td style="padding:3px 6px;text-align:center">'+(szTotals[sz]||0)+'</td>').join('')
+          +'<td style="padding:3px 6px;text-align:center">'+rowTotal+'</td></tr></tfoot>'
+      +'</table>';
+  }
+  if(sourceCoId){
+    const ord=(S.orders||[]).find(o=>o.id===sourceCoId);
+    const client=ord?(ord.client||''):'';
+    return '<div style="font-size:10.5px;color:#6B5215">🔗 <strong>'+esc(sourceCoNum||'CO')+'</strong>'+(client?' · '+esc(client):'')+' — entire row</div>';
+  }
+  return '<div style="font-size:10.5px;color:#C0392B;font-weight:700">⚠ Not linked to any customer order — check before sending</div>';
+}
+
+function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
   imgMode=imgMode||'top';
   const w=window.open('','_blank','width=980,height=780');if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
 
@@ -12165,6 +12233,12 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate){
       // Build table rows for all design codes in the group
       let trows='';
       const vRateTd=(r)=>includeRate?`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#555">${r?('₹'+r):'—'}</td>`:'';
+      // Internal copy only: one extra full-width row under a design/variety row
+      // showing which customer(s) it's for — same column count as a data row.
+      const totalCols=1+(imgMode==='inline'?1:0)+szKeys.length+2+(includeRate?1:0);
+      const forTr=(sources,bufferSizes,stockSizes,sourceCoId,sourceCoNum)=>internal
+        ?`<tr><td colspan="${totalCols}" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:6px 8px 8px">${_vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum)}</td></tr>`
+        :'';
       g.items.forEach(d=>{
         const varieties=d.varieties||[];
         const hod=varieties.length===1&&!(varieties[0].name&&varieties[0].name.trim()&&varieties[0].name.trim().toLowerCase()!=='default');
@@ -12184,6 +12258,7 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate){
             +`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#777">${esc(unit)}</td>`
             +vRateTd(hod?(varieties[0].rate||d.rate):d.rate)
           +`</tr>`;
+          trows+=forTr(d.sources,d.bufferSizes,d.stockSizes,d.sourceCoId,d.sourceCoNum);
         } else {
           const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
           const dTotal=Object.values(colT).reduce((a,v)=>a+v,0);
@@ -12206,6 +12281,7 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate){
               +`<td style="padding:5px 8px;text-align:center;font-size:12px;color:#777">${esc(v.unit||'pcs')}</td>`
               +vRateTd(v.rate)
             +`</tr>`;
+            trows+=forTr(null,null,null,v.sourceCoId,v.sourceCoNum);
           });
         }
       });
@@ -12268,8 +12344,9 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate){
         <img src="https://sayyamranka1610.github.io/bangle-tracker/icon-192.png" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
         Siddhi Bangles — Vendor Orders
       </h1>
-      <div style="text-align:right;font-size:11px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}</span></div>
+      <div style="text-align:right;font-size:11px"><strong>${esc(title)}</strong><br><span style="color:#888">Printed: ${fmtDate(new Date().toISOString().split('T')[0])}${internal?' · <strong style="color:#B08D57">Internal use only</strong>':''}</span></div>
     </div>
+    ${internal?'<div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:6px;padding:6px 10px;font-size:11px;color:#8A5A00;margin-bottom:10px">🏠 Internal copy — shows which customer(s) each design row is for. Do not hand this sheet to the vendor.</div>':''}
     <div class="print-toolbar" style="margin-bottom:10px"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print</button></div>
     ${body}<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});<\/script></body></html>`);
   w.document.close();
