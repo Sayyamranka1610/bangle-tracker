@@ -12185,14 +12185,19 @@ function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sour
   if(sources&&sources.length){
     const szTotals={};szKeys.forEach(sz=>szTotals[sz]=0);
     let rows='';
+    // Font sizes here match the main table's own row size (16px) as closely
+    // as legibility allows — the first attempt at this used 10px, dramatically
+    // smaller than the 16px data row it sits directly under, which read as
+    // "too small to read" on a printed page (owner-reported). A "sub-row"
+    // can be a touch smaller than the row it explains, but never this drastic.
     const addRow=(label,sizes,italic)=>{
       szKeys.forEach(sz=>{szTotals[sz]+=(parseInt((sizes||{})[sz])||0);});
       const clr=italic?'#7A7768':'#6B5215';
       rows+='<tr style="background:'+(italic?'#F5F3EC':'#FFF9EE')+'">'
-        +'<td style="padding:4px 10px;padding-left:20px;font-size:10px;color:'+clr+(italic?';font-style:italic':';font-weight:700')+'">└ '+esc(label)+'</td>'
+        +'<td style="padding:7px 10px;padding-left:22px;font-size:14px;color:'+clr+(italic?';font-style:italic':';font-weight:700')+'">└ '+esc(label)+'</td>'
         +imgTd
-        +szKeys.map(sz=>'<td style="padding:4px 8px;text-align:center;font-size:10px;color:'+clr+(italic?';font-style:italic':'')+'">'+(parseInt((sizes||{})[sz])||0)+'</td>').join('')
-        +'<td style="padding:4px 8px;text-align:center;font-size:10px;font-weight:700;color:'+clr+'">'+qtyOf(sizes)+'</td>'
+        +szKeys.map(sz=>'<td style="padding:7px 8px;text-align:center;font-size:14px;color:'+clr+(italic?';font-style:italic':'')+'">'+(parseInt((sizes||{})[sz])||0)+'</td>').join('')
+        +'<td style="padding:7px 8px;text-align:center;font-size:14px;font-weight:700;color:'+clr+'">'+qtyOf(sizes)+'</td>'
         +'<td></td>'+rateTd
       +'</tr>';
     };
@@ -12205,16 +12210,16 @@ function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sour
     // sit in the very same columns, so a repeated "Row total" line would
     // just be noise.
     if(accounted!==rowTotal){
-      rows+='<tr><td colspan="'+totalCols+'" style="background:#FFF8E1;border-top:1px solid #FFD54F;padding:5px 10px;font-size:10px;color:#8A5A00">⚠ Adds up to '+accounted+', but this row shows '+rowTotal+' — it was changed by hand after pooling; check before sending.</td></tr>';
+      rows+='<tr><td colspan="'+totalCols+'" style="background:#FFF8E1;border-top:1px solid #FFD54F;padding:8px 10px;font-size:13px;color:#8A5A00">⚠ Adds up to '+accounted+', but this row shows '+rowTotal+' — it was changed by hand after pooling; check before sending.</td></tr>';
     }
     return rows;
   }
   if(sourceCoId){
     const ord=(S.orders||[]).find(o=>o.id===sourceCoId);
     const client=ord?(ord.client||''):'';
-    return '<tr><td colspan="'+totalCols+'" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:5px 10px;font-size:10.5px;color:#6B5215">└ 🔗 <strong>'+esc(sourceCoNum||'CO')+'</strong>'+(client?' · '+esc(client):'')+' — entire row</td></tr>';
+    return '<tr><td colspan="'+totalCols+'" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:8px 10px;font-size:14px;color:#6B5215">└ 🔗 <strong>'+esc(sourceCoNum||'CO')+'</strong>'+(client?' · '+esc(client):'')+' — entire row</td></tr>';
   }
-  return '<tr><td colspan="'+totalCols+'" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:5px 10px;font-size:10.5px;color:#C0392B;font-weight:700">└ ⚠ Not linked to any customer order — check before sending</td></tr>';
+  return '<tr><td colspan="'+totalCols+'" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:8px 10px;font-size:14px;color:#C0392B;font-weight:700">└ ⚠ Not linked to any customer order — check before sending</td></tr>';
 }
 
 function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
