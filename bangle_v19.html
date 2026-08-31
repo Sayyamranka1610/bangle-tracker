@@ -4748,6 +4748,18 @@ function toggleCOStageRcvd(oi,di,vri,stage){
 }
 
 // ── KARIGAR / VENDOR ASSIGNMENT ──────────────────────────────────────────────
+// Which customer-row field a given pooling/vendor-order "type" writes to,
+// and a setter that always keeps the field + its follow-up-system timestamp
+// companion (…At) in sync — used by pooling, and by linking/unlinking a
+// customer from a multi-customer vendor order row.
+function _coVendorFieldFor(mode){
+  return mode==='pipe'?'pipeVendor':mode==='plating'?'platingVendor':'assignedVendor';
+}
+function _setCOVendorField(holder,mode,name){
+  const f=_coVendorFieldFor(mode),fAt=f+'At';
+  if(name){holder[f]=name;holder[fAt]=Date.now();}
+  else{delete holder[f];delete holder[fAt];}
+}
 function upDesignVendor(oi,di,val){
   if(!S.orders[oi]||!S.orders[oi].designs[di])return;
   const d=S.orders[oi].designs[di];
@@ -10111,9 +10123,11 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
           +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">'
             +'<button class="icon-btn sm" style="'+(d.received?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56':'background:#F8F9FA;color:#ADB5BD;border-color:#DEE2E6')+';font-weight:700" onclick="toggleVORowReceived('+vi+','+di+',-1)" title="'+(d.received?'Received ✓ — click to undo':'Mark as received from vendor')+'">✓</button>'
-            +(d.sourceCoId
-              ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
-              :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
+            +(d.sources&&d.sources.length
+              ?'<span style="font-size:9px;font-weight:700;background:#EEEDFE;color:#534AB7;border:1px solid #C6C1F0;border-radius:5px;padding:2px 7px;white-space:nowrap;cursor:pointer" onclick="_openVOWhoModal('+vi+','+di+')" title="See the customer(s) behind this pooled row">'+(d.sources.length>1?'👥 '+d.sources.length+' customers':'🔗 '+esc((d.sources[0]||{}).orderLabel||'CO'))+'</span>'
+              :d.sourceCoId
+                ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
+                :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
             +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
             +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
           +'</div></td>'
@@ -10762,6 +10776,178 @@ function _unlinkVO(vi, di, vri){
   save();
   render();
   showToast('Link to '+prevNum+' removed'+(karigarCleared?' · karigar cleared in '+prevNum:''));
+}
+
+// ── VENDOR ORDER ROW ↔ MULTIPLE CUSTOMERS ("who is this row for?") ──────────
+// A row created via the Pooling Board can carry pieces for several customer
+// orders at once — vd.sources[] (written by btPoolCreate) has one entry per
+// customer with their exact ordered sizes. This popup shows who they are and
+// lets the owner unlink one (their pieces come back out of the vendor row and
+// their customer order reappears on the Pooling board) or add another
+// matching customer order (the opposite: their pieces go in, their row locks).
+// Every action here also keeps the customer's Karigar/Pipe/Plating dropdown
+// in sync (_setCOVendorField) so that box can never disagree with the
+// "→ VORD-xx" badge next to it.
+function _voQty(sizes){return Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);}
+function _voSizeStr(sizes){
+  return Object.keys(sizes||{}).filter(k=>(parseInt(sizes[k])||0)>0)
+    .sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);})
+    .map(k=>k+': '+sizes[k]).join(' · ');
+}
+// Resolves a saved source entry back to the live customer order/design/variety
+// objects — returns null if that customer order or row was deleted since.
+function _voSourceHolder(src){
+  const order=(S.orders||[]).find(o=>o.id===src.orderDbId); if(!order)return null;
+  const d=(order.designs||[]).find(x=>x.id===src.designId); if(!d)return null;
+  const holder=src.varietyId?((d.varieties||[]).find(v=>v.id===src.varietyId)||null):d;
+  return holder?{order,d,holder}:null;
+}
+function _openVOWhoModal(vi,di,showAdd){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const old=document.getElementById('_vo-who-overlay'); if(old)old.remove();
+  const sources=vd.sources||[];
+
+  const rowsHtml=sources.map((s,si)=>
+    '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px solid #E0DFFF;margin-bottom:7px;background:#fafafd">'
+    +'<span style="background:#534AB7;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+esc(s.orderLabel||'CO')+'</span>'
+    +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:13px;font-weight:600;color:#3C3489">'+esc(s.client||'')+'</div>'
+      +'<div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(s.sizes))+'</div>'
+    +'</div>'
+    +'<div style="font-size:13px;font-weight:700;color:#534AB7;flex-shrink:0">'+_voQty(s.sizes)+'</div>'
+    +'<button onclick="_voWhoUnlink('+vi+','+di+','+si+')" style="background:#FFECB3;color:#E65100;border:1px solid #FFB74D;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0">✕ Unlink</button>'
+    +'</div>'
+  ).join('');
+
+  const bufferQty=_voQty(vd.bufferSizes), stockQty=_voQty(vd.stockSizes);
+  const extraRow=(tag,bg,label,sizes,qty)=>qty>0
+    ?'<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px dashed #D8D5EE;margin-bottom:7px;background:#fbfbfb">'
+      +'<span style="background:'+bg+';color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+tag+'</span>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#555">'+label+'</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(sizes))+'</div></div>'
+      +'<div style="font-size:13px;font-weight:700;color:'+bg+';flex-shrink:0">'+qty+'</div></div>'
+    :'';
+  const bufferHtml=extraRow('Buffer','#8A87A8','Rejection cover — nobody\'s',vd.bufferSizes,bufferQty);
+  const stockHtml=extraRow('Stock','#B08D57','Top-up for stock — nobody\'s',vd.stockSizes,stockQty);
+
+  const rowTotal=_voQty(vd.sizes);
+  const accounted=sources.reduce((a,s)=>a+_voQty(s.sizes),0)+bufferQty+stockQty;
+  const mismatch=accounted!==rowTotal;
+  const addends=sources.map(s=>_voQty(s.sizes)).concat(bufferQty?[bufferQty]:[],stockQty?[stockQty]:[]);
+  const totalHtml='<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:'+(mismatch?'#FFF8E1':'#F7F6FF')+';border-radius:9px;margin-top:4px;font-size:13px;font-weight:700;color:#3C3489">'
+    +'<span>Row total ('+rowTotal+')</span>'
+    +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(rowTotal-accounted)+' pcs unaccounted for':' — matches')+'</span></div>';
+  const mismatchNote=mismatch?'<div style="font-size:11px;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:7px;padding:7px 10px;margin-top:10px">This row\'s numbers were changed by hand after pooling, so they no longer match the customers behind it. Nothing is broken — the difference is simply untracked, like Buffer.</div>':'';
+
+  // "Add customer" candidates: other customer orders with this same design
+  // code whose matching row isn't already sent to any vendor.
+  const code=(vd.code||'').trim();
+  const linkedKeys=new Set(sources.map(s=>s.orderDbId+'|'+s.designId+'|'+(s.varietyId||'')));
+  const candidates=[];
+  if(code){
+    (S.orders||[]).filter(o=>!o.archived).forEach(order=>{
+      btRowsOfOrder(order).forEach(r=>{
+        if((r.code||'').trim()!==code||r.qty<=0)return;
+        if(r.holder.importedToVOId)return;
+        const key=order.id+'|'+r.designId+'|'+(r.varietyId||'');
+        if(linkedKeys.has(key))return;
+        candidates.push({orderDbId:order.id,orderLabel:order.orderId,client:order.client,designId:r.designId,varietyId:r.varietyId,sizes:r.sizes,qty:r.qty});
+      });
+    });
+  }
+  window._voWhoCandidates=candidates;
+
+  const addSection=showAdd
+    ?(candidates.length
+      ?'<div style="font-size:11px;color:#AAA;margin:14px 0 8px">Add which customer order?</div>'
+        +candidates.map((c,ci)=>'<div onclick="_voWhoAdd('+vi+','+di+','+ci+')" style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px solid #D0CCF5;margin-bottom:7px;cursor:pointer;background:#fafafd" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'#fafafd\'">'
+          +'<span style="background:#534AB7;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+esc(c.orderLabel||'CO')+'</span>'
+          +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#3C3489">'+esc(c.client||'')+'</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(c.sizes))+'</div></div>'
+          +'<div style="font-size:13px;font-weight:700;color:#534AB7;flex-shrink:0">'+c.qty+'</div>'
+        +'</div>').join('')
+      :'<div style="font-size:11px;color:#AAA;margin:14px 0 4px;text-align:center;padding:10px;border:1.5px dashed #E0DFFF;border-radius:9px">No other customer order has design "'+esc(code)+'" waiting to be pooled.</div>')
+    :'<div onclick="_openVOWhoModal('+vi+','+di+',true)" style="border:1.5px dashed #C6C1F0;border-radius:9px;padding:10px 12px;text-align:center;color:#534AB7;font-size:12px;font-weight:600;cursor:pointer;margin-top:6px">+ Add another customer order</div>';
+
+  const overlay=document.createElement('div');
+  overlay.id='_vo-who-overlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  overlay.innerHTML='<div style="background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(83,74,183,.35);padding:22px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-sizing:border-box">'
+    +'<div style="font-size:15px;font-weight:700;color:#3C3489;margin-bottom:4px">👥 Who is this row for?</div>'
+    +'<div style="font-size:12px;color:#777;margin-bottom:14px">Design <strong>'+esc(code||'—')+'</strong> in <strong>'+esc(vo.orderId||'')+'</strong> — '+rowTotal+' pcs total</div>'
+    +(rowsHtml||'<div style="font-size:12px;color:#AAA;text-align:center;padding:10px">No customer linked to this row yet.</div>')
+    +bufferHtml+stockHtml
+    +addSection
+    +totalHtml+mismatchNote
+    +'<div style="text-align:right;margin-top:14px"><button onclick="document.getElementById(\'_vo-who-overlay\').remove()" style="background:#f0eff8;color:#534AB7;border:none;padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">Close</button></div>'
+    +'</div>';
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.body.appendChild(overlay);
+}
+function _voWhoAdd(vi,di,ci){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const c=(window._voWhoCandidates||[])[ci]; if(!c)return;
+  const found=_voSourceHolder({orderDbId:c.orderDbId,designId:c.designId,varietyId:c.varietyId});
+  if(!found){showToast('That customer order row could not be found — it may have been deleted','red');return;}
+  const holder=found.holder;
+
+  // Karigar/Pipe/Plating conflict check, same pattern as the single-link flow:
+  // if it already points somewhere else, ask before overwriting; Cancel aborts.
+  const mode=vo.type||'karigar';
+  const field=_coVendorFieldFor(mode);
+  const label=mode==='pipe'?'Pipe':mode==='plating'?'Plating':'Karigar';
+  const cur=holder[field];
+  if(vo.vendor&&cur&&cur!==vo.vendor){
+    const ok=confirm('Design "'+(vd.code||'')+'" in '+c.orderLabel+' already has "'+cur+'" as '+label+'.\n\nReplace with "'+vo.vendor+'"?\n\n(Click Cancel to leave this customer out of the vendor order.)');
+    if(!ok){showToast('Not added — '+label+' still set to "'+cur+'" in '+c.orderLabel,'amber',4200);return;}
+  }
+
+  vd.sizes=vd.sizes||{};
+  Object.keys(c.sizes||{}).forEach(sz=>{
+    const n=parseInt(c.sizes[sz])||0; if(n<=0)return;
+    vd.sizes[sz]=(parseInt(vd.sizes[sz])||0)+n;
+  });
+  vd.sources=vd.sources||[];
+  vd.sources.push({orderDbId:c.orderDbId,orderLabel:c.orderLabel,client:c.client,designId:c.designId,varietyId:c.varietyId,sizes:Object.assign({},c.sizes)});
+  holder.importedToVOId=vo.id;
+  if(vo.vendor)_setCOVendorField(holder,mode,vo.vendor);
+
+  save();render();
+  showToast('✅ Added '+c.client+' ('+c.orderLabel+') to this row','green');
+  _openVOWhoModal(vi,di,false);
+}
+function _voWhoUnlink(vi,di,si){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const src=(vd.sources||[])[si]; if(!src)return;
+  const qty=_voQty(src.sizes);
+  if(!confirm('Remove '+(src.client||'this customer')+' ('+(src.orderLabel||'CO')+') from this row?\n\nTheir '+qty+' pcs will come back out of this vendor row, and their order row will reappear on the Pooling board.'))return;
+
+  // Subtract their sizes out of the vendor row — never below 0, in case the
+  // row's numbers were already hand-edited down since this source was added.
+  vd.sizes=vd.sizes||{};
+  Object.keys(src.sizes||{}).forEach(sz=>{
+    const n=parseInt(src.sizes[sz])||0; if(n<=0)return;
+    const cur=parseInt(vd.sizes[sz])||0;
+    const next=Math.max(0,cur-n);
+    if(next<=0)delete vd.sizes[sz]; else vd.sizes[sz]=next;
+  });
+  vd.sources.splice(si,1);
+
+  // Release the customer's row, and — only if it still points at this vendor,
+  // so a manual change made since is never overwritten — clear their
+  // Karigar/Pipe/Plating dropdown too.
+  const found=_voSourceHolder(src);
+  if(found){
+    delete found.holder.importedToVOId;
+    const mode=vo.type||'karigar';
+    const field=_coVendorFieldFor(mode);
+    if(vo.vendor&&found.holder[field]===vo.vendor)_setCOVendorField(found.holder,mode,'');
+  }
+
+  save();render();
+  showToast('Unlinked '+(src.client||'')+' — back on the Pooling board','amber');
+  _openVOWhoModal(vi,di,false);
 }
 
 // ── ROW-LEVEL RECEIVED TOGGLE ────────────────────────────────────────────────
@@ -17862,7 +18048,14 @@ function btPoolCreate(){
   if(!S.vendorOrders)S.vendorOrders=[];
   S.vendorOrders.push(vo);
   // lock every source row so it can never be pooled or sent twice
-  touched.forEach(r=>{r.holder.importedToVOId=vo.id;});
+  touched.forEach(r=>{
+    r.holder.importedToVOId=vo.id;
+    // A vendor order now exists for this row — reflect that on the customer's
+    // Karigar/Pipe/Plating dropdown too, matching whichever tab was pooled from.
+    // Without this the "→ VORD-xx" badge is correct but the dropdown next to it
+    // stays empty/red, wrongly implying nothing was sent out (owner-reported bug).
+    _setCOVendorField(r.holder,_poolMode,vendor);
+  });
   const pcs=designs.reduce((a,d)=>a+btSum(d.sizes),0);
   audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+pcs+' pcs from '+touched.length+' customer row(s)');
   _poolSel={};_poolExtras={};
