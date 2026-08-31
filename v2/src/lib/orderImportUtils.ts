@@ -11,6 +11,8 @@ export interface ParsedVariety {
   name: string;
   sizes: Record<string, number>;
   unit?: string;
+  rate?: number;
+  note?: string;
 }
 
 export interface ParsedDesign {
@@ -27,6 +29,11 @@ export interface ParsedOrder {
   notes?: string;
   bangleType?: BangleType;
   designs: ParsedDesign[];
+  // Rows with quantity but no Unit — ports Phase 1's "Unit is now required on
+  // import" rule (rate is per-unit, so a blank unit would produce a
+  // meaningless order value). Non-empty means the import should be refused
+  // and these named to the user rather than silently loaded.
+  unitIssues: string[];
 }
 
 function todayStr(): string { return new Date().toISOString().slice(0, 10); }
@@ -44,13 +51,20 @@ function parseDateCell(raw: unknown): string {
 // Groups rows into designs by (name+code) — mirrors groupIntoDesigns() exactly.
 // vIdx=-1 (CNC sections): every qty-bearing row becomes its own 'Default' variety.
 // vIdx>=0 (Dye Gold sections): rows sharing name+code become multiple varieties.
+// rIdx/nIdx (both optional, -1 if the sheet has no such column): Rate and Note
+// are read when present, blank is ignored. Unit is NOT defaulted to 'pcs'
+// here — a blank unit is collected into unitIssues instead, so the caller can
+// refuse the import (rate is per-unit, so a guessed unit would silently
+// produce a wrong order value — Phase 1's "Option B" rule).
 function groupIntoDesigns(
   dataRows: unknown[][],
   dnIdx: number, dcIdx: number, vIdx: number,
   szIdxMap: Record<string, number>, allSizes: string[], uIdx: number,
-): ParsedDesign[] {
+  rIdx = -1, nIdx = -1,
+): { designs: ParsedDesign[]; unitIssues: string[] } {
   const designMap: ParsedDesign[] = [];
   const byKey = new Map<string, ParsedDesign>();
+  const unitIssues: string[] = [];
   let lastDN = '', lastDC = '';
 
   dataRows.forEach(row => {
@@ -83,11 +97,20 @@ function groupIntoDesigns(
     }
     const sizes: Record<string, number> = {};
     allSizes.forEach(sz => { sizes[sz] = parseInt(String(row[szIdxMap[sz]])) || 0; });
-    const unit = uIdx >= 0 ? (String(row[uIdx] ?? '').trim() || 'pcs') : 'pcs';
-    design.varieties.push({ name: finalVName, sizes, unit });
+
+    const unit = uIdx >= 0 ? String(row[uIdx] ?? '').trim() : '';
+    if (!unit) unitIssues.push(`${lastDN || '?'}${lastDC ? ` (${lastDC})` : ''} — ${finalVName}`);
+
+    const variety: ParsedVariety = { name: finalVName, sizes, unit: unit || 'pcs' };
+    const rawRate = rIdx >= 0 ? parseFloat(String(row[rIdx])) : NaN;
+    if (isFinite(rawRate) && rawRate > 0) variety.rate = rawRate;
+    const rawNote = nIdx >= 0 ? String(row[nIdx] ?? '').trim() : '';
+    if (rawNote) variety.note = rawNote;
+
+    design.varieties.push(variety);
   });
 
-  return designMap.filter(d => d.name && d.varieties.length > 0);
+  return { designs: designMap.filter(d => d.name && d.varieties.length > 0), unitIssues };
 }
 
 // ─── CSV ──────────────────────────────────────────────────────────────────────
@@ -126,6 +149,8 @@ export function parseCSV(text: string): ParsedOrder | null {
   headers.forEach((h, i) => { if (/^\d+\/\d+$/.test(h)) szIdxMap[h] = i; });
   const allSizes = Object.keys(szIdxMap);
   const uIdx = headers.findIndex(h => h === 'unit');
+  const rIdx = headers.findIndex(h => /^rate/.test(h));
+  const nIdx = headers.findIndex(h => h === 'note');
 
   const orderRow = dataRows[0];
   const client = getFromRow(orderRow, 'client', 'customer', 'party', 'buyer');
@@ -133,8 +158,8 @@ export function parseCSV(text: string): ParsedOrder | null {
   const notes = getFromRow(orderRow, 'notes', 'remarks', 'comment');
   const orderId = getFromRow(orderRow, 'order id', 'orderid', 'order no', 'order number');
 
-  const designs = groupIntoDesigns(dataRows as unknown[][], designNameIdx, designCodeIdx, varietyIdx, szIdxMap, allSizes, uIdx);
-  return { orderId: orderId || undefined, client, startDate, notes: notes || undefined, designs };
+  const { designs, unitIssues } = groupIntoDesigns(dataRows as unknown[][], designNameIdx, designCodeIdx, varietyIdx, szIdxMap, allSizes, uIdx, rIdx, nIdx);
+  return { orderId: orderId || undefined, client, startDate, notes: notes || undefined, designs, unitIssues };
 }
 
 // ─── Excel (.xlsx / .xls) ──────────────────────────────────────────────────────
@@ -159,9 +184,9 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedOrder | null {
     startDate = parseDateCell(labelVal('start date') || labelVal('date'));
     notes = labelVal('notes');
 
-    const parseSection = (startRowIdx: number, endRowIdx: number, forceNoVariety: boolean): ParsedDesign[] => {
+    const parseSection = (startRowIdx: number, endRowIdx: number, forceNoVariety: boolean): { designs: ParsedDesign[]; unitIssues: string[] } => {
       const hdrIdx = rows.findIndex((r, i) => i > startRowIdx && i < endRowIdx && String(r[0] ?? '').toLowerCase().trim() === 'design name');
-      if (hdrIdx < 0) return [];
+      if (hdrIdx < 0) return { designs: [], unitIssues: [] };
       const hdr = rows[hdrIdx].map(h => String(h).trim());
       const szIdxMap: Record<string, number> = {};
       const allSizes: string[] = [];
@@ -169,27 +194,33 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedOrder | null {
       const szColSet = new Set(Object.values(szIdxMap));
       const vIdx = forceNoVariety ? -1 : hdr.findIndex((h, i) => i > 1 && !szColSet.has(i) && /variety/i.test(h));
       const uIdx = hdr.findIndex((h, i) => !szColSet.has(i) && /^unit$/i.test(h));
-      return groupIntoDesigns(rows.slice(hdrIdx + 1, endRowIdx), 0, 1, vIdx, szIdxMap, allSizes, uIdx);
+      const rIdx = hdr.findIndex((h, i) => !szColSet.has(i) && /^rate/i.test(h));
+      const nIdx = hdr.findIndex((h, i) => !szColSet.has(i) && /^note$/i.test(h));
+      return groupIntoDesigns(rows.slice(hdrIdx + 1, endRowIdx), 0, 1, vIdx, szIdxMap, allSizes, uIdx, rIdx, nIdx);
     };
 
     const cncSecIdx = colA.findIndex(l => l.includes('cnc design'));
     const dyeSecIdx = colA.findIndex(l => l.includes('dye gold design') || l.includes('dye_gold design'));
 
     if (cncSecIdx >= 0 || dyeSecIdx >= 0) {
-      let allDesigns: ParsedDesign[] = [];
+      const allDesigns: ParsedDesign[] = [];
+      const allUnitIssues: string[] = [];
       let detectedBT: '' | 'cnc' | 'dye_gold' | 'both' = '';
       if (cncSecIdx >= 0) {
         const cncEnd = dyeSecIdx > cncSecIdx ? dyeSecIdx : rows.length;
-        const cncDesigns = parseSection(cncSecIdx, cncEnd, true).map(d => ({ ...d, bangleType: 'cnc' as const }));
+        const cncResult = parseSection(cncSecIdx, cncEnd, true);
+        const cncDesigns = cncResult.designs.map(d => ({ ...d, bangleType: 'cnc' as const }));
         if (cncDesigns.length) { allDesigns.push(...cncDesigns); detectedBT = 'cnc'; }
+        allUnitIssues.push(...cncResult.unitIssues);
       }
       if (dyeSecIdx >= 0) {
-        const dyeDesigns = parseSection(dyeSecIdx, rows.length, false);
-        if (dyeDesigns.length) { allDesigns.push(...dyeDesigns); detectedBT = detectedBT === 'cnc' ? 'both' : 'dye_gold'; }
+        const dyeResult = parseSection(dyeSecIdx, rows.length, false);
+        if (dyeResult.designs.length) { allDesigns.push(...dyeResult.designs); detectedBT = detectedBT === 'cnc' ? 'both' : 'dye_gold'; }
+        allUnitIssues.push(...dyeResult.unitIssues);
       }
       return {
         orderId: orderId || undefined, client, startDate: startDate || todayStr(), notes: notes || undefined,
-        bangleType: (detectedBT || 'dye_gold') as BangleType, designs: allDesigns,
+        bangleType: (detectedBT || 'dye_gold') as BangleType, designs: allDesigns, unitIssues: allUnitIssues,
       };
     }
 
@@ -203,8 +234,10 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedOrder | null {
       const szColSet = new Set(Object.values(szIdxMap));
       const vIdx = hdr.findIndex((h, i) => i > 1 && !szColSet.has(i) && /variety/i.test(h));
       const uIdx = hdr.findIndex((h, i) => !szColSet.has(i) && /^unit$/i.test(h));
-      const designs = groupIntoDesigns(rows.slice(tblHdrIdx + 1), 0, 1, vIdx, szIdxMap, allSizes, uIdx);
-      return { orderId: orderId || undefined, client, startDate: startDate || todayStr(), notes: notes || undefined, designs };
+      const rIdx = hdr.findIndex((h, i) => !szColSet.has(i) && /^rate/i.test(h));
+      const nIdx = hdr.findIndex((h, i) => !szColSet.has(i) && /^note$/i.test(h));
+      const { designs, unitIssues } = groupIntoDesigns(rows.slice(tblHdrIdx + 1), 0, 1, vIdx, szIdxMap, allSizes, uIdx, rIdx, nIdx);
+      return { orderId: orderId || undefined, client, startDate: startDate || todayStr(), notes: notes || undefined, designs, unitIssues };
     }
     return null;
   }
@@ -231,9 +264,13 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedOrder | null {
   headers.forEach((h, i) => { if (/^\d+\/\d+$/.test(h)) szIdxMap[h] = i; });
   const allSizes = Object.keys(szIdxMap);
   const uIdx = headers.findIndex(h => h === 'unit');
-  const designs = dnIdx >= 0 && dcIdx >= 0 ? groupIntoDesigns(rows.slice(1), dnIdx, dcIdx, vIdx, szIdxMap, allSizes, uIdx) : [];
+  const rIdx = headers.findIndex(h => /^rate/.test(h));
+  const nIdx = headers.findIndex(h => h === 'note');
+  const { designs, unitIssues } = dnIdx >= 0 && dcIdx >= 0
+    ? groupIntoDesigns(rows.slice(1), dnIdx, dcIdx, vIdx, szIdxMap, allSizes, uIdx, rIdx, nIdx)
+    : { designs: [] as ParsedDesign[], unitIssues: [] as string[] };
 
-  return { orderId: orderId || undefined, client, startDate: startDate || todayStr(), notes: notes || undefined, designs };
+  return { orderId: orderId || undefined, client, startDate: startDate || todayStr(), notes: notes || undefined, designs, unitIssues };
 }
 
 // Reads a File (csv/xlsx/xls) and returns the parsed order, or null if the
@@ -268,6 +305,8 @@ export function fileToDataUrl(file: File): Promise<string> {
 
 export function buildOrderTemplateWorkbook(): XLSX.WorkBook {
   const sizeCols = ['2/2', '2/4', '2/6', '2/8', '2/10'];
+  // Unit is required (rate is per-unit — a blank unit refuses the whole
+  // import, see groupIntoDesigns above); Rate and Note stay optional.
   const aoa: (string | number)[][] = [
     ['Order ID', ''],
     ['Client Name', ''],
@@ -276,15 +315,15 @@ export function buildOrderTemplateWorkbook(): XLSX.WorkBook {
     ['Notes (Optional)', ''],
     [],
     ['CNC DESIGNS & QUANTITIES'],
-    ['Design Name', 'Design Code', ...sizeCols, 'Unit'],
-    ...Array.from({ length: 10 }, () => ['', '', ...sizeCols.map(() => ''), 'pcs']),
+    ['Design Name', 'Design Code', ...sizeCols, 'Unit', 'Rate (₹)', 'Note'],
+    ...Array.from({ length: 10 }, () => ['', '', ...sizeCols.map(() => ''), 'pcs', '', '']),
     [],
     ['DYE GOLD DESIGNS & VARIETIES'],
-    ['Design Name', 'Design Code', 'Variety', ...sizeCols, '2/12', 'Unit'],
-    ...Array.from({ length: 20 }, () => ['', '', '', ...sizeCols.map(() => ''), '', 'pcs']),
+    ['Design Name', 'Design Code', 'Variety', ...sizeCols, '2/12', 'Unit', 'Rate (₹)', 'Note'],
+    ...Array.from({ length: 20 }, () => ['', '', '', ...sizeCols.map(() => ''), '', 'pcs', '', '']),
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+  ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 22 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Order');
   return wb;

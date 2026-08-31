@@ -10,6 +10,9 @@ interface ModalVariety {
   id: string;
   name: string;
   sizes: Record<string, number>;  // size key → qty
+  unit?: string;
+  rate?: number;
+  note?: string;
 }
 
 interface ModalDesign {
@@ -76,6 +79,9 @@ function parsedDesignsToModal(parsed: ParsedDesign[]): ModalDesign[] {
         id: uid(),
         name: v.name,
         sizes: Object.fromEntries(sizes.map(s => [s, v.sizes[s] ?? 0])),
+        unit: v.unit,
+        rate: v.rate,
+        note: v.note,
       })),
     };
   });
@@ -92,7 +98,9 @@ function buildEmbeddedDesign(md: ModalDesign): EmbeddedDesign {
     name: v.name,
     sizes: Object.fromEntries(md.sizes.map(s => [s, Number(v.sizes[s]) || 0])),
     images: [],
-    unit: 'pcs',
+    unit: v.unit || 'pcs',
+    rate: v.rate,
+    note: v.note,
   }));
   return {
     id: md.id,
@@ -386,6 +394,18 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
         setImportStatus('⚠️ Could not read that file — check it matches the template format.');
         return;
       }
+      // Unit is required — rate is per-unit, so importing rows with no unit
+      // would produce a meaningless order value. Refuse the whole import and
+      // name the rows to fix, exactly like Phase 1's btImportBlockedByUnit().
+      if (parsed.unitIssues.length) {
+        const shown = parsed.unitIssues.slice(0, 6).map(x => `• ${x}`).join('\n');
+        const more = parsed.unitIssues.length > 6 ? `\n…and ${parsed.unitIssues.length - 6} more` : '';
+        setImportStatus(
+          `⚠️ Import stopped — ${parsed.unitIssues.length} row${parsed.unitIssues.length !== 1 ? 's have' : ' has'} no Unit.\n` +
+          `Every row needs a Unit (pcs / pairs / jotta / Set), because the Rate is per unit. Fill the Unit column in your sheet and drop it again — nothing has been imported.\n${shown}${more}`,
+        );
+        return;
+      }
       if (parsed.client) setClient(parsed.client);
       if (parsed.startDate) setStartDate(parsed.startDate);
       if (parsed.notes) setNotes(parsed.notes);
@@ -471,7 +491,11 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
                 <input type="file" accept=".xlsx,.xls,.csv" disabled={importing} className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleFileImport(f); }} />
               </label>
-              {importStatus && <p className="text-xs text-green-400 bg-green-500/10 px-3 py-1.5 rounded-lg">{importStatus}</p>}
+              {importStatus && (
+                <p className={`text-xs px-3 py-1.5 rounded-lg whitespace-pre-wrap ${importStatus.startsWith('⚠️') ? 'text-red-300 bg-red-500/10' : 'text-green-400 bg-green-500/10'}`}>
+                  {importStatus}
+                </p>
+              )}
             </div>
           )}
 

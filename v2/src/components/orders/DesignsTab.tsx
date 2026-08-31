@@ -37,6 +37,7 @@ interface Props {
   canEdit: boolean;
   dnames: string[];
   dcodes: string[];
+  units: string[];
   vendorOrders: VendorOrder[];
   onDesignChange: (designIndex: number, design: EmbeddedDesign) => void;
   onAddDesign: () => void;
@@ -89,7 +90,7 @@ function VendorCell({
   );
 }
 
-export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrders, onDesignChange, onAddDesign, onRemoveDesign }: Props) {
+export default function DesignsTab({ order, canEdit, dnames, dcodes, units, vendorOrders, onDesignChange, onAddDesign, onRemoveDesign }: Props) {
   const pipeVendors = dedupedVendorsOfType(vendorOrders, 'pipe');
   const karigarVendors = dedupedVendorsOfType(vendorOrders, 'karigar');
   const platingVendors = dedupedVendorsOfType(vendorOrders, 'plating');
@@ -154,7 +155,7 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
     onDesignChange(di, { ...d, varieties, sizes: aggSizes });
   }
 
-  function updateVarietyFields(di: number, vi: number, patch: VendorPipelineFields) {
+  function updateVarietyFields(di: number, vi: number, patch: Partial<DesignVariety>) {
     const d = order.designs[di];
     const varieties = d.varieties!.map((v, i) => i === vi ? { ...v, ...patch } : v);
     onDesignChange(di, { ...d, varieties });
@@ -257,6 +258,8 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
                       <th key={sz} className="text-center px-2 py-1.5 text-white/40 font-normal">{sz}</th>
                     ))}
                     <th className="text-center pl-2 py-1.5 text-[#a89fff] font-normal">Total</th>
+                    <th className="text-center px-1 py-1.5 text-white/30 font-normal">Unit</th>
+                    <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Rate per unit — used to total up the order value">Rate (₹)</th>
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Pipe</th>
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Karigar</th>
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Plating</th>
@@ -308,6 +311,30 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
                           </td>
                         ))}
                         <td className="text-center pl-2 py-1.5 font-semibold text-[#a89fff]">{total}</td>
+                        <td className="px-1 py-1.5">
+                          {canEdit ? (
+                            <select
+                              value={v.unit || ''}
+                              onChange={e => updateVarietyFields(di, vi, { unit: e.target.value })}
+                              className="w-16 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-[11px] focus:outline-none focus:border-[#534AB7]"
+                            >
+                              <option value="">— not set —</option>
+                              {units.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          ) : (
+                            <span className={v.unit ? 'text-white/70' : 'text-red-300/70'}>{v.unit || 'not set'}</span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1.5">
+                          {canEdit ? (
+                            <input type="number" min="0" step="0.01" placeholder="₹"
+                              value={v.rate ?? ''}
+                              onChange={e => updateVarietyFields(di, vi, { rate: e.target.value === '' ? undefined : Number(e.target.value) })}
+                              className="w-16 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-[11px] text-right focus:outline-none focus:border-[#534AB7]" />
+                          ) : (
+                            <span className="text-white/70">{v.rate ? `₹${v.rate}` : '—'}</span>
+                          )}
+                        </td>
                         <td className="px-1 py-1.5">
                           <VendorCell label="Pipe" vendorField="pipeVendor" receivedField="pipeReceived"
                             vendors={pipeVendors} holder={v} canEdit={canEdit}
@@ -411,7 +438,7 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, vendorOrder
                     <td className="text-center pl-2 py-1.5 font-bold text-[#a89fff]">
                       {varieties.reduce((a, v) => a + sizeKeys.reduce((b, sz) => b + (Number(v.sizes?.[sz]) || 0), 0), 0)}
                     </td>
-                    <td /><td /><td /><td />
+                    <td /><td /><td /><td /><td /><td />
                     {canEdit && <td />}
                   </tr>
                 </tbody>

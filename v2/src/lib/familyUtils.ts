@@ -101,6 +101,12 @@ export interface CatalogRow {
   qty: number;
   images: { data: string; name?: string }[];
   unit: string;
+  /** Unit as actually entered on the row, with NO 'pcs' fallback — used to
+   *  detect "unit missing" for order-value math (rate is per-unit, so a
+   *  defaulted unit would silently produce a wrong total). `unit` above keeps
+   *  its existing defaulted behavior for Dashboard/Pooling display. */
+  rawUnit: string;
+  rate?: number;
   note?: string;
 }
 
@@ -128,6 +134,8 @@ export function catalogRowsOfOrder(data: AppData, order: Order): CatalogRow[] {
         ...base, varietyId: null, isFlat: true, varName: null,
         sizes: { ...sizes }, qty: sumSizes(sizes),
         images: d.images ?? [], note: d.note,
+        rawUnit: d.unit || '',
+        rate: (d.rate != null && Number(d.rate) > 0) ? Number(d.rate) : undefined,
       });
     } else {
       (d.varieties ?? []).forEach((v: DesignVariety, vi) => {
@@ -138,6 +146,9 @@ export function catalogRowsOfOrder(data: AppData, order: Order): CatalogRow[] {
           images: v.images?.length ? v.images : (d.images ?? []),
           unit: v.unit || base.unit,
           note: v.note,
+          rawUnit: v.unit || d.unit || '',
+          rate: (v.rate != null && Number(v.rate) > 0) ? Number(v.rate)
+              : (d.rate != null && Number(d.rate) > 0) ? Number(d.rate) : undefined,
         });
       });
     }
@@ -256,4 +267,30 @@ export function renameFamily(data: AppData, oldName: string, newName: string): P
   }
 
   return { designFamilies: nextFamilies, familyNotes: nextNotes };
+}
+
+// ─── Order value from rates (retail addition, Aug 2026) ──────────────────────
+// Ports Phase 1's btOrderValue()/btMoney() exactly. Rate is per the row's own
+// unit, so a unit is required before anything can be totalled — "Option B",
+// the rule Phase 1 settled on: a wrong order value (from a mismatched/assumed
+// unit) is worse than a missing one, so this refuses to guess.
+
+export type OrderValueState =
+  | { state: 'empty' }
+  | { state: 'nounit'; noUnit: number; rows: number }
+  | { state: 'pending'; priced: number; rows: number }
+  | { state: 'ok'; total: number; rows: number };
+
+export function computeOrderValue(data: AppData, order: Order): OrderValueState {
+  const rows = catalogRowsOfOrder(data, order).filter(r => r.qty > 0);
+  if (!rows.length) return { state: 'empty' };
+  const noUnit = rows.filter(r => !String(r.rawUnit || '').trim()).length;
+  if (noUnit) return { state: 'nounit', noUnit, rows: rows.length };
+  const priced = rows.filter(r => r.rate != null && r.rate > 0).length;
+  if (priced < rows.length) return { state: 'pending', priced, rows: rows.length };
+  return { state: 'ok', total: rows.reduce((a, r) => a + (r.rate ?? 0) * r.qty, 0), rows: rows.length };
+}
+
+export function formatMoney(n: number): string {
+  return '₹ ' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }

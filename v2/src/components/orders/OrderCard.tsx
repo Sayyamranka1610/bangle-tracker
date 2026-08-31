@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { Order, EmbeddedDesign, VendorOrder } from '../../types';
+import type { AppData, Order, EmbeddedDesign, VendorOrder } from '../../types';
 import { orderStatus, orderPct, orderTotalQty, PRIORITY_LABELS, BANGLE_TYPE_LABELS, uid, isOrderOverdue } from '../../lib/orderUtils';
 import { coOrderStageCounts, CO_STAGE_DEFS, markDesignCompleteFields } from '../../lib/coStageUtils';
 import { makeStageFresh, DEFAULT_SIZES } from '../../lib/designUtils';
+import { computeOrderValue, formatMoney } from '../../lib/familyUtils';
 import DesignsTab from './DesignsTab';
 import VendorSummaryTab from './VendorSummaryTab';
 
@@ -10,6 +11,7 @@ type Tab = 'details' | 'designs' | 'vendor';
 
 interface Props {
   order: Order;
+  data: AppData;
   canEdit: boolean;
   dnames: string[];
   dcodes: string[];
@@ -22,6 +24,34 @@ interface Props {
   onArchive: (order: Order) => void;
   onRestore: (order: Order) => void;
   onDuplicate: (order: Order) => void;
+}
+
+// Small colored pill showing the order's value once every priced row has a
+// unit and rate — or, before that, exactly what's still missing. Ports Phase
+// 1's btOrderValueHTML() exactly (three states: red "unit missing", amber
+// "rates pending", green total).
+function OrderValueChip({ data, order }: { data: AppData; order: Order }) {
+  const v = computeOrderValue(data, order);
+  if (v.state === 'empty') return null;
+  if (v.state === 'ok') {
+    return (
+      <span title={`All ${v.rows} rows priced`} className="text-xs px-2 py-0.5 rounded-full font-bold bg-green-500/15 text-green-300">
+        {formatMoney(v.total)}
+      </span>
+    );
+  }
+  if (v.state === 'pending') {
+    return (
+      <span title="Add a rate to every row to see the order value" className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-300">
+        Rates pending {v.priced}/{v.rows}
+      </span>
+    );
+  }
+  return (
+    <span title="Rate is per unit, so every row needs a unit before the order can be valued" className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/15 text-red-300">
+      Unit missing on {v.noUnit} row{v.noUnit !== 1 ? 's' : ''}
+    </span>
+  );
 }
 
 const priorityColors: Record<string, string> = {
@@ -64,7 +94,7 @@ function InlineField({ field, value, type = 'text', options, canEdit, editingFie
 }
 
 export default function OrderCard({
-  order, canEdit, dnames, dcodes, vendorOrders, archivedView, autoExpand, onUpdate, onEdit, onDelete, onArchive, onRestore, onDuplicate,
+  order, data, canEdit, dnames, dcodes, vendorOrders, archivedView, autoExpand, onUpdate, onEdit, onDelete, onArchive, onRestore, onDuplicate,
 }: Props) {
   const [expanded, setExpanded] = useState(!!autoExpand);
   const [activeTab, setActiveTab] = useState<Tab>('designs');
@@ -158,6 +188,7 @@ export default function OrderCard({
             {(order.tags ?? []).map(t => (
               <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[#534AB7]/30 text-[#c9c3ff]">{t}</span>
             ))}
+            <OrderValueChip data={data} order={order} />
           </div>
           <p className="text-white font-semibold mt-0.5 truncate">{order.client}</p>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/40 mt-0.5">
@@ -305,6 +336,7 @@ export default function OrderCard({
                 canEdit={canEdit}
                 dnames={dnames}
                 dcodes={dcodes}
+                units={data.vocabulary?.units ?? ['pcs', 'pairs', 'jotta']}
                 vendorOrders={vendorOrders}
                 onDesignChange={handleDesignChange}
                 onAddDesign={handleAddDesign}

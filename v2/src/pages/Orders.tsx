@@ -344,6 +344,7 @@ export default function Orders() {
                   <OrderCard
                     key={order.id}
                     order={order}
+                    data={data}
                     canEdit={canEdit}
                     dnames={dnames}
                     dcodes={dcodes}
