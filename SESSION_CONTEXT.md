@@ -4,6 +4,17 @@
 
 ---
 
+> ## ⚠️ THIS FILE IS OUT OF DATE (written 5 June 2026)
+> The "where we left off" section below describes the June library re-sync, which is long finished.
+> Details such as the service worker version (`v68`) are wrong — as of **25 Aug 2026** it is **v196**.
+>
+> **For anything to do with the retail / exhibition work — order value, rates, notes, units,
+> the Pooling Board, the Dashboard, design families, or photo storage — read
+> [`RETAIL_CONTEXT.md`](RETAIL_CONTEXT.md) instead.** It is current and describes a bug pattern
+> that has already caused three false "it's broken" reports.
+
+---
+
 ## ⚡ WHERE WE LEFT OFF (MOST IMPORTANT — READ FIRST)
 
 ### Immediate pending action
