@@ -12143,13 +12143,24 @@ function _printHeaderWithGallery(headerHtml, imgs){
     +'</div>';
   };
   const GRID='display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;background:#fafafe;border-left:1px solid #D0CCF5;border-right:1px solid #D0CCF5;';
-  const first=imgs.slice(0,3), rest=imgs.slice(3);
-  // The first grid drops its bottom padding when more rows follow — the 4 mm top
-  // padding of the continuation grid then supplies the row gap, so splitting one
-  // grid into two is visually identical to the single grid this replaced.
-  const firstGrid='<div style="'+GRID+'padding:4mm 6mm '+(rest.length?'0':'4mm')+'">'+first.map(cell).join('')+'</div>';
-  const restGrid=rest.length?'<div style="'+GRID+'padding:4mm 6mm">'+rest.map(cell).join('')+'</div>':'';
-  return '<div style="break-inside:avoid;page-break-inside:avoid">'+headerHtml+firstGrid+'</div>'+restGrid;
+  // Chrome's print engine will not split a multi-row CSS Grid across a page
+  // boundary — if the grid as a whole doesn't fit in what's left of the page,
+  // it moves the ENTIRE grid to the next page, even if 2 more rows would have
+  // fit in the space left behind. That's the blank space the owner reported.
+  // Fix: build each row of 3 as its OWN single-row grid. A single-row grid
+  // still can't be split (an image is never sliced in half), but the browser
+  // CAN break normally between separate sibling boxes — so each row now finds
+  // its own page instead of the whole tail jumping together.
+  const rows=[];
+  for(let i=0;i<imgs.length;i+=3)rows.push(imgs.slice(i,i+3));
+  // Vertical gap between rows comes from the NEXT row's top padding (not the
+  // previous row's bottom padding) — same trick as before, just applied to
+  // every row instead of only the first: only the very last row gets bottom
+  // padding, so two adjacent row-boxes never end up with a doubled-up gap.
+  const rowHtml=(row,isLast)=>'<div style="'+GRID+'padding:4mm 6mm '+(isLast?'4mm':'0')+'">'+row.map(cell).join('')+'</div>';
+  const firstRow=rowHtml(rows[0],rows.length===1);
+  const restRows=rows.slice(1).map((row,idx)=>rowHtml(row,idx===rows.length-2)).join('');
+  return '<div style="break-inside:avoid;page-break-inside:avoid">'+headerHtml+firstRow+'</div>'+restRows;
 }
 
 // Internal-copy only: the small table that goes under a design/variety row
