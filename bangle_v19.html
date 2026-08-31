@@ -12169,41 +12169,52 @@ function _printHeaderWithGallery(headerHtml, imgs){
 //   sources        — vd.sources[] (pooled, 1+ customers), or null
 //   bufferSizes/stockSizes — vd.bufferSizes / vd.stockSizes (flat rows only)
 //   sourceCoId/sourceCoNum — the older single-customer manual link, if that's all this row has
-function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum){
+// Returns whole <tr> row(s) meant to be inserted directly into the SAME
+// table as the design/variety row above them — never a separate nested
+// table. A nested table has its own "Customer" column (wider than "Code"),
+// which shifts its size columns out from under the real 2/2, 2/4, 2/6...
+// headers at the top of the page — confusing, since the numbers no longer
+// sit under the label they belong to. Reusing the real table's columns
+// guarantees they always line up, at the cost of the Code column growing a
+// little wider to fit a customer's name.
+function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate){
   const qtyOf=sizes=>Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+  const imgTd=imgMode==='inline'?'<td></td>':'';
+  const rateTd=includeRate?'<td></td>':'';
+  const totalCols=1+(imgMode==='inline'?1:0)+szKeys.length+2+(includeRate?1:0);
   if(sources&&sources.length){
     const szTotals={};szKeys.forEach(sz=>szTotals[sz]=0);
     let rows='';
     const addRow=(label,sizes,italic)=>{
       szKeys.forEach(sz=>{szTotals[sz]+=(parseInt((sizes||{})[sz])||0);});
-      rows+='<tr'+(italic?' style="font-style:italic;color:#7A7768"':'')+'>'
-        +'<td style="padding:3px 6px;text-align:left;font-weight:700;color:'+(italic?'#7A7768':'#6B5215')+'">'+esc(label)+'</td>'
-        +szKeys.map(sz=>'<td style="padding:3px 6px;text-align:center">'+(parseInt((sizes||{})[sz])||0)+'</td>').join('')
-        +'<td style="padding:3px 6px;text-align:center;font-weight:700">'+qtyOf(sizes)+'</td></tr>';
+      const clr=italic?'#7A7768':'#6B5215';
+      rows+='<tr style="background:'+(italic?'#F5F3EC':'#FFF9EE')+'">'
+        +'<td style="padding:4px 10px;padding-left:20px;font-size:10px;color:'+clr+(italic?';font-style:italic':';font-weight:700')+'">└ '+esc(label)+'</td>'
+        +imgTd
+        +szKeys.map(sz=>'<td style="padding:4px 8px;text-align:center;font-size:10px;color:'+clr+(italic?';font-style:italic':'')+'">'+(parseInt((sizes||{})[sz])||0)+'</td>').join('')
+        +'<td style="padding:4px 8px;text-align:center;font-size:10px;font-weight:700;color:'+clr+'">'+qtyOf(sizes)+'</td>'
+        +'<td></td>'+rateTd
+      +'</tr>';
     };
     sources.forEach(s=>addRow((s.orderLabel||'CO')+' · '+(s.client||''),s.sizes,false));
     if(qtyOf(bufferSizes)>0)addRow('Buffer (rejection cover)',bufferSizes,true);
     if(qtyOf(stockSizes)>0)addRow('Stock (top-up)',stockSizes,true);
-    const rowTotal=Object.values(szTotals).reduce((a,v)=>a+v,0);
-    return '<div style="font-size:8.5px;font-weight:700;color:#8A6D2F;text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px">For</div>'
-      +'<table style="width:100%;border-collapse:collapse;font-size:10px">'
-        +'<thead><tr style="background:#EADCB8;color:#5C4114">'
-          +'<th style="padding:3px 6px;text-align:left">Customer</th>'
-          +szKeys.map(sz=>'<th style="padding:3px 6px;text-align:center">'+esc(sz)+'</th>').join('')
-          +'<th style="padding:3px 6px;text-align:center">Qty</th></tr></thead>'
-        +'<tbody style="background:#fffdf7">'+rows+'</tbody>'
-        +'<tfoot><tr style="background:#EADCB8;font-weight:700;color:#5C4114">'
-          +'<td style="padding:3px 6px;text-align:left">Row total</td>'
-          +szKeys.map(sz=>'<td style="padding:3px 6px;text-align:center">'+(szTotals[sz]||0)+'</td>').join('')
-          +'<td style="padding:3px 6px;text-align:center">'+rowTotal+'</td></tr></tfoot>'
-      +'</table>';
+    const accounted=Object.values(szTotals).reduce((a,v)=>a+v,0);
+    // Only speak up when the customer breakdown doesn't add up to the row
+    // above it — when it matches, that's already obvious since the numbers
+    // sit in the very same columns, so a repeated "Row total" line would
+    // just be noise.
+    if(accounted!==rowTotal){
+      rows+='<tr><td colspan="'+totalCols+'" style="background:#FFF8E1;border-top:1px solid #FFD54F;padding:5px 10px;font-size:10px;color:#8A5A00">⚠ Adds up to '+accounted+', but this row shows '+rowTotal+' — it was changed by hand after pooling; check before sending.</td></tr>';
+    }
+    return rows;
   }
   if(sourceCoId){
     const ord=(S.orders||[]).find(o=>o.id===sourceCoId);
     const client=ord?(ord.client||''):'';
-    return '<div style="font-size:10.5px;color:#6B5215">🔗 <strong>'+esc(sourceCoNum||'CO')+'</strong>'+(client?' · '+esc(client):'')+' — entire row</div>';
+    return '<tr><td colspan="'+totalCols+'" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:5px 10px;font-size:10.5px;color:#6B5215">└ 🔗 <strong>'+esc(sourceCoNum||'CO')+'</strong>'+(client?' · '+esc(client):'')+' — entire row</td></tr>';
   }
-  return '<div style="font-size:10.5px;color:#C0392B;font-weight:700">⚠ Not linked to any customer order — check before sending</div>';
+  return '<tr><td colspan="'+totalCols+'" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:5px 10px;font-size:10.5px;color:#C0392B;font-weight:700">└ ⚠ Not linked to any customer order — check before sending</td></tr>';
 }
 
 function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
@@ -12244,11 +12255,12 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
       // Build table rows for all design codes in the group
       let trows='';
       const vRateTd=(r)=>includeRate?`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#555">${r?('₹'+r):'—'}</td>`:'';
-      // Internal copy only: one extra full-width row under a design/variety row
-      // showing which customer(s) it's for — same column count as a data row.
-      const totalCols=1+(imgMode==='inline'?1:0)+szKeys.length+2+(includeRate?1:0);
-      const forTr=(sources,bufferSizes,stockSizes,sourceCoId,sourceCoNum)=>internal
-        ?`<tr><td colspan="${totalCols}" style="background:#FFF9EE;border-bottom:1px solid #F0E4C8;padding:6px 8px 8px">${_vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum)}</td></tr>`
+      // Internal copy only: extra row(s) under a design/variety row showing
+      // which customer(s) it's for — built as normal rows in this SAME
+      // table (see _vprintForRowHtml) so their numbers sit under the exact
+      // same size headers as the row above them.
+      const forTr=(sources,bufferSizes,stockSizes,sourceCoId,sourceCoNum,rowTotal)=>internal
+        ?_vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate)
         :'';
       g.items.forEach(d=>{
         const varieties=d.varieties||[];
@@ -12269,7 +12281,7 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
             +`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#777">${esc(unit)}</td>`
             +vRateTd(hod?(varieties[0].rate||d.rate):d.rate)
           +`</tr>`;
-          trows+=forTr(d.sources,d.bufferSizes,d.stockSizes,d.sourceCoId,d.sourceCoNum);
+          trows+=forTr(d.sources,d.bufferSizes,d.stockSizes,d.sourceCoId,d.sourceCoNum,rt);
         } else {
           const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
           const dTotal=Object.values(colT).reduce((a,v)=>a+v,0);
@@ -12292,7 +12304,7 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
               +`<td style="padding:5px 8px;text-align:center;font-size:12px;color:#777">${esc(v.unit||'pcs')}</td>`
               +vRateTd(v.rate)
             +`</tr>`;
-            trows+=forTr(null,null,null,v.sourceCoId,v.sourceCoNum);
+            trows+=forTr(null,null,null,v.sourceCoId,v.sourceCoNum,rt);
           });
         }
       });
