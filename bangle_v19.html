@@ -4038,13 +4038,13 @@ function designQtyByUnit(d){
   const out={};
   if(d.varieties&&d.varieties.length>0){
     d.varieties.forEach(v=>{
-      const u=(v.unit||'pcs').toLowerCase();
+      const u=_validUnit(v.unit).toLowerCase();
       const qty=Object.values(v.sizes||{}).reduce((a,q)=>a+(parseInt(q)||0),0);
       out[u]=(out[u]||0)+qty;
     });
   } else {
     const qty=Object.values(d.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
-    if(qty>0) out[(d.unit||'pcs').toLowerCase()]=qty;
+    if(qty>0) out[_validUnit(d.unit).toLowerCase()]=qty;
   }
   return out;
 }
@@ -5693,7 +5693,7 @@ function renderAnalytics(){
   const container=document.getElementById('view-analytics');
   const orders=S.orders;
   if(!orders.length){container.innerHTML='<div class="empty-state">No orders to analyse yet.</div>';return;}
-  const totalOrds=orders.length,totalDesigns=orders.reduce((a,o)=>a+o.designs.length,0),totalPcs=orders.reduce((a,o)=>a+totalQty(o),0);
+  const totalOrds=orders.length,totalDesigns=orders.reduce((a,o)=>a+o.designs.length,0);
   const lateOrds=orders.filter(o=>orderAlert(o)==='late').length,warnOrds=orders.filter(o=>orderAlert(o)==='warn').length,doneOrds=orders.filter(o=>orderAlert(o)==='done').length,okOrds=totalOrds-lateOrds-warnOrds-doneOrds;
   const byClient={};orders.forEach(o=>{byClient[o.client]=(byClient[o.client]||0)+1;});
   const clientEntries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]).slice(0,8),maxC=Math.max(...clientEntries.map(e=>e[1]),1);
@@ -5782,7 +5782,6 @@ function renderAnalytics(){
       <div class="metric-grid">
         <div class="metric-box"><div class="metric-val">${totalOrds}</div><div class="metric-lbl">Total orders</div></div>
         <div class="metric-box"><div class="metric-val">${totalDesigns}</div><div class="metric-lbl">Designs in production</div></div>
-        <div class="metric-box"><div class="metric-val">${totalPcs.toLocaleString()}</div><div class="metric-lbl">Total pieces ordered</div></div>
         <div class="metric-box"><div class="metric-val">${avgPct}%</div><div class="metric-lbl">Avg. completion</div></div>
         <div class="metric-box"><div class="metric-val" style="color:#A32D2D">${lateOrds}</div><div class="metric-lbl">Overdue orders</div></div>
         <div class="metric-box"><div class="metric-val" style="color:#0F6E56">${doneOrds}</div><div class="metric-lbl">Completed orders</div></div>
@@ -10645,16 +10644,17 @@ function _openVOLinkPicker(vi, di, vri){
     if(!matchDesign) return;
     if(matches.find(m=>m.coId===order.id)) return; // deduplicate per order
     const varList=(matchDesign.varieties||[]).filter(v=>v.name&&v.name!=='Default').map(v=>v.name);
-    const totalQty=varList.length
-      ?(matchDesign.varieties||[]).reduce((a,v)=>a+Object.values(v.sizes||{}).reduce((b,q)=>b+(parseInt(q)||0),0),0)
-      :Object.values(matchDesign.sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+    // Unit-aware — a row can be in pairs or jotta, not just pcs. See
+    // designQtyByUnit/formatQtyByUnit (owner-reported: this picker used to
+    // always say "N pcs" even for a pairs/jotta row).
+    const qtyLabel=formatQtyByUnit(designQtyByUnit(matchDesign));
     matches.push({
       coId:order.id,
       coNum:order.orderId||'ORD-?',
       client:order.client||'(no client)',
       designName:matchDesign.name||'',
       varSummary:varList.slice(0,4).join(', ')+(varList.length>4?'…':''),
-      totalQty
+      qtyLabel
     });
   });
 
@@ -10677,7 +10677,7 @@ function _openVOLinkPicker(vi, di, vri){
     <div style="background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(83,74,183,.35);padding:22px;max-width:440px;width:100%;max-height:80vh;overflow-y:auto;box-sizing:border-box">
       <div style="font-size:15px;font-weight:700;color:#3C3489;margin-bottom:4px">🔗 Link to customer order</div>
       <div style="font-size:12px;color:#777;margin-bottom:${alreadyLinked?'8':'14'}px">
-        Design <strong>${esc(code)}</strong>${rowLabel} in <strong>VORD-${esc(vo.orderId||'')}</strong> — which customer order is it for?
+        Design <strong>${esc(code)}</strong>${rowLabel} in <strong>${esc(vo.orderId||'')}</strong> — which customer order is it for?
       </div>
       ${alreadyLinked?`
       <div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:8px;padding:8px 12px;font-size:11px;color:#795548;margin-bottom:12px;display:flex;align-items:center;gap:8px">
@@ -10694,7 +10694,7 @@ function _openVOLinkPicker(vi, di, vri){
           <div>
             <div style="font-size:13px;font-weight:600;color:#3C3489">${esc(m.client)}</div>
             <div style="font-size:10px;color:#888;margin-top:3px">
-              ${m.designName?esc(m.designName)+' · ':''}${m.varSummary?'Varieties: '+esc(m.varSummary)+' · ':''}${m.totalQty} pcs total
+              ${m.designName?esc(m.designName)+' · ':''}${m.varSummary?'Varieties: '+esc(m.varSummary)+' · ':''}${esc(m.qtyLabel)} total
             </div>
           </div>
         </div>`).join('')}
@@ -10850,12 +10850,13 @@ function _openVOWhoModal(vi,di,showAdd){
   const stockHtml=extraRow('Stock','#B08D57','Top-up for stock — nobody\'s',vd.stockSizes,stockQty);
 
   const rowTotal=_voQty(vd.sizes);
+  const rowUnit=vd.unit||'pcs'; // owner-reported: this modal used to always say "pcs" even for a jotta/pairs row
   const accounted=sources.reduce((a,s)=>a+_voQty(s.sizes),0)+bufferQty+stockQty;
   const mismatch=accounted!==rowTotal;
   const addends=sources.map(s=>_voQty(s.sizes)).concat(bufferQty?[bufferQty]:[],stockQty?[stockQty]:[]);
   const totalHtml='<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:'+(mismatch?'#FFF8E1':'#F7F6FF')+';border-radius:9px;margin-top:4px;font-size:13px;font-weight:700;color:#3C3489">'
     +'<span>Row total ('+rowTotal+')</span>'
-    +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(rowTotal-accounted)+' pcs unaccounted for':' — matches')+'</span></div>';
+    +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(rowTotal-accounted)+' '+esc(rowUnit)+' unaccounted for':' — matches')+'</span></div>';
   const mismatchNote=mismatch?'<div style="font-size:11px;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:7px;padding:7px 10px;margin-top:10px">This row\'s numbers were changed by hand after pooling, so they no longer match the customers behind it. Nothing is broken — the difference is simply untracked, like Buffer.</div>':'';
 
   // "Add customer" candidates: other customer orders with this same design
@@ -10892,7 +10893,7 @@ function _openVOWhoModal(vi,di,showAdd){
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   overlay.innerHTML='<div style="background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(83,74,183,.35);padding:22px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-sizing:border-box">'
     +'<div style="font-size:15px;font-weight:700;color:#3C3489;margin-bottom:4px">👥 Who is this row for?</div>'
-    +'<div style="font-size:12px;color:#777;margin-bottom:14px">Design <strong>'+esc(code||'—')+'</strong> in <strong>'+esc(vo.orderId||'')+'</strong> — '+rowTotal+' pcs total</div>'
+    +'<div style="font-size:12px;color:#777;margin-bottom:14px">Design <strong>'+esc(code||'—')+'</strong> in <strong>'+esc(vo.orderId||'')+'</strong> — '+rowTotal+' '+esc(rowUnit)+' total</div>'
     +(rowsHtml||'<div style="font-size:12px;color:#AAA;text-align:center;padding:10px">No customer linked to this row yet.</div>')
     +bufferHtml+stockHtml
     +addSection
@@ -17893,6 +17894,17 @@ function _btFlatRate(d){
   const pick=x=>(x!=null&&x!==''&&Number(x)>0)?Number(x):null;
   return pick(d.rate) ?? pick((d.varieties&&d.varieties[0]&&d.varieties[0].rate));
 }
+// A design/variety's `unit` field should always be a real word (pcs, pairs,
+// jotta, ...). A handful of older records have data corruption where it
+// holds a raw number instead — almost certainly a value written into the
+// wrong field at some point. Never surface that verbatim (an owner-reported
+// unit-error sweep turned this up as e.g. "270 270" on the Dashboard) — an
+// honest 'pcs' default beats showing garbage.
+function _validUnit(u){
+  u=(u==null?'':String(u)).trim();
+  if(!u||!isNaN(u))return'pcs';
+  return u;
+}
 function btRowsOfOrder(order){
   const out=[];
   (order.designs||[]).forEach(d=>{
@@ -17905,7 +17917,7 @@ function btRowsOfOrder(order){
       family:btFamilyOf(d.code,d.name),finish:btFinishOf(d.name),
       // A flat/CNC design may carry its unit on the design OR on its single
       // 'Default' variety - the rest of the app reads both (see flatUnit).
-      unit:(d.unit||_flatU||'pcs'),rawUnit:(d.unit||_flatU||'')};
+      unit:_validUnit(d.unit||_flatU),rawUnit:(d.unit||_flatU||'')};
     if(isFlat){
       const sizes=hod?((d.varieties[0]||{}).sizes||{}):(d.sizes||{});
       out.push(Object.assign({},base,{varietyId:null,varName:null,holder:d,
@@ -17915,7 +17927,14 @@ function btRowsOfOrder(order){
       (d.varieties||[]).forEach((v,vi)=>{
         out.push(Object.assign({},base,{varietyId:v.id,varName:v.name||('Variety '+(vi+1)),holder:v,
           sizes:v.sizes||{},qty:btSum(v.sizes),images:(v.images&&v.images.length?v.images:(d.images||[])),
-          note:v.note||'',recvQty:v.recvQty||{},rawUnit:v.unit||d.unit||'',
+          note:v.note||'',recvQty:v.recvQty||{},
+          // base.unit was computed once from the DESIGN/first-variety and never
+          // corrected per-variety here — so every real variety row silently
+          // inherited variety[0]'s unit (or 'pcs') regardless of its own actual
+          // unit. rawUnit was already fixed correctly; unit wasn't. This is
+          // what fed the wrong "pcs" into every r.unit consumer (Dashboard,
+          // Pooling, print) whenever a design's varieties don't all share one unit.
+          unit:_validUnit(v.unit||d.unit||_flatU),rawUnit:v.unit||d.unit||'',
           rate:(v.rate!=null&&v.rate!==''?Number(v.rate):(d.rate!=null&&d.rate!==''?Number(d.rate):null))}));
       });
     }
@@ -18265,7 +18284,11 @@ function renderPoolingView(){
 
   const selKeys=Object.keys(_poolSel).filter(k=>groups.some(g=>g.key===k));
   const selMake=selKeys.reduce((a,k)=>{const g=groups.find(x=>x.key===k);return a+(g?btSum(btMakeQty(g)):0);},0);
-  const looseTotal=all.reduce((a,g)=>a+g.total,0);
+  // Unit-aware — pooled groups can be jotta, pairs, or pcs; a bare "N pieces"
+  // wrongly summed them together regardless (owner-reported unit bug sweep).
+  const looseByUnit={};
+  all.forEach(g=>{const u=(g.unit||'pcs').toLowerCase();looseByUnit[u]=(looseByUnit[u]||0)+g.total;});
+  const looseLabel=formatQtyByUnit(looseByUnit);
   const modeBtn=(m,label)=>'<div class="main-tab'+(_poolMode===m?' active':'')+'" style="padding:7px 14px;font-size:12px" onclick="btPoolSetMode(\''+m+'\')">'+label+'</div>';
 
   el.innerHTML=
@@ -18286,7 +18309,7 @@ function renderPoolingView(){
       '<div class="main-tab'+(_poolMultiOnly?' active':'')+'" style="padding:8px 14px;font-size:12px" onclick="btPoolToggleMulti()">Only where 2+ customers want it</div>'+
     '</div>'+
     '<div style="font-size:12px;color:#8A87A8;margin-bottom:10px">'+groups.length+' batch'+(groups.length!==1?'es':'')+
-      ' · '+looseTotal.toLocaleString()+' pieces not yet with any vendor</div>'+
+      ' · '+esc(looseLabel)+' not yet with any vendor</div>'+
     '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+
       '<div style="flex:1;min-width:320px">'+
         (groups.length?famNames.map(f=>
@@ -18294,7 +18317,7 @@ function renderPoolingView(){
             '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">'+
               '<b style="font-size:13px;color:#534AB7">'+esc(f)+'</b>'+
               '<span style="font-size:11px;color:#A5A2C0">'+fams[f].length+' batch'+(fams[f].length!==1?'es':'')+
-              ' · '+fams[f].reduce((a,g)=>a+g.total,0).toLocaleString()+' pcs ordered</span>'+
+              ' · '+esc(formatQtyByUnit(fams[f].reduce((acc,g)=>{const u=(g.unit||'pcs').toLowerCase();acc[u]=(acc[u]||0)+g.total;return acc;},{})))+' ordered</span>'+
             '</div>'+
             ((S.familyNotes||{})[f]?'<div style="font-size:11px;color:#6B6797;background:#F7F6FF;border:1px solid #E0DFFF;border-radius:8px;padding:7px 10px;margin-bottom:8px"><b style="color:#3C3489">Family note:</b> '+esc(S.familyNotes[f])+'</div>':'')+
             fams[f].map(btPoolCardHTML).join('')+
@@ -18370,11 +18393,13 @@ function btPoolCreate(){
     // stays empty/red, wrongly implying nothing was sent out (owner-reported bug).
     _setCOVendorField(r.holder,_poolMode,vendor);
   });
-  const pcs=designs.reduce((a,d)=>a+btSum(d.sizes),0);
-  audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+pcs+' pcs from '+touched.length+' customer row(s)');
+  // Unit-aware — a pooled batch can mix codes with different units (jotta,
+  // pairs, pcs), so a bare "N pcs" total can misstate what was actually made.
+  const qtyLabel=formatQtyByUnit(vendorOrderQtyByUnit(vo));
+  audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+qtyLabel+' from '+touched.length+' customer row(s)');
   _poolSel={};_poolExtras={};
   save();try{fbPushNow();}catch(e){}
-  showToast('✅ '+vo.orderId+' created for '+vendor+' — '+pcs+' pcs','green',3800);
+  showToast('✅ '+vo.orderId+' created for '+vendor+' — '+qtyLabel,'green',3800);
   renderPoolingView();
 }
 
@@ -18543,7 +18568,7 @@ function btUnitFixerRender(){
               '<div style="flex:1;min-width:0">'+
                 '<b style="color:#2A2458">'+esc(r.code||'(no code)')+'</b> '+
                 '<span style="color:#8A87A8">'+esc(r.name||'')+(r.varName?(' \u00B7 '+esc(r.varName)):'')+'</span>'+
-                '<div style="font-size:10px;color:#A5A2C0">'+r.qty+' pcs</div>'+
+                '<div style="font-size:10px;color:#A5A2C0">Qty: '+r.qty+'</div>'+
               '</div>'+
               (r.missing?'<span style="font-size:10px;font-weight:800;color:#C62828">no unit</span>':'<span style="font-size:10px;color:#0F6E56">'+esc(r.rawUnit)+'</span>')+
               '<select style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;min-width:76px" '+
@@ -18792,11 +18817,14 @@ function btDashClients(){
     }
     const counts={notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0};
     rows.forEach(r=>{counts[r.stage]++;});
-    const c=by[o.client]=by[o.client]||{client:o.client,orders:[],items:0,pcs:0,
+    const c=by[o.client]=by[o.client]||{client:o.client,orders:[],items:0,qtyByUnit:{},
       counts:{notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0},
       overdue:0,soonest:null,phone:''};
     c.orders.push({o:o,rows:rows,counts:counts,overdue:btOrderOverdue(o),daysLeft:btDaysLeft(o)});
-    c.items+=rows.length; c.pcs+=rows.reduce((a,r)=>a+r.qty,0);
+    c.items+=rows.length;
+    // Unit-aware — rows can be jotta, pairs, or pcs; summing them into one
+    // number and calling it "pcs" regardless was a real reported bug.
+    rows.forEach(r=>{const u=(r.unit||'pcs').toLowerCase();c.qtyByUnit[u]=(c.qtyByUnit[u]||0)+(r.qty||0);});
     Object.keys(counts).forEach(k=>c.counts[k]+=counts[k]);
     if(btOrderOverdue(o))c.overdue++;
     if(o.phone&&!c.phone)c.phone=o.phone;
@@ -18855,14 +18883,23 @@ function btItemCardHTML(r){
 function renderDashboardView(){
   const el=document.getElementById('view-dashboard'); if(!el)return;
   const clients=btDashClients();
-  const tot={clients:clients.length,orders:0,items:0,pcs:0,overdue:0,
+  const tot={clients:clients.length,orders:0,items:0,qtyByUnit:{},overdue:0,
     counts:{notStarted:0,pipe:0,karigar:0,plating:0,packing:0,dispatched:0}};
-  clients.forEach(c=>{tot.orders+=c.orders.length;tot.items+=c.items;tot.pcs+=c.pcs;tot.overdue+=c.overdue;
+  clients.forEach(c=>{tot.orders+=c.orders.length;tot.items+=c.items;tot.overdue+=c.overdue;
+    Object.keys(c.qtyByUnit).forEach(u=>{tot.qtyByUnit[u]=(tot.qtyByUnit[u]||0)+c.qtyByUnit[u];});
     Object.keys(tot.counts).forEach(k=>tot.counts[k]+=c.counts[k]);});
 
-  const tile=(n,l,alert)=>'<div style="background:#fff;border:1.5px solid #E0DFFF;border-radius:12px;padding:10px 13px">'+
-    '<div style="font-size:21px;font-weight:800;line-height:1;color:'+(alert?'#C62828':'#534AB7')+'">'+n+'</div>'+
-    '<div style="font-size:9.5px;color:#8A87A8;text-transform:uppercase;letter-spacing:.4px;margin-top:5px">'+l+'</div></div>';
+  // Quantity can be a short number ("56") or a longer unit-aware breakdown
+  // ("31724 jotta, 65798 pairs, ...") when a client mixes units — shrink the
+  // font for longer strings so it wraps inside the tile instead of spilling
+  // over the row below it.
+  const tile=(n,l,alert)=>{
+    const len=String(n).length;
+    const fs=len>18?'13px':len>10?'16px':'21px';
+    return '<div style="background:#fff;border:1.5px solid #E0DFFF;border-radius:12px;padding:10px 13px">'+
+      '<div style="font-size:'+fs+';font-weight:800;line-height:1.25;color:'+(alert?'#C62828':'#534AB7')+'">'+n+'</div>'+
+      '<div style="font-size:9.5px;color:#8A87A8;text-transform:uppercase;letter-spacing:.4px;margin-top:5px">'+l+'</div></div>';
+  };
 
   const active=_dashClient?clients.find(c=>c.client===_dashClient):null;
 
@@ -18872,7 +18909,7 @@ function renderDashboardView(){
     '<p style="font-size:12px;color:#8A87A8;margin:0 0 12px">Every client, every order, and exactly where each item is. Click a client to open them up.</p>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px;margin-bottom:12px">'+
       tile(tot.clients,'Clients')+tile(tot.orders,'Orders')+tile(tot.items,'Items')+
-      tile(tot.pcs.toLocaleString(),'Pieces')+tile(tot.counts.dispatched+' / '+tot.items,'Dispatched')+
+      tile(esc(formatQtyByUnit(tot.qtyByUnit)),'Quantity')+tile(tot.counts.dispatched+' / '+tot.items,'Dispatched')+
       tile(tot.overdue,'Orders overdue',tot.overdue>0)+
     '</div>'+
     '<input id="dash-search" value="'+esc(_dashSearch)+'" placeholder="Search client, order or design code…" '+
@@ -18891,7 +18928,7 @@ function renderDashboardView(){
           '<b style="font-size:13px;color:#2A2458;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.client)+'</b>'+
           '<b style="font-size:12px;color:#534AB7">'+c.pct+'%</b></div>'+
         '<div style="font-size:11px;color:#8A87A8;margin-top:2px">'+c.orders.length+' order'+(c.orders.length!==1?'s':'')+
-          ' · '+c.items+' items · '+c.pcs.toLocaleString()+' pcs'+(c.soonest?' · due '+esc(c.soonest):'')+'</div>'+
+          ' · '+c.items+' items · '+esc(formatQtyByUnit(c.qtyByUnit))+(c.soonest?' · due '+esc(c.soonest):'')+'</div>'+
         btStageBar(c.counts,c.items)+
         (c.overdue?'<div style="margin-top:6px;display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:#FFEBEE;color:#C62828">⚠ '+c.overdue+' order'+(c.overdue!==1?'s':'')+' overdue</div>':'')+
       '</div>').join('')+
@@ -18904,7 +18941,7 @@ function btDashDrillHTML(c){
   return '<div id="dash-drill" style="margin-top:16px">'+
     '<div style="background:#534AB7;color:#fff;border-radius:12px 12px 0 0;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+
       '<b style="font-size:15px">'+esc(c.client)+'</b>'+
-      '<span style="font-size:11.5px;opacity:.85">'+(c.phone?'📞 '+esc(c.phone)+' · ':'')+c.items+' items · '+c.pcs.toLocaleString()+' pcs</span>'+
+      '<span style="font-size:11.5px;opacity:.85">'+(c.phone?'📞 '+esc(c.phone)+' · ':'')+c.items+' items · '+esc(formatQtyByUnit(c.qtyByUnit))+'</span>'+
       '<span style="flex:1"></span>'+
       '<span onclick="btDashSetClient(null)" style="cursor:pointer;background:rgba(255,255,255,.2);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700">✕ close</span>'+
     '</div>'+
