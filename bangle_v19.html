@@ -5199,11 +5199,11 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
     // code has real history to suggest from. One click fills the dropdown —
     // exactly the same call the dropdown's own onchange would make — nothing
     // is ever assigned without the owner clicking it themselves.
-    const kSugg=(!kVal&&code)?_khSuggestionFor(code):null;
+    const kSugg=(!kVal&&code)?_khSuggestionFor(code,vri>=0?(holder.name||''):''):null;
     const kFillCall=kSugg?(vri>=0
       ?'upVarietyVendor('+oi+','+di+','+vri+',\''+esc(kSugg.vendor).replace(/'/g,"\\'")+'\')'
       :'upDesignVendor('+oi+','+di+',\''+esc(kSugg.vendor).replace(/'/g,"\\'")+'\')'):'';
-    const kSuggHtml=kSugg?'<div class="no-print" onclick="'+kFillCall+'" title="Sent '+(kSugg.at?esc(fmtDate(new Date(kSugg.at))):'earlier')+' · made this code '+kSugg.count+' time'+(kSugg.count!==1?'s':'')+' — click to fill in" style="margin-top:3px;font-size:9px;font-weight:600;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:20px;padding:2px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">💡 Last: '+esc(kSugg.vendor)+'</div>':'';
+    const kSuggHtml=kSugg?'<div class="no-print" onclick="'+kFillCall+'" title="Sent '+(kSugg.at?esc(fmtDate(new Date(kSugg.at))):'earlier')+' · made this design '+kSugg.count+' time'+(kSugg.count!==1?'s':'')+' — click to fill in" style="margin-top:3px;font-size:9px;font-weight:600;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:20px;padding:2px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">💡 Last: '+esc(kSugg.vendor)+'</div>':'';
     const karigarTd='<td class="no-print" style="padding:3px 4px;min-width:105px;'+karigarTdBg+'">'
       +'<div style="font-size:8px;font-weight:800;color:#4A148C;letter-spacing:.04em;margin-bottom:2px">Karigar</div>'
       +'<div style="display:flex;align-items:center;gap:3px">'
@@ -17940,28 +17940,51 @@ function btAllRows(){
    Feeds three places: the suggestion chip on an empty Karigar box, the
    "Usually:" tag on a Pooling card, and the Karigar History tab. One engine,
    rebuilt at most once per render() pass (see _khInvalidate call in render). */
+// A design code alone is NOT a unique identity — a Dye Gold code like "12MM"
+// can have several real varieties (e.g. SH-17, SH-21, SH-23…) that are
+// genuinely different physical designs, not size labels. Keying history by
+// code alone would credit one variety's karigar to every other variety that
+// happens to share the same code — exactly the bug an owner caught in
+// production (a suggestion for a karigar who'd never touched that variety).
+// So every event carries both code AND varietyName ('' for a flat/CNC row,
+// which has no varieties at all), and the two together are the real key.
+function _khKey(code,varietyName){ return (code||'').trim()+'|'+((varietyName||'').trim()); }
 function _khBuildEvents(){
   const events=[];
   const seen=new Set();
-  const push=(code,vendor,at,coLabel)=>{
+  const push=(code,varietyName,vendor,at,coLabel)=>{
     code=(code||'').trim(); vendor=(vendor||'').trim();
     if(!code||!vendor||vendor==='__own__')return;
+    const vName=(varietyName||'').trim();
     const day=at?new Date(at).toISOString().slice(0,10):'unknown';
-    const key=code+'|'+vendor+'|'+day;
-    if(seen.has(key))return; seen.add(key);
-    events.push({code,vendor,at:at||0,coLabel:coLabel||''});
+    const dedupeKey=code+'|'+vName+'|'+vendor+'|'+day;
+    if(seen.has(dedupeKey))return; seen.add(dedupeKey);
+    events.push({code,varietyName:vName,vendor,at:at||0,coLabel:coLabel||''});
   };
   (S.vendorOrders||[]).forEach(vo=>{
     if((vo.type||'karigar')!=='karigar'||!vo.vendor)return;
     const at=vo.startDate?(Date.parse(vo.startDate)||0):0;
-    (vo.designs||[]).forEach(d=>push(d.code,vo.vendor,at,vo.orderId));
+    (vo.designs||[]).forEach(d=>{
+      const varieties=d.varieties||[];
+      const isFlat=varieties.length===0||_hasOnlyDefault(d);
+      if(isFlat)push(d.code,'',vo.vendor,at,vo.orderId);
+      else varieties.forEach(v=>push(d.code,v.name,vo.vendor,at,vo.orderId));
+    });
   });
   (S.orders||[]).forEach(o=>{
     (o.designs||[]).forEach(d=>{
-      if(d.assignedVendor)push(d.code,d.assignedVendor,d.assignedVendorAt||0,o.orderId);
-      (d.varieties||[]).forEach(v=>{
-        if(v.assignedVendor)push(d.code,v.assignedVendor,v.assignedVendorAt||0,o.orderId);
-      });
+      const varieties=d.varieties||[];
+      const isFlat=varieties.length===0||_hasOnlyDefault(d);
+      // Karigar always lives on d.assignedVendor for a flat row — including
+      // the hasOnlyDefault case — because the UI always calls upDesignVendor
+      // (never upVarietyVendor) whenever it renders that row as flat.
+      if(isFlat){
+        if(d.assignedVendor)push(d.code,'',d.assignedVendor,d.assignedVendorAt||0,o.orderId);
+      } else {
+        varieties.forEach(v=>{
+          if(v.assignedVendor)push(d.code,v.name,v.assignedVendor,v.assignedVendorAt||0,o.orderId);
+        });
+      }
     });
   });
   return events;
@@ -17970,28 +17993,34 @@ let _khCache=null;
 function _khInvalidate(){ _khCache=null; }
 function _khHistory(){
   if(_khCache)return _khCache;
-  const byCode={};
-  _khBuildEvents().forEach(e=>{ (byCode[e.code]=byCode[e.code]||[]).push(e); });
-  Object.values(byCode).forEach(list=>list.sort((a,b)=>b.at-a.at));
-  _khCache=byCode;
-  return byCode;
+  const byKey={};
+  _khBuildEvents().forEach(e=>{ const k=_khKey(e.code,e.varietyName); (byKey[k]=byKey[k]||[]).push(e); });
+  Object.values(byKey).forEach(list=>list.sort((a,b)=>b.at-a.at));
+  _khCache=byKey;
+  return byKey;
 }
-// Top pick for one code — most RECENT vendor wins (not most frequent), since
-// who currently makes a design can change over time. null when there's no
-// history at all for that code yet.
-function _khSuggestionFor(code){
-  const list=_khHistory()[(code||'').trim()];
+// Top pick for one (code, variety) — most RECENT vendor wins (not most
+// frequent), since who currently makes a design can change over time.
+// varietyName omitted/blank means a flat/CNC row. null = no history yet.
+function _khSuggestionFor(code,varietyName){
+  const list=_khHistory()[_khKey(code,varietyName)];
   if(!list||!list.length)return null;
   const top=list[0];
   return {vendor:top.vendor, at:top.at, count:list.filter(e=>e.vendor===top.vendor).length};
 }
-// First available photo for a code — checks customer orders (compressed
-// thumbnail, cheap) then vendor orders. Empty string if nothing has one.
-function _khImageForCode(code){
+// First available photo for a (code, variety) — checks that exact variety's
+// own photos first, then falls back to the design-level/flat photo, then
+// vendor orders. Empty string if nothing has one.
+function _khImageForCode(code,varietyName){
   code=(code||'').trim(); if(!code)return'';
+  const vName=(varietyName||'').trim();
   for(const o of (S.orders||[])){
     for(const d of (o.designs||[])){
       if((d.code||'').trim()!==code)continue;
+      if(vName){
+        const v=(d.varieties||[]).find(vv=>(vv.name||'').trim()===vName);
+        if(v&&v.images&&v.images.length){const src=_resolveImgSrc(v.images[0]); if(src)return src;}
+      }
       const imgs=(d.images&&d.images.length)?d.images:((d.varieties&&d.varieties[0]&&d.varieties[0].images)||[]);
       if(imgs&&imgs.length){const src=_resolveImgSrc(imgs[0]); if(src)return src;}
     }
@@ -17999,6 +18028,10 @@ function _khImageForCode(code){
   for(const vo of (S.vendorOrders||[])){
     for(const d of (vo.designs||[])){
       if((d.code||'').trim()!==code)continue;
+      if(vName){
+        const v=(d.varieties||[]).find(vv=>(vv.name||'').trim()===vName);
+        if(v&&v.images&&v.images.length){const src=_resolveImgSrc(v.images[0]); if(src)return src;}
+      }
       if(d.images&&d.images.length){const src=_resolveImgSrc(d.images[0]); if(src)return src;}
     }
   }
@@ -18006,9 +18039,9 @@ function _khImageForCode(code){
 }
 function _khRows(){
   const hist=_khHistory();
-  return Object.keys(hist).map(code=>{
-    const list=hist[code], top=list[0];
-    return {code, vendor:top.vendor, at:top.at, count:list.filter(e=>e.vendor===top.vendor).length, totalEvents:list.length, events:list};
+  return Object.keys(hist).map(key=>{
+    const list=hist[key], top=list[0];
+    return {code:top.code, varietyName:top.varietyName, key, vendor:top.vendor, at:top.at, count:list.filter(e=>e.vendor===top.vendor).length, totalEvents:list.length, events:list};
   }).sort((a,b)=>b.at-a.at);
 }
 
@@ -18016,19 +18049,20 @@ function _khRows(){
 let _khSearch='';
 let _khOpenRow=null;
 function _khSetSearch(v){_khSearch=v; renderKarigarHistoryView(); const i=document.getElementById('kh-search'); if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);} }
-function _khToggleRow(code){ _khOpenRow=(_khOpenRow===code)?null:code; renderKarigarHistoryView(); }
+function _khToggleRow(key){ _khOpenRow=(_khOpenRow===key)?null:key; renderKarigarHistoryView(); }
 
 function renderKarigarHistoryView(){
   const el=document.getElementById('view-karigar'); if(!el)return;
   let rows=_khRows();
   const q=_khSearch.trim().toLowerCase();
-  if(q)rows=rows.filter(r=>(r.code+' '+btFamilyOf(r.code,'')+' '+r.vendor).toLowerCase().indexOf(q)>=0);
+  if(q)rows=rows.filter(r=>(r.code+' '+r.varietyName+' '+btFamilyOf(r.code,'')+' '+r.vendor).toLowerCase().indexOf(q)>=0);
 
   const trs=rows.map(r=>{
-    const img=_khImageForCode(r.code);
+    const img=_khImageForCode(r.code,r.varietyName);
     const fam=btFamilyOf(r.code,'');
-    const open=_khOpenRow===r.code;
-    const kEsc=esc(r.code).replace(/'/g,"\\'");
+    const open=_khOpenRow===r.key;
+    const kEsc=esc(r.key).replace(/'/g,"\\'");
+    const codeLabel=r.varietyName?(esc(r.code)+' <span style="color:#8A87A8;font-weight:600">· '+esc(r.varietyName)+'</span>'):esc(r.code);
     const logHtml=open?('<tr><td colspan="6" style="padding:0;background:#FBFAFF;border-top:1px dashed #E0DFFF">'
       +'<div style="padding:8px 14px">'
       +r.events.map(e=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid #F0EFFA;font-size:12px">'
@@ -18037,7 +18071,7 @@ function renderKarigarHistoryView(){
       +'</div></td></tr>'):'';
     return '<tr style="cursor:pointer;border-top:1px solid #EFEDFF" onclick="_khToggleRow(\''+kEsc+'\')">'
       +'<td style="padding:6px 8px">'+(img?'<img src="'+esc(img)+'" loading="lazy" style="width:200px;height:200px;border-radius:9px;object-fit:cover;border:1px solid #E0DFFF;cursor:zoom-in" onclick="event.stopPropagation();openLbDirect(\''+img.replace(/'/g,"\\'")+'\')">':'<div style="width:200px;height:200px;border-radius:9px;background:#F0EFFA"></div>')+'</td>'
-      +'<td style="padding:6px 8px;font-weight:700;color:#3C3489">'+esc(r.code)+(r.totalEvents>1?' <span style="color:#AAA;font-size:10px">'+(open?'▾':'▸')+' '+r.totalEvents+'</span>':'')+'</td>'
+      +'<td style="padding:6px 8px;font-weight:700;color:#3C3489">'+codeLabel+(r.totalEvents>1?' <span style="color:#AAA;font-size:10px">'+(open?'▾':'▸')+' '+r.totalEvents+'</span>':'')+'</td>'
       +'<td style="padding:6px 8px;color:#666;font-size:12px">'+esc(fam)+'</td>'
       +'<td style="padding:6px 8px;color:#4A148C;font-weight:600">'+esc(r.vendor)+'</td>'
       +'<td style="padding:6px 8px;color:#888;font-size:12px">'+(r.at?esc(fmtDate(new Date(r.at))):'—')+'</td>'
@@ -18067,11 +18101,11 @@ function _khExportExcel(){
   const rows=_khRows();
   if(!rows.length){showToast('Nothing to export yet — no karigar history','amber');return;}
   const cur=rows.map(r=>({
-    'Design Code':r.code, 'Family':btFamilyOf(r.code,''), 'Karigar (most recent)':r.vendor,
+    'Design Code':r.code, 'Variety':r.varietyName||'', 'Family':btFamilyOf(r.code,''), 'Karigar (most recent)':r.vendor,
     'Last Sent':r.at?fmtDate(new Date(r.at)):'', 'Times Made':r.count
   }));
   const log=_khBuildEvents().slice().sort((a,b)=>a.at-b.at).map(e=>({
-    'Date':e.at?fmtDate(new Date(e.at)):'', 'Design Code':e.code, 'Karigar':e.vendor, 'Order':e.coLabel
+    'Date':e.at?fmtDate(new Date(e.at)):'', 'Design Code':e.code, 'Variety':e.varietyName||'', 'Karigar':e.vendor, 'Order':e.coLabel
   }));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cur),'Current');
@@ -18175,7 +18209,7 @@ function btPoolCardHTML(G){
           G.finishes.map(f=>'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#EDEBFF;color:#534AB7">'+esc(f)+'</span>').join('')+
           (G.finishes.length>1&&_poolMode!=='plating'?'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#E8F5E9;color:#2E7D32" title="Same physical piece — the karigar makes them together">✓ '+G.finishes.length+' colours merged</span>':'')+
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#EDEBFF;color:#534AB7">'+G.clients.length+' customer'+(G.clients.length!==1?'s':'')+'</span>'+
-          (_poolMode==='karigar'?(()=>{const s=_khSuggestionFor(G.code);return s?'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#FFF8E1;color:#8A5A00;border:1px solid #FFD54F" title="Sent '+(s.at?esc(fmtDate(new Date(s.at))):'earlier')+' · made this code '+s.count+' time'+(s.count!==1?'s':'')+'">💡 Usually: '+esc(s.vendor)+'</span>':'';})():'')+
+          (_poolMode==='karigar'?(()=>{const s=_khSuggestionFor(G.code);return s?'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#FFF8E1;color:#8A5A00;border:1px solid #FFD54F" title="Sent '+(s.at?esc(fmtDate(new Date(s.at))):'earlier')+' · made this design '+s.count+' time'+(s.count!==1?'s':'')+'">💡 Usually: '+esc(s.vendor)+'</span>':'';})():'')+
         '</div>'+
       '</div>'+
       '<div style="text-align:right;flex-shrink:0">'+
