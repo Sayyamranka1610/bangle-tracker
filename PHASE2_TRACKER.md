@@ -15,7 +15,10 @@ This file is the **linking bridge** between the current app (Phase 1) and Phase 
 
 | # | Feature | Added to Phase 1 | Description | Phase 2 Status |
 |---|---------|-----------------|-------------|----------------|
-| — | *(none logged yet)* | — | — | — |
+| 1 | Multi-customer vendor-order rows (Pooling) — "👥 N customers" badge, who-modal to view/link/unlink customers with per-size quantities, keeps Karigar/Pipe/Plating dropdown in sync | 2026-09-01 | `_openVOWhoModal`/`_voWhoAdd`/`_voWhoUnlink`/`_setCOVendorField` in `bangle_v19.html`. A pooled vendor-order row now carries `vd.sources[]` (per-customer sizes). Fixed a real bug alongside this: pooling never filled the source rows' Karigar/Pipe/Plating field, leaving it red/empty despite a vendor order existing. | Not started |
+| 2 | Vendor order print: "Print for" choice (Vendor vs Internal use) — internal copy shows which customer(s) each pooled row is for, in a table reusing the same size columns (not a separate nested table) | 2026-09-01 | `_vprintForRowHtml`, `openVendorPrintWindow` in `bangle_v19.html`. Also fixed: multi-row photo galleries in print now break page-by-row instead of the whole remaining block jumping to the next page (Chrome print-engine grid-fragmentation limitation). | Not started |
+| 3 | Pooling Board photo click-to-zoom + larger thumbnail (52px→84px) | 2026-09-01 | Trivial UI fix in `btPoolCardHTML`. | Not started |
+| 4 | Karigar History — new tab, suggestion chip, Pooling "Usually:" tag | 2026-09-01 | `_khBuildEvents`/`_khHistory`/`_khSuggestionFor` in `bangle_v19.html` — derives per-design-code karigar history from real vendor-order + customer-order records (deduped by code+vendor+day), no new data entry. New "💡 Karigar History" tab (searchable table, photo, click-to-expand full log, Export to Excel with 2 sheets). Empty Karigar dropdown on a Designs & Varieties row shows a "💡 Last: <name>" click-to-fill chip (never auto-assigns silently). Pooling card shows an informational "💡 Usually: <name>" tag. | Not started |
 
 ---
 
