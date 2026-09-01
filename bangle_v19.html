@@ -959,6 +959,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <div class="main-tabs no-print">
     <div class="main-tab" data-view="dashboard" onclick="switchMain('dashboard')">📊 Dashboard</div>
     <div class="main-tab" data-view="pooling" onclick="switchMain('pooling')">🧲 Pooling</div>
+    <div class="main-tab" data-view="karigar" onclick="switchMain('karigar')">💡 Karigar History</div>
     <div class="main-tab active" data-view="orders" onclick="switchMain('orders')">📦 Customer Orders</div>
     <div class="main-tab" data-view="design" onclick="switchMain('design')">🎨 Design view</div>
     <div class="main-tab" data-view="analytics" onclick="switchMain('analytics')">📊 Analytics</div>
@@ -995,6 +996,7 @@ body.bt-readonly select { pointer-events:none; background:#f5f5f5!important; col
   <div id="view-assign" style="display:none"></div>
   <div id="view-dashboard" style="display:none"></div>
   <div id="view-pooling" style="display:none"></div>
+  <div id="view-karigar" style="display:none"></div>
   <div id="empty-msg" class="empty-state" style="display:none">
     <div style="font-size:32px;margin-bottom:8px">○</div>
     <div style="font-size:14px;font-weight:600;color:#888">No orders yet</div>
@@ -4152,10 +4154,11 @@ function switchMain(view){
   document.getElementById('view-assign').style.display=view==='assign'?'':'none';
   document.getElementById('view-dashboard').style.display=view==='dashboard'?'':'none';
   document.getElementById('view-pooling').style.display=view==='pooling'?'':'none';
-  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders'||view==='dispatch'||view==='dashboard'||view==='pooling')?'none':'';
+  document.getElementById('view-karigar').style.display=view==='karigar'?'':'none';
+  document.getElementById('filter-bar').style.display=(view==='analytics'||view==='inventory'||view==='vendor'||view==='masters'||view==='library'||view==='orders'||view==='dispatch'||view==='dashboard'||view==='pooling'||view==='karigar')?'none':'';
   // Show/hide the "+ New order" button (only relevant on orders view)
   const nb=document.getElementById('btn-new-order');
-  if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library'||view==='dispatch'||view==='dashboard'||view==='pooling')?'none':'';
+  if(nb)nb.style.display=(view==='vendor'||view==='masters'||view==='library'||view==='dispatch'||view==='dashboard'||view==='pooling'||view==='karigar')?'none':'';
   if(view==='orders')renderOrdersView();
   if(view==='analytics')renderAnalytics();
   if(view==='inventory')renderInventory();
@@ -4166,6 +4169,7 @@ function switchMain(view){
   if(view==='assign')renderAssign();
   if(view==='dashboard')renderDashboardView();
   if(view==='pooling')renderPoolingView();
+  if(view==='karigar')renderKarigarHistoryView();
   scheduleAutosave();
 }
 function render(){
@@ -4173,6 +4177,11 @@ function render(){
   // This runs on every render so adding/editing an order's start date always
   // immediately reflects the correct ORD-XXX number everywhere in the UI.
   renumberOrders();
+  // Karigar-history cache (see _khHistory) is rebuilt at most once per render
+  // pass, not once per row — invalidate it here so every consumer this pass
+  // (suggestion chips, Pooling tags, the History tab) sees the same, current
+  // data without each one re-scanning every order and vendor order itself.
+  _khInvalidate();
   // ── PRESERVE FOCUSED INPUT (critical for mobile typing) ────────────────────
   // render() rebuilds large chunks of DOM. If the user is mid-type in an
   // input, the rebuilt DOM gets the OLD value from state and the user's
@@ -4213,11 +4222,12 @@ function render(){
   else if(S.mainView==='assign')renderAssign();
   else if(S.mainView==='dashboard')renderDashboardView();
   else if(S.mainView==='pooling')renderPoolingView();
+  else if(S.mainView==='karigar')renderKarigarHistoryView();
   else renderAnalytics();
   scheduleAutosave();
   // Sync view div visibility + tab highlights with S.mainView.
   {const _mv=S.mainView||'orders';
-  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign','dashboard','pooling'];
+  const _vn=['orders','design','analytics','inventory','vendor','masters','library','dispatch','assign','dashboard','pooling','karigar'];
   _vn.forEach(v=>{const el=document.getElementById('view-'+v);if(el)el.style.display=_mv===v?'':'none';});
   const _fb=document.getElementById('filter-bar');if(_fb)_fb.style.display=_mv==='design'?'':'none';
   document.querySelectorAll('.main-tab').forEach(t=>{t.classList.toggle('active',t.dataset.view===_mv);});}
@@ -5147,7 +5157,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
   // Replaces the old sub-row pattern — no more extra row below each variety.
   // holder = d (flat) or v (variety). vri = -1 for flat, ≥0 for variety.
   // Closes over: oi, S, esc from buildDesignsGroupTable scope.
-  const _coVendorCells=(holder,di,vri)=>{
+  const _coVendorCells=(holder,di,vri,code)=>{
     // ── Pipe ──────────────────────────────────────────────────────────────────
     // Deduplicate pipe vendors by name — show each vendor once, not once per order
     const _pSeen=new Set();
@@ -5185,13 +5195,22 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
     const kBdr=kVal?(kVal==='__own__'?'border:1.5px solid #AFA9EC;background:#f7f6ff;color:#534AB7':'border:1.5px solid #CE93D8;background:#F6EEFF;color:#4A148C'):'border:1.5px solid #F5A0A0;background:#FFF0EE;color:#C0392B';
     const kChange=vri>=0?'upVarietyVendor('+oi+','+di+','+vri+',this.value)':'upDesignVendor('+oi+','+di+',this.value)';
     const karigarTdBg=kRcvd?'background:#E8F5E9;':'';
+    // Suggestion chip: only when this row has no karigar yet AND the design
+    // code has real history to suggest from. One click fills the dropdown —
+    // exactly the same call the dropdown's own onchange would make — nothing
+    // is ever assigned without the owner clicking it themselves.
+    const kSugg=(!kVal&&code)?_khSuggestionFor(code):null;
+    const kFillCall=kSugg?(vri>=0
+      ?'upVarietyVendor('+oi+','+di+','+vri+',\''+esc(kSugg.vendor).replace(/'/g,"\\'")+'\')'
+      :'upDesignVendor('+oi+','+di+',\''+esc(kSugg.vendor).replace(/'/g,"\\'")+'\')'):'';
+    const kSuggHtml=kSugg?'<div class="no-print" onclick="'+kFillCall+'" title="Sent '+(kSugg.at?esc(fmtDate(new Date(kSugg.at))):'earlier')+' · made this code '+kSugg.count+' time'+(kSugg.count!==1?'s':'')+' — click to fill in" style="margin-top:3px;font-size:9px;font-weight:600;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:20px;padding:2px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">💡 Last: '+esc(kSugg.vendor)+'</div>':'';
     const karigarTd='<td class="no-print" style="padding:3px 4px;min-width:105px;'+karigarTdBg+'">'
       +'<div style="font-size:8px;font-weight:800;color:#4A148C;letter-spacing:.04em;margin-bottom:2px">Karigar</div>'
       +'<div style="display:flex;align-items:center;gap:3px">'
       +'<select style="font-size:9.5px;padding:2px 3px;border-radius:5px;'+kBdr+';flex:1;min-width:0" onchange="'+kChange+'">'
       +'<option value="">— karigar —</option>'+kOpts+'</select>'
       +'<button class="co-recv-btn" style="'+kTick+';width:22px;height:22px;min-width:22px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;border-style:solid;display:inline-flex;align-items:center;justify-content:center" onclick="toggleCOStageRcvd('+oi+','+di+','+vri+',\'karigar\')" title="'+(kRcvd?'Unmark karigar received':'Mark karigar received')+'">✓</button>'
-      +'</div></td>';
+      +'</div>'+kSuggHtml+'</td>';
     // ── Plating ───────────────────────────────────────────────────────────────
     // Vendor names from vocabulary (same pattern as karigar), backward-compat with old platingVoId
     const platVendors=vendorsOfType('plating');
@@ -5287,7 +5306,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +' onchange="upDesignUnit('+oi+','+di+',this.value)">'+unitOpts+'</select></td>'
         +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(flatRateStored||'')+'" onchange="upDesignRate('+oi+','+di+',this.value)"></td>'
         +btNoteCell(oi,di,-1,_btFlatNote(d))
-        +_coVendorCells(d,di,-1)
+        +_coVendorCells(d,di,-1,d.code)
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Dispatch — auto-ticks all stages">✓</button>'
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
@@ -5370,7 +5389,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
             +' onchange="upVarietyUnit('+oi+','+di+','+vi+',this.value)">'+unitOpts2+'</select></td>'
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+(v.rate||'')+'" onchange="upVarietyRate('+oi+','+di+','+vi+',this.value)"></td>'
           +btNoteCell(oi,di,vi,v.note)
-          +_coVendorCells(v,di,vi)
+          +_coVendorCells(v,di,vi,d.code)
           +'<td class="no-print"><div style="display:flex;gap:3px">'
             +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as dispatched (auto-ticks stages)':'Mark variety dispatched')+'">✓</button>'
             +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
@@ -17906,6 +17925,161 @@ function btRowsOfOrder(order){
 function btAllRows(){
   return (S.orders||[]).filter(o=>!o.archived).reduce((a,o)=>a.concat(btRowsOfOrder(o)),[]);
 }
+
+/* ── KARIGAR HISTORY ENGINE ──────────────────────────────────────────────────
+   "Which design has been given to which karigar before?" — built entirely
+   from records the app already has, not a separate thing to maintain:
+     1. Every karigar-type vendor order that contains the code — the real
+        "this was actually sent out" record (vo.vendor, vo.startDate).
+     2. Every customer order row that ever had a Karigar picked for the code
+        — a fallback for codes assigned by hand but never sent via a formal
+        vendor order.
+   A CO assignment and its linked vendor order are usually the SAME real
+   shipment, not two — so the same code+vendor+day is only ever counted once,
+   whichever source is seen first.
+   Feeds three places: the suggestion chip on an empty Karigar box, the
+   "Usually:" tag on a Pooling card, and the Karigar History tab. One engine,
+   rebuilt at most once per render() pass (see _khInvalidate call in render). */
+function _khBuildEvents(){
+  const events=[];
+  const seen=new Set();
+  const push=(code,vendor,at,coLabel)=>{
+    code=(code||'').trim(); vendor=(vendor||'').trim();
+    if(!code||!vendor||vendor==='__own__')return;
+    const day=at?new Date(at).toISOString().slice(0,10):'unknown';
+    const key=code+'|'+vendor+'|'+day;
+    if(seen.has(key))return; seen.add(key);
+    events.push({code,vendor,at:at||0,coLabel:coLabel||''});
+  };
+  (S.vendorOrders||[]).forEach(vo=>{
+    if((vo.type||'karigar')!=='karigar'||!vo.vendor)return;
+    const at=vo.startDate?(Date.parse(vo.startDate)||0):0;
+    (vo.designs||[]).forEach(d=>push(d.code,vo.vendor,at,vo.orderId));
+  });
+  (S.orders||[]).forEach(o=>{
+    (o.designs||[]).forEach(d=>{
+      if(d.assignedVendor)push(d.code,d.assignedVendor,d.assignedVendorAt||0,o.orderId);
+      (d.varieties||[]).forEach(v=>{
+        if(v.assignedVendor)push(d.code,v.assignedVendor,v.assignedVendorAt||0,o.orderId);
+      });
+    });
+  });
+  return events;
+}
+let _khCache=null;
+function _khInvalidate(){ _khCache=null; }
+function _khHistory(){
+  if(_khCache)return _khCache;
+  const byCode={};
+  _khBuildEvents().forEach(e=>{ (byCode[e.code]=byCode[e.code]||[]).push(e); });
+  Object.values(byCode).forEach(list=>list.sort((a,b)=>b.at-a.at));
+  _khCache=byCode;
+  return byCode;
+}
+// Top pick for one code — most RECENT vendor wins (not most frequent), since
+// who currently makes a design can change over time. null when there's no
+// history at all for that code yet.
+function _khSuggestionFor(code){
+  const list=_khHistory()[(code||'').trim()];
+  if(!list||!list.length)return null;
+  const top=list[0];
+  return {vendor:top.vendor, at:top.at, count:list.filter(e=>e.vendor===top.vendor).length};
+}
+// First available photo for a code — checks customer orders (compressed
+// thumbnail, cheap) then vendor orders. Empty string if nothing has one.
+function _khImageForCode(code){
+  code=(code||'').trim(); if(!code)return'';
+  for(const o of (S.orders||[])){
+    for(const d of (o.designs||[])){
+      if((d.code||'').trim()!==code)continue;
+      const imgs=(d.images&&d.images.length)?d.images:((d.varieties&&d.varieties[0]&&d.varieties[0].images)||[]);
+      if(imgs&&imgs.length){const src=_resolveImgSrc(imgs[0]); if(src)return src;}
+    }
+  }
+  for(const vo of (S.vendorOrders||[])){
+    for(const d of (vo.designs||[])){
+      if((d.code||'').trim()!==code)continue;
+      if(d.images&&d.images.length){const src=_resolveImgSrc(d.images[0]); if(src)return src;}
+    }
+  }
+  return'';
+}
+function _khRows(){
+  const hist=_khHistory();
+  return Object.keys(hist).map(code=>{
+    const list=hist[code], top=list[0];
+    return {code, vendor:top.vendor, at:top.at, count:list.filter(e=>e.vendor===top.vendor).length, totalEvents:list.length, events:list};
+  }).sort((a,b)=>b.at-a.at);
+}
+
+/* ── KARIGAR HISTORY TAB ─────────────────────────────────────────────────── */
+let _khSearch='';
+let _khOpenRow=null;
+function _khSetSearch(v){_khSearch=v; renderKarigarHistoryView(); const i=document.getElementById('kh-search'); if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);} }
+function _khToggleRow(code){ _khOpenRow=(_khOpenRow===code)?null:code; renderKarigarHistoryView(); }
+
+function renderKarigarHistoryView(){
+  const el=document.getElementById('view-karigar'); if(!el)return;
+  let rows=_khRows();
+  const q=_khSearch.trim().toLowerCase();
+  if(q)rows=rows.filter(r=>(r.code+' '+btFamilyOf(r.code,'')+' '+r.vendor).toLowerCase().indexOf(q)>=0);
+
+  const trs=rows.map(r=>{
+    const img=_khImageForCode(r.code);
+    const fam=btFamilyOf(r.code,'');
+    const open=_khOpenRow===r.code;
+    const kEsc=esc(r.code).replace(/'/g,"\\'");
+    const logHtml=open?('<tr><td colspan="6" style="padding:0;background:#FBFAFF;border-top:1px dashed #E0DFFF">'
+      +'<div style="padding:8px 14px">'
+      +r.events.map(e=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid #F0EFFA;font-size:12px">'
+        +'<div><b style="color:#3C3489">'+esc(e.vendor)+'</b> <span style="color:#999">· '+esc(e.coLabel||'')+'</span></div>'
+        +'<b style="color:#8A87A8">'+(e.at?esc(fmtDate(new Date(e.at))):'—')+'</b></div>').join('')
+      +'</div></td></tr>'):'';
+    return '<tr style="cursor:pointer;border-top:1px solid #EFEDFF" onclick="_khToggleRow(\''+kEsc+'\')">'
+      +'<td style="padding:6px 8px">'+(img?'<img src="'+esc(img)+'" style="width:40px;height:40px;border-radius:6px;object-fit:cover;border:1px solid #E0DFFF">':'<div style="width:40px;height:40px;border-radius:6px;background:#F0EFFA"></div>')+'</td>'
+      +'<td style="padding:6px 8px;font-weight:700;color:#3C3489">'+esc(r.code)+(r.totalEvents>1?' <span style="color:#AAA;font-size:10px">'+(open?'▾':'▸')+' '+r.totalEvents+'</span>':'')+'</td>'
+      +'<td style="padding:6px 8px;color:#666;font-size:12px">'+esc(fam)+'</td>'
+      +'<td style="padding:6px 8px;color:#4A148C;font-weight:600">'+esc(r.vendor)+'</td>'
+      +'<td style="padding:6px 8px;color:#888;font-size:12px">'+(r.at?esc(fmtDate(new Date(r.at))):'—')+'</td>'
+      +'<td style="padding:6px 8px;text-align:center;color:#534AB7;font-weight:700">'+r.count+'</td>'
+    +'</tr>'+logHtml;
+  }).join('');
+
+  el.innerHTML='<div style="max-width:900px">'
+    +'<h2 style="font-size:17px;color:#3C3489;margin:0 0 4px">💡 Karigar History</h2>'
+    +'<p style="font-size:12px;color:#8A87A8;margin:0 0 12px;line-height:1.6">Which design has gone to which karigar, built automatically from your own orders — no separate data entry needed. Click a row to see its full history.</p>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">'
+      +'<input id="kh-search" value="'+esc(_khSearch)+'" placeholder="Search code, family, or karigar name…" oninput="_khSetSearch(this.value)" style="flex:1;min-width:220px;padding:8px 11px;border:1.5px solid #E0DFFF;border-radius:9px;font-size:13px">'
+      +'<button onclick="_khExportExcel()" style="background:#534AB7;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:700;white-space:nowrap">📥 Export to Excel</button>'
+    +'</div>'
+    +(rows.length?'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid #E0DFFF;border-radius:10px;overflow:hidden">'
+      +'<thead><tr style="background:#F7F6FF;color:#8A87A8;text-align:left">'
+        +'<th style="padding:6px 8px">Photo</th><th style="padding:6px 8px">Code</th><th style="padding:6px 8px">Family</th>'
+        +'<th style="padding:6px 8px">Karigar</th><th style="padding:6px 8px">Last Sent</th><th style="padding:6px 8px;text-align:center">Times</th>'
+      +'</tr></thead><tbody>'+trs+'</tbody></table></div>'
+      +'<div style="font-size:11px;color:#AAA;margin-top:8px">'+rows.length+' design'+(rows.length!==1?'s':'')+' with a karigar history</div>'
+    :'<div style="border:1.5px solid #E0DFFF;border-radius:12px;padding:26px;text-align:center;color:#8A87A8;font-size:13px">'
+      +(q?'No match for "'+esc(_khSearch)+'"':'No karigar has been assigned to any design yet — this fills in automatically as you assign karigars.')+'</div>')
+  +'</div>';
+}
+function _khExportExcel(){
+  if(typeof XLSX==='undefined'){showToast('Export library still loading — try again in a moment','amber');return;}
+  const rows=_khRows();
+  if(!rows.length){showToast('Nothing to export yet — no karigar history','amber');return;}
+  const cur=rows.map(r=>({
+    'Design Code':r.code, 'Family':btFamilyOf(r.code,''), 'Karigar (most recent)':r.vendor,
+    'Last Sent':r.at?fmtDate(new Date(r.at)):'', 'Times Made':r.count
+  }));
+  const log=_khBuildEvents().slice().sort((a,b)=>a.at-b.at).map(e=>({
+    'Date':e.at?fmtDate(new Date(e.at)):'', 'Design Code':e.code, 'Karigar':e.vendor, 'Order':e.coLabel
+  }));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cur),'Current');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(log),'Full History');
+  XLSX.writeFile(wb,'Karigar_History_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  audit('Export','Karigar history ('+cur.length+' designs)');
+}
+
 const BT_SIZE_ORDER=['2/2','2/4','2/6','2/8','2/10','2/12','2/14','2/16'];
 function btSortSizes(keys){
   return keys.slice().sort((a,b)=>{
@@ -18001,6 +18175,7 @@ function btPoolCardHTML(G){
           G.finishes.map(f=>'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#EDEBFF;color:#534AB7">'+esc(f)+'</span>').join('')+
           (G.finishes.length>1&&_poolMode!=='plating'?'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#E8F5E9;color:#2E7D32" title="Same physical piece — the karigar makes them together">✓ '+G.finishes.length+' colours merged</span>':'')+
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#EDEBFF;color:#534AB7">'+G.clients.length+' customer'+(G.clients.length!==1?'s':'')+'</span>'+
+          (_poolMode==='karigar'?(()=>{const s=_khSuggestionFor(G.code);return s?'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#FFF8E1;color:#8A5A00;border:1px solid #FFD54F" title="Sent '+(s.at?esc(fmtDate(new Date(s.at))):'earlier')+' · made this code '+s.count+' time'+(s.count!==1?'s':'')+'">💡 Usually: '+esc(s.vendor)+'</span>':'';})():'')+
         '</div>'+
       '</div>'+
       '<div style="text-align:right;flex-shrink:0">'+
