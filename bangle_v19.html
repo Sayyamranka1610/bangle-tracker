@@ -18036,7 +18036,7 @@ function renderKarigarHistoryView(){
         +'<b style="color:#8A87A8">'+(e.at?esc(fmtDate(new Date(e.at))):'—')+'</b></div>').join('')
       +'</div></td></tr>'):'';
     return '<tr style="cursor:pointer;border-top:1px solid #EFEDFF" onclick="_khToggleRow(\''+kEsc+'\')">'
-      +'<td style="padding:6px 8px">'+(img?'<img src="'+esc(img)+'" style="width:40px;height:40px;border-radius:6px;object-fit:cover;border:1px solid #E0DFFF">':'<div style="width:40px;height:40px;border-radius:6px;background:#F0EFFA"></div>')+'</td>'
+      +'<td style="padding:6px 8px">'+(img?'<img src="'+esc(img)+'" loading="lazy" style="width:200px;height:200px;border-radius:9px;object-fit:cover;border:1px solid #E0DFFF;cursor:zoom-in" onclick="event.stopPropagation();openLbDirect(\''+img.replace(/'/g,"\\'")+'\')">':'<div style="width:200px;height:200px;border-radius:9px;background:#F0EFFA"></div>')+'</td>'
       +'<td style="padding:6px 8px;font-weight:700;color:#3C3489">'+esc(r.code)+(r.totalEvents>1?' <span style="color:#AAA;font-size:10px">'+(open?'▾':'▸')+' '+r.totalEvents+'</span>':'')+'</td>'
       +'<td style="padding:6px 8px;color:#666;font-size:12px">'+esc(fam)+'</td>'
       +'<td style="padding:6px 8px;color:#4A148C;font-weight:600">'+esc(r.vendor)+'</td>'
