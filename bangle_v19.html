@@ -18239,6 +18239,24 @@ function btPoolSetMake(key,size,val){
   const again=document.querySelector('[data-pmk="'+key+'|'+size+'"]');
   if(again){try{again.focus();}catch(e2){}}
 }
+// Tab/Enter between MAKE cells in the same row without letting the normal
+// blur→re-render happen mid-keystroke (that's what was eating the first Tab
+// press — see the comment on makeCell). Commits the value silently, then
+// moves focus itself.
+function btPoolMakeTab(e,el){
+  if(e.key!=='Tab'&&e.key!=='Enter')return;
+  e.preventDefault();
+  el._skipBlur=true; el._dirty=false;
+  const [key,size]=el.dataset.pmk.split('|');
+  btPoolSetMakeSilent(key,size,el.value);
+  const tr=el.closest('tr');
+  const allInRow=tr?Array.from(tr.querySelectorAll('input.pool-make-inp')):[];
+  const idx=allInRow.indexOf(el);
+  const moveTo=inp=>{inp._skipBlur=false;inp.focus();inp.select();};
+  const target=e.shiftKey?allInRow[idx-1]:allInRow[idx+1];
+  if(target)moveTo(target);
+  setTimeout(()=>{el._skipBlur=false;},50);
+}
 // A size nobody has ordered yet doesn't get a column at all (owner-reported:
 // wanted to build stock under a size with zero customer demand, e.g. 2/10,
 // and there was no way to even open that column). Pinning a size here just
@@ -18330,10 +18348,16 @@ function btPoolCardHTML(G){
   const makeCell=sz=>{
     const ord=Number(G.ordered[sz])||0;
     const val=m[sz]!==undefined?m[sz]:'';
-    return '<td style="padding:3px;text-align:center"><input type="number" min="0" data-pmk="'+K+'|'+esc(sz)+'" value="'+val+'" placeholder="'+ord+'" '+
+    // onkeydown handles Tab itself (see btPoolMakeTab) — otherwise Tab first
+    // fires blur, which re-renders the whole board and destroys the input
+    // the browser was mid-flight to Tab into, so the first press lands on
+    // nothing and you need a second press (owner-reported). Same fix
+    // already used for vendor-order size inputs elsewhere in the app.
+    return '<td style="padding:3px;text-align:center"><input type="number" min="0" class="pool-make-inp" data-pmk="'+K+'|'+esc(sz)+'" value="'+val+'" placeholder="'+ord+'" '+
       'style="width:52px;text-align:center;padding:3px;border:1.5px solid #AFA9EC;border-radius:5px;font-size:12px;font-weight:700;color:#3C3489;background:#F7F6FF" '+
       'oninput="btPoolSetMakeSilent(this.dataset.pmk.split(\'|\')[0],this.dataset.pmk.split(\'|\')[1],this.value);this._dirty=true" '+
-      'onblur="if(this._dirty){this._dirty=false;btPoolSetMake(this.dataset.pmk.split(\'|\')[0],this.dataset.pmk.split(\'|\')[1],this.value)}"></td>';
+      'onfocus="this.select()" onkeydown="btPoolMakeTab(event,this)" tabindex="0" '+
+      'onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;btPoolSetMake(this.dataset.pmk.split(\'|\')[0],this.dataset.pmk.split(\'|\')[1],this.value)}"></td>';
   };
   return '<div style="border:1.5px solid '+(sel?'#534AB7':'#E0DFFF')+';border-radius:12px;margin-bottom:10px;overflow:hidden;background:'+(sel?'#F7F6FF':'#fff')+'">'+
     '<div style="display:flex;gap:10px;padding:10px;align-items:flex-start;border-bottom:1px solid #EFEDFF">'+
