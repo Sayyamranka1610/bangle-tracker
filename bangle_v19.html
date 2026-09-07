@@ -18158,6 +18158,14 @@ function btPoolable(row){
   if(h.importedToVOId)return false;
   return _coStage(h)==='notStarted';
 }
+// A customer's row can be temporarily left OUT of the batch about to be
+// created (owner-reported need: "I don't want to make this for Vijay Bhai
+// this time") without touching their order — they just stay poolable for
+// next time. Keyed by row identity, not group, so it survives a re-render;
+// transient like _poolExtras/_poolSel — cleared once a batch is created.
+let _poolExcluded={};
+function _poolRowKey(r){ return r.orderId+'|'+r.designId+'|'+(r.varietyId||''); }
+function btPoolToggleRow(rowKey){ if(_poolExcluded[rowKey])delete _poolExcluded[rowKey]; else _poolExcluded[rowKey]=true; renderPoolingView(); }
 function btPoolGroups(){
   const g={};
   (S.orders||[]).filter(o=>!o.archived).forEach(o=>{
@@ -18170,9 +18178,16 @@ function btPoolGroups(){
       if(r.name&&G.names.indexOf(r.name)<0)G.names.push(r.name);
       if(r.finish&&r.finish!=='—'&&G.finishes.indexOf(r.finish)<0)G.finishes.push(r.finish);
       if(!G.image&&r.images[0]&&r.images[0].data)G.image=r.images[0].data;
-      if(G.clients.indexOf(r.client)<0)G.clients.push(r.client);
-      Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0;if(n>0)G.ordered[sz]=(G.ordered[sz]||0)+n;});
-      G.rows.push(r);
+      const rowKey=_poolRowKey(r);
+      const excluded=!!_poolExcluded[rowKey];
+      // Ordered totals and the "N customers" count reflect who is actually
+      // still IN this batch — an excluded customer's pieces don't count
+      // toward what's about to be made or sent.
+      if(!excluded){
+        if(G.clients.indexOf(r.client)<0)G.clients.push(r.client);
+        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0;if(n>0)G.ordered[sz]=(G.ordered[sz]||0)+n;});
+      }
+      G.rows.push(Object.assign({},r,{rowKey:rowKey,excluded:excluded}));
     });
   });
   const list=Object.keys(g).map(k=>{g[k].total=btSum(g[k].ordered);return g[k];});
@@ -18188,12 +18203,75 @@ function btMakeQty(G){
     const n=Number(src[sz])||0; if(n>0)out[sz]=(out[sz]||0)+n;}));
   return out;
 }
+// Runs on every keystroke — updates the number with NO re-render, so the
+// browser's own cursor position is never disturbed while typing.
+function btPoolSetExtraSilent(key,kind,size,val){
+  const e=btExtras(key),n=Number(val);
+  if(!String(val).trim()||!isFinite(n)||n<=0)delete e[kind][size]; else e[kind][size]=n;
+}
+// Runs once, on blur — same update, then a real re-render so MAKE/TOTAL and
+// the size-column set (in case this was the value that added/removed a
+// column) catch up.
 function btPoolSetExtra(key,kind,size,val){
   const e=btExtras(key),n=Number(val);
   if(!String(val).trim()||!isFinite(n)||n<=0)delete e[kind][size]; else e[kind][size]=n;
   renderPoolingView();
   const again=document.querySelector('[data-pk="'+key+'|'+kind+'|'+size+'"]');
   if(again){try{again.focus();}catch(e2){}}
+}
+// A size nobody has ordered yet doesn't get a column at all (owner-reported:
+// wanted to build "Extra for stock" under a size with zero customer demand,
+// e.g. 2/10, and there was no way to even open that column). Pinning a size
+// here just makes the column appear with 0 ordered, ready for Buffer/Stock
+// input — same lifecycle as Buffer/Stock itself: not persisted, cleared on
+// reload or once a vendor order is created from this batch.
+let _poolExtraSizes={};
+function btPoolOpenAddSizeModal(key){
+  const old=document.getElementById('_poolsz-modal');if(old)old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='_poolsz-modal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:10010;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px';
+  wrap.innerHTML=`
+  <div style="background:#fff;border-radius:14px;padding:22px 24px;width:min(360px,96vw);display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:700;color:#534AB7">➕ Add Size Column</div>
+    <div style="font-size:12px;color:#555;line-height:1.7">
+      Type the size you want to add — e.g. <strong>2/10</strong>. It'll show up with 0 ordered, so you can put a number straight into Buffer or Extra for stock.
+    </div>
+    <input id="_poolsz-inp" placeholder="e.g. 2/10" autocomplete="off"
+      style="padding:10px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:15px;width:100%;box-sizing:border-box;outline:none"
+      oninput="document.getElementById('_poolsz-err').textContent=''"
+      onkeydown="if(event.key==='Enter')_doPoolAddSize('${esc(key).replace(/'/g,"\\'")}')">
+    <div id="_poolsz-err" style="font-size:11px;color:#C0392B;min-height:16px;margin-top:-8px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('_poolsz-modal').remove()"
+        style="padding:9px 20px;border:1.5px solid #ccc;border-radius:8px;font-size:13px;cursor:pointer;background:#f5f4f2;font-weight:600;color:#333">Cancel</button>
+      <button onclick="_doPoolAddSize('${esc(key).replace(/'/g,"\\'")}')"
+        style="padding:9px 20px;border:none;border-radius:8px;font-size:13px;cursor:pointer;background:#534AB7;color:#fff;font-weight:700">Add Column</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  setTimeout(()=>{const i=document.getElementById('_poolsz-inp');if(i)i.focus();},60);
+}
+function _doPoolAddSize(key){
+  const inp=document.getElementById('_poolsz-inp');
+  const err=document.getElementById('_poolsz-err');
+  if(!inp)return;
+  const sz=inp.value.trim();
+  if(!sz){if(err)err.textContent='Please enter a size (e.g. 2/10).';return;}
+  const groups=btPoolGroups(), G=groups.find(g=>g.key===key);
+  const e=btExtras(key);
+  const existing=new Set(Object.keys(Object.assign({},G?G.ordered:{},e.buffer,e.stock,_poolExtraSizes[key]||{})));
+  if(existing.has(sz)){if(err)err.textContent=`Size "${sz}" is already shown on this card.`;inp.select();return;}
+  if(!_poolExtraSizes[key])_poolExtraSizes[key]={};
+  _poolExtraSizes[key][sz]=true;
+  document.getElementById('_poolsz-modal').remove();
+  renderPoolingView();
+}
+function btPoolRemoveExtraSize(key,size){
+  if(_poolExtraSizes[key])delete _poolExtraSizes[key][size];
+  const e=btExtras(key);
+  delete e.buffer[size]; delete e.stock[size];
+  renderPoolingView();
 }
 function btPoolToggle(key){ if(_poolSel[key])delete _poolSel[key]; else _poolSel[key]=true; renderPoolingView(); }
 function btPoolSetMode(m){ _poolMode=m; _poolSel={}; renderPoolingView(); }
@@ -18210,13 +18288,22 @@ function btPoolEditFamily(code){
 
 function btPoolCardHTML(G){
   const e=btExtras(G.key),make=btMakeQty(G);
-  const sizes=btSortSizes(Object.keys(Object.assign({},G.ordered,e.buffer,e.stock)));
+  const extraSz=_poolExtraSizes[G.key]||{};
+  const sizes=btSortSizes(Object.keys(Object.assign({},G.ordered,e.buffer,e.stock,extraSz)));
   const makeTot=btSum(make),bufTot=btSum(e.buffer),stkTot=btSum(e.stock);
   const sel=!!_poolSel[G.key];
   const K=esc(G.key);
+  // oninput calling a full re-render on every keystroke was the actual cause
+  // of the owner-reported "typing 16 gives 61" bug: the input got destroyed
+  // and recreated after each character, and the refocus afterward landed
+  // the cursor back at position 0, not where it was — so each new digit was
+  // inserted BEFORE the one just typed. Fixed the same way the vendor-order
+  // size inputs already handle this elsewhere: update the number silently
+  // (no re-render) while typing, only commit + re-render on blur.
   const cell=(sz,kind)=>'<td style="padding:3px;text-align:center"><input type="number" min="0" data-pk="'+K+'|'+kind+'|'+esc(sz)+'" value="'+
     (e[kind][sz]!==undefined?e[kind][sz]:'')+'" placeholder="—" style="width:46px;text-align:center;padding:3px;border:1px solid #ddd;border-radius:5px;font-size:12px" '+
-    'oninput="btPoolSetExtra(this.dataset.pk.split(\'|\')[0],\''+kind+'\',\''+esc(sz)+'\',this.value)"></td>';
+    'oninput="btPoolSetExtraSilent(this.dataset.pk.split(\'|\')[0],\''+kind+'\',\''+esc(sz)+'\',this.value);this._dirty=true" '+
+    'onblur="if(this._dirty){this._dirty=false;btPoolSetExtra(this.dataset.pk.split(\'|\')[0],\''+kind+'\',\''+esc(sz)+'\',this.value)}"></td>';
   return '<div style="border:1.5px solid '+(sel?'#534AB7':'#E0DFFF')+';border-radius:12px;margin-bottom:10px;overflow:hidden;background:'+(sel?'#F7F6FF':'#fff')+'">'+
     '<div style="display:flex;gap:10px;padding:10px;align-items:flex-start;border-bottom:1px solid #EFEDFF">'+
       '<input type="checkbox" '+(sel?'checked':'')+' onchange="btPoolToggle(this.dataset.k)" data-k="'+K+'" style="margin-top:4px;width:17px;height:17px;accent-color:#534AB7">'+
@@ -18238,7 +18325,8 @@ function btPoolCardHTML(G){
     '</div>'+
     '<div style="overflow-x:auto"><table style="width:100%;min-width:420px;border-collapse:collapse;font-size:12px">'+
       '<tr style="background:#FCFBFF"><th style="text-align:left;padding:5px 10px;font-size:10px;color:#8A87A8;font-weight:700">SIZE</th>'+
-        sizes.map(s=>'<th style="padding:5px;font-size:10px;color:#8A87A8;font-weight:700">'+esc(s)+'</th>').join('')+
+        sizes.map(s=>'<th style="padding:5px;font-size:10px;color:#8A87A8;font-weight:700;white-space:nowrap">'+esc(s)+
+          (extraSz[s]?' <span onclick="btPoolRemoveExtraSize(\''+K+'\',\''+esc(s).replace(/'/g,"\\'")+'\')" title="Remove this size column" style="cursor:pointer;color:#C0392B;font-weight:800">✕</span>':'')+'</th>').join('')+
         '<th style="padding:5px 10px;font-size:10px;color:#534AB7;font-weight:700;border-left:1px solid #E0DFFF">TOTAL</th></tr>'+
       '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">Ordered by customers</td>'+
         sizes.map(s=>'<td style="text-align:center;padding:5px">'+(G.ordered[s]||0)+'</td>').join('')+
@@ -18256,14 +18344,23 @@ function btPoolCardHTML(G){
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#FCFBFF;border-top:1px solid #EFEDFF;flex-wrap:wrap">'+
       '<span><a href="#" data-k="'+K+'" onclick="btPoolToggleWho(this.dataset.k);return false" style="font-size:12px;font-weight:700;color:#534AB7;text-decoration:none">'+
         (_poolOpenWho[G.key]?'▾':'▸')+' Who ordered this ('+G.rows.length+')</a>'+
-        ' &nbsp;<a href="#" data-c="'+esc(G.code)+'" onclick="btPoolEditFamily(this.dataset.c);return false" style="font-size:11px;color:#8A87A8;text-decoration:none" title="Change which family this code belongs to">✎ '+esc(G.family)+'</a></span>'+
+        ' &nbsp;<a href="#" data-c="'+esc(G.code)+'" onclick="btPoolEditFamily(this.dataset.c);return false" style="font-size:11px;color:#8A87A8;text-decoration:none" title="Change which family this code belongs to">✎ '+esc(G.family)+'</a>'+
+        ' &nbsp;<a href="#" data-k="'+K+'" onclick="btPoolOpenAddSizeModal(this.dataset.k);return false" style="font-size:11px;color:#534AB7;text-decoration:none" title="Add a size column nobody has ordered yet, e.g. to build extra stock">+ Add size</a></span>'+
     '</div>'+
     (_poolOpenWho[G.key]?'<div style="padding:4px 12px 10px;background:#FBFAFF;border-top:1px dashed #E0DFFF">'+
-      G.rows.map(r=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #F0EFFA;font-size:12px">'+
-        '<div><b style="color:#3C3489">'+esc(r.client)+'</b>'+(r.note?' <span title="'+esc(r.note)+'">📌</span>':'')+
-        '<div style="font-size:10px;color:#8A87A8">'+esc(r.orderLabel)+(r.varName?' · '+esc(r.varName):'')+' · '+esc(r.finish)+' · '+
-        btSortSizes(Object.keys(r.sizes)).map(s=>esc(s)+'×'+r.sizes[s]).join(', ')+'</div></div>'+
-        '<b style="color:#534AB7">'+r.qty+'</b></div>').join('')+
+      '<div style="font-size:10.5px;color:#A5A2C0;margin-bottom:4px">Uncheck a customer to leave their pieces out of this batch — their order is untouched and they stay available to pool next time.</div>'+
+      G.rows.map(r=>{
+        const dim=r.excluded?'opacity:.45;text-decoration:line-through':'';
+        const rk=esc(r.rowKey).replace(/'/g,"\\'");
+        return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid #F0EFFA;font-size:12px">'
+        +'<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;flex:1;min-width:0">'
+          +'<input type="checkbox" '+(r.excluded?'':'checked')+' onchange="btPoolToggleRow(\''+rk+'\')" style="width:15px;height:15px;accent-color:#534AB7;flex-shrink:0;margin-top:1px">'
+          +'<div style="'+dim+'"><b style="color:#3C3489">'+esc(r.client)+'</b>'+(r.note?' <span title="'+esc(r.note)+'">📌</span>':'')+(r.excluded?' <span style="color:#C0392B;font-weight:700;font-size:10px">excluded</span>':'')+
+          '<div style="font-size:10px;color:#8A87A8">'+esc(r.orderLabel)+(r.varName?' · '+esc(r.varName):'')+' · '+esc(r.finish)+' · '+
+          btSortSizes(Object.keys(r.sizes)).map(s=>esc(s)+'×'+r.sizes[s]).join(', ')+'</div></div>'
+        +'</label>'
+        +'<b style="color:#534AB7;'+dim+'">'+r.qty+'</b></div>';
+      }).join('')+
       ((bufTot||stkTot)?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px"><div><b style="color:#2E7D32">Buffer / stock</b><div style="font-size:10px;color:#8A87A8">not promised to anyone — stays with you</div></div><b style="color:#2E7D32">'+(bufTot+stkTot)+'</b></div>':'')+
     '</div>':'')+
   '</div>';
@@ -18282,8 +18379,22 @@ function renderPoolingView(){
   const famNames=Object.keys(fams).sort((a,b)=>
     fams[b].reduce((x,g)=>x+g.total,0)-fams[a].reduce((x,g)=>x+g.total,0));
 
-  const selKeys=Object.keys(_poolSel).filter(k=>groups.some(g=>g.key===k));
-  const selMake=selKeys.reduce((a,k)=>{const g=groups.find(x=>x.key===k);return a+(g?btSum(btMakeQty(g)):0);},0);
+  // Look these up against `all` (unfiltered), not the search-filtered
+  // `groups` — otherwise selecting a batch, then searching for something
+  // else, would make it silently drop out of the count/total/chip list
+  // even though it's still selected (owner-reported: wanted a permanent
+  // sanity check of what's selected while searching for more).
+  const selKeys=Object.keys(_poolSel).filter(k=>all.some(g=>g.key===k));
+  const selMake=selKeys.reduce((a,k)=>{const g=all.find(x=>x.key===k);return a+(g?btSum(btMakeQty(g)):0);},0);
+  const selectedChipsHtml=selKeys.length?('<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#F7F6FF;border:1.5px solid #D0CCF5;border-radius:10px;padding:8px 10px;margin-bottom:10px">'
+    +'<span style="font-size:11px;font-weight:700;color:#534AB7;margin-right:2px">Selected ('+selKeys.length+'):</span>'
+    +selKeys.map(k=>{
+      const g=all.find(x=>x.key===k); if(!g)return'';
+      const ke=esc(k).replace(/'/g,"\\'");
+      return '<span onclick="btPoolToggle(\''+ke+'\')" title="Click to remove from selection" style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1.5px solid #C6C1F0;border-radius:20px;padding:3px 6px 3px 10px;font-size:11px;color:#3C3489;cursor:pointer">'
+        +esc(g.code)+'<span style="background:#EEEDFE;color:#8A87A8;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:11px">✕</span></span>';
+    }).join('')
+    +'</div>'):'';
   // Unit-aware — pooled groups can be jotta, pairs, or pcs; a bare "N pieces"
   // wrongly summed them together regardless (owner-reported unit bug sweep).
   const looseByUnit={};
@@ -18308,6 +18419,7 @@ function renderPoolingView(){
         'oninput="btPoolSearch(this.value)" style="flex:1;min-width:220px;padding:8px 11px;border:1.5px solid #E0DFFF;border-radius:9px;font-size:13px">'+
       '<div class="main-tab'+(_poolMultiOnly?' active':'')+'" style="padding:8px 14px;font-size:12px" onclick="btPoolToggleMulti()">Only where 2+ customers want it</div>'+
     '</div>'+
+    selectedChipsHtml+
     '<div style="font-size:12px;color:#8A87A8;margin-bottom:10px">'+groups.length+' batch'+(groups.length!==1?'es':'')+
       ' · '+esc(looseLabel)+' not yet with any vendor</div>'+
     '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+
@@ -18362,18 +18474,23 @@ function btPoolCreate(){
   const designs=[],touched=[];
   chosen.forEach(G=>{
     const e=btExtras(G.key);
+    // A customer unchecked in "Who ordered this" is left out entirely —
+    // not locked to this vendor order, not in its sources[], free to pool
+    // into a later batch. btMakeQty(G) already excludes them (built from
+    // G.ordered, which btPoolGroups only adds non-excluded rows into).
+    const includedRows=G.rows.filter(r=>!r.excluded);
     designs.push({
       id:'d_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
       name:G.names[0]||G.code, code:(G.code==='(no code)'?'':G.code),
       sizes:btMakeQty(G), sizesLocked:false,
       images:G.image?[{data:G.image}]:[], varieties:[], unit:G.unit||'pcs',
       // provenance — which customer is owed how much out of this pooled line
-      sources:G.rows.map(r=>({orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
+      sources:includedRows.map(r=>({orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
         designId:r.designId,varietyId:r.varietyId,sizes:Object.assign({},r.sizes)})),
       bufferSizes:Object.keys(e.buffer).length?Object.assign({},e.buffer):undefined,
       stockSizes:Object.keys(e.stock).length?Object.assign({},e.stock):undefined
     });
-    G.rows.forEach(r=>touched.push(r));
+    includedRows.forEach(r=>touched.push(r));
   });
 
   const vo={id:'vo_'+Date.now(),orderId:genVendorOrderId(),vendor:vendor,
@@ -18397,7 +18514,7 @@ function btPoolCreate(){
   // pairs, pcs), so a bare "N pcs" total can misstate what was actually made.
   const qtyLabel=formatQtyByUnit(vendorOrderQtyByUnit(vo));
   audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+qtyLabel+' from '+touched.length+' customer row(s)');
-  _poolSel={};_poolExtras={};
+  _poolSel={};_poolExtras={};_poolExcluded={};_poolExtraSizes={};
   save();try{fbPushNow();}catch(e){}
   showToast('✅ '+vo.orderId+' created for '+vendor+' — '+qtyLabel,'green',3800);
   renderPoolingView();
