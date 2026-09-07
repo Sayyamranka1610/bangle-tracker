@@ -10808,6 +10808,15 @@ function _unlinkVO(vi, di, vri){
 // in sync (_setCOVendorField) so that box can never disagree with the
 // "→ VORD-xx" badge next to it.
 function _voQty(sizes){return Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);}
+// Backward-compat merge for vendor designs created before Buffer/Stock were
+// combined into one "Extra" field — Object.assign would silently DROP one
+// side's number whenever both had the same size key (5+5 becoming 5, not
+// 10). Sum instead.
+function _mergeSizeMaps(a,b){
+  const out=Object.assign({},a);
+  Object.keys(b||{}).forEach(sz=>{out[sz]=(parseInt(out[sz])||0)+(parseInt(b[sz])||0);});
+  return out;
+}
 function _voSizeStr(sizes){
   return Object.keys(sizes||{}).filter(k=>(parseInt(sizes[k])||0)>0)
     .sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);})
@@ -10839,21 +10848,25 @@ function _openVOWhoModal(vi,di,showAdd){
     +'</div>'
   ).join('');
 
-  const bufferQty=_voQty(vd.bufferSizes), stockQty=_voQty(vd.stockSizes);
-  const extraRow=(tag,bg,label,sizes,qty)=>qty>0
+  // Buffer + Stock were merged into one "Extra" concept on the Pooling
+  // board (owner-requested — "no need for two rows"); vendor designs
+  // created since then carry it as vd.extraSizes. Older ones created
+  // before this change may still carry the two separate fields — read
+  // both so nothing already-created loses its numbers.
+  const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
+  const extraQty=_voQty(extraSizes);
+  const extraHtml=extraQty>0
     ?'<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px dashed #D8D5EE;margin-bottom:7px;background:#fbfbfb">'
-      +'<span style="background:'+bg+';color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+tag+'</span>'
-      +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#555">'+label+'</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(sizes))+'</div></div>'
-      +'<div style="font-size:13px;font-weight:700;color:'+bg+';flex-shrink:0">'+qty+'</div></div>'
+      +'<span style="background:#8A87A8;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">Extra</span>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#555">Buffer/stock — nobody\'s</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(extraSizes))+'</div></div>'
+      +'<div style="font-size:13px;font-weight:700;color:#8A87A8;flex-shrink:0">'+extraQty+'</div></div>'
     :'';
-  const bufferHtml=extraRow('Buffer','#8A87A8','Rejection cover — nobody\'s',vd.bufferSizes,bufferQty);
-  const stockHtml=extraRow('Stock','#B08D57','Top-up for stock — nobody\'s',vd.stockSizes,stockQty);
 
   const rowTotal=_voQty(vd.sizes);
   const rowUnit=vd.unit||'pcs'; // owner-reported: this modal used to always say "pcs" even for a jotta/pairs row
-  const accounted=sources.reduce((a,s)=>a+_voQty(s.sizes),0)+bufferQty+stockQty;
+  const accounted=sources.reduce((a,s)=>a+_voQty(s.sizes),0)+extraQty;
   const mismatch=accounted!==rowTotal;
-  const addends=sources.map(s=>_voQty(s.sizes)).concat(bufferQty?[bufferQty]:[],stockQty?[stockQty]:[]);
+  const addends=sources.map(s=>_voQty(s.sizes)).concat(extraQty?[extraQty]:[]);
   const totalHtml='<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:'+(mismatch?'#FFF8E1':'#F7F6FF')+';border-radius:9px;margin-top:4px;font-size:13px;font-weight:700;color:#3C3489">'
     +'<span>Row total ('+rowTotal+')</span>'
     +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(rowTotal-accounted)+' '+esc(rowUnit)+' unaccounted for':' — matches')+'</span></div>';
@@ -10895,7 +10908,7 @@ function _openVOWhoModal(vi,di,showAdd){
     +'<div style="font-size:15px;font-weight:700;color:#3C3489;margin-bottom:4px">👥 Who is this row for?</div>'
     +'<div style="font-size:12px;color:#777;margin-bottom:14px">Design <strong>'+esc(code||'—')+'</strong> in <strong>'+esc(vo.orderId||'')+'</strong> — '+rowTotal+' '+esc(rowUnit)+' total</div>'
     +(rowsHtml||'<div style="font-size:12px;color:#AAA;text-align:center;padding:10px">No customer linked to this row yet.</div>')
-    +bufferHtml+stockHtml
+    +extraHtml
     +addSection
     +totalHtml+mismatchNote
     +'<div style="text-align:right;margin-top:14px"><button onclick="document.getElementById(\'_vo-who-overlay\').remove()" style="background:#f0eff8;color:#534AB7;border:none;padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">Close</button></div>'
@@ -12187,7 +12200,7 @@ function _printHeaderWithGallery(headerHtml, imgs){
 // showing which customer(s) it's for. Mirrors the "Who is this row for?"
 // popup (_openVOWhoModal) so the same numbers appear on paper as on screen.
 //   sources        — vd.sources[] (pooled, 1+ customers), or null
-//   bufferSizes/stockSizes — vd.bufferSizes / vd.stockSizes (flat rows only)
+//   extraSizes     — vd.extraSizes, buffer+stock merged into one (flat rows only)
 //   sourceCoId/sourceCoNum — the older single-customer manual link, if that's all this row has
 // Returns whole <tr> row(s) meant to be inserted directly into the SAME
 // table as the design/variety row above them — never a separate nested
@@ -12197,7 +12210,7 @@ function _printHeaderWithGallery(headerHtml, imgs){
 // sit under the label they belong to. Reusing the real table's columns
 // guarantees they always line up, at the cost of the Code column growing a
 // little wider to fit a customer's name.
-function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate){
+function _vprintForRowHtml(sources,extraSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate){
   const qtyOf=sizes=>Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
   const imgTd=imgMode==='inline'?'<td></td>':'';
   const rateTd=includeRate?'<td></td>':'';
@@ -12222,8 +12235,7 @@ function _vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sour
       +'</tr>';
     };
     sources.forEach(s=>addRow((s.orderLabel||'CO')+' · '+(s.client||''),s.sizes,false));
-    if(qtyOf(bufferSizes)>0)addRow('Buffer (rejection cover)',bufferSizes,true);
-    if(qtyOf(stockSizes)>0)addRow('Stock (top-up)',stockSizes,true);
+    if(qtyOf(extraSizes)>0)addRow('Extra (buffer/stock)',extraSizes,true);
     const accounted=Object.values(szTotals).reduce((a,v)=>a+v,0);
     // Only speak up when the customer breakdown doesn't add up to the row
     // above it — when it matches, that's already obvious since the numbers
@@ -12284,8 +12296,8 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
       // which customer(s) it's for — built as normal rows in this SAME
       // table (see _vprintForRowHtml) so their numbers sit under the exact
       // same size headers as the row above them.
-      const forTr=(sources,bufferSizes,stockSizes,sourceCoId,sourceCoNum,rowTotal)=>internal
-        ?_vprintForRowHtml(sources,bufferSizes,stockSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate)
+      const forTr=(sources,extraSizes,sourceCoId,sourceCoNum,rowTotal)=>internal
+        ?_vprintForRowHtml(sources,extraSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate)
         :'';
       g.items.forEach(d=>{
         const varieties=d.varieties||[];
@@ -12306,7 +12318,7 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
             +`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#777">${esc(unit)}</td>`
             +vRateTd(hod?(varieties[0].rate||d.rate):d.rate)
           +`</tr>`;
-          trows+=forTr(d.sources,d.bufferSizes,d.stockSizes,d.sourceCoId,d.sourceCoNum,rt);
+          trows+=forTr(d.sources,d.extraSizes||_mergeSizeMaps(d.bufferSizes,d.stockSizes),d.sourceCoId,d.sourceCoNum,rt);
         } else {
           const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
           const dTotal=Object.values(colT).reduce((a,v)=>a+v,0);
@@ -18147,7 +18159,6 @@ function btSortSizes(keys){
    Karigar/pipe pool by CODE (gold and rose are the same physical piece);
    plating pools by CODE + FINISH, because that is exactly what differs.      */
 let _poolMode='karigar';
-let _poolExtras={};      // key -> {buffer:{size:n}, stock:{size:n}}  (not persisted)
 let _poolSel={};         // key -> true
 let _poolMultiOnly=false;
 let _poolSearch='';
@@ -18162,7 +18173,7 @@ function btPoolable(row){
 // created (owner-reported need: "I don't want to make this for Vijay Bhai
 // this time") without touching their order — they just stay poolable for
 // next time. Keyed by row identity, not group, so it survives a re-render;
-// transient like _poolExtras/_poolSel — cleared once a batch is created.
+// transient like _poolMakeOverride/_poolSel — cleared once a batch is created.
 let _poolExcluded={};
 function _poolRowKey(r){ return r.orderId+'|'+r.designId+'|'+(r.varietyId||''); }
 function btPoolToggleRow(rowKey){ if(_poolExcluded[rowKey])delete _poolExcluded[rowKey]; else _poolExcluded[rowKey]=true; renderPoolingView(); }
@@ -18193,38 +18204,47 @@ function btPoolGroups(){
   const list=Object.keys(g).map(k=>{g[k].total=btSum(g[k].ordered);return g[k];});
   return list.sort((a,b)=>b.total-a.total);
 }
-function btExtras(key){
-  if(!_poolExtras[key])_poolExtras[key]={buffer:{},stock:{}};
-  return _poolExtras[key];
+// The owner types the TOTAL they want to make, per size, directly — not a
+// separate buffer number and a separate stock number. "Extra" (rejection
+// cover + stock top-up, merged into one row — owner-requested, "no need
+// for two rows") is never typed; it's always MAKE minus what customers
+// actually ordered. Leaving a size blank means "just make what's ordered."
+// Transient, same lifecycle as before: not persisted, resets on reload or
+// once the batch is created.
+let _poolMakeOverride={}; // key -> {size: totalMakeQty}
+function btPoolMakeFor(key){
+  if(!_poolMakeOverride[key])_poolMakeOverride[key]={};
+  return _poolMakeOverride[key];
 }
 function btMakeQty(G){
-  const e=btExtras(G.key),out={};
-  [G.ordered,e.buffer,e.stock].forEach(src=>Object.keys(src||{}).forEach(sz=>{
-    const n=Number(src[sz])||0; if(n>0)out[sz]=(out[sz]||0)+n;}));
+  const m=btPoolMakeFor(G.key),out={};
+  Object.keys(Object.assign({},G.ordered,_poolExtraSizes[G.key]||{},m)).forEach(sz=>{
+    out[sz]=m[sz]!==undefined?m[sz]:(Number(G.ordered[sz])||0);
+  });
   return out;
 }
 // Runs on every keystroke — updates the number with NO re-render, so the
-// browser's own cursor position is never disturbed while typing.
-function btPoolSetExtraSilent(key,kind,size,val){
-  const e=btExtras(key),n=Number(val);
-  if(!String(val).trim()||!isFinite(n)||n<=0)delete e[kind][size]; else e[kind][size]=n;
+// browser's own cursor position is never disturbed while typing (this is
+// the exact fix for the owner-reported "typing 16 gives 61" bug).
+function btPoolSetMakeSilent(key,size,val){
+  const m=btPoolMakeFor(key),n=Number(val);
+  if(!String(val).trim()||!isFinite(n)||n<0)delete m[size]; else m[size]=n;
 }
-// Runs once, on blur — same update, then a real re-render so MAKE/TOTAL and
-// the size-column set (in case this was the value that added/removed a
-// column) catch up.
-function btPoolSetExtra(key,kind,size,val){
-  const e=btExtras(key),n=Number(val);
-  if(!String(val).trim()||!isFinite(n)||n<=0)delete e[kind][size]; else e[kind][size]=n;
+// Runs once, on blur — same update, then a real re-render so the Extra row,
+// the card total, and the size-column set (in case this was the value that
+// added/removed a column) all catch up.
+function btPoolSetMake(key,size,val){
+  btPoolSetMakeSilent(key,size,val);
   renderPoolingView();
-  const again=document.querySelector('[data-pk="'+key+'|'+kind+'|'+size+'"]');
+  const again=document.querySelector('[data-pmk="'+key+'|'+size+'"]');
   if(again){try{again.focus();}catch(e2){}}
 }
 // A size nobody has ordered yet doesn't get a column at all (owner-reported:
-// wanted to build "Extra for stock" under a size with zero customer demand,
-// e.g. 2/10, and there was no way to even open that column). Pinning a size
-// here just makes the column appear with 0 ordered, ready for Buffer/Stock
-// input — same lifecycle as Buffer/Stock itself: not persisted, cleared on
-// reload or once a vendor order is created from this batch.
+// wanted to build stock under a size with zero customer demand, e.g. 2/10,
+// and there was no way to even open that column). Pinning a size here just
+// makes the column appear with 0 ordered, ready to type a MAKE total into.
+// Same lifecycle as the override above: not persisted, resets on reload or
+// once a vendor order is created from this batch.
 let _poolExtraSizes={};
 function btPoolOpenAddSizeModal(key){
   const old=document.getElementById('_poolsz-modal');if(old)old.remove();
@@ -18235,7 +18255,7 @@ function btPoolOpenAddSizeModal(key){
   <div style="background:#fff;border-radius:14px;padding:22px 24px;width:min(360px,96vw);display:flex;flex-direction:column;gap:14px">
     <div style="font-size:15px;font-weight:700;color:#534AB7">➕ Add Size Column</div>
     <div style="font-size:12px;color:#555;line-height:1.7">
-      Type the size you want to add — e.g. <strong>2/10</strong>. It'll show up with 0 ordered, so you can put a number straight into Buffer or Extra for stock.
+      Type the size you want to add — e.g. <strong>2/10</strong>. It'll show up with 0 ordered, so you can type a MAKE total straight into it.
     </div>
     <input id="_poolsz-inp" placeholder="e.g. 2/10" autocomplete="off"
       style="padding:10px 12px;border:1.5px solid #AFA9EC;border-radius:8px;font-size:15px;width:100%;box-sizing:border-box;outline:none"
@@ -18259,8 +18279,8 @@ function _doPoolAddSize(key){
   const sz=inp.value.trim();
   if(!sz){if(err)err.textContent='Please enter a size (e.g. 2/10).';return;}
   const groups=btPoolGroups(), G=groups.find(g=>g.key===key);
-  const e=btExtras(key);
-  const existing=new Set(Object.keys(Object.assign({},G?G.ordered:{},e.buffer,e.stock,_poolExtraSizes[key]||{})));
+  const m=btPoolMakeFor(key);
+  const existing=new Set(Object.keys(Object.assign({},G?G.ordered:{},m,_poolExtraSizes[key]||{})));
   if(existing.has(sz)){if(err)err.textContent=`Size "${sz}" is already shown on this card.`;inp.select();return;}
   if(!_poolExtraSizes[key])_poolExtraSizes[key]={};
   _poolExtraSizes[key][sz]=true;
@@ -18269,8 +18289,8 @@ function _doPoolAddSize(key){
 }
 function btPoolRemoveExtraSize(key,size){
   if(_poolExtraSizes[key])delete _poolExtraSizes[key][size];
-  const e=btExtras(key);
-  delete e.buffer[size]; delete e.stock[size];
+  const m=btPoolMakeFor(key);
+  delete m[size];
   renderPoolingView();
 }
 function btPoolToggle(key){ if(_poolSel[key])delete _poolSel[key]; else _poolSel[key]=true; renderPoolingView(); }
@@ -18287,10 +18307,17 @@ function btPoolEditFamily(code){
 }
 
 function btPoolCardHTML(G){
-  const e=btExtras(G.key),make=btMakeQty(G);
+  const m=btPoolMakeFor(G.key),make=btMakeQty(G);
   const extraSz=_poolExtraSizes[G.key]||{};
-  const sizes=btSortSizes(Object.keys(Object.assign({},G.ordered,e.buffer,e.stock,extraSz)));
-  const makeTot=btSum(make),bufTot=btSum(e.buffer),stkTot=btSum(e.stock);
+  const sizes=btSortSizes(Object.keys(Object.assign({},G.ordered,extraSz,m)));
+  const makeTot=btSum(make);
+  // Extra (rejection cover + stock, merged into one row — owner-requested,
+  // "no need for two rows") is never typed directly: it's always MAKE minus
+  // what customers actually ordered for that size. Negative means MAKE was
+  // typed lower than the real order — flagged, not hidden, since that
+  // would shortchange a customer.
+  const extraOf=sz=>(Number(make[sz])||0)-(Number(G.ordered[sz])||0);
+  const extraTot=sizes.reduce((a,sz)=>a+extraOf(sz),0);
   const sel=!!_poolSel[G.key];
   const K=esc(G.key);
   // oninput calling a full re-render on every keystroke was the actual cause
@@ -18300,10 +18327,14 @@ function btPoolCardHTML(G){
   // inserted BEFORE the one just typed. Fixed the same way the vendor-order
   // size inputs already handle this elsewhere: update the number silently
   // (no re-render) while typing, only commit + re-render on blur.
-  const cell=(sz,kind)=>'<td style="padding:3px;text-align:center"><input type="number" min="0" data-pk="'+K+'|'+kind+'|'+esc(sz)+'" value="'+
-    (e[kind][sz]!==undefined?e[kind][sz]:'')+'" placeholder="—" style="width:46px;text-align:center;padding:3px;border:1px solid #ddd;border-radius:5px;font-size:12px" '+
-    'oninput="btPoolSetExtraSilent(this.dataset.pk.split(\'|\')[0],\''+kind+'\',\''+esc(sz)+'\',this.value);this._dirty=true" '+
-    'onblur="if(this._dirty){this._dirty=false;btPoolSetExtra(this.dataset.pk.split(\'|\')[0],\''+kind+'\',\''+esc(sz)+'\',this.value)}"></td>';
+  const makeCell=sz=>{
+    const ord=Number(G.ordered[sz])||0;
+    const val=m[sz]!==undefined?m[sz]:'';
+    return '<td style="padding:3px;text-align:center"><input type="number" min="0" data-pmk="'+K+'|'+esc(sz)+'" value="'+val+'" placeholder="'+ord+'" '+
+      'style="width:52px;text-align:center;padding:3px;border:1.5px solid #AFA9EC;border-radius:5px;font-size:12px;font-weight:700;color:#3C3489;background:#F7F6FF" '+
+      'oninput="btPoolSetMakeSilent(this.dataset.pmk.split(\'|\')[0],this.dataset.pmk.split(\'|\')[1],this.value);this._dirty=true" '+
+      'onblur="if(this._dirty){this._dirty=false;btPoolSetMake(this.dataset.pmk.split(\'|\')[0],this.dataset.pmk.split(\'|\')[1],this.value)}"></td>';
+  };
   return '<div style="border:1.5px solid '+(sel?'#534AB7':'#E0DFFF')+';border-radius:12px;margin-bottom:10px;overflow:hidden;background:'+(sel?'#F7F6FF':'#fff')+'">'+
     '<div style="display:flex;gap:10px;padding:10px;align-items:flex-start;border-bottom:1px solid #EFEDFF">'+
       '<input type="checkbox" '+(sel?'checked':'')+' onchange="btPoolToggle(this.dataset.k)" data-k="'+K+'" style="margin-top:4px;width:17px;height:17px;accent-color:#534AB7">'+
@@ -18331,15 +18362,12 @@ function btPoolCardHTML(G){
       '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">Ordered by customers</td>'+
         sizes.map(s=>'<td style="text-align:center;padding:5px">'+(G.ordered[s]||0)+'</td>').join('')+
         '<td style="text-align:center;font-weight:800;color:#534AB7;border-left:1px solid #E0DFFF">'+G.total+'</td></tr>'+
-      '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">+ Buffer for rejections</td>'+
-        sizes.map(s=>cell(s,'buffer')).join('')+
-        '<td style="text-align:center;color:#8A87A8;border-left:1px solid #E0DFFF">'+(bufTot||'—')+'</td></tr>'+
-      '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">+ Extra for stock</td>'+
-        sizes.map(s=>cell(s,'stock')).join('')+
-        '<td style="text-align:center;color:#8A87A8;border-left:1px solid #E0DFFF">'+(stkTot||'—')+'</td></tr>'+
-      '<tr style="background:#F3F1FF"><td style="padding:6px 10px;font-weight:800;color:#3C3489">MAKE</td>'+
-        sizes.map(s=>'<td style="text-align:center;font-weight:800;color:#3C3489;padding:6px">'+(make[s]||0)+'</td>').join('')+
+      '<tr style="background:#F3F1FF"><td style="padding:6px 10px;font-weight:800;color:#3C3489">MAKE <span style="font-weight:400;font-size:9.5px;color:#8A87A8">(type total)</span></td>'+
+        sizes.map(s=>makeCell(s)).join('')+
         '<td style="text-align:center;font-weight:800;color:#534AB7;border-left:1px solid #E0DFFF">'+makeTot+'</td></tr>'+
+      '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">= Extra <span style="color:#AAA">(buffer/stock)</span></td>'+
+        sizes.map(s=>{const ex=extraOf(s);return '<td style="text-align:center;padding:5px;'+(ex<0?'color:#C0392B;font-weight:700':'color:#8A87A8')+'" title="'+(ex<0?'MAKE is lower than what customers ordered':'')+'">'+(ex?(ex<0?'⚠ '+ex:ex):'—')+'</td>';}).join('')+
+        '<td style="text-align:center;border-left:1px solid #E0DFFF;'+(extraTot<0?'color:#C0392B;font-weight:700':'color:#8A87A8')+'">'+(extraTot?extraTot:'—')+'</td></tr>'+
     '</table></div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#FCFBFF;border-top:1px solid #EFEDFF;flex-wrap:wrap">'+
       '<span><a href="#" data-k="'+K+'" onclick="btPoolToggleWho(this.dataset.k);return false" style="font-size:12px;font-weight:700;color:#534AB7;text-decoration:none">'+
@@ -18361,7 +18389,7 @@ function btPoolCardHTML(G){
         +'</label>'
         +'<b style="color:#534AB7;'+dim+'">'+r.qty+'</b></div>';
       }).join('')+
-      ((bufTot||stkTot)?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px"><div><b style="color:#2E7D32">Buffer / stock</b><div style="font-size:10px;color:#8A87A8">not promised to anyone — stays with you</div></div><b style="color:#2E7D32">'+(bufTot+stkTot)+'</b></div>':'')+
+      (extraTot?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px"><div><b style="color:'+(extraTot<0?'#C0392B':'#2E7D32')+'">Extra (buffer/stock)</b><div style="font-size:10px;color:#8A87A8">'+(extraTot<0?'MAKE is lower than what customers ordered':'not promised to anyone — stays with you')+'</div></div><b style="color:'+(extraTot<0?'#C0392B':'#2E7D32')+'">'+extraTot+'</b></div>':'')+
     '</div>':'')+
   '</div>';
 }
@@ -18473,22 +18501,27 @@ function btPoolCreate(){
 
   const designs=[],touched=[];
   chosen.forEach(G=>{
-    const e=btExtras(G.key);
+    const make=btMakeQty(G);
     // A customer unchecked in "Who ordered this" is left out entirely —
     // not locked to this vendor order, not in its sources[], free to pool
     // into a later batch. btMakeQty(G) already excludes them (built from
     // G.ordered, which btPoolGroups only adds non-excluded rows into).
     const includedRows=G.rows.filter(r=>!r.excluded);
+    // Extra (buffer/stock, merged into one) — whatever MAKE was typed to
+    // beyond what customers ordered for that size. Clamped at 0 here so a
+    // MAKE typed below the real order (flagged on-screen already) never
+    // stores a negative "extra" on the vendor order itself.
+    const extraSizes={};
+    Object.keys(make).forEach(sz=>{const ex=(Number(make[sz])||0)-(Number(G.ordered[sz])||0); if(ex>0)extraSizes[sz]=ex;});
     designs.push({
       id:'d_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
       name:G.names[0]||G.code, code:(G.code==='(no code)'?'':G.code),
-      sizes:btMakeQty(G), sizesLocked:false,
+      sizes:make, sizesLocked:false,
       images:G.image?[{data:G.image}]:[], varieties:[], unit:G.unit||'pcs',
       // provenance — which customer is owed how much out of this pooled line
       sources:includedRows.map(r=>({orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
         designId:r.designId,varietyId:r.varietyId,sizes:Object.assign({},r.sizes)})),
-      bufferSizes:Object.keys(e.buffer).length?Object.assign({},e.buffer):undefined,
-      stockSizes:Object.keys(e.stock).length?Object.assign({},e.stock):undefined
+      extraSizes:Object.keys(extraSizes).length?extraSizes:undefined
     });
     includedRows.forEach(r=>touched.push(r));
   });
@@ -18514,7 +18547,7 @@ function btPoolCreate(){
   // pairs, pcs), so a bare "N pcs" total can misstate what was actually made.
   const qtyLabel=formatQtyByUnit(vendorOrderQtyByUnit(vo));
   audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+qtyLabel+' from '+touched.length+' customer row(s)');
-  _poolSel={};_poolExtras={};_poolExcluded={};_poolExtraSizes={};
+  _poolSel={};_poolMakeOverride={};_poolExcluded={};_poolExtraSizes={};
   save();try{fbPushNow();}catch(e){}
   showToast('✅ '+vo.orderId+' created for '+vendor+' — '+qtyLabel,'green',3800);
   renderPoolingView();
