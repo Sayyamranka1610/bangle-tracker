@@ -11106,6 +11106,25 @@ function _voWhoAdd(vi,di,ci){
   const isFirstLink=!(vd.sources&&vd.sources.length);
   const existingTotal=_voQty(vd.sizes);
   const growSizes=!vd._manualSizes&&(!isFirstLink||existingTotal===0);
+
+  // Owner-requested: instead of a passive "unaccounted for" banner AFTER
+  // linking, ask right here, in Hinglish, on a manually-typed row —
+  // BEFORE the shortfall case (customer needs more than this row currently
+  // has), so the link can be cancelled outright instead of silently leaving
+  // a gap the owner never explicitly agreed to.
+  if(!growSizes){
+    const hypotheticalSources=(vd.sources||[]).concat([{sizes:convSizes}]);
+    const{remainder:preRemainder}=_voRemainderBySize(vd,hypotheticalSources);
+    let shortTotal=0;
+    Object.keys(preRemainder).forEach(sz=>{ if(preRemainder[sz]<0)shortTotal+=-preRemainder[sz]; });
+    if(shortTotal>0){
+      const proceed=confirm(c.client+' ka order is row mein abhi jitna banaya ja raha hai usse zyada hai — '+shortTotal+' '+rowUnit+' kam hai.\n\nCustomer order ki quantity vendor order se zyada hai jisse link karna hai. Aage badhein?');
+      if(!proceed){
+        showToast('Link nahi hua — pehle row ki quantity badhao ya '+c.orderLabel+' ka order check karo','amber',5000);
+        return;
+      }
+    }
+  }
   if(!growSizes&&isFirstLink)vd._manualSizes=true;
 
   if(growSizes){
@@ -11119,6 +11138,23 @@ function _voWhoAdd(vi,di,ci){
     sizes:convSizes,origUnit:c.unit,origSizes:Object.assign({},c.sizes)});
   holder.importedToVOId=vo.id;
   if(vo.vendor)_setCOVendorField(holder,mode,vo.vendor);
+
+  // Now that the link is committed: if this leaves a clean SURPLUS (never
+  // mixed with a shortfall elsewhere on the same row), ask right away — in
+  // Hinglish — whether to record it as Extra, instead of leaving it as a
+  // banner the owner has to notice and act on separately.
+  if(!growSizes){
+    const{remainder,anyNegative}=_voRemainderBySize(vd);
+    if(!anyNegative){
+      const surplus={}; let surplusTotal=0;
+      Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0){surplus[sz]=remainder[sz]; surplusTotal+=remainder[sz];} });
+      if(surplusTotal>0&&confirm('Is row mein '+surplusTotal+' '+rowUnit+' zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?')){
+        vd.extraSizes=vd.extraSizes||{};
+        Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+surplus[sz]; });
+        delete vd.bufferSizes; delete vd.stockSizes;
+      }
+    }
+  }
 
   save();render();
   showToast(growSizes?'✅ Added '+c.client+' ('+c.orderLabel+') to this row':'🔗 Linked '+c.client+' ('+c.orderLabel+') — row quantity unchanged','green');
@@ -11175,32 +11211,43 @@ function _voWhoUnlink(vi,di,si){
 // warning with no way to actually record it. Refuses to touch anything if
 // the row is instead SHORT of what's linked (accounted > row total) — that
 // means a size was hand-edited down, which needs fixing by hand, not sweeping.
-function _voSweepRemainderToExtra(vi,di){
-  const vo=S.vendorOrders[vi]; if(!vo)return;
-  const vd=vo.designs[di]; if(!vd)return;
-  const sources=vd.sources||[];
+// Shared by the sweep/grow buttons below AND by _voWhoAdd's own live prompt —
+// one place that answers "per size, how far off is this row from what's
+// actually linked to it (sources) plus Extra?" `sourcesOverride` lets
+// _voWhoAdd ask "what WOULD the gap be if I add this candidate" before it's
+// actually added, without mutating anything.
+function _voRemainderBySize(vd,sourcesOverride){
+  const sources=sourcesOverride||vd.sources||[];
   const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
-  const szKeys=new Set([...Object.keys(vd.sizes||{}),...Object.keys(extraSizes||{})]);
+  const szKeys=new Set([...Object.keys(vd.sizes||{}),...sources.flatMap(s=>Object.keys(s.sizes||{})),...Object.keys(extraSizes||{})]);
   const remainder={};
-  let anyNegative=false;
+  let anyNegative=false,anyPositive=false;
   szKeys.forEach(sz=>{
     const total=parseInt((vd.sizes||{})[sz])||0;
     const fromSources=sources.reduce((a,s)=>a+(parseInt((s.sizes||{})[sz])||0),0);
     const fromExtra=parseInt(extraSizes[sz])||0;
     const diff=total-fromSources-fromExtra;
-    if(diff>0)remainder[sz]=diff;
+    if(diff!==0)remainder[sz]=diff;
+    if(diff>0)anyPositive=true;
     if(diff<0)anyNegative=true;
   });
+  return{remainder,anyNegative,anyPositive};
+}
+function _voSweepRemainderToExtra(vi,di){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const{remainder,anyNegative}=_voRemainderBySize(vd);
   if(anyNegative){
     showToast('Some sizes show less than what\'s already linked — fix those by hand first; only a genuine surplus can be swept to Extra','amber',5000);
     return;
   }
-  if(!Object.keys(remainder).length){showToast('Nothing left over — already fully accounted for','green');return;}
-  const total=Object.values(remainder).reduce((a,v)=>a+v,0);
+  const surplus={}; Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0)surplus[sz]=remainder[sz]; });
+  if(!Object.keys(surplus).length){showToast('Nothing left over — already fully accounted for','green');return;}
+  const total=Object.values(surplus).reduce((a,v)=>a+v,0);
   const unit=vd.unit||'pcs';
-  if(!confirm('Record '+total+' '+unit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(remainder).map(sz=>sz+': '+remainder[sz]).join(' · ')))return;
+  if(!confirm('Record '+total+' '+unit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(surplus).map(sz=>sz+': '+surplus[sz]).join(' · ')))return;
   vd.extraSizes=vd.extraSizes||{};
-  Object.keys(remainder).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+remainder[sz]; });
+  Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+surplus[sz]; });
   delete vd.bufferSizes; delete vd.stockSizes; // fully migrated into the merged Extra field now
   audit('Extra stock recorded',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+unit);
   save();render();
@@ -11217,23 +11264,12 @@ function _voSweepRemainderToExtra(vi,di){
 function _voGrowRowToMatchSources(vi,di){
   const vo=S.vendorOrders[vi]; if(!vo)return;
   const vd=vo.designs[di]; if(!vd)return;
-  const sources=vd.sources||[];
-  const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
-  const szKeys=new Set([...Object.keys(vd.sizes||{}),...sources.flatMap(s=>Object.keys(s.sizes||{})),...Object.keys(extraSizes||{})]);
-  const shortfall={};
-  let anyPositive=false;
-  szKeys.forEach(sz=>{
-    const total=parseInt((vd.sizes||{})[sz])||0;
-    const fromSources=sources.reduce((a,s)=>a+(parseInt((s.sizes||{})[sz])||0),0);
-    const fromExtra=parseInt(extraSizes[sz])||0;
-    const diff=total-fromSources-fromExtra;
-    if(diff<0)shortfall[sz]=-diff;
-    if(diff>0)anyPositive=true;
-  });
+  const{remainder,anyPositive}=_voRemainderBySize(vd);
   if(anyPositive){
     showToast('Some sizes already show more than what\'s linked — that surplus belongs in Extra, not mixed with a shortfall elsewhere','amber',5000);
     return;
   }
+  const shortfall={}; Object.keys(remainder).forEach(sz=>{ if(remainder[sz]<0)shortfall[sz]=-remainder[sz]; });
   if(!Object.keys(shortfall).length){showToast('Nothing short — already fully accounted for','green');return;}
   const total=Object.values(shortfall).reduce((a,v)=>a+v,0);
   const unit=vd.unit||'pcs';
