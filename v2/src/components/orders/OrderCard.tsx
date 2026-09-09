@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AppData, Order, EmbeddedDesign, VendorOrder } from '../../types';
 import { orderStatus, orderPct, orderTotalQty, PRIORITY_LABELS, BANGLE_TYPE_LABELS, uid, isOrderOverdue } from '../../lib/orderUtils';
-import { coOrderStageCounts, CO_STAGE_DEFS, markDesignCompleteFields } from '../../lib/coStageUtils';
+import { coOrderStageCounts, CO_STAGE_DEFS, toggleDesignComplete } from '../../lib/coStageUtils';
 import { makeStageFresh, DEFAULT_SIZES } from '../../lib/designUtils';
 import { computeOrderValue, formatMoney } from '../../lib/familyUtils';
 import DesignsTab from './DesignsTab';
@@ -140,9 +140,19 @@ export default function OrderCard({
   }
 
   function handleMarkDesignComplete(di: number) {
-    const stages = order.designs[di]?.stages ?? [];
-    if (!confirm(`Mark all ${stages.length} production stage${stages.length !== 1 ? 's' : ''} as Done?\n\nUse this when the design is dispatched.`)) return;
-    const designs = order.designs.map((d, i) => i === di ? markDesignCompleteFields(d) : d);
+    const design = order.designs[di];
+    if (!design) return;
+    const stages = design.stages ?? [];
+    const allStagesDone = stages.length > 0 && stages.every(st => st.status === 'done');
+    const alreadyDone = !!design.done || allStagesDone;
+    const label = design.code || design.name || 'this design';
+
+    const confirmMsg = alreadyDone
+      ? `Undo dispatch for "${label}"?\n\nThis reverses the ✓ Dispatch click — its ${stages.length} production stage${stages.length !== 1 ? 's' : ''} go back to not done, and it'll need to be marked complete again once it's actually ready.`
+      : `Mark all ${stages.length} production stage${stages.length !== 1 ? 's' : ''} of "${label}" as Done?\n\nUse this when the design is dispatched.`;
+    if (!confirm(confirmMsg)) return;
+
+    const designs = order.designs.map((d, i) => i === di ? toggleDesignComplete(d) : d);
     onUpdate({ ...order, designs });
   }
 
@@ -351,12 +361,21 @@ export default function OrderCard({
 
           {canEdit && !archivedView && activeTab === 'designs' && (
             <div className="px-4 pb-4 flex flex-wrap gap-2">
-              {order.designs.map((d, di) => (
-                <button key={d.id} onClick={() => handleMarkDesignComplete(di)}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
-                  ✓ Mark "{d.code || d.name || `Design ${di + 1}`}" dispatched
-                </button>
-              ))}
+              {order.designs.map((d, di) => {
+                const allStagesDone = d.stages.length > 0 && d.stages.every(st => st.status === 'done');
+                const isDone = !!d.done || allStagesDone;
+                return (
+                  <button key={d.id} onClick={() => handleMarkDesignComplete(di)}
+                    title={isDone ? 'Dispatched ✓ — click to undo' : 'Dispatch — auto-ticks all stages'}
+                    className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+                      isDone
+                        ? 'bg-green-500/15 text-green-300 hover:bg-green-500/25'
+                        : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                    }`}>
+                    ✓ {isDone ? 'Dispatched' : 'Mark'} "{d.code || d.name || `Design ${di + 1}`}"{isDone ? '' : ' dispatched'}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

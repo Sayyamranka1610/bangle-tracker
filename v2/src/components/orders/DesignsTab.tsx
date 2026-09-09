@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { AppData, Order, EmbeddedDesign, DesignVariety, DesignImage, VendorOrder, VendorPipelineFields } from '../../types';
 import { uid } from '../../lib/orderUtils';
 import { DEFAULT_SIZES } from '../../lib/designUtils';
-import { dedupedVendorsOfType, setPipeVendor, setKarigarVendor, setPlatingVendor, toggleReceived, toggleVarietyDone, hasOnlyDefault } from '../../lib/coStageUtils';
+import { dedupedVendorsOfType, setPipeVendor, setKarigarVendor, setPlatingVendor, toggleReceived, toggleVarietyDone, hasOnlyDefault, setHold, clearHold } from '../../lib/coStageUtils';
 import { karigarHistory, suggestionFor, type KarigarSuggestion } from '../../lib/karigarHistoryUtils';
 import PhotoPickerModal from '../designs/PhotoPickerModal';
 
@@ -175,6 +175,24 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
     onDesignChange(di, { ...d, varieties });
   }
 
+  // A reason is required to put something ON hold (never a blank click) but
+  // NOT required to take it back off — clearing the text is how you resolve
+  // it. Mirrors Phase 1's _holdPrompt() exactly.
+  function handleToggleHold(di: number, vi: number) {
+    const v = order.designs[di]?.varieties?.[vi];
+    if (!v) return;
+    const label = `${order.designs[di]?.code || 'this design'}${v.name ? ` — ${v.name}` : ''}`;
+    if (v.onHold) {
+      const next = prompt(`Hold reason for ${label}:\n\n(clear the text and press OK to take it off hold)`, v.holdReason ?? '');
+      if (next === null) return; // cancelled
+      updateVarietyFields(di, vi, next.trim() ? setHold(v, next.trim()) : clearHold(v));
+      return;
+    }
+    const reason = prompt(`Why is "${label}" on hold?\n\n(e.g. waiting on gold rate, client changed mind, material shortage)`);
+    if (reason === null || !reason.trim()) return; // cancelled, or no reason given — don't put on hold silently
+    updateVarietyFields(di, vi, setHold(v, reason.trim()));
+  }
+
   function addVariety(di: number) {
     const d = order.designs[di];
     const szKeys = d.sizes ? Object.keys(d.sizes) : DEFAULT_SIZES;
@@ -282,6 +300,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Karigar</th>
                     <th className="text-center px-2 py-1.5 text-white/30 font-normal">Plating</th>
                     <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Special request for this row">Note</th>
+                    <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Pause production on this row">Hold</th>
                     <th className="text-center px-1 py-1.5 text-white/30 font-normal">Done</th>
                     {canEdit && <th className="w-6" />}
                   </tr>
@@ -292,20 +311,29 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                     const isEditingName = editingVarName?.di === di && editingVarName.vi === vi;
 
                     return (
-                      <tr key={v.id} className="border-b border-white/5">
+                      <tr key={v.id} className={`border-b border-white/5 ${v.onHold ? 'border-l-2 border-l-amber-400' : ''}`}>
                         <td className="pr-3 py-1.5">
-                          {canEdit && isEditingName ? (
-                            <input autoFocus value={editingVarName.value}
-                              onChange={e => setEditingVarName({ di, vi, value: e.target.value })}
-                              onBlur={() => commitVarName(di, vi, editingVarName.value)}
-                              onKeyDown={e => e.key === 'Enter' && commitVarName(di, vi, editingVarName.value)}
-                              className="w-24 bg-white/10 border border-[#534AB7] rounded px-1.5 py-0.5 text-white text-xs focus:outline-none" />
-                          ) : (
-                            <span
-                              className={`text-white/70 ${canEdit ? 'cursor-pointer hover:text-white' : ''}`}
-                              onClick={() => canEdit && setEditingVarName({ di, vi, value: v.name })}
-                            >{v.name}</span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {canEdit && isEditingName ? (
+                              <input autoFocus value={editingVarName.value}
+                                onChange={e => setEditingVarName({ di, vi, value: e.target.value })}
+                                onBlur={() => commitVarName(di, vi, editingVarName.value)}
+                                onKeyDown={e => e.key === 'Enter' && commitVarName(di, vi, editingVarName.value)}
+                                className="w-24 bg-white/10 border border-[#534AB7] rounded px-1.5 py-0.5 text-white text-xs focus:outline-none" />
+                            ) : (
+                              <span
+                                className={`text-white/70 ${canEdit ? 'cursor-pointer hover:text-white' : ''}`}
+                                onClick={() => canEdit && setEditingVarName({ di, vi, value: v.name })}
+                              >{v.name}</span>
+                            )}
+                            {v.onHold && (
+                              <button onClick={() => canEdit && handleToggleHold(di, vi)}
+                                title={`⏸ On hold — ${v.holdReason || '(no reason given)'}. Click to edit or take off hold.`}
+                                className="text-[9px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/40 rounded-full px-2 py-0.5 whitespace-nowrap max-w-[140px] truncate">
+                                ⏸ On hold — {v.holdReason || '(no reason given)'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5">
                           <PhotoStrip
@@ -388,6 +416,16 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                         <td className="text-center px-1 py-1.5">
                           <button
                             disabled={!canEdit}
+                            onClick={() => handleToggleHold(di, vi)}
+                            title={v.onHold ? 'On hold — click to edit reason or take off hold' : 'Put this row on hold'}
+                            className={`w-6 h-6 rounded text-xs flex items-center justify-center mx-auto transition-colors ${
+                              v.onHold ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40' : 'bg-white/5 text-white/20 border border-white/10'
+                            }`}
+                          >⏸</button>
+                        </td>
+                        <td className="text-center px-1 py-1.5">
+                          <button
+                            disabled={!canEdit}
                             onClick={() => updateVarietyFields(di, vi, toggleVarietyDone(v))}
                             title={v.done ? 'Undo dispatched' : 'Mark this variety dispatched'}
                             className={`w-6 h-6 rounded text-xs font-bold flex items-center justify-center mx-auto transition-colors ${
@@ -457,7 +495,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                     <td className="text-center pl-2 py-1.5 font-bold text-[#a89fff]">
                       {varieties.reduce((a, v) => a + sizeKeys.reduce((b, sz) => b + (Number(v.sizes?.[sz]) || 0), 0), 0)}
                     </td>
-                    <td /><td /><td /><td /><td /><td />
+                    <td /><td /><td /><td /><td /><td /><td />
                     {canEdit && <td />}
                   </tr>
                 </tbody>

@@ -91,6 +91,32 @@ export default function Vendors() {
     await persist(next, 'Edit vendor order', `${order.orderId} status → ${status}`, false);
   }
 
+  // A reason is required to put a row ON hold (never a blank click) but NOT
+  // required to take it back off — clearing the text is how you resolve it.
+  // Mirrors Phase 1's _holdPrompt()/toggleVOHold() exactly.
+  function handleHoldToggle(order: VendorOrder, designId: string) {
+    const d = order.designs?.find(x => x.id === designId);
+    if (!d) return;
+    const label = d.code || d.name || 'this design';
+    let reason: string | null;
+    let cleared = false;
+    if (d.onHold) {
+      reason = prompt(`Hold reason for ${label}:\n\n(clear the text and press OK to take it off hold)`, d.holdReason ?? '');
+      if (reason === null) return;
+      cleared = !reason.trim();
+    } else {
+      reason = prompt(`Why is "${label}" on hold?\n\n(e.g. waiting on gold rate, client changed mind, material shortage)`);
+      if (reason === null || !reason.trim()) return;
+    }
+    const next = vendorOrders.map(o => o.id !== order.id ? o : {
+      ...o,
+      designs: o.designs?.map(x => x.id !== designId ? x : (
+        cleared ? { ...x, onHold: false, holdReason: undefined } : { ...x, onHold: true, holdReason: (reason ?? '').trim() }
+      )),
+    });
+    persist(next, 'Hold', `"${label}" in ${order.orderId} — ${cleared ? 'removed' : (d.onHold ? 'updated' : 'added')}${!cleared && reason ? `: ${reason.trim()}` : ''}`, false);
+  }
+
   // Who-modal (link/unlink a customer on a pooled vendor-order row) touches
   // BOTH vendorOrders and orders at once — a customer's own row and the
   // vendor batch it's linked to must always agree on importedToVOId, so
@@ -237,6 +263,7 @@ export default function Vendors() {
                         onDelete={o => setDeleteTarget(o)}
                         onStatusChange={handleStatusChange}
                         onWhoChange={handleWhoChange}
+                        onHoldToggle={handleHoldToggle}
                       />
                     ))}
                   </div>

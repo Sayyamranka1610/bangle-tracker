@@ -32,7 +32,7 @@ const MODES: { id: PoolMode; label: string; hint: string }[] = [
 // ─── One pooled batch ────────────────────────────────────────────────────────
 
 function PoolCard({
-  group, extras, selected, canEdit, onToggle, onExtras, familyNote, suggestion,
+  group, extras, selected, canEdit, onToggle, onExtras, familyNote, suggestion, knownUnits, onChooseUnit,
 }: {
   group: PoolGroup;
   extras: Extras;
@@ -45,9 +45,12 @@ function PoolCard({
    *  mode only (Pooling never pools varieties, only flat/CNC rows, so a bare
    *  design code is a safe, unambiguous key here — see karigarHistoryUtils.ts). */
   suggestion?: KarigarSuggestion | null;
+  knownUnits: string[];
+  onChooseUnit: (unit: string | null) => void;
 }) {
   const [showWho, setShowWho] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+  const [pendingUnit, setPendingUnit] = useState('');
 
   const make = makeQty(group, extras);
   const sizes = orderSizes([...new Set([
@@ -73,8 +76,9 @@ function PoolCard({
       {/* header */}
       <div className="flex gap-3 p-3 items-start border-b border-white/10">
         {canEdit && (
-          <input type="checkbox" checked={selected} onChange={onToggle}
-            className="mt-1 w-4 h-4 accent-[#534AB7] cursor-pointer" />
+          <input type="checkbox" checked={selected} onChange={onToggle} disabled={!!group.blocked}
+            title={group.blocked ? 'Resolve the mixed units below before this batch can be selected' : undefined}
+            className="mt-1 w-4 h-4 accent-[#534AB7] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" />
         )}
         {group.image
           ? <img src={group.image} alt="" loading="lazy"
@@ -106,6 +110,12 @@ function PoolCard({
             <span className="text-[10px] rounded-full px-2 py-0.5 bg-white/10 text-white/60">
               {group.clients.length} customer{group.clients.length !== 1 ? 's' : ''}
             </span>
+            {group.mixedUnits && (
+              <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/15 text-red-300 border border-red-500/30"
+                title={`Customers ordered this in different units (${group.units.join(', ')}) — pick one below before it can total`}>
+                ⚠ Mixed units ({group.units.join('/')})
+              </span>
+            )}
             {suggestion && (
               <span title={`Sent ${suggestion.at ? new Date(suggestion.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'earlier'} · made this design ${suggestion.count} time${suggestion.count !== 1 ? 's' : ''}`}
                 className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30">
@@ -126,8 +136,47 @@ function PoolCard({
         </div>
       )}
 
+      {/* Mixed units — no size table until the owner picks one target unit.
+          Never guess: 1 jotta and 1 pair are different piece counts, so
+          adding them raw silently produced a wrong total once (real
+          incident) — this blocks the total instead of showing a bad number. */}
+      {group.blocked && (
+        <div className="px-3 py-3 bg-red-500/5 border-b border-red-500/20">
+          {group.blocked.reason === 'choose' && (
+            <>
+              <p className="text-xs text-white/60 mb-2">
+                Customers ordered this in different units ({group.units.join(', ')}). Pick ONE unit to total this batch in — every row converts to real piece-counts, nothing added raw.
+              </p>
+              <div className="flex gap-2">
+                <select value={pendingUnit} onChange={e => setPendingUnit(e.target.value)}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#534AB7]">
+                  <option value="">— pick a unit —</option>
+                  {[...new Set([...group.units, ...knownUnits])].map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+                <button onClick={() => pendingUnit && onChooseUnit(pendingUnit)} disabled={!pendingUnit}
+                  className="px-3 py-1.5 rounded-lg bg-[#534AB7] hover:bg-[#6259c8] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold">
+                  Use this unit
+                </button>
+              </div>
+            </>
+          )}
+          {group.blocked.reason === 'undefinedTarget' && (
+            <p className="text-xs text-amber-300">
+              "{group.blocked.unit}" has no piece-count set — add it in Masters → Units first, or{' '}
+              <button onClick={() => onChooseUnit(null)} className="underline">pick a different unit</button>.
+            </p>
+          )}
+          {group.blocked.reason === 'undefinedRow' && (
+            <p className="text-xs text-amber-300">
+              "{group.blocked.unit}" has no piece-count set — add it in Masters → Units so this row can convert, or{' '}
+              <button onClick={() => onChooseUnit(null)} className="underline">pick a different target unit</button>.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* size matrix */}
-      <div className="overflow-x-auto">
+      {!group.blocked && <div className="overflow-x-auto">
         <table className="w-full text-xs" style={{ minWidth: 420 }}>
           <thead>
             <tr className="border-b border-white/10">
@@ -173,7 +222,7 @@ function PoolCard({
             </tr>
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {/* who ordered it */}
       <button onClick={() => setShowWho(v => !v)}
@@ -224,6 +273,7 @@ export default function Pooling() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [extrasByKey, setExtrasByKey] = useState<Record<string, Extras>>({});
+  const [unitChoiceByKey, setUnitChoiceByKey] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   // Vendor order form
@@ -233,7 +283,7 @@ export default function Pooling() {
   const [priority, setPriority] = useState<Priority>('normal');
   const [notes, setNotes] = useState('');
 
-  const allGroups = useMemo(() => buildPoolGroups(data, mode), [data, mode]);
+  const allGroups = useMemo(() => buildPoolGroups(data, mode, unitChoiceByKey), [data, mode, unitChoiceByKey]);
   const khist = useMemo(() => karigarHistory(data), [data]);
 
   const groups = useMemo(() => {
@@ -249,6 +299,7 @@ export default function Pooling() {
   }, [allGroups, multiOnly, search]);
 
   const families = useMemo(() => groupByFamily(groups), [groups]);
+  const knownUnits = data.vocabulary?.units ?? ['pcs', 'pairs', 'jotta'];
 
   const knownVendors = useMemo(() => {
     const fromVocab = data.vocabulary?.vendors ?? [];
@@ -262,9 +313,19 @@ export default function Pooling() {
     (a, g) => a + sumSizes(makeQty(g, extrasByKey[g.key] ?? emptyExtras())), 0);
 
   function toggle(key: string) {
+    const g = groups.find(x => x.key === key);
+    if (g?.blocked) return; // resolve mixed units before this batch can be selected
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function chooseUnit(key: string, unit: string | null) {
+    setUnitChoiceByKey(prev => {
+      const next = { ...prev };
+      if (unit) next[key] = unit; else delete next[key];
       return next;
     });
   }
@@ -306,6 +367,7 @@ export default function Pooling() {
       showToast(`${vo.orderId} created for ${vo.vendor} — ${selectedMake} pcs`, 'success');
       setSelected(new Set());
       setExtrasByKey({});
+      setUnitChoiceByKey({});
       setVendor(''); setNotes(''); setDelivery('');
     } catch {
       showToast('Failed to save — check your connection', 'error');
@@ -332,7 +394,7 @@ export default function Pooling() {
         <span className="text-xs text-white/40">Sending to:</span>
         <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
           {MODES.map(m => (
-            <button key={m.id} onClick={() => { setMode(m.id); setSelected(new Set()); }}
+            <button key={m.id} onClick={() => { setMode(m.id); setSelected(new Set()); setUnitChoiceByKey({}); }}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 mode === m.id ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'}`}>
               {m.label}
@@ -392,7 +454,9 @@ export default function Pooling() {
                   onToggle={() => toggle(g.key)}
                   onExtras={e => setExtrasByKey(p => ({ ...p, [g.key]: e }))}
                   familyNote={data.familyNotes?.[family]}
-                  suggestion={mode === 'karigar' ? suggestionFor(khist, g.code, '') : null} />
+                  suggestion={mode === 'karigar' ? suggestionFor(khist, g.code, '') : null}
+                  knownUnits={knownUnits}
+                  onChooseUnit={u => chooseUnit(g.key, u)} />
               ))}
             </div>
           ))}

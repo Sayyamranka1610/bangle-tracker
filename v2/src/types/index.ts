@@ -78,6 +78,13 @@ export interface VendorPipelineFields {
   recvQty?: Record<string, number>;
   // Per-size quantities rejected by QC on arrival.
   rejQty?: Record<string, number>;
+  // Production deliberately paused on this exact row (rate hold, client
+  // changed mind, waiting on material...) — works identically on a customer
+  // order OR vendor order, design OR variety holder. A required reason
+  // (never blank) is the whole point: it shows up as a badge next to the
+  // code so nobody has to ask why nothing's moving on that row.
+  onHold?: boolean;
+  holdReason?: string;
 }
 
 // ─── Variety (sub-design per code) ───────────────────────────────────────────
@@ -205,6 +212,11 @@ export interface VendorDesign {
   // across several part-deliveries).
   recvQty?: Record<string, number>;
   rejQty?: Record<string, number>;
+  // Same Hold concept as VendorPipelineFields (Sept 2026) — a VendorDesign
+  // isn't part of that shared interface, so repeated here rather than
+  // reshaping the type hierarchy for two fields.
+  onHold?: boolean;
+  holdReason?: string;
 }
 
 // One customer's contribution to a pooled vendor-order line.

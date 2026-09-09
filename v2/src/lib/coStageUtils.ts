@@ -112,11 +112,31 @@ export function toggleReceived<T extends VendorPipelineFields>(holder: T, stage:
   return next;
 }
 
-// Design-level "mark complete" shortcut — mirrors Phase 1's markDesignComplete
-// exactly. Ticks every stage done AND every vendor-stage received flag, both
-// on the design itself (for flat/CNC rows) and on every variety (for dye-gold
-// rows) — either could be the "holder" coStage() reads from.
-export function markDesignCompleteFields(design: EmbeddedDesign): EmbeddedDesign {
+// Design-level "mark complete" toggle — mirrors Phase 1's markDesignComplete
+// exactly, including a real bug Phase 1 shipped and fixed live (Sept 2026):
+// the original version only ever wrote "done", with no way to undo an
+// accidental click. It now toggles, and — deliberately, matching Phase 1's
+// own fix — the undo path is more thorough than the per-variety toggle below:
+// it also clears the vendor-stage received flags, not just dispatch/received.
+export function toggleDesignComplete(design: EmbeddedDesign): EmbeddedDesign {
+  const allStagesDone = design.stages.length > 0 && design.stages.every(st => st.status === 'done');
+  const alreadyDone = !!design.done || allStagesDone;
+
+  if (alreadyDone) {
+    const stages = design.stages.map(st => {
+      const next = { ...st, status: 'pending' as const };
+      delete next.completionDate;
+      return next;
+    });
+    const next: EmbeddedDesign = {
+      ...design, stages, done: false,
+      receivedFromKarigar: false, dispatchedToClient: false,
+      pipeReceived: false, karigarReceived: false, platingReceived: false,
+    };
+    delete next.dispatchedAt;
+    return next;
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const stages = design.stages.map(st => ({ ...st, status: 'done' as const, completionDate: st.completionDate ?? today }));
   const varieties = (design.varieties ?? []).map(v => ({ ...v, pipeReceived: true, karigarReceived: true, platingReceived: true }));
@@ -124,6 +144,7 @@ export function markDesignCompleteFields(design: EmbeddedDesign): EmbeddedDesign
     ...design,
     stages,
     varieties,
+    done: true,
     receivedFromKarigar: true,
     dispatchedToClient: true,
     pipeReceived: true,
@@ -273,4 +294,23 @@ export function buildVendorSummary(order: Order): { vendor: string; rows: Vendor
   const result = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([vendor, rows]) => ({ vendor, rows }));
   if (unassigned.length) result.push({ vendor: '', rows: unassigned }); // '' = unassigned bucket
   return result;
+}
+
+// ─── Hold (retail addition, Sept 2026) ────────────────────────────────────────
+// Production deliberately paused on a design or variety row, for any reason
+// (rate hold, client changed mind, waiting on material...). Works identically
+// on a customer-order OR vendor-order, design OR variety holder — the field
+// lives on the shared VendorPipelineFields, nothing else reads or writes it,
+// so it can never interact with sizes/units/sources. Ports Phase 1's
+// _holdPrompt()/toggleCOHold()/toggleVOHold() (bangle_v19.html ~L326).
+// A reason is required to put something ON hold (never a blank click) but
+// NOT required to take it back off — clearing the text is how you resolve it.
+export function setHold<T extends VendorPipelineFields>(holder: T, reason: string): T {
+  return { ...holder, onHold: true, holdReason: reason };
+}
+
+export function clearHold<T extends VendorPipelineFields>(holder: T): T {
+  const next: T = { ...holder, onHold: false };
+  delete next.holdReason;
+  return next;
 }

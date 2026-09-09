@@ -2,6 +2,7 @@ import type { AppData, Order, VendorDesign, PoolSource, DesignImage } from '../t
 import { coStage } from './coStageUtils';
 import { catalogRowsOfOrder, familyOf, type CatalogRow } from './familyUtils';
 import { uid } from './orderUtils';
+import { unitPieces } from './vendorWhoUtils';
 
 // ─── Pooling Board ───────────────────────────────────────────────────────────
 // Collects the same design wanted by several customers into one batch big
@@ -21,6 +22,13 @@ export interface PoolContributor {
   qty: number;
 }
 
+// Why a group's total can't be shown yet — set only when its contributors
+// don't all share one unit (see buildPoolGroups()'s unit-conversion note).
+export type PoolBlocked =
+  | { reason: 'choose' }                     // owner hasn't picked a target unit yet
+  | { reason: 'undefinedTarget'; unit: string } // chosen unit has no piece-count set
+  | { reason: 'undefinedRow'; unit: string };   // a contributing row's unit has no piece-count set
+
 export interface PoolGroup {
   key: string;
   code: string;
@@ -28,11 +36,22 @@ export interface PoolGroup {
   names: string[];
   finishes: string[];
   image?: string;
-  ordered: Record<string, number>;   // size -> qty across all customers
+  ordered: Record<string, number>;   // size -> qty, in `unit`, across all customers
   orderedTotal: number;
   contributors: PoolContributor[];
   clients: string[];
+  /** Every distinct unit seen among this group's contributors. */
+  units: string[];
+  /** true when `units` has more than one distinct value. */
+  mixedUnits: boolean;
+  /** The unit `ordered` is expressed in — the single shared unit, or the
+   *  owner's chosen target unit once resolved. Empty string while mixed
+   *  and unresolved (see `blocked`). */
   unit: string;
+  /** Set (and `ordered` left empty) until the owner resolves a mixed-unit
+   *  group by picking a target unit and every unit involved has a defined
+   *  piece-count. null once resolved (including the common single-unit case). */
+  blocked: PoolBlocked | null;
 }
 
 const addInto = (target: Record<string, number>, src: Record<string, number>) => {
@@ -59,7 +78,13 @@ export function isPoolable(order: Order, row: CatalogRow): boolean {
   return coStage(holder) === 'notStarted';
 }
 
-export function buildPoolGroups(data: AppData, mode: PoolMode): PoolGroup[] {
+/**
+ * `unitChoice`: the owner's picked target unit per group key, for groups
+ * whose contributors don't all share one unit (see PoolGroup.blocked).
+ * Transient UI state — Pooling.tsx holds it in React state, cleared once a
+ * batch is created, exactly like the rest of the board's in-progress choices.
+ */
+export function buildPoolGroups(data: AppData, mode: PoolMode, unitChoice: Record<string, string> = {}): PoolGroup[] {
   const groups = new Map<string, PoolGroup>();
 
   (data.orders ?? [])
@@ -85,7 +110,10 @@ export function buildPoolGroups(data: AppData, mode: PoolMode): PoolGroup[] {
             orderedTotal: 0,
             contributors: [],
             clients: [],
-            unit: row.unit,
+            units: [],
+            mixedUnits: false,
+            unit: '',
+            blocked: null,
           });
         }
         const g = groups.get(key)!;
@@ -93,13 +121,58 @@ export function buildPoolGroups(data: AppData, mode: PoolMode): PoolGroup[] {
         if (row.finish && row.finish !== '—' && !g.finishes.includes(row.finish)) g.finishes.push(row.finish);
         if (!g.image && row.images?.[0]?.data) g.image = row.images[0].data;
         if (!g.clients.includes(row.client)) g.clients.push(row.client);
-        addInto(g.ordered, row.sizes);
+        const rowUnit = row.unit || 'pcs';
+        if (!g.units.includes(rowUnit)) g.units.push(rowUnit);
         g.contributors.push({ row, qty: row.qty });
       });
     });
 
+  // Resolve each group's unit and build `ordered` accordingly. A design
+  // pooled from customers who all used the SAME unit needs no conversion —
+  // by far the common case, completely unaffected by any of this. A design
+  // pooled from customers in DIFFERENT units (a real bug once here: one
+  // customer's 8 jotta + another's 78 pairs silently added as "86", when
+  // the real total in pairs is 94 — 1 jotta is 4 bangles, 1 pair is 2)
+  // instead blocks its total until the owner picks ONE target unit; every
+  // contributing row is then converted to that unit via real piece-counts
+  // from Masters → Units, never added raw.
   const out = [...groups.values()];
-  out.forEach(g => { g.orderedTotal = sumSizes(g.ordered); });
+  out.forEach(g => {
+    g.mixedUnits = g.units.length > 1;
+
+    if (!g.mixedUnits) {
+      g.unit = g.units[0] || 'pcs';
+      g.blocked = null;
+      g.contributors.forEach(c => addInto(g.ordered, c.row.sizes));
+    } else {
+      g.unit = unitChoice[g.key] || '';
+      if (!g.unit) {
+        g.blocked = { reason: 'choose' };
+      } else {
+        const targetPcs = unitPieces(data, g.unit);
+        if (!targetPcs) {
+          g.blocked = { reason: 'undefinedTarget', unit: g.unit };
+        } else {
+          let missingUnit: string | null = null;
+          g.contributors.forEach(c => {
+            const rowUnit = c.row.unit || 'pcs';
+            const rowPcs = unitPieces(data, rowUnit);
+            if (!rowPcs) { missingUnit = rowUnit; return; }
+            const factor = rowPcs / targetPcs;
+            Object.entries(c.row.sizes ?? {}).forEach(([sz, n]) => {
+              const q = Number(n) || 0;
+              if (q <= 0) return;
+              g.ordered[sz] = Math.round(((g.ordered[sz] ?? 0) + q * factor) * 100) / 100;
+            });
+          });
+          g.blocked = missingUnit ? { reason: 'undefinedRow', unit: missingUnit } : null;
+        }
+      }
+    }
+
+    g.orderedTotal = sumSizes(g.ordered);
+  });
+
   return out.sort((a, b) => b.orderedTotal - a.orderedTotal);
 }
 

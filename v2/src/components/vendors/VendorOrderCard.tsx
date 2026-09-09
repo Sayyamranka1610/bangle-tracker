@@ -15,6 +15,7 @@ interface Props {
   onDelete: (o: VendorOrder) => void;
   onStatusChange: (o: VendorOrder, status: VendorStatus) => void;
   onWhoChange: (patch: { vendorOrders: VendorOrder[]; orders: Order[] }, auditDetail: string) => void;
+  onHoldToggle: (order: VendorOrder, designId: string) => void;
 }
 
 const priorityColors: Record<string, string> = {
@@ -27,7 +28,7 @@ const priorityLabels: Record<string, string> = {
   normal: '', urgent: '⚡ Urgent', critical: '🔴 Critical',
 };
 
-export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete, onStatusChange, onWhoChange }: Props) {
+export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete, onStatusChange, onWhoChange, onHoldToggle }: Props) {
   const [receiving, setReceiving] = useState(false);
   const [showDesigns, setShowDesigns] = useState(false);
   const [whoDesignId, setWhoDesignId] = useState<string | null>(null);
@@ -93,9 +94,23 @@ export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete
           {order.designs!.map(d => {
             const sourceCount = d.sources?.length ?? 0;
             return (
-              <div key={d.id} className="flex items-center gap-2 bg-white/3 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs">
+              <div key={d.id} className={`flex items-center gap-2 bg-white/3 border rounded-lg px-2.5 py-1.5 text-xs ${d.onHold ? 'border-amber-400/40 border-l-2' : 'border-white/10'}`}>
                 <span className="text-white/70 font-medium truncate flex-1 min-w-0">{d.code || d.name || '—'}</span>
                 <span className="text-white/40 flex-shrink-0">{voQty(d.sizes)} {d.unit || 'pcs'}</span>
+                {d.onHold && (
+                  <button onClick={() => onHoldToggle(order, d.id)}
+                    title={`⏸ On hold — ${d.holdReason || '(no reason given)'}. Click to edit or take off hold.`}
+                    className="text-[10px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/40 rounded-full px-2 py-0.5 flex-shrink-0 max-w-[140px] truncate">
+                    ⏸ {d.holdReason || '(no reason given)'}
+                  </button>
+                )}
+                {canEdit && !d.onHold && (
+                  <button onClick={() => onHoldToggle(order, d.id)}
+                    title="Put this row on hold"
+                    className="text-[10px] w-5 h-5 flex-shrink-0 rounded-full bg-white/5 border border-white/10 text-white/30 hover:text-amber-300 hover:border-amber-400/40 flex items-center justify-center">
+                    ⏸
+                  </button>
+                )}
                 {sourceCount > 0 && (
                   <button onClick={() => setWhoDesignId(d.id)}
                     title="View which customers this row is for"
