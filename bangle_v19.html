@@ -11347,6 +11347,7 @@ function toggleVORowReceived(vi, di, vri){
   holder.received=!holder.received;
   if(holder.received) holder.receivedAt=Date.now();
   else delete holder.receivedAt;
+  _syncCOReceivedForVORow(vd,holder,vo.type||'karigar');
   // If all rows in this VORD are now received, prompt to mark the whole order delivered
   const prog=_voRowsProgress(vo);
   save();render();
@@ -11355,6 +11356,81 @@ function toggleVORowReceived(vi, di, vri){
   } else {
     showToast(holder.received?'✅ Marked received':'↩️ Marked pending',holder.received?'green':'red',2000);
   }
+}
+
+// ── CO ↔ VO "RECEIVED" SYNC ───────────────────────────────────────────────────
+// Owner-reported: ticking "received" on either side of a linked row was two
+// completely disconnected flags — a customer-order row could show "Karigar
+// received ✓" while its linked vendor-order row sat unmarked, or the other
+// way round. Ticking either side now re-checks the other, for Pipe, Karigar
+// AND Plating (same mechanism, three separate vendor-order relationships).
+// A vendor-order row pooled from multiple customers only counts as received
+// on the customer side once EVERY one of those customers has ticked their
+// own row — one customer confirming never marks a shared batch "done" for
+// everyone else still waiting on it.
+
+// Every vendor-order row of the given stage type linked to this exact
+// customer-order design/variety, matched by real identity (order+design+
+// variety id) rather than the single importedToVOId field — that field can
+// only ever remember ONE of pipe/karigar/plating at a time even though a CO
+// row genuinely has all three relationships running at once.
+function _findVORowsForCOHolder(orderId,designId,varietyId,stage){
+  const out=[];
+  (S.vendorOrders||[]).forEach((vo,vi)=>{
+    if((vo.type||'karigar')!==stage)return;
+    (vo.designs||[]).forEach((vd,di)=>{
+      const varieties=vd.varieties||[];
+      if(!varieties.length){
+        const inSources=(vd.sources||[]).some(s=>s.orderDbId===orderId&&s.designId===designId&&(s.varietyId||null)===(varietyId||null));
+        const legacyMatch=!(vd.sources&&vd.sources.length)&&vd.sourceCoId===orderId;
+        if(inSources||legacyMatch)out.push({vo,vi,vd,di,vri:-1,holder:vd});
+      } else {
+        varieties.forEach((vv,vvi)=>{ if(vv.sourceCoId===orderId)out.push({vo,vi,vd,di,vri:vvi,holder:vv}); });
+      }
+    });
+  });
+  return out;
+}
+// The reverse: every customer-order design/variety linked to this one
+// vendor-order row (its sources[], or its older single sourceCoId).
+function _findCOHoldersForVORow(vd,holder){
+  const out=[];
+  if(holder.sources&&holder.sources.length){
+    holder.sources.forEach(s=>{ const found=_voSourceHolder(s); if(found)out.push(found.holder); });
+  } else if(holder.sourceCoId){
+    const order=(S.orders||[]).find(o=>o.id===holder.sourceCoId);
+    const match=order&&(order.designs||[]).find(d=>(d.code||'').trim()===(vd.code||'').trim());
+    if(match)out.push(match);
+  }
+  return out;
+}
+// CO side ticked/unticked → re-check every linked vendor-order row of that
+// stage: received only when ALL its linked customers now agree.
+function _syncVOReceivedForCOHolder(orderId,designId,varietyId,stage){
+  const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
+  _findVORowsForCOHolder(orderId,designId,varietyId,stage).forEach(({vd,holder})=>{
+    const coHolders=_findCOHoldersForVORow(vd,holder);
+    if(!coHolders.length)return;
+    const shouldBeReceived=coHolders.every(h=>!!h[field]);
+    if(!!holder.received!==shouldBeReceived){
+      holder.received=shouldBeReceived;
+      if(shouldBeReceived)holder.receivedAt=Date.now(); else delete holder.receivedAt;
+    }
+  });
+}
+// VO side ticked/unticked → every customer-order row linked to it mirrors
+// that exact state directly (the VO row is the one just clicked, so it's
+// the source of truth here — on a pooled row this marks every one of its
+// customers received/pending together, since the physical batch either did
+// or didn't come back for all of them at once).
+function _syncCOReceivedForVORow(vd,holder,stage){
+  const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
+  _findCOHoldersForVORow(vd,holder).forEach(h=>{
+    if(!!h[field]!==!!holder.received){
+      h[field]=!!holder.received;
+      if(h[field])h[field+'At']=Date.now(); else delete h[field+'At'];
+    }
+  });
 }
 
 // Returns {received: n, total: n} counting every design/variety row in the vendor order.
@@ -11389,6 +11465,8 @@ function toggleCOStageRcvd(oi,di,vri,stage){
   holder[field]=!holder[field];
   // Timestamp companion — used by the follow-up system to count days since received.
   if(holder[field])holder[field+'At']=Date.now(); else delete holder[field+'At'];
+  const varietyId=vri>=0?(holder.id||null):null;
+  _syncVOReceivedForCOHolder(order.id,d.id,varietyId,stage);
   save(); render();
   showToast(holder[field]?'✅ Marked received':'↩️ Marked pending',holder[field]?'green':'red',2000);
 }
