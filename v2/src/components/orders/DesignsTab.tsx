@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import type { Order, EmbeddedDesign, DesignVariety, DesignImage, VendorOrder, VendorPipelineFields } from '../../types';
+import { useMemo, useState } from 'react';
+import type { AppData, Order, EmbeddedDesign, DesignVariety, DesignImage, VendorOrder, VendorPipelineFields } from '../../types';
 import { uid } from '../../lib/orderUtils';
 import { DEFAULT_SIZES } from '../../lib/designUtils';
-import { dedupedVendorsOfType, setPipeVendor, setKarigarVendor, setPlatingVendor, toggleReceived, toggleVarietyDone } from '../../lib/coStageUtils';
+import { dedupedVendorsOfType, setPipeVendor, setKarigarVendor, setPlatingVendor, toggleReceived, toggleVarietyDone, hasOnlyDefault } from '../../lib/coStageUtils';
+import { karigarHistory, suggestionFor, type KarigarSuggestion } from '../../lib/karigarHistoryUtils';
 import PhotoPickerModal from '../designs/PhotoPickerModal';
 
 // Small thumbnail strip + "add from library" button — shared by the design
@@ -34,6 +35,7 @@ function PhotoStrip({ images, canEdit, onAdd, onRemove }: {
 
 interface Props {
   order: Order;
+  data: AppData;
   canEdit: boolean;
   dnames: string[];
   dcodes: string[];
@@ -48,7 +50,7 @@ interface Props {
 // (dropdown of vendors of that type + a "received" toggle), simplified to plain
 // React controls rather than the exact spreadsheet-cell markup.
 function VendorCell({
-  label, vendorField, receivedField, vendors, holder, onChange, canEdit,
+  label, vendorField, receivedField, vendors, holder, onChange, canEdit, suggestion,
 }: {
   label: string;
   vendorField: 'pipeVendor' | 'assignedVendor' | 'platingVendor';
@@ -57,6 +59,10 @@ function VendorCell({
   holder: VendorPipelineFields;
   onChange: (next: VendorPipelineFields) => void;
   canEdit: boolean;
+  /** Karigar History suggestion — "who last made this exact design/variety".
+   *  Only ever passed for the Karigar cell; never auto-assigns, just offers
+   *  a click-to-fill chip when the box is still empty. */
+  suggestion?: KarigarSuggestion | null;
 }) {
   const selected = holder[vendorField] || '';
   const received = !!holder[receivedField];
@@ -86,14 +92,22 @@ function VendorCell({
           }`}
         >✓</button>
       </div>
+      {canEdit && !selected && suggestion && (
+        <button type="button" onClick={() => onChange(setter(holder, suggestion.vendor))}
+          title={`Made this ${suggestion.count} time${suggestion.count !== 1 ? 's' : ''} before`}
+          className="text-[9px] text-amber-300/80 hover:text-amber-300 text-left truncate">
+          💡 Last: {suggestion.vendor}
+        </button>
+      )}
     </div>
   );
 }
 
-export default function DesignsTab({ order, canEdit, dnames, dcodes, units, vendorOrders, onDesignChange, onAddDesign, onRemoveDesign }: Props) {
+export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units, vendorOrders, onDesignChange, onAddDesign, onRemoveDesign }: Props) {
   const pipeVendors = dedupedVendorsOfType(vendorOrders, 'pipe');
   const karigarVendors = dedupedVendorsOfType(vendorOrders, 'karigar');
   const platingVendors = dedupedVendorsOfType(vendorOrders, 'plating');
+  const khist = useMemo(() => karigarHistory(data), [data]);
   const [editingName, setEditingName] = useState<{ di: number; value: string } | null>(null);
   const [editingCode, setEditingCode] = useState<{ di: number; value: string } | null>(null);
   const [editingVarName, setEditingVarName] = useState<{ di: number; vi: number; value: string } | null>(null);
@@ -190,6 +204,10 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, units, vend
       {order.designs.map((design, di) => {
         const varieties = design.varieties ?? [];
         const sizeKeys = design.sizes ? Object.keys(design.sizes) : DEFAULT_SIZES;
+        // Karigar History keys a flat/CNC row by varietyName='' (matching how
+        // it's actually recorded — see karigarHistoryUtils.ts), even though
+        // this table always represents it as a lone "Default" variety row.
+        const isFlatRow = hasOnlyDefault(design);
 
         return (
           <div key={design.id} className="border border-white/10 rounded-xl overflow-hidden">
@@ -343,6 +361,7 @@ export default function DesignsTab({ order, canEdit, dnames, dcodes, units, vend
                         <td className="px-1 py-1.5">
                           <VendorCell label="Karigar" vendorField="assignedVendor" receivedField="karigarReceived"
                             vendors={karigarVendors} holder={v} canEdit={canEdit}
+                            suggestion={suggestionFor(khist, design.code ?? '', isFlatRow ? '' : v.name)}
                             onChange={patch => updateVarietyFields(di, vi, patch)} />
                         </td>
                         <td className="px-1 py-1.5">

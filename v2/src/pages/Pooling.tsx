@@ -9,6 +9,7 @@ import {
 import { genVendorOrderId } from '../lib/vendorUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import { todayISO } from '../lib/orderUtils';
+import { karigarHistory, suggestionFor, type KarigarSuggestion } from '../lib/karigarHistoryUtils';
 
 const SIZE_ORDER = ['2/2', '2/4', '2/6', '2/8', '2/10', '2/12', '2/14', '2/16'];
 
@@ -31,7 +32,7 @@ const MODES: { id: PoolMode; label: string; hint: string }[] = [
 // ─── One pooled batch ────────────────────────────────────────────────────────
 
 function PoolCard({
-  group, extras, selected, canEdit, onToggle, onExtras, familyNote,
+  group, extras, selected, canEdit, onToggle, onExtras, familyNote, suggestion,
 }: {
   group: PoolGroup;
   extras: Extras;
@@ -40,8 +41,13 @@ function PoolCard({
   onToggle: () => void;
   onExtras: (e: Extras) => void;
   familyNote?: string;
+  /** Karigar History's "who made this before" — informational only, karigar
+   *  mode only (Pooling never pools varieties, only flat/CNC rows, so a bare
+   *  design code is a safe, unambiguous key here — see karigarHistoryUtils.ts). */
+  suggestion?: KarigarSuggestion | null;
 }) {
   const [showWho, setShowWho] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
 
   const make = makeQty(group, extras);
   const sizes = orderSizes([...new Set([
@@ -72,9 +78,16 @@ function PoolCard({
         )}
         {group.image
           ? <img src={group.image} alt="" loading="lazy"
-              className="w-14 h-14 rounded-lg object-cover border border-white/10 flex-shrink-0"
+              onClick={e => { e.stopPropagation(); setZoomed(true); }}
+              title="Click to zoom"
+              className="w-20 h-20 rounded-lg object-cover border border-white/10 flex-shrink-0 cursor-zoom-in hover:brightness-110 transition-[filter]"
               onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
-          : <div className="w-14 h-14 rounded-lg bg-white/5 flex-shrink-0" />}
+          : <div className="w-20 h-20 rounded-lg bg-white/5 flex-shrink-0" />}
+        {zoomed && group.image && (
+          <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setZoomed(false)}>
+            <img src={group.image} alt="" className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain" />
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold text-white">{group.code}</div>
           <div className="text-[11px] text-white/40 truncate" title={group.names.join(' · ')}>
@@ -93,6 +106,12 @@ function PoolCard({
             <span className="text-[10px] rounded-full px-2 py-0.5 bg-white/10 text-white/60">
               {group.clients.length} customer{group.clients.length !== 1 ? 's' : ''}
             </span>
+            {suggestion && (
+              <span title={`Sent ${suggestion.at ? new Date(suggestion.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'earlier'} · made this design ${suggestion.count} time${suggestion.count !== 1 ? 's' : ''}`}
+                className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30">
+                💡 Usually: {suggestion.vendor}
+              </span>
+            )}
           </div>
         </div>
         <div className="text-right flex-shrink-0">
@@ -215,6 +234,7 @@ export default function Pooling() {
   const [notes, setNotes] = useState('');
 
   const allGroups = useMemo(() => buildPoolGroups(data, mode), [data, mode]);
+  const khist = useMemo(() => karigarHistory(data), [data]);
 
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -371,7 +391,8 @@ export default function Pooling() {
                   canEdit={canEdit}
                   onToggle={() => toggle(g.key)}
                   onExtras={e => setExtrasByKey(p => ({ ...p, [g.key]: e }))}
-                  familyNote={data.familyNotes?.[family]} />
+                  familyNote={data.familyNotes?.[family]}
+                  suggestion={mode === 'karigar' ? suggestionFor(khist, g.code, '') : null} />
               ))}
             </div>
           ))}

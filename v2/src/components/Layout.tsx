@@ -10,6 +10,7 @@ const navItems = [
   { to: '/masters',   label: 'Masters',   icon: '📋' },
   { to: '/assign',    label: 'Assign',    icon: '↔️' },
   { to: '/pooling',   label: 'Pooling',   icon: '🧲' },
+  { to: '/karigar-history', label: 'Karigar History', icon: '💡' },
   { to: '/library',   label: 'Library',   icon: '🖼️' },
   { to: '/analytics', label: 'Analytics', icon: '📊' },
   { to: '/audit',     label: 'Audit',     icon: '🔍' },

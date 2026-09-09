@@ -333,6 +333,7 @@ export default function OrderCard({
             {activeTab === 'designs' && (
               <DesignsTab
                 order={order}
+                data={data}
                 canEdit={canEdit}
                 dnames={dnames}
                 dcodes={dcodes}

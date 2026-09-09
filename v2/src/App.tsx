@@ -14,6 +14,7 @@ import Masters from './pages/Masters';
 import Assign from './pages/Assign';
 import Pooling from './pages/Pooling';
 import Library from './pages/Library';
+import KarigarHistory from './pages/KarigarHistory';
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="/assign"    element={<Assign />} />
               <Route path="/pooling"   element={<Pooling />} />
               <Route path="/library"   element={<Library />} />
+              <Route path="/karigar-history" element={<KarigarHistory />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/audit"     element={<Audit />} />
               <Route element={<ProtectedRoute requiredRole="owner" />}>
