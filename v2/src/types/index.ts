@@ -166,6 +166,11 @@ export interface Vocabulary {
   dnames?: string[];
   dcodes?: string[];
   units?: string[];
+  // How many actual bangle pieces one unit contains (1 jotta = 4, 1 pair = 2,
+  // ...) — owner-defined in Masters → Units. Needed to safely convert
+  // quantities between units when linking a customer order in a different
+  // unit onto an existing vendor-order row (see vendorWhoUtils.ts).
+  unitPieces?: Record<string, number>;
 }
 
 // ─── Vendor orders ────────────────────────────────────────────────────────────

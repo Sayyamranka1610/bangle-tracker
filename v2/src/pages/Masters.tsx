@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../store/AppContext';
 import type { VendorOrderType } from '../types';
-import { addMasterEntry, deleteMasterEntry, renameMasterEntry, setVendorTypeMaster, vendorTypeOf, type MasterListKey } from '../lib/mastersUtils';
+import { addMasterEntry, deleteMasterEntry, renameMasterEntry, setVendorTypeMaster, vendorTypeOf, setUnitPieceCount, type MasterListKey } from '../lib/mastersUtils';
+import { unitPieces } from '../lib/vendorWhoUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import FamiliesTab from '../components/masters/FamiliesTab';
 
@@ -57,7 +58,7 @@ export default function Masters() {
         </div>
       )}
       {tab === 'families' && <FamiliesTab />}
-      {tab === 'units' && <MasterList label="Unit" listKey="units" data={data} canEdit={canEdit} saveAppData={saveAppData} showToast={showToast} auditUser={session?.username} />}
+      {tab === 'units' && <MasterList label="Unit" listKey="units" data={data} canEdit={canEdit} saveAppData={saveAppData} showToast={showToast} auditUser={session?.username} showPieceCount />}
     </div>
   );
 }
@@ -70,12 +71,13 @@ interface MasterListProps {
   data: import('../types').AppData;
   canEdit: boolean;
   showVendorType?: boolean;
+  showPieceCount?: boolean;
   saveAppData: (patch: Partial<import('../types').AppData>) => Promise<void>;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   auditUser?: string;
 }
 
-function MasterList({ label, listKey, data, canEdit, showVendorType, saveAppData, showToast, auditUser }: MasterListProps) {
+function MasterList({ label, listKey, data, canEdit, showVendorType, showPieceCount, saveAppData, showToast, auditUser }: MasterListProps) {
   const items = useMemo(() => (listKey === 'units' ? data.vocabulary?.units : data.vocabulary?.[listKey]) ?? [], [data.vocabulary, listKey]);
 
   const [search, setSearch] = useState('');
@@ -123,6 +125,12 @@ function MasterList({ label, listKey, data, canEdit, showVendorType, saveAppData
     showToast(`${vendorName} moved to ${VENDOR_TYPE_OPTS.find(o => o.value === type)?.label ?? type}`, 'success');
   }
 
+  async function handlePieceCountChange(unit: string, raw: string) {
+    const n = raw.trim() === '' ? null : Number(raw);
+    const patch = setUnitPieceCount(data, unit, n && n > 0 ? n : null);
+    await saveAppData(patch);
+  }
+
   return (
     <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
       <div className="px-4 py-3 bg-white/3 border-b border-white/10 flex items-center justify-between">
@@ -157,6 +165,19 @@ function MasterList({ label, listKey, data, canEdit, showVendorType, saveAppData
                 className="text-xs bg-white/5 border border-white/10 rounded px-2 py-1 text-white/70 focus:outline-none">
                 {VENDOR_TYPE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+            )}
+            {showPieceCount && editingIdx !== i && (
+              <div className="flex items-center gap-1" title="How many actual pieces one of this unit contains — used to convert quantities when linking a customer order in a different unit onto a vendor order">
+                {canEdit ? (
+                  <input type="number" min="0" step="0.5" disabled={!canEdit}
+                    defaultValue={unitPieces(data, value) ?? ''}
+                    onBlur={e => handlePieceCountChange(value, e.target.value)}
+                    placeholder="pcs"
+                    className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-xs text-right focus:outline-none focus:border-[#534AB7]" />
+                ) : (
+                  <span className="text-xs text-white/50">{unitPieces(data, value) ?? '—'} pcs</span>
+                )}
+              </div>
             )}
             {canEdit && editingIdx !== i && (
               <>

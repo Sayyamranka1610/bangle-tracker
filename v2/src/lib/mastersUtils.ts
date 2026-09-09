@@ -124,3 +124,15 @@ export function setVendorTypeMaster(data: AppData, vendorName: string, type: Ven
 export function vendorTypeOf(data: AppData, vendorName: string): VendorOrderType {
   return data.vendorTypes?.[vendorName] ?? 'karigar';
 }
+
+// How many actual bangle pieces one unit contains — feeds the unit-conversion
+// math when linking a customer order in a different unit onto an existing
+// vendor-order row (see vendorWhoUtils.ts's unitPieces()). A blank/invalid
+// value clears the override, falling back to the built-in pcs/pairs/jotta
+// defaults rather than storing a bad number.
+export function setUnitPieceCount(data: AppData, unit: string, pieces: number | null): Partial<AppData> {
+  const next = { ...(data.vocabulary?.unitPieces ?? {}) };
+  if (pieces && pieces > 0) next[unit] = pieces;
+  else delete next[unit];
+  return { vocabulary: { ...data.vocabulary, unitPieces: next } };
+}

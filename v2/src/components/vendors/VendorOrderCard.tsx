@@ -1,15 +1,20 @@
 import { useState } from 'react';
-import type { VendorOrder, VendorStatus } from '../../types';
+import type { AppData, Order, VendorOrder, VendorStatus } from '../../types';
 import ReceiveModal from './ReceiveModal';
+import VendorWhoModal from './VendorWhoModal';
 import { receivableDesigns } from '../../lib/receiveUtils';
+import { voQty } from '../../lib/vendorWhoUtils';
+import { printVendorOrder } from '../../lib/vendorPrintUtils';
 import { vendorAlert, STATUS_PCT, STATUS_LABELS, ALL_STATUSES, ALERT_CONFIG } from '../../lib/vendorUtils';
 
 interface Props {
   order: VendorOrder;
+  data: AppData;
   canEdit: boolean;
   onEdit: (o: VendorOrder) => void;
   onDelete: (o: VendorOrder) => void;
   onStatusChange: (o: VendorOrder, status: VendorStatus) => void;
+  onWhoChange: (patch: { vendorOrders: VendorOrder[]; orders: Order[] }, auditDetail: string) => void;
 }
 
 const priorityColors: Record<string, string> = {
@@ -22,8 +27,10 @@ const priorityLabels: Record<string, string> = {
   normal: '', urgent: '⚡ Urgent', critical: '🔴 Critical',
 };
 
-export default function VendorOrderCard({ order, canEdit, onEdit, onDelete, onStatusChange }: Props) {
+export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete, onStatusChange, onWhoChange }: Props) {
   const [receiving, setReceiving] = useState(false);
+  const [showDesigns, setShowDesigns] = useState(false);
+  const [whoDesignId, setWhoDesignId] = useState<string | null>(null);
   const pooledCount = receivableDesigns(order).length;
   const alert = vendorAlert(order);
   const pct   = STATUS_PCT[order.status];
@@ -69,7 +76,9 @@ export default function VendorOrderCard({ order, canEdit, onEdit, onDelete, onSt
         <span>📅 Start {order.startDate}</span>
         {order.deliveryDate && <span>🚚 Due {order.deliveryDate}</span>}
         {(order.designs?.length ?? 0) > 0 && (
-          <span>🎨 {order.designs!.length} design{order.designs!.length !== 1 ? 's' : ''}</span>
+          <button onClick={() => setShowDesigns(s => !s)} className="hover:text-white transition-colors">
+            🎨 {order.designs!.length} design{order.designs!.length !== 1 ? 's' : ''} {showDesigns ? '▾' : '▸'}
+          </button>
         )}
         {pooledCount > 0 && (
           <span className="text-[#a89fff]" title="Lines pooled from several customer orders">
@@ -77,6 +86,57 @@ export default function VendorOrderCard({ order, canEdit, onEdit, onDelete, onSt
           </span>
         )}
       </div>
+
+      {/* Design rows — code, quantity, and who it's for if pooled from customers */}
+      {showDesigns && (order.designs?.length ?? 0) > 0 && (
+        <div className="flex flex-col gap-1 mb-3">
+          {order.designs!.map(d => {
+            const sourceCount = d.sources?.length ?? 0;
+            return (
+              <div key={d.id} className="flex items-center gap-2 bg-white/3 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs">
+                <span className="text-white/70 font-medium truncate flex-1 min-w-0">{d.code || d.name || '—'}</span>
+                <span className="text-white/40 flex-shrink-0">{voQty(d.sizes)} {d.unit || 'pcs'}</span>
+                {sourceCount > 0 && (
+                  <button onClick={() => setWhoDesignId(d.id)}
+                    title="View which customers this row is for"
+                    className="text-[10px] font-semibold bg-[#534AB7]/20 hover:bg-[#534AB7]/35 text-[#c9c3ff] rounded-full px-2 py-0.5 flex-shrink-0">
+                    👥 {sourceCount} customer{sourceCount !== 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {whoDesignId && (
+        <VendorWhoModal
+          data={data}
+          vo={order}
+          vendorDesignId={whoDesignId}
+          canEdit={canEdit}
+          onChange={onWhoChange}
+          onClose={() => setWhoDesignId(null)}
+        />
+      )}
+
+      {/* Print — vendor-facing copy (sizes/totals only) or internal copy
+          (adds which customer(s) each pooled row is for) */}
+      {(order.designs?.length ?? 0) > 0 && (
+        <div className="flex gap-1.5 mb-3">
+          <button
+            onClick={() => printVendorOrder(order, { internal: false })}
+            className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-white/70 text-xs font-medium transition-colors">
+            🖨️ Print for vendor
+          </button>
+          {pooledCount > 0 && (
+            <button
+              onClick={() => printVendorOrder(order, { internal: true })}
+              className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-white/70 text-xs font-medium transition-colors">
+              🏠 Print internal copy
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Receiving — only for batches that were pooled from customer orders */}
       {pooledCount > 0 && (

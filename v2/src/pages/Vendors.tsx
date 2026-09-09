@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../store/AppContext';
-import type { VendorOrder, VendorStatus, AppData } from '../types';
+import type { VendorOrder, VendorStatus, AppData, Order } from '../types';
 import { vendorAlert, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import VendorOrderCard from '../components/vendors/VendorOrderCard';
@@ -91,6 +91,25 @@ export default function Vendors() {
     await persist(next, 'Edit vendor order', `${order.orderId} status → ${status}`, false);
   }
 
+  // Who-modal (link/unlink a customer on a pooled vendor-order row) touches
+  // BOTH vendorOrders and orders at once — a customer's own row and the
+  // vendor batch it's linked to must always agree on importedToVOId, so
+  // they're saved together in one patch, never as two separate writes.
+  async function handleWhoChange(patch: { vendorOrders: VendorOrder[]; orders: Order[] }, auditDetail: string) {
+    const full: Partial<AppData> = { ...patch };
+    if (session?.username) {
+      full.auditLog = buildAuditLog('Edit vendor order', auditDetail, session.username, data.auditLog ?? []);
+    }
+    setSaving(true);
+    try {
+      await saveAppData(full, { immediate: true });
+    } catch {
+      showToast('Failed to save — check your connection', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     const next = vendorOrders.filter(o => o.id !== deleteTarget.id);
@@ -102,7 +121,7 @@ export default function Vendors() {
   function toggleCollapse(vendor: string) {
     setCollapsed(prev => {
       const next = new Set(prev);
-      next.has(vendor) ? next.delete(vendor) : next.add(vendor);
+      if (next.has(vendor)) next.delete(vendor); else next.add(vendor);
       return next;
     });
   }
@@ -212,10 +231,12 @@ export default function Vendors() {
                       <VendorOrderCard
                         key={order.id}
                         order={order}
+                        data={data}
                         canEdit={canEdit}
                         onEdit={o => setModalOrder(o)}
                         onDelete={o => setDeleteTarget(o)}
                         onStatusChange={handleStatusChange}
+                        onWhoChange={handleWhoChange}
                       />
                     ))}
                   </div>
