@@ -1081,7 +1081,7 @@ let S = {
   openDesignStages:new Set(),    // design IDs whose Production Stages are expanded
   activeTabs:{}, auditLog:[], mainView:'orders',
   filters:{client:'',dname:'',dcode:'',status:''},
-  vocabulary:{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']},
+  vocabulary:{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta'],unitPieces:{pcs:1,pairs:2,jotta:4}},
   vocabularyManual:{clients:[],vendors:[],dnames:[],dcodes:[]}, // manually-added master entries (persist across rebuilds)
   invLedger:[],           // [{id,date,designName,designCode,type,qty,orderId,note,source,autoType,stageRef,rejections}]
   // qty = pieces for ALL groups (raw, semi, finished)
@@ -1126,6 +1126,17 @@ try{
     S.vocabulary=sv.vocabulary||{clients:[],vendors:[],dnames:[],dcodes:[],units:['pcs','pairs','jotta']};
     if(!S.vocabulary.vendors)S.vocabulary.vendors=[];
     if(!S.vocabulary.units||!S.vocabulary.units.length)S.vocabulary.units=['pcs','pairs','jotta'];
+    // How many actual bangles are in one unit — e.g. 1 jotta = 4 pieces, 1
+    // pair = 2. Needed so pooling never adds a jotta count to a pairs count
+    // as if they were the same thing (owner-reported: exactly that
+    // happened — 8 jotta + 78 pairs showed as "86", the right answer is
+    // 94 pairs). Owner-confirmed values seeded once; anything else (Set,
+    // Box, ...) starts blank — the owner fills those in via Masters, never
+    // guessed here.
+    if(!S.vocabulary.unitPieces)S.vocabulary.unitPieces={};
+    if(S.vocabulary.unitPieces.pcs==null)S.vocabulary.unitPieces.pcs=1;
+    if(S.vocabulary.unitPieces.pairs==null)S.vocabulary.unitPieces.pairs=2;
+    if(S.vocabulary.unitPieces.jotta==null)S.vocabulary.unitPieces.jotta=4;
     S.vocabularyManual=sv.vocabularyManual||{clients:[],vendors:[],dnames:[],dcodes:[]};
     S.mainView=sv.mainView||'orders';
     if(S.mainView==='dispatch')S.mainView='orders'; // Dispatch tab hidden — fall back to orders
@@ -5285,12 +5296,13 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       const allStagesDone=(d.stages||[]).length>0&&(d.stages||[]).every(st=>st.status==='done');
       const tickSty=allStagesDone?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0';
       const flatDone=!!d.done||allStagesDone;
-      tbody+='<tr style="background:#fff;border-left:'+(flatDone?'4px solid #4CAF50':'4px solid transparent')+'">'
+      tbody+='<tr style="background:#fff;border-left:'+(d.onHold?'4px solid #FF9800':(flatDone?'4px solid #4CAF50':'4px solid transparent'))+'">'
         +'<td>'
           +'<div style="display:flex;flex-direction:column;gap:3px">'
             +badgeHtml(al)
             +(codeEmpty?'<span style="font-size:9px;font-weight:700;color:#BA7517;letter-spacing:.04em">ADD CODE ↓</span>':'')
             +_voBadgeHtml(d.code||'','__flat__')
+            +_holdBadgeHtml(d,'toggleCOHold('+oi+','+di+',-1)')
             +'<input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="e.g. DC-001"'
             +' oninput="if(S.orders['+oi+']&&S.orders['+oi+'].designs['+di+']){S.orders['+oi+'].designs['+di+'].code=this.value;scheduleAutosave();}"'
             +' onkeydown="handleCodeTabKey(event)"'
@@ -5309,6 +5321,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +_coVendorCells(d,di,-1,d.code)
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
           +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Dispatch — auto-ticks all stages">✓</button>'
+          +_holdToggleBtnHtml(d,'toggleCOHold('+oi+','+di+',-1)')
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
         +'</div></td>'
@@ -5373,7 +5386,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +' onkeydown="handleQtyTabKey(event,'+oi+','+di+','+vi+','+szI+')"'
           +' tabindex="0"></td>'
         ).join('');
-        tbody+='<tr style="background:#FAFAFF;border-left:'+(v.done?'4px solid #4CAF50':'4px solid transparent')+'" data-di="'+di+'" data-vi="'+vi+'">'
+        tbody+='<tr style="background:#FAFAFF;border-left:'+(v.onHold?'4px solid #FF9800':(v.done?'4px solid #4CAF50':'4px solid transparent'))+'" data-di="'+di+'" data-vi="'+vi+'">'
           +'<td style="padding-left:22px">'
             +'<span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
             +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vi+1))+'"'
@@ -5381,6 +5394,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
             +' onkeydown="handleVarietyNameTabKey(event,'+oi+','+di+','+vi+')"'
             +' placeholder="e.g. Classic" tabindex="0" style="max-width:100px">'
             +_voBadgeHtml(d.code||'',v.name||'')
+            +_holdBadgeHtml(v,'toggleCOHold('+oi+','+di+','+vi+')')
           +'</td>'
           +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
           +szCells2
@@ -5392,6 +5406,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
           +_coVendorCells(v,di,vi,d.code)
           +'<td class="no-print"><div style="display:flex;gap:3px">'
             +'<button class="icon-btn sm" style="'+(v.done?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0')+';font-weight:700" onclick="markVarietyDone('+oi+','+di+','+vi+')" title="'+(v.done?'Mark as dispatched (auto-ticks stages)':'Mark variety dispatched')+'">✓</button>'
+            +_holdToggleBtnHtml(v,'toggleCOHold('+oi+','+di+','+vi+')')
             +'<button class="icon-btn danger sm" onclick="removeVariety('+oi+','+di+','+vi+')">✕</button>'
           +'</div></td>'
         +'</tr>'+btNoteRow(v.note);
@@ -9480,13 +9495,25 @@ function renderMasters(){
     </div>`:''}
   </div>`;
 
-  const unitChips=(v.units||[]).map((u,i)=>
-    `<span style="display:inline-flex;align-items:center;gap:5px;background:#f0efff;border:1px solid #AFA9EC;border-radius:20px;padding:4px 10px 4px 12px;font-size:12px;color:#3C3489;font-weight:500">
-      ${esc(u)}<button onclick="masterDelete('units',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0;line-height:1" title="Remove">✕</button>
-    </span>`
-  ).join('');
+  // "Pieces per unit" — how many actual bangles one unit contains. Needed
+  // so Pooling can safely combine, say, a jotta order with a pairs order
+  // (owner-reported: was silently adding the raw numbers as if 1 jotta and
+  // 1 pair were the same thing). Blank = not defined yet; Pooling refuses
+  // to guess and asks the owner to fill it in here instead.
+  const unitChips=(v.units||[]).map((u,i)=>{
+    const pcs=_unitPieces(u)||'';
+    return `<div style="display:flex;align-items:center;gap:8px;background:#f7f6ff;border:1px solid #E0DFFF;border-radius:9px;padding:6px 8px 6px 12px">
+      <span style="flex:1;font-size:12px;color:#3C3489;font-weight:600">${esc(u)}</span>
+      <span style="font-size:11px;color:#8A87A8;white-space:nowrap">1 ${esc(u)} =</span>
+      <input type="number" min="1" step="1" value="${pcs}" placeholder="?" data-unit="${esc(u).replace(/"/g,'&quot;')}"
+        style="width:48px;padding:4px 5px;border:1.5px solid #AFA9EC;border-radius:6px;font-size:12px;text-align:center;background:#fff"
+        onchange="masterSetUnitPieces(this.dataset.unit,this.value)" title="How many bangles are in one ${esc(u)}?">
+      <span style="font-size:11px;color:#8A87A8">pcs</span>
+      <button onclick="masterDelete('units',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:0 2px;line-height:1" title="Remove">✕</button>
+    </div>`;
+  }).join('');
   const unitSection=makeSection('units','📏','Unit Master',v.units||[],'e.g. dozen',
-    (v.units||[]).length?`<div style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px">${unitChips}</div>`
+    (v.units||[]).length?`<div style="padding:10px 16px;display:flex;flex-direction:column;gap:6px">${unitChips}</div>`
     :'<div style="padding:10px 16px;font-size:11px;color:#aaa">Default: pcs, pairs, jotta. Add custom units here.</div>'
   ).replace(`<div id="mast-list-units" style="max-height:240px;overflow-y:auto">`,`<div id="mast-list-units" style="display:none">`);
 
@@ -9572,10 +9599,22 @@ function masterAdd(listKey){
   save();renderMasters();
 }
 
+// Owner sets/edits how many bangle pieces one unit contains — see the
+// comment above unitChips. Blank/0/invalid clears it back to "not defined."
+function masterSetUnitPieces(unit,val){
+  if(!S.vocabulary.unitPieces)S.vocabulary.unitPieces={};
+  const n=Number(val);
+  if(!String(val||'').trim()||!isFinite(n)||n<=0)delete S.vocabulary.unitPieces[unit];
+  else S.vocabulary.unitPieces[unit]=n;
+  audit('Master edit','Unit "'+unit+'" = '+(S.vocabulary.unitPieces[unit]||'(not set)')+' pcs');
+  save();renderMasters();
+}
 function masterDelete(listKey,idx){
   if(listKey==='units'){
     if(!S.vocabulary.units)return;
+    const removedUnit=S.vocabulary.units[idx];
     S.vocabulary.units.splice(idx,1);
+    if(removedUnit&&S.vocabulary.unitPieces)delete S.vocabulary.unitPieces[removedUnit];
   } else {
     // Remove from both the live vocab and the persistent manual list
     const val=(S.vocabulary[listKey]||[])[idx];
@@ -9644,6 +9683,10 @@ function masterRename(key,oldVal,newVal,idx){
     });
     (S.orders||[]).forEach(o=>upd(o.designs||[]));
     (S.vendorOrders||[]).forEach(vo=>upd(vo.designs||[]));
+    if(S.vocabulary.unitPieces&&S.vocabulary.unitPieces[oldVal]!=null){
+      S.vocabulary.unitPieces[newVal]=S.vocabulary.unitPieces[oldVal];
+      delete S.vocabulary.unitPieces[oldVal];
+    }
   }
   audit('Rename master',''+key+': "'+oldVal+'" → "'+newVal+'"');
   save(); render();
@@ -10132,8 +10175,8 @@ function buildVendorDesignsPanel(vo,vi){
           +' oninput="upVendorFlatSizeSilent('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+');this._dirty=true"'
           +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorFlatSize('+vi+','+di+',\''+sz+'\',this.value,'+hasOnlyDefault+')}"'
           +' onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
-        tbody+='<tr style="background:'+(d.received?'#F0FFF4':'#fff')+'">'
-          +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onkeydown="handleCodeTabKey(event)" onblur="rebuildVocab()" tabindex="0" style="max-width:110px"></td>'
+        tbody+='<tr style="background:'+(d.received?'#F0FFF4':'#fff')+';border-left:'+(d.onHold?'4px solid #FF9800':'4px solid transparent')+'">'
+          +'<td><input class="variety-name-inp" value="'+esc(d.code||'')+'" placeholder="Code" oninput="S.vendorOrders['+vi+'].designs['+di+'].code=this.value;scheduleAutosave()" onkeydown="handleCodeTabKey(event)" onblur="rebuildVocab()" tabindex="0" style="max-width:110px">'+_holdBadgeHtml(d,'toggleVOHold('+vi+','+di+',-1)')+'</td>'
           +'<td><div class="variety-img-cell">'+imgCells+addImgBtn+'</div></td>'
           +sizeCells
           +'<td class="total-col">'+rowTotal+'</td>'
@@ -10141,11 +10184,12 @@ function buildVendorDesignsPanel(vo,vi){
           +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:3px 5px;border:1px solid #AFA9EC;border-radius:5px;width:72px;text-align:right" value="'+flatRate+'" onchange="upVendorFlatRate('+vi+','+di+',this.value,'+hasOnlyDefault+')"></td>'
           +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">'
             +'<button class="icon-btn sm" style="'+(d.received?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56':'background:#F8F9FA;color:#ADB5BD;border-color:#DEE2E6')+';font-weight:700" onclick="toggleVORowReceived('+vi+','+di+',-1)" title="'+(d.received?'Received ✓ — click to undo':'Mark as received from vendor')+'">✓</button>'
+            +_holdToggleBtnHtml(d,'toggleVOHold('+vi+','+di+',-1)')
             +(d.sources&&d.sources.length
               ?'<span style="font-size:9px;font-weight:700;background:#EEEDFE;color:#534AB7;border:1px solid #C6C1F0;border-radius:5px;padding:2px 7px;white-space:nowrap;cursor:pointer" onclick="_openVOWhoModal('+vi+','+di+')" title="See the customer(s) behind this pooled row">'+(d.sources.length>1?'👥 '+d.sources.length+' customers':'🔗 '+esc((d.sources[0]||{}).orderLabel||'CO'))+'</span>'
               :d.sourceCoId
-                ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+')" title="Linked — click to change or remove">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
-                :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+')" title="Link to customer order">🔗 Link</button>':'')
+                ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOWhoModal('+vi+','+di+')" title="Linked — click to see or add customers">🔗 '+esc(d.sourceCoNum||'CO')+'</span>'
+                :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOWhoModal('+vi+','+di+',true)" title="Link to customer order">🔗 Link</button>':'')
             +'<button class="icon-btn sm" onclick="addVendorVariety('+vi+','+di+')" title="Add variety">+Var</button>'
             +'<button class="icon-btn danger sm" onclick="removeVendorDesign('+vi+','+di+')" title="Remove">✕</button>'
           +'</div></td>'
@@ -10184,9 +10228,9 @@ function buildVendorDesignsPanel(vo,vi){
             +' oninput="upVendorVarietySizeSilent('+vi+','+di+','+vri+',\''+sz+'\',this.value);this._dirty=true"'
             +' onblur="if(this._dirty&&!this._skipBlur){this._dirty=false;upVendorVarietySize('+vi+','+di+','+vri+',\''+sz+'\',this.value)}"'
             +' onfocus="this.select()" onkeydown="handleVendorQtyTab(event,this)" tabindex="0"></td>').join('');
-          tbody+='<tr style="background:'+(v.received?'#F0FFF4':'#FAFAFF')+'">'
+          tbody+='<tr style="background:'+(v.received?'#F0FFF4':'#FAFAFF')+';border-left:'+(v.onHold?'4px solid #FF9800':'4px solid transparent')+'">'
             +'<td style="padding-left:22px"><span style="color:#AFA9EC;margin-right:4px;font-size:13px">└</span>'
-              +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px"></td>'
+              +'<input class="variety-name-inp" value="'+esc(v.name||'Variety '+(vri+1))+'" oninput="S.vendorOrders['+vi+'].designs['+di+'].varieties['+vri+'].name=this.value;scheduleAutosave()" placeholder="e.g. L 11" tabindex="0" style="max-width:100px">'+_holdBadgeHtml(v,'toggleVOHold('+vi+','+di+','+vri+')')+'</td>'
             +'<td><div class="variety-img-cell">'+varImgs+addVarImg+'</div></td>'
             +szCells
             +'<td class="total-col">'+rowTotal+'</td>'
@@ -10194,6 +10238,7 @@ function buildVendorDesignsPanel(vo,vi){
             +'<td><input type="number" min="0" step="0.01" placeholder="₹" style="font-size:11px;padding:2px 4px;border:1px solid #AFA9EC;border-radius:5px;width:50px;text-align:right" value="'+(v.rate||'')+'" onchange="upVendorVarietyRate('+vi+','+di+','+vri+',this.value)"></td>'
             +'<td class="no-print"><div style="display:flex;gap:3px;align-items:center">'
               +'<button class="icon-btn sm" style="'+(v.received?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56':'background:#F8F9FA;color:#ADB5BD;border-color:#DEE2E6')+';font-weight:700" onclick="toggleVORowReceived('+vi+','+di+','+vri+')" title="'+(v.received?'Received ✓ — click to undo':'Mark as received from vendor')+'">✓</button>'
+              +_holdToggleBtnHtml(v,'toggleVOHold('+vi+','+di+','+vri+')')
               +(v.sourceCoId
                 ?'<span style="font-size:9px;color:#27AE60;background:#E9F7EF;border:1px solid #A9DFBF;border-radius:5px;padding:2px 5px;white-space:nowrap;cursor:pointer" onclick="_openVOLinkPicker('+vi+','+di+','+vri+')" title="Linked — click to change or remove">🔗 '+esc(v.sourceCoNum||'CO')+'</span>'
                 :(d.code||'').trim()?'<button class="icon-btn sm" style="background:#FFF3E0;color:#E65100;border-color:#FFB74D;font-size:10px;padding:3px 7px;white-space:nowrap" onclick="_openVOLinkPicker('+vi+','+di+','+vri+')" title="Link to customer order">🔗 Link</button>':'')
@@ -10572,6 +10617,9 @@ function _buildVOPresenceMap(){
       const vars=vd.varieties||[];
       if(!vars.length){
         if(vd.sourceCoId) add(vd.sourceCoId,code,'__flat__',vo.orderId);
+        // Pooled/multi-linked rows: one badge per customer behind this row,
+        // not just the legacy single link above.
+        (vd.sources||[]).forEach(s=>{ if(s.orderDbId) add(s.orderDbId,code,'__flat__',vo.orderId); });
       } else {
         vars.forEach(v=>{
           const coId=v.sourceCoId||(vd.sourceCoId||'');
@@ -10830,9 +10878,45 @@ function _voSourceHolder(src){
   const holder=src.varietyId?((d.varieties||[]).find(v=>v.id===src.varietyId)||null):d;
   return holder?{order,d,holder}:null;
 }
+// One-time upgrade: a design linked through the OLDER single-customer picker
+// (vd.sourceCoId/vd.sourceCoNum — see _openVOLinkPicker below) is converted
+// into the same vd.sources[] list the Pooling-created rows already use, the
+// first time this row is opened here. Nothing on screen changes for the
+// owner — the one customer just becomes entry #1 in the list, and the
+// "+ Add another customer order" option (already built for Pooling rows)
+// now works on manually-linked rows too, which is the whole point: before
+// this, clicking a second match in the old picker silently overwrote the
+// first link instead of adding to it.
+function _migrateSourceCoIdToSources(vo,vd){
+  if((vd.sources&&vd.sources.length)||!vd.sourceCoId)return;
+  const order=(S.orders||[]).find(o=>o.id===vd.sourceCoId);
+  const code=(vd.code||'').trim();
+  let designId=null,client='';
+  if(order){
+    client=order.client||'';
+    const match=(order.designs||[]).find(d=>(d.code||'').trim()===code);
+    if(match){
+      designId=match.id;
+      if(!match.importedToVOId)match.importedToVOId=vo.id; // it was always "spoken for" — just never flagged
+    }
+  }
+  vd.sources=[{
+    orderDbId:vd.sourceCoId, orderLabel:vd.sourceCoNum||'CO', client:client,
+    designId:designId, varietyId:null,
+    sizes:Object.assign({},vd.sizes), origUnit:vd.unit||'pcs', origSizes:Object.assign({},vd.sizes)
+  }];
+  // Now redundant — sources[0] carries this; clearing avoids the old green
+  // "🔗 CO" badge reappearing later if this one customer is ever unlinked
+  // and sources goes back to empty (badge logic checks sources first, then
+  // falls back to sourceCoId — a stale sourceCoId would show a link that no
+  // longer exists).
+  delete vd.sourceCoId; delete vd.sourceCoNum;
+  save();
+}
 function _openVOWhoModal(vi,di,showAdd){
   const vo=S.vendorOrders[vi]; if(!vo)return;
   const vd=vo.designs[di]; if(!vd)return;
+  _migrateSourceCoIdToSources(vo,vd);
   const old=document.getElementById('_vo-who-overlay'); if(old)old.remove();
   const sources=vd.sources||[];
 
@@ -10884,7 +10968,7 @@ function _openVOWhoModal(vi,di,showAdd){
         if(r.holder.importedToVOId)return;
         const key=order.id+'|'+r.designId+'|'+(r.varietyId||'');
         if(linkedKeys.has(key))return;
-        candidates.push({orderDbId:order.id,orderLabel:order.orderId,client:order.client,designId:r.designId,varietyId:r.varietyId,sizes:r.sizes,qty:r.qty});
+        candidates.push({orderDbId:order.id,orderLabel:order.orderId,client:order.client,designId:r.designId,varietyId:r.varietyId,sizes:r.sizes,qty:r.qty,unit:_validUnit(r.unit)});
       });
     });
   }
@@ -10896,7 +10980,7 @@ function _openVOWhoModal(vi,di,showAdd){
         +candidates.map((c,ci)=>'<div onclick="_voWhoAdd('+vi+','+di+','+ci+')" style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px solid #D0CCF5;margin-bottom:7px;cursor:pointer;background:#fafafd" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'#fafafd\'">'
           +'<span style="background:#534AB7;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+esc(c.orderLabel||'CO')+'</span>'
           +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#3C3489">'+esc(c.client||'')+'</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(c.sizes))+'</div></div>'
-          +'<div style="font-size:13px;font-weight:700;color:#534AB7;flex-shrink:0">'+c.qty+'</div>'
+          +'<div style="font-size:13px;font-weight:700;color:#534AB7;flex-shrink:0">'+c.qty+' <span style="font-size:10px;font-weight:600;color:#8A87A8">'+esc(c.unit)+'</span></div>'
         +'</div>').join('')
       :'<div style="font-size:11px;color:#AAA;margin:14px 0 4px;text-align:center;padding:10px;border:1.5px dashed #E0DFFF;border-radius:9px">No other customer order has design "'+esc(code)+'" waiting to be pooled.</div>')
     :'<div onclick="_openVOWhoModal('+vi+','+di+',true)" style="border:1.5px dashed #C6C1F0;border-radius:9px;padding:10px 12px;text-align:center;color:#534AB7;font-size:12px;font-weight:600;cursor:pointer;margin-top:6px">+ Add another customer order</div>';
@@ -10935,13 +11019,29 @@ function _voWhoAdd(vi,di,ci){
     if(!ok){showToast('Not added — '+label+' still set to "'+cur+'" in '+c.orderLabel,'amber',4200);return;}
   }
 
+  // This candidate may be in a different unit than the row (that's exactly
+  // what pooling can mix) — convert before touching vd.sizes, never add the
+  // raw number as if it were already the row's unit. That silent mismatch
+  // is the same bug fixed on the create side; refuse rather than guess if
+  // either unit's piece-count isn't defined yet.
+  const rowUnit=vd.unit||'pcs';
+  const candPcs=_unitPieces(c.unit), rowPcs=_unitPieces(rowUnit);
+  if(!candPcs||!rowPcs){
+    const badUnit=!candPcs?c.unit:rowUnit;
+    showToast('"'+badUnit+'" has no piece-count set — add it in Masters → Units before adding this customer','amber',5000);
+    return;
+  }
+  const factor=candPcs/rowPcs;
+  const convSizes={};
+  Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*100)/100;});
+
   vd.sizes=vd.sizes||{};
-  Object.keys(c.sizes||{}).forEach(sz=>{
-    const n=parseInt(c.sizes[sz])||0; if(n<=0)return;
-    vd.sizes[sz]=(parseInt(vd.sizes[sz])||0)+n;
+  Object.keys(convSizes).forEach(sz=>{
+    vd.sizes[sz]=Math.round(((Number(vd.sizes[sz])||0)+convSizes[sz])*100)/100;
   });
   vd.sources=vd.sources||[];
-  vd.sources.push({orderDbId:c.orderDbId,orderLabel:c.orderLabel,client:c.client,designId:c.designId,varietyId:c.varietyId,sizes:Object.assign({},c.sizes)});
+  vd.sources.push({orderDbId:c.orderDbId,orderLabel:c.orderLabel,client:c.client,designId:c.designId,varietyId:c.varietyId,
+    sizes:convSizes,origUnit:c.unit,origSizes:Object.assign({},c.sizes)});
   holder.importedToVOId=vo.id;
   if(vo.vendor)_setCOVendorField(holder,mode,vo.vendor);
 
@@ -10981,6 +11081,60 @@ function _voWhoUnlink(vi,di,si){
   save();render();
   showToast('Unlinked '+(src.client||'')+' — back on the Pooling board','amber');
   _openVOWhoModal(vi,di,false);
+}
+
+// ── HOLD ─────────────────────────────────────────────────────────────────────
+// A design (or one of its varieties) can be marked "on hold" — production is
+// deliberately paused, for any reason (rate hold, client changed mind, waiting
+// on material...). Works the same way on a customer order design/variety AND
+// a vendor order design/variety — holder.onHold + holder.holdReason, nothing
+// else touches these two fields, so it can't interact with sizes/units/sources.
+// `label` is only for toasts/audit text, never written to state.
+function _holdBadgeHtml(holder,toggleCall){
+  if(!holder||!holder.onHold)return'';
+  const reason=esc(holder.holdReason||'(no reason given)');
+  return '<span class="no-print" onclick="'+toggleCall+'" title="⏸ On hold — '+reason+'. Click to edit or take off hold." style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;background:#FFF3E0;color:#BF360C;border:1px solid #FFB74D;border-radius:20px;padding:2px 8px;cursor:pointer;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis">⏸ On hold — '+reason+'</span>';
+}
+function _holdToggleBtnHtml(holder,toggleCall){
+  const on=!!(holder&&holder.onHold);
+  return '<button class="icon-btn sm no-print" style="'+(on?'background:#FFF3E0;color:#BF360C;border-color:#FFB74D':'background:#F8F9FA;color:#ADB5BD;border-color:#DEE2E6')+'" onclick="'+toggleCall+'" title="'+(on?'On hold — click to edit reason or take off hold':'Put this on hold')+'">⏸</button>';
+}
+function _holdPrompt(holder,label){
+  if(holder.onHold){
+    const next=prompt('Hold reason for '+label+':\n\n(clear the text and press OK to take it off hold)',holder.holdReason||'');
+    if(next===null)return null; // cancelled
+    if(!next.trim()){ holder.onHold=false; holder.holdReason=''; return {action:'removed'}; }
+    holder.holdReason=next.trim(); return {action:'updated',reason:next.trim()};
+  }
+  const reason=prompt('Why is "'+label+'" on hold?\n\n(e.g. waiting on gold rate, client changed mind, material shortage)');
+  if(reason===null)return null; // cancelled
+  if(!reason.trim()){ return null; } // no reason given — don't put on hold silently
+  holder.onHold=true; holder.holdReason=reason.trim();
+  return {action:'added',reason:reason.trim()};
+}
+function toggleCOHold(oi,di,vri){
+  const o=S.orders[oi]; if(!o)return;
+  const d=o.designs[di]; if(!d)return;
+  const holder=(vri==null||vri<0)?d:((d.varieties||[])[vri]||null);
+  if(!holder)return;
+  const label=(d.code||'this design')+(vri>=0&&holder.name?' — '+holder.name:'');
+  const r=_holdPrompt(holder,label);
+  if(!r)return;
+  audit('Hold','"'+label+'" — '+r.action+(r.reason?': '+r.reason:''));
+  save();render();
+  showToast(r.action==='removed'?'Took "'+label+'" off hold':(r.action==='added'?'⏸ "'+label+'" put on hold':'Hold reason updated'),r.action==='removed'?'green':'amber');
+}
+function toggleVOHold(vi,di,vri){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const holder=(vri==null||vri<0)?vd:((vd.varieties||[])[vri]||null);
+  if(!holder)return;
+  const label=(vd.code||'this design')+(vri>=0&&holder.name?' — '+holder.name:'');
+  const r=_holdPrompt(holder,label);
+  if(!r)return;
+  audit('Hold','"'+label+'" in '+(vo.orderId||'')+' — '+r.action+(r.reason?': '+r.reason:''));
+  save();render();
+  showToast(r.action==='removed'?'Took "'+label+'" off hold':(r.action==='added'?'⏸ "'+label+'" put on hold':'Hold reason updated'),r.action==='removed'?'green':'amber');
 }
 
 // ── ROW-LEVEL RECEIVED TOGGLE ────────────────────────────────────────────────
@@ -17917,6 +18071,21 @@ function _validUnit(u){
   if(!u||!isNaN(u))return'pcs';
   return u;
 }
+// How many actual bangle pieces one unit contains (1 jotta = 4, 1 pair = 2,
+// ...) — owner-defined in Masters → Units. null means "not defined yet",
+// which callers must treat as "can't safely convert this," not silently 1.
+function _unitPieces(unit){
+  const u=_validUnit(unit);
+  const map=(S.vocabulary&&S.vocabulary.unitPieces)||{};
+  let n=Number(map[u]);
+  if(!(n>0)){
+    // Owner-confirmed defaults as a safety net — doesn't depend on the
+    // Firebase-load seeding step having already run for this state object.
+    const known={pcs:1,pairs:2,jotta:4};
+    if(known[u]!=null)n=known[u];
+  }
+  return (n>0)?n:null;
+}
 function btRowsOfOrder(order){
   const out=[];
   (order.designs||[]).forEach(d=>{
@@ -18177,6 +18346,16 @@ function btPoolable(row){
 let _poolExcluded={};
 function _poolRowKey(r){ return r.orderId+'|'+r.designId+'|'+(r.varietyId||''); }
 function btPoolToggleRow(rowKey){ if(_poolExcluded[rowKey])delete _poolExcluded[rowKey]; else _poolExcluded[rowKey]=true; renderPoolingView(); }
+// Owner picks which unit a mixed-unit batch gets made in — e.g. code X has
+// one customer in jotta and another in pairs, so "how much to make" is
+// meaningless until a single unit is chosen. Transient like the rest of
+// this board; cleared once the batch is created (or the mode changes,
+// since a plating-mode split can regroup rows differently).
+let _poolUnitChoice={}; // key -> chosen unit string
+function btPoolChooseUnit(key,unit){
+  if(unit)_poolUnitChoice[key]=unit; else delete _poolUnitChoice[key];
+  renderPoolingView();
+}
 function btPoolGroups(){
   const g={};
   (S.orders||[]).filter(o=>!o.archived).forEach(o=>{
@@ -18184,7 +18363,7 @@ function btPoolGroups(){
       if(!btPoolable(r)||r.qty<=0)return;
       const key=_poolMode==='plating'?(r.code+'||'+r.finish):(r.code||('?'+r.name));
       if(!g[key])g[key]={key:key,code:r.code||'(no code)',family:r.family,names:[],finishes:[],
-        image:'',ordered:{},total:0,rows:[],clients:[],unit:r.unit};
+        image:'',ordered:{},total:0,rows:[],clients:[],units:[]};
       const G=g[key];
       if(r.name&&G.names.indexOf(r.name)<0)G.names.push(r.name);
       if(r.finish&&r.finish!=='—'&&G.finishes.indexOf(r.finish)<0)G.finishes.push(r.finish);
@@ -18196,12 +18375,58 @@ function btPoolGroups(){
       // toward what's about to be made or sent.
       if(!excluded){
         if(G.clients.indexOf(r.client)<0)G.clients.push(r.client);
-        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0;if(n>0)G.ordered[sz]=(G.ordered[sz]||0)+n;});
+        const ru=_validUnit(r.unit);
+        if(G.units.indexOf(ru)<0)G.units.push(ru);
       }
       G.rows.push(Object.assign({},r,{rowKey:rowKey,excluded:excluded}));
     });
   });
-  const list=Object.keys(g).map(k=>{g[k].total=btSum(g[k].ordered);return g[k];});
+  // Resolve each group's unit and build `ordered` accordingly. A design
+  // pooled from customers who all used the SAME unit needs no conversion —
+  // exactly the common case, completely unaffected by any of this.
+  // A design pooled from customers in DIFFERENT units (owner-reported: one
+  // in jotta, one in pairs, silently added as if 1 jotta = 1 pair — wrong,
+  // 1 jotta is 4 bangles and 1 pair is 2) needs the owner to pick ONE
+  // target unit before any total can be shown at all; every included
+  // row's quantity is then converted to that unit via real bangle-piece
+  // counts (Masters → Units), never just added raw.
+  const list=Object.keys(g).map(k=>{
+    const G=g[k];
+    G.mixedUnits=G.units.length>1;
+    if(!G.mixedUnits){
+      G.unit=G.units[0]||'pcs';
+      G.blocked=null;
+      G.rows.forEach(r=>{
+        if(r.excluded)return;
+        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0;if(n>0)G.ordered[sz]=(G.ordered[sz]||0)+n;});
+      });
+    } else {
+      G.unit=_poolUnitChoice[k]||null;
+      if(!G.unit){
+        G.blocked='choose'; // owner hasn't picked a target unit yet
+      } else {
+        const targetPcs=_unitPieces(G.unit);
+        if(!targetPcs){
+          G.blocked='undefinedTarget'; // the chosen unit itself has no piece-count set
+        } else {
+          let missing=null;
+          G.rows.forEach(r=>{
+            if(r.excluded)return;
+            const rowPcs=_unitPieces(r.unit);
+            if(!rowPcs){missing=_validUnit(r.unit);return;}
+            const factor=rowPcs/targetPcs;
+            Object.keys(r.sizes||{}).forEach(sz=>{
+              const n=Number(r.sizes[sz])||0; if(n<=0)return;
+              G.ordered[sz]=Math.round(((G.ordered[sz]||0)+n*factor)*100)/100;
+            });
+          });
+          G.blocked=missing?('undefinedRow:'+missing):null;
+        }
+      }
+    }
+    G.total=btSum(G.ordered);
+    return G;
+  });
   return list.sort((a,b)=>b.total-a.total);
 }
 // The owner types the TOTAL they want to make, per size, directly — not a
@@ -18325,6 +18550,55 @@ function btPoolEditFamily(code){
 }
 
 function btPoolCardHTML(G){
+  const K=esc(G.key);
+  // Mixed units (owner-reported: a jotta order and a pairs order for the
+  // same code were silently added as if 1 jotta = 1 pair) — no size table
+  // at all until the owner resolves it, so nothing that could be a wrong
+  // number ever gets shown.
+  if(G.blocked){
+    const unitOptsHtml=(G.units||[]).map(u=>'<option value="'+esc(u)+'">'+esc(u)+' ('+(_unitPieces(u)?_unitPieces(u)+' pcs each':'piece-count not set')+')</option>').join('');
+    const body=G.blocked==='choose'
+      ? '<div style="font-size:12px;color:#8A5A00;line-height:1.7">Customers ordered this design in different units — '
+        +G.units.map(u=>'<strong>'+esc(u)+'</strong>').join(' and ')
+        +'. Pick which unit to make this whole batch in; every customer\'s quantity will be converted to it (using the piece-counts in Masters → Units), never just added as if they were the same thing.</div>'
+        +'<div style="display:flex;gap:8px;margin-top:10px">'
+          +'<select id="poolunit-'+K+'" style="flex:1;padding:7px 9px;border:1.5px solid #FFB74D;border-radius:8px;font-size:13px;background:#fff"><option value="">— choose unit —</option>'+unitOptsHtml+'</select>'
+          +'<button onclick="btPoolChooseUnit(\''+K+'\',document.getElementById(\'poolunit-'+K+'\').value)" style="background:#534AB7;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">Use this unit</button>'
+        +'</div>'
+      : G.blocked==='undefinedTarget'
+      ? '<div style="font-size:12px;color:#8A5A00;line-height:1.7">You picked <strong>'+esc(G.unit)+'</strong>, but it has no "pieces per unit" set yet. <a href="#" onclick="switchMain(\'masters\');return false" style="color:#534AB7;font-weight:700">Set it in Masters → Units</a>, then come back — nothing is guessed here.</div>'
+        +'<button onclick="btPoolChooseUnit(\''+K+'\',null)" style="margin-top:8px;background:#f0eff8;color:#534AB7;border:none;padding:6px 14px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer">↩ Pick a different unit</button>'
+      : '<div style="font-size:12px;color:#8A5A00;line-height:1.7">One customer\'s row is in <strong>'+esc(G.blocked.split(':')[1]||'')+'</strong>, which has no "pieces per unit" set yet. <a href="#" onclick="switchMain(\'masters\');return false" style="color:#534AB7;font-weight:700">Set it in Masters → Units</a>, or uncheck that customer below.</div>'
+        +'<button onclick="btPoolChooseUnit(\''+K+'\',null)" style="margin-top:8px;background:#f0eff8;color:#534AB7;border:none;padding:6px 14px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer">↩ Pick a different unit</button>';
+    return '<div style="border:1.5px solid #FFD54F;border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff">'
+      +'<div style="display:flex;gap:10px;padding:10px;align-items:flex-start;border-bottom:1px solid #FFF3E0;background:#FFFBF0">'
+        +'<span style="font-size:18px">⚠️</span>'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:14px;font-weight:800;color:#2A2458">'+esc(G.code)+' <span style="font-size:11px;font-weight:700;color:#8A5A00">— mixed units, action needed</span></div>'
+          +'<div style="font-size:11px;color:#8A87A8;margin-top:1px">'+esc(G.names.join(' · ')||G.family)+'</div>'
+        +'</div>'
+      +'</div>'
+      +'<div style="padding:12px 14px">'+body+'</div>'
+      +'<div style="padding:7px 10px;background:#FCFBFF;border-top:1px solid #EFEDFF">'
+        +'<a href="#" data-k="'+K+'" onclick="btPoolToggleWho(this.dataset.k);return false" style="font-size:12px;font-weight:700;color:#534AB7;text-decoration:none">'
+          +(_poolOpenWho[G.key]?'▾':'▸')+' Who ordered this ('+G.rows.length+')</a>'
+      +'</div>'
+      +(_poolOpenWho[G.key]?'<div style="padding:4px 12px 10px;background:#FBFAFF;border-top:1px dashed #E0DFFF">'
+        +G.rows.map(r=>{
+          const dim=r.excluded?'opacity:.45;text-decoration:line-through':'';
+          const rk=esc(r.rowKey).replace(/'/g,"\\'");
+          return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid #F0EFFA;font-size:12px">'
+          +'<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;flex:1;min-width:0">'
+            +'<input type="checkbox" '+(r.excluded?'':'checked')+' onchange="btPoolToggleRow(\''+rk+'\')" style="width:15px;height:15px;accent-color:#534AB7;flex-shrink:0;margin-top:1px">'
+            +'<div style="'+dim+'"><b style="color:#3C3489">'+esc(r.client)+'</b>'+(r.excluded?' <span style="color:#C0392B;font-weight:700;font-size:10px">excluded</span>':'')+
+            '<div style="font-size:10px;color:#8A87A8">'+esc(r.orderLabel)+(r.varName?' · '+esc(r.varName):'')+' · '+
+            btSortSizes(Object.keys(r.sizes)).map(s=>esc(s)+'×'+r.sizes[s]).join(', ')+'</div></div>'
+          +'</label>'
+          +'<b style="color:#534AB7;'+dim+'">'+r.qty+' <span style="font-size:10px;font-weight:600;color:#8A87A8">'+esc(_validUnit(r.unit))+'</span></b></div>';
+        }).join('')
+      +'</div>':'')
+    +'</div>';
+  }
   const m=btPoolMakeFor(G.key),make=btMakeQty(G);
   const extraSz=_poolExtraSizes[G.key]||{};
   const sizes=btSortSizes(Object.keys(Object.assign({},G.ordered,extraSz,m)));
@@ -18337,7 +18611,6 @@ function btPoolCardHTML(G){
   const extraOf=sz=>(Number(make[sz])||0)-(Number(G.ordered[sz])||0);
   const extraTot=sizes.reduce((a,sz)=>a+extraOf(sz),0);
   const sel=!!_poolSel[G.key];
-  const K=esc(G.key);
   // oninput calling a full re-render on every keystroke was the actual cause
   // of the owner-reported "typing 16 gives 61" bug: the input got destroyed
   // and recreated after each character, and the refocus afterward landed
@@ -18375,14 +18648,14 @@ function btPoolCardHTML(G){
       '</div>'+
       '<div style="text-align:right;flex-shrink:0">'+
         '<div style="font-size:20px;font-weight:800;color:#534AB7;line-height:1">'+makeTot+'</div>'+
-        '<div style="font-size:9px;color:#8A87A8;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">to make</div>'+
+        '<div style="font-size:9px;color:#8A87A8;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">'+esc(G.unit)+' — to make</div>'+
       '</div>'+
     '</div>'+
     '<div style="overflow-x:auto"><table style="width:100%;min-width:420px;border-collapse:collapse;font-size:12px">'+
       '<tr style="background:#FCFBFF"><th style="text-align:left;padding:5px 10px;font-size:10px;color:#8A87A8;font-weight:700">SIZE</th>'+
         sizes.map(s=>'<th style="padding:5px;font-size:10px;color:#8A87A8;font-weight:700;white-space:nowrap">'+esc(s)+
           (extraSz[s]?' <span onclick="btPoolRemoveExtraSize(\''+K+'\',\''+esc(s).replace(/'/g,"\\'")+'\')" title="Remove this size column" style="cursor:pointer;color:#C0392B;font-weight:800">✕</span>':'')+'</th>').join('')+
-        '<th style="padding:5px 10px;font-size:10px;color:#534AB7;font-weight:700;border-left:1px solid #E0DFFF">TOTAL</th></tr>'+
+        '<th style="padding:5px 10px;font-size:10px;color:#534AB7;font-weight:700;border-left:1px solid #E0DFFF">TOTAL ('+esc(G.unit)+')</th></tr>'+
       '<tr><td style="padding:5px 10px;color:#4A4480;white-space:nowrap">Ordered by customers</td>'+
         sizes.map(s=>'<td style="text-align:center;padding:5px">'+(G.ordered[s]||0)+'</td>').join('')+
         '<td style="text-align:center;font-weight:800;color:#534AB7;border-left:1px solid #E0DFFF">'+G.total+'</td></tr>'+
@@ -18411,7 +18684,7 @@ function btPoolCardHTML(G){
           '<div style="font-size:10px;color:#8A87A8">'+esc(r.orderLabel)+(r.varName?' · '+esc(r.varName):'')+' · '+esc(r.finish)+' · '+
           btSortSizes(Object.keys(r.sizes)).map(s=>esc(s)+'×'+r.sizes[s]).join(', ')+'</div></div>'
         +'</label>'
-        +'<b style="color:#534AB7;'+dim+'">'+r.qty+'</b></div>';
+        +'<b style="color:#534AB7;'+dim+'">'+r.qty+' <span style="font-size:10px;font-weight:600;color:#8A87A8">'+esc(_validUnit(r.unit))+'</span></b></div>';
       }).join('')+
       (extraTot?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px"><div><b style="color:'+(extraTot<0?'#C0392B':'#2E7D32')+'">Extra (buffer/stock)</b><div style="font-size:10px;color:#8A87A8">'+(extraTot<0?'MAKE is lower than what customers ordered':'not promised to anyone — stays with you')+'</div></div><b style="color:'+(extraTot<0?'#C0392B':'#2E7D32')+'">'+extraTot+'</b></div>':'')+
     '</div>':'')+
@@ -18522,6 +18795,14 @@ function btPoolCreate(){
   const chosen=groups.filter(g=>_poolSel[g.key]);
   if(!chosen.length){showToast('Tick at least one batch first','warn');return;}
   if(!vendor){showToast('Please enter a vendor name','red');return;}
+  // A batch with unresolved mixed units can't be a checkbox-selectable card
+  // in the first place, but guard here too in case the mode was switched
+  // (which regroups rows) while it was still selected.
+  const stillBlocked=chosen.filter(g=>g.blocked);
+  if(stillBlocked.length){
+    showToast('"'+stillBlocked[0].code+'" needs a unit picked before it can be sent — see the batch card','amber',4500);
+    return;
+  }
 
   const designs=[],touched=[];
   chosen.forEach(G=>{
@@ -18543,8 +18824,23 @@ function btPoolCreate(){
       sizes:make, sizesLocked:false,
       images:G.image?[{data:G.image}]:[], varieties:[], unit:G.unit||'pcs',
       // provenance — which customer is owed how much out of this pooled line
-      sources:includedRows.map(r=>({orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
-        designId:r.designId,varietyId:r.varietyId,sizes:Object.assign({},r.sizes)})),
+      // sizes here are CONVERTED to the row's own unit (G.unit) — this is
+      // what gets added/subtracted against vd.sizes when linking/unlinking
+      // a customer, so it must already be apples-to-apples with the row,
+      // never a raw copy of what the customer originally typed in their own
+      // unit (that was the exact bug being fixed: an unconverted 8-jotta
+      // source sitting next to a 78-pairs source, silently read as "8" and
+      // "78" of the same thing, reproducing the wrong "86" one layer down).
+      // origUnit/origSizes are kept purely for on-screen transparency.
+      sources:includedRows.map(r=>{
+        const rowPcs=_unitPieces(r.unit), targetPcs=_unitPieces(G.unit);
+        const factor=(rowPcs&&targetPcs)?rowPcs/targetPcs:1;
+        const convSizes={};
+        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*100)/100;});
+        return {orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
+          designId:r.designId,varietyId:r.varietyId,sizes:convSizes,
+          origUnit:_validUnit(r.unit),origSizes:Object.assign({},r.sizes)};
+      }),
       extraSizes:Object.keys(extraSizes).length?extraSizes:undefined
     });
     includedRows.forEach(r=>touched.push(r));
@@ -18571,7 +18867,7 @@ function btPoolCreate(){
   // pairs, pcs), so a bare "N pcs" total can misstate what was actually made.
   const qtyLabel=formatQtyByUnit(vendorOrderQtyByUnit(vo));
   audit('Pool batch',vo.orderId+' → '+vendor+' ('+_poolMode+') · '+designs.length+' design(s) · '+qtyLabel+' from '+touched.length+' customer row(s)');
-  _poolSel={};_poolMakeOverride={};_poolExcluded={};_poolExtraSizes={};
+  _poolSel={};_poolMakeOverride={};_poolExcluded={};_poolExtraSizes={};_poolUnitChoice={};
   save();try{fbPushNow();}catch(e){}
   showToast('✅ '+vo.orderId+' created for '+vendor+' — '+qtyLabel,'green',3800);
   renderPoolingView();
