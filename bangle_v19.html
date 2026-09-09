@@ -11004,7 +11004,7 @@ function _migrateSourceCoIdToSources(vo,vd){
   }];
   // This row came from the OLD single-link picker — always a manually-typed
   // row, never a Pooling batch — so its quantity must stay independent of
-  // whoever gets linked/unlinked from here on (see _voWhoAdd).
+  // whoever gets linked/unlinked from here on (see _voWhoAddSelected).
   vd._manualSizes=true;
   // Now redundant — sources[0] carries this; clearing avoids the old green
   // "🔗 CO" badge reappearing later if this one customer is ever unlinked
@@ -11020,6 +11020,12 @@ function _openVOWhoModal(vi,di,showAdd){
   _migrateSourceCoIdToSources(vo,vd);
   const old=document.getElementById('_vo-who-overlay'); if(old)old.remove();
   const sources=vd.sources||[];
+  // Ticked-but-not-yet-added candidates, for the multi-select "Add selected"
+  // flow below — kept across re-renders of THIS row (ticking a box re-opens
+  // the modal to show its new checked state) but reset whenever a
+  // genuinely different row is opened, so stale ticks never leak across rows.
+  if(window._voWhoVi!==vi||window._voWhoDi!==di){ window._voWhoSelected=new Set(); }
+  window._voWhoVi=vi; window._voWhoDi=di;
 
   const rowsHtml=sources.map((s,si)=>
     '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px solid #E0DFFF;margin-bottom:7px;background:#fafafd">'
@@ -11053,7 +11059,7 @@ function _openVOWhoModal(vi,di,showAdd){
     :'';
 
   const rowTotal=_voQty(vd.sizes);
-  // Single source of truth with the sweep/grow buttons and _voWhoAdd's own
+  // Single source of truth with the sweep/grow buttons and _voWhoAddSelected's own
   // prompt (_voRemainderBySize) — converts Extra into the row's unit before
   // comparing, so this never drifts from what those actions actually do.
   const{remainder:remainderBySize}=_voRemainderBySize(vd);
@@ -11110,15 +11116,29 @@ function _openVOWhoModal(vi,di,showAdd){
     });
   }
   window._voWhoCandidates=candidates;
+  const selected=window._voWhoSelected||new Set();
 
+  // Owner-reported: clicking one candidate immediately tried to link it —
+  // and if it happened to be short of the row's own quantity, a native
+  // confirm() popped up asking to proceed; declining it (or missing it
+  // entirely) silently did nothing, which read as "the button doesn't
+  // work". Ticking candidates first and confirming once for the whole
+  // batch avoids firing that question over and over for each click, and
+  // makes "pick more than one" an explicit, visible action instead of a
+  // repeat-and-hope-it-works loop.
   const addSection=showAdd
     ?(candidates.length
-      ?'<div style="font-size:11px;color:#AAA;margin:14px 0 8px">Add which customer order?</div>'
-        +candidates.map((c,ci)=>'<div onclick="_voWhoAdd('+vi+','+di+','+ci+')" style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px solid #D0CCF5;margin-bottom:7px;cursor:pointer;background:#fafafd" onmouseover="this.style.background=\'#EEEDFE\'" onmouseout="this.style.background=\'#fafafd\'">'
-          +'<span style="background:#534AB7;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+esc(c.orderLabel||'CO')+'</span>'
-          +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#3C3489">'+esc(c.client||'')+'</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(c.sizes))+'</div></div>'
-          +'<div style="font-size:13px;font-weight:700;color:#534AB7;flex-shrink:0">'+c.qty+' <span style="font-size:10px;font-weight:600;color:#8A87A8">'+esc(c.unit)+'</span></div>'
-        +'</div>').join('')
+      ?'<div style="font-size:11px;color:#AAA;margin:14px 0 8px">Add which customer order(s)? Tick one or more, then confirm.</div>'
+        +candidates.map((c,ci)=>{
+          const checked=selected.has(ci);
+          return '<div onclick="_voWhoToggleSelect('+ci+')" style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px solid '+(checked?'#534AB7':'#D0CCF5')+';margin-bottom:7px;cursor:pointer;background:'+(checked?'#EEEDFE':'#fafafd')+'">'
+            +'<input type="checkbox" '+(checked?'checked':'')+' onclick="event.stopPropagation();_voWhoToggleSelect('+ci+')" style="margin-top:2px;width:16px;height:16px;accent-color:#534AB7;flex-shrink:0;cursor:pointer">'
+            +'<span style="background:#534AB7;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">'+esc(c.orderLabel||'CO')+'</span>'
+            +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#3C3489">'+esc(c.client||'')+'</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(c.sizes))+'</div></div>'
+            +'<div style="font-size:13px;font-weight:700;color:#534AB7;flex-shrink:0">'+c.qty+' <span style="font-size:10px;font-weight:600;color:#8A87A8">'+esc(c.unit)+'</span></div>'
+          +'</div>';
+        }).join('')
+        +(selected.size?'<button onclick="_voWhoAddSelected('+vi+','+di+')" style="width:100%;margin-top:2px;background:#534AB7;color:#fff;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer">✅ Add selected ('+selected.size+')</button>':'')
       :'<div style="font-size:11px;color:#AAA;margin:14px 0 4px;text-align:center;padding:10px;border:1.5px dashed #E0DFFF;border-radius:9px">No other customer order has design "'+esc(code)+'" waiting to be pooled.</div>')
     :'<div onclick="_openVOWhoModal('+vi+','+di+',true)" style="border:1.5px dashed #C6C1F0;border-radius:9px;padding:10px 12px;text-align:center;color:#534AB7;font-size:12px;font-weight:600;cursor:pointer;margin-top:6px">+ Add another customer order</div>';
 
@@ -11137,80 +11157,78 @@ function _openVOWhoModal(vi,di,showAdd){
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.body.appendChild(overlay);
 }
-function _voWhoAdd(vi,di,ci){
+function _voWhoToggleSelect(ci){
+  if(!window._voWhoSelected)window._voWhoSelected=new Set();
+  if(window._voWhoSelected.has(ci))window._voWhoSelected.delete(ci); else window._voWhoSelected.add(ci);
+  _openVOWhoModal(window._voWhoVi,window._voWhoDi,true);
+}
+// Adds every ticked candidate at once, with ONE combined shortfall/surplus
+// check instead of one per customer. Owner-reported: clicking a candidate
+// that alone was short of the row's quantity popped a native confirm() —
+// missing or declining it (easy to do without realising what it was, or
+// while trying to add a SECOND customer too) silently did nothing, which
+// read as "the button doesn't work" rather than "this needs confirming."
+function _voWhoAddSelected(vi,di){
   const vo=S.vendorOrders[vi]; if(!vo)return;
   const vd=vo.designs[di]; if(!vd)return;
-  const c=(window._voWhoCandidates||[])[ci]; if(!c)return;
-  const found=_voSourceHolder({orderDbId:c.orderDbId,designId:c.designId,varietyId:c.varietyId});
-  if(!found){showToast('That customer order row could not be found — it may have been deleted','red');return;}
-  const holder=found.holder;
+  const candidates=window._voWhoCandidates||[];
+  const chosen=[...(window._voWhoSelected||[])].map(ci=>candidates[ci]).filter(Boolean);
+  if(!chosen.length)return;
 
-  // Karigar/Pipe/Plating conflict check, same pattern as the single-link flow:
-  // if it already points somewhere else, ask before overwriting; Cancel aborts.
   const mode=vo.type||'karigar';
   const field=_coVendorFieldFor(mode);
   const label=mode==='pipe'?'Pipe':mode==='plating'?'Plating':'Karigar';
-  const cur=holder[field];
-  if(vo.vendor&&cur&&cur!==vo.vendor){
-    const ok=confirm('Design "'+(vd.code||'')+'" in '+c.orderLabel+' already has "'+cur+'" as '+label+'.\n\nReplace with "'+vo.vendor+'"?\n\n(Click Cancel to leave this customer out of the vendor order.)');
-    if(!ok){showToast('Not added — '+label+' still set to "'+cur+'" in '+c.orderLabel,'amber',4200);return;}
-  }
-
-  // This candidate may be in a different unit than the row (that's exactly
-  // what pooling can mix) — convert before touching vd.sizes, never add the
-  // raw number as if it were already the row's unit. That silent mismatch
-  // is the same bug fixed on the create side; refuse rather than guess if
-  // either unit's piece-count isn't defined yet.
   const rowUnit=_voRowUnit(vd);
-  const candPcs=_unitPieces(c.unit), rowPcs=_unitPieces(rowUnit);
-  if(!candPcs||!rowPcs){
-    const badUnit=!candPcs?c.unit:rowUnit;
-    showToast('"'+badUnit+'" has no piece-count set — add it in Masters → Units before adding this customer','amber',5000);
-    return;
-  }
-  // Owner-corrected: NOT rounded. Rounding "12.5 jotta of size 2/4" up to 13
-  // silently manufactured or erased up to half a piece per size — small
-  // per size, but it can shift the true surplus/shortfall by whole pairs
-  // once summed (this is exactly what made 51 jotta vs 100 pairs — a real
-  // 1-jotta/2-pair surplus — look like it "matched exactly"). Kept exact
-  // instead; rounded only to 4 decimals to clean up floating-point noise,
-  // never to hide a real fraction of a piece.
-  const factor=candPcs/rowPcs;
-  const convSizes={};
-  Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*10000)/10000;});
 
-  // Owner-reported: linking a customer to a row that was typed BY HAND
-  // ("+ Add manually", never pooled) was silently ADDING that customer's
-  // quantity on top of the number already there — a manually-typed 51 jotta
-  // became 102 the moment one customer was linked, even though the row's
-  // own quantity was already a deliberate decision, not something to grow.
-  // A genuinely pooled row (built by selecting customers on the Pooling
-  // board) IS defined as the sum of its customers, so adding one more there
-  // correctly grows it — that's the tested, intended behaviour and stays
-  // unchanged. The two are told apart like this: a pooled row is never
-  // empty of sources while carrying a real quantity (btPoolCreate always
-  // seeds both together), so a row with NO sources yet but a non-zero
-  // quantity can only be a manually-typed row getting its first link —
-  // from that point on it's remembered (vd._manualSizes) so a second link
-  // behaves the same way, instead of switching behaviour mid-row.
+  // Resolve + karigar-conflict-check each ticked candidate first. A
+  // declined conflict skips just THAT customer (asked once, per customer,
+  // same as before) — it never blocks the others also being added.
+  const toAdd=[];
+  chosen.forEach(c=>{
+    const found=_voSourceHolder({orderDbId:c.orderDbId,designId:c.designId,varietyId:c.varietyId});
+    if(!found){showToast(c.client+' ('+c.orderLabel+') could not be found — it may have been deleted','red');return;}
+    const holder=found.holder;
+    const cur=holder[field];
+    if(vo.vendor&&cur&&cur!==vo.vendor){
+      const ok=confirm('Design "'+(vd.code||'')+'" in '+c.orderLabel+' already has "'+cur+'" as '+label+'.\n\nReplace with "'+vo.vendor+'"?\n\n(Click Cancel to leave this customer out of the vendor order.)');
+      if(!ok){showToast('Skipped '+c.client+' — '+label+' still set to "'+cur+'" in '+c.orderLabel,'amber',4200);return;}
+    }
+    // Owner-corrected: NOT rounded — see the comment on the conversion in
+    // _voRemainderBySize's callers for why.
+    const candPcs=_unitPieces(c.unit),rowPcs=_unitPieces(rowUnit);
+    if(!candPcs||!rowPcs){
+      showToast('"'+(!candPcs?c.unit:rowUnit)+'" has no piece-count set — add it in Masters → Units before adding this customer','amber',5000);
+      return;
+    }
+    const factor=candPcs/rowPcs;
+    const convSizes={};
+    Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*10000)/10000;});
+    toAdd.push({c,holder,convSizes});
+  });
+  if(!toAdd.length)return;
+
+  // Same manually-typed-row-vs-pooled-row distinction as before, decided
+  // once for the whole batch (see _voWhoUnlink's comment for the full
+  // reasoning) — a row that's never had a source is manual, and stays that
+  // way for every customer added to it from here on.
   const isFirstLink=!(vd.sources&&vd.sources.length);
   const existingTotal=_voQty(vd.sizes);
   const growSizes=!vd._manualSizes&&(!isFirstLink||existingTotal===0);
 
-  // Owner-requested: instead of a passive "unaccounted for" banner AFTER
-  // linking, ask right here, in Hinglish, on a manually-typed row —
-  // BEFORE the shortfall case (customer needs more than this row currently
-  // has), so the link can be cancelled outright instead of silently leaving
-  // a gap the owner never explicitly agreed to.
   if(!growSizes){
-    const hypotheticalSources=(vd.sources||[]).concat([{sizes:convSizes}]);
+    // ONE combined shortfall check across everyone ticked, not one per
+    // customer — asking the same Hinglish question two or three times in a
+    // row for one "Add selected" click was exactly what made this look
+    // broken.
+    const hypotheticalSources=(vd.sources||[]).concat(toAdd.map(x=>({sizes:x.convSizes})));
     const{remainder:preRemainder}=_voRemainderBySize(vd,hypotheticalSources);
     let shortTotal=0;
     Object.keys(preRemainder).forEach(sz=>{ if(preRemainder[sz]<0)shortTotal+=-preRemainder[sz]; });
     if(shortTotal>0){
-      const proceed=confirm(c.client+' ka order is row mein abhi jitna banaya ja raha hai usse zyada hai — '+shortTotal+' '+rowUnit+' kam hai.\n\nCustomer order ki quantity vendor order se zyada hai jisse link karna hai. Aage badhein?');
+      const names=toAdd.map(x=>x.c.client).join(', ');
+      const proceed=confirm(names+' ka order(s) is row mein abhi jitna banaya ja raha hai usse zyada hai — '+(Math.round(shortTotal*10000)/10000)+' '+rowUnit+' kam hai.\n\nCustomer order ki quantity vendor order se zyada hai jisse link karna hai. Aage badhein?');
       if(!proceed){
-        showToast('Link nahi hua — pehle row ki quantity badhao ya '+c.orderLabel+' ka order check karo','amber',5000);
+        showToast('Link nahi hua — pehle row ki quantity badhao ya order check karo','amber',5000);
         return;
       }
     }
@@ -11219,20 +11237,23 @@ function _voWhoAdd(vi,di,ci){
 
   if(growSizes){
     vd.sizes=vd.sizes||{};
-    Object.keys(convSizes).forEach(sz=>{
-      vd.sizes[sz]=Math.round(((Number(vd.sizes[sz])||0)+convSizes[sz])*10000)/10000;
+    toAdd.forEach(({convSizes})=>{
+      Object.keys(convSizes).forEach(sz=>{
+        vd.sizes[sz]=Math.round(((Number(vd.sizes[sz])||0)+convSizes[sz])*10000)/10000;
+      });
     });
   }
   vd.sources=vd.sources||[];
-  vd.sources.push({orderDbId:c.orderDbId,orderLabel:c.orderLabel,client:c.client,designId:c.designId,varietyId:c.varietyId,
-    sizes:convSizes,origUnit:c.unit,origSizes:Object.assign({},c.sizes)});
-  holder.importedToVOId=vo.id;
-  if(vo.vendor)_setCOVendorField(holder,mode,vo.vendor);
+  toAdd.forEach(({c,holder,convSizes})=>{
+    vd.sources.push({orderDbId:c.orderDbId,orderLabel:c.orderLabel,client:c.client,designId:c.designId,varietyId:c.varietyId,
+      sizes:convSizes,origUnit:c.unit,origSizes:Object.assign({},c.sizes)});
+    holder.importedToVOId=vo.id;
+    if(vo.vendor)_setCOVendorField(holder,mode,vo.vendor);
+  });
 
-  // Now that the link is committed: if this leaves a clean SURPLUS (never
-  // mixed with a shortfall elsewhere on the same row), ask right away — in
-  // Hinglish — whether to record it as Extra, instead of leaving it as a
-  // banner the owner has to notice and act on separately.
+  // Now that the batch is committed: if this leaves a clean SURPLUS (never
+  // mixed with a shortfall elsewhere on the same row), ask once — in
+  // Hinglish — whether to record it as Extra.
   if(!growSizes){
     const{remainder,anyNegative}=_voRemainderBySize(vd);
     if(!anyNegative){
@@ -11243,17 +11264,18 @@ function _voWhoAdd(vi,di,ci){
         const extraUnit=_voExtraUnit(vd);
         const extraPcs=_unitPieces(extraUnit),rowPcsForExtra=_unitPieces(rowUnit);
         const extraFactor=(rowPcsForExtra&&extraPcs)?rowPcsForExtra/extraPcs:1;
-        const surplusInExtraUnit={}; let surplusTotal=0;
-        Object.keys(surplus).forEach(sz=>{ const v=Math.round(surplus[sz]*extraFactor*10000)/10000; surplusInExtraUnit[sz]=v; surplusTotal+=v; });
-        if(surplusTotal>0&&confirm('Is row mein '+surplusTotal+' '+extraUnit+' zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?')){
+        let surplusTotal=0;
+        Object.keys(surplus).forEach(sz=>{ surplusTotal+=Math.round(surplus[sz]*extraFactor*10000)/10000; });
+        if(surplusTotal>0&&confirm('Is row mein '+(Math.round(surplusTotal*10000)/10000)+' '+extraUnit+' zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?')){
           _voAddToExtra(vd,surplus);
         }
       }
     }
   }
 
+  window._voWhoSelected=new Set();
   save();render();
-  showToast(growSizes?'✅ Added '+c.client+' ('+c.orderLabel+') to this row':'🔗 Linked '+c.client+' ('+c.orderLabel+') — row quantity unchanged','green');
+  showToast('✅ Added '+toAdd.length+' customer'+(toAdd.length!==1?'s':'')+' to this row','green');
   _openVOWhoModal(vi,di,false);
 }
 function _voWhoUnlink(vi,di,si){
@@ -11262,7 +11284,7 @@ function _voWhoUnlink(vi,di,si){
   const src=(vd.sources||[])[si]; if(!src)return;
   const qty=_voQty(src.sizes);
   // A manually-typed row's own quantity is never touched by linking — see
-  // the comment in _voWhoAdd — so unlinking must symmetrically leave it
+  // the comment in _voWhoAddSelected — so unlinking must symmetrically leave it
   // alone too, instead of subtracting a customer's pieces out of a number
   // the owner decided independently.
   const willShrink=!vd._manualSizes;
@@ -11307,10 +11329,10 @@ function _voWhoUnlink(vi,di,si){
 // warning with no way to actually record it. Refuses to touch anything if
 // the row is instead SHORT of what's linked (accounted > row total) — that
 // means a size was hand-edited down, which needs fixing by hand, not sweeping.
-// Shared by the sweep/grow buttons below AND by _voWhoAdd's own live prompt —
+// Shared by the sweep/grow buttons below AND by _voWhoAddSelected's own live prompt —
 // one place that answers "per size, how far off is this row from what's
 // actually linked to it (sources) plus Extra?" `sourcesOverride` lets
-// _voWhoAdd ask "what WOULD the gap be if I add this candidate" before it's
+// _voWhoAddSelected ask "what WOULD the gap be if I add this candidate" before it's
 // actually added, without mutating anything.
 function _voRemainderBySize(vd,sourcesOverride){
   const sources=sourcesOverride||vd.sources||[];
@@ -11366,7 +11388,7 @@ function _voSweepRemainderToExtra(vi,di){
 // The mirror image of the sweep above: the customers linked to this row need
 // MORE made than the row currently has (e.g. a size was edited down by hand,
 // or a customer was linked to a manually-typed row whose own quantity never
-// grows automatically — see _voWhoAdd). Raises each short size up to match
+// grows automatically — see _voWhoAddSelected). Raises each short size up to match
 // what's linked; never lowers anything, and refuses if the row is instead
 // already ahead (that's what Extra is for, above).
 function _voGrowRowToMatchSources(vi,di){
