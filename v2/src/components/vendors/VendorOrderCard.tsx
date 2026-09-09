@@ -14,7 +14,7 @@ interface Props {
   onEdit: (o: VendorOrder) => void;
   onDelete: (o: VendorOrder) => void;
   onStatusChange: (o: VendorOrder, status: VendorStatus) => void;
-  onWhoChange: (patch: { vendorOrders: VendorOrder[]; orders: Order[] }, auditDetail: string) => void;
+  onWhoChange: (patch: { vendorOrders: VendorOrder[]; orders?: Order[] }, auditDetail: string) => void;
   onHoldToggle: (order: VendorOrder, designId: string) => void;
 }
 

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { AppData, Order, VendorOrder } from '../../types';
 import {
-  voQty, voSizeStr, addCandidatesFor, addSourceToVendorDesign, unlinkSourceFromVendorDesign,
+  voQty, voSizeStr, rowUnit, extraInRowUnit, remainderBySize, finerUnitFor,
+  addCandidatesFor, addSourceToVendorDesign, unlinkSourceFromVendorDesign,
+  sweepRemainderToExtra, growRowToMatchSources, applySurplusOffer,
   type AddCandidate,
 } from '../../lib/vendorWhoUtils';
 
@@ -10,14 +12,19 @@ interface Props {
   vo: VendorOrder;
   vendorDesignId: string;
   canEdit: boolean;
-  onChange: (patch: { vendorOrders: VendorOrder[]; orders: Order[] }, auditDetail: string) => void;
+  onChange: (patch: { vendorOrders: VendorOrder[]; orders?: Order[] }, auditDetail: string) => void;
   onClose: () => void;
 }
 
 // Ports Phase 1's _openVOWhoModal() — view who a pooled vendor-order row is
 // for, unlink a customer (their row reappears on Pooling), or link in
 // another customer order that shares the same design code and hasn't been
-// sent to a vendor yet.
+// sent to a vendor yet. Includes the Sept 2026 correction pass: a row built
+// by Pooling still grows/shrinks as customers link/unlink (unchanged), but a
+// manually-typed or legacy row's own quantity is never touched by linking —
+// any gap is surfaced instead, with one-click "record as Extra" / "increase
+// to match" actions, ported exactly (f9879a2, 70cf572, dabb3cf, 84986c4,
+// 6a3db87, 762d811).
 export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onChange, onClose }: Props) {
   const [showAdd, setShowAdd] = useState(false);
 
@@ -26,57 +33,102 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
   const liveVo = data.vendorOrders?.find(v => v.id === vo.id) ?? vo;
   const vd = liveVo.designs?.find(d => d.id === vendorDesignId);
 
-  const sources = vd?.sources ?? [];
-  // Cheap merge (a couple of size keys) — not worth memoizing, and `vd` is a
-  // fresh object every render anyway (re-derived from `data` above).
-  const extraSizes: Record<string, number> = {};
-  Object.entries(vd?.bufferSizes ?? {}).forEach(([sz, n]) => { extraSizes[sz] = (extraSizes[sz] ?? 0) + (Number(n) || 0); });
-  Object.entries(vd?.stockSizes ?? {}).forEach(([sz, n]) => { extraSizes[sz] = (extraSizes[sz] ?? 0) + (Number(n) || 0); });
-  const extraQty = voQty(extraSizes);
+  if (!vd) return null;
 
-  const rowTotal = voQty(vd?.sizes);
-  const rowUnit = vd?.unit || 'pcs';
-  const accounted = sources.reduce((a, s) => a + voQty(s.sizes), 0) + extraQty;
-  const mismatch = accounted !== rowTotal;
+  const sources = vd.sources ?? [];
+  const unit = rowUnit(vd);
+  const extraSizes = extraInRowUnit(data, vd); // in the row's own unit, for display next to sources
+  const extraQty = voQty(extraSizes);
+  const rowTotal = voQty(vd.sizes);
+  const { remainder, anyNegative, anyPositive } = remainderBySize(data, vd);
+  const totalDiff = Object.values(remainder).reduce((a, n) => a + n, 0);
+  const mismatch = Math.abs(totalDiff) > 1e-9;
+  const accounted = rowTotal - totalDiff;
   const addends = [...sources.map(s => voQty(s.sizes)), ...(extraQty ? [extraQty] : [])];
 
-  const code = (vd?.code || '').trim();
-  // Not memoized — `sources`/`vd` are freshly derived from `data` above (a
-  // handful of items at most), and candidates only need computing while the
-  // add panel is actually open.
+  const code = (vd.code || '').trim();
   const linkedKeys = new Set(sources.map(s => `${s.orderDbId}|${s.designId}|${s.varietyId ?? ''}`));
   const candidates = showAdd ? addCandidatesFor(data, code, linkedKeys) : [];
-
-  if (!vd) return null;
 
   function handleUnlink(si: number) {
     const src = sources[si];
     const qty = voQty(src.sizes);
-    if (!confirm(`Remove ${src.client || 'this customer'} (${src.orderLabel || 'CO'}) from this row?\n\nTheir ${qty} pcs will come back out of this vendor row, and their order row will reappear on the Pooling board.`)) return;
+    const willShrink = !vd!.manualSizes;
+    const msg = `Remove ${src.client || 'this customer'} (${src.orderLabel || 'CO'}) from this row?\n\n` + (
+      willShrink
+        ? `Their ${qty} ${unit} will come back out of this vendor row, and their order row will reappear on the Pooling board.`
+        : `This row's own quantity stays exactly as it is — only the "who this is for" record is removed. Their order row will reappear on the Pooling board.`
+    );
+    if (!confirm(msg)) return;
     const result = unlinkSourceFromVendorDesign(data, liveVo, vendorDesignId, si);
     if (!result) return;
-    onChange(result, `Unlinked ${src.client || ''} (${src.orderLabel || ''}) from ${vd?.code || vd?.name || 'row'} in ${liveVo.orderId}`);
+    onChange(result, `Unlinked ${src.client || ''} (${src.orderLabel || ''}) from ${vd!.code || vd!.name || 'row'} in ${liveVo.orderId}`);
   }
 
-  function handleAdd(candidate: AddCandidate, allowOverride = false) {
-    const result = addSourceToVendorDesign(data, liveVo, vendorDesignId, candidate, allowOverride);
-    if (result.ok) {
-      onChange(result, `Added ${candidate.client} (${candidate.orderLabel}) to ${vd?.code || vd?.name || 'row'} in ${liveVo.orderId}`);
+  function handleAdd(candidate: AddCandidate, opts: { allowConflictOverride?: boolean; allowShortfall?: boolean } = {}) {
+    const result = addSourceToVendorDesign(data, liveVo, vendorDesignId, candidate, opts);
+
+    if (!result.ok) {
+      if (result.reason === 'conflict') {
+        const ok = confirm(
+          `Design "${vd!.code || ''}" in ${candidate.orderLabel} already has "${result.current}" as ${result.label}.\n\n` +
+          `Replace with "${liveVo.vendor}"?\n\n(Click Cancel to leave this customer out of the vendor order.)`,
+        );
+        if (ok) handleAdd(candidate, { ...opts, allowConflictOverride: true });
+        return;
+      }
+      if (result.reason === 'shortfall-confirm') {
+        const proceed = confirm(
+          `${candidate.client} ka order is row mein abhi jitna banaya ja raha hai usse zyada hai — ${result.shortfallTotal} ${result.unit} kam hai.\n\n` +
+          `Customer order ki quantity vendor order se zyada hai jisse link karna hai. Aage badhein?`,
+        );
+        if (proceed) handleAdd(candidate, { ...opts, allowShortfall: true });
+        else alert(`Link nahi hua — pehle row ki quantity badhao ya ${candidate.orderLabel} ka order check karo`);
+        return;
+      }
+      if (result.reason === 'unit-undefined') {
+        alert(`"${result.badUnit}" has no piece-count set — add it in Masters → Units before adding this customer.`);
+        return;
+      }
+      alert('That customer order row could not be found — it may have been deleted.');
       return;
     }
-    if (result.reason === 'conflict') {
-      const ok = confirm(
-        `Design "${vd?.code || ''}" in ${candidate.orderLabel} already has "${result.current}" as ${result.label}.\n\n` +
-        `Replace with "${liveVo.vendor}"?\n\n(Click Cancel to leave this customer out of the vendor order.)`,
-      );
-      if (ok) handleAdd(candidate, true);
+
+    const addDetail = `${result.grew ? 'Added' : 'Linked'} ${candidate.client} (${candidate.orderLabel}) to ${vd!.code || vd!.name || 'row'} in ${liveVo.orderId}`;
+
+    if (result.offerSweepSurplus) {
+      const { total, unit: extraUnit } = result.offerSweepSurplus;
+      if (confirm(`Is row mein ${total} ${extraUnit} zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?`)) {
+        // Compose onto the vendorOrders the add itself just produced (NOT
+        // fresh `data`, which is still the pre-add state at this instant —
+        // the add is saved asynchronously) so the surplus recorded matches
+        // exactly what was just offered.
+        const swept = applySurplusOffer(result.vendorOrders, liveVo.id, vendorDesignId, result.offerSweepSurplus);
+        onChange({ vendorOrders: swept, orders: result.orders }, `${addDetail}; Extra stock recorded: +${total} ${extraUnit}`);
+        return;
+      }
+    }
+    onChange(result, addDetail);
+  }
+
+  function handleSweep() {
+    const result = sweepRemainderToExtra(data, liveVo, vendorDesignId);
+    if (!result.ok) {
+      if (result.reason === 'has-shortfall') alert("Some sizes show less than what's already linked — fix those by hand first; only a genuine surplus can be swept to Extra.");
+      else alert('Nothing left over — already fully accounted for.');
       return;
     }
-    if (result.reason === 'unit-undefined') {
-      alert(`"${result.badUnit}" has no piece-count set — add it in Masters → Units before adding this customer.`);
+    onChange({ vendorOrders: result.vendorOrders }, `Extra stock recorded: ${vo.orderId} › ${vd!.code || ''}: +${result.total} ${result.unit}`);
+  }
+
+  function handleGrow() {
+    const result = growRowToMatchSources(data, liveVo, vendorDesignId);
+    if (!result.ok) {
+      if (result.reason === 'has-surplus') alert("Some sizes already show more than what's linked — that surplus belongs in Extra, not mixed with a shortfall elsewhere.");
+      else alert('Nothing short — already fully accounted for.');
       return;
     }
-    alert('That customer order row could not be found — it may have been deleted.');
+    onChange({ vendorOrders: result.vendorOrders }, `Row increased to match customers: ${vo.orderId} › ${vd!.code || ''}: +${result.total} ${result.unit}`);
   }
 
   return (
@@ -85,7 +137,7 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
         <div>
           <h3 className="text-sm font-bold text-[#a89fff]">👥 Who is this row for?</h3>
           <p className="text-xs text-white/40 mt-0.5">
-            Design <strong className="text-white/70">{code || '—'}</strong> in <strong className="text-white/70">{liveVo.orderId}</strong> — {rowTotal} {rowUnit} total
+            Design <strong className="text-white/70">{code || '—'}</strong> in <strong className="text-white/70">{liveVo.orderId}</strong> — {rowTotal} {unit} total
           </p>
         </div>
 
@@ -154,16 +206,40 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
         )}
 
         <div className={`flex justify-between gap-2.5 px-3 py-2 rounded-lg text-sm font-bold ${mismatch ? 'bg-amber-400/10 text-amber-200' : 'bg-white/5 text-[#a89fff]'}`}>
-          <span>Row total ({rowTotal})</span>
+          <span>Row total ({rowTotal} {unit})</span>
           <span className={mismatch ? 'text-amber-300' : 'text-green-400'}>
             {mismatch ? '⚠ ' : '✓ '}
             {addends.length ? `${addends.join(' + ')} = ` : ''}{accounted}
-            {mismatch ? ` — ${Math.abs(rowTotal - accounted)} ${rowUnit} unaccounted for` : ' — matches'}
+            {mismatch ? ` — ${Math.abs(totalDiff)} ${unit} unaccounted for` : ' — matches'}
           </span>
         </div>
-        {mismatch && (
+
+        {mismatch && canEdit && (
+          totalDiff > 0 ? (
+            <div className="text-[11px] text-amber-300/80 bg-amber-400/10 border border-amber-400/25 rounded-lg px-3 py-2">
+              This row has <strong>{Object.values(remainder).reduce((a, n) => a + Math.max(n, 0), 0)} {finerUnitFor(data, vd)}</strong> more than what's linked above — either another customer order still needs adding, or that's genuine extra stock made beyond any order.
+              <div className="mt-1.5">
+                <button onClick={handleSweep} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-3 py-1.5">
+                  → Record as Extra stock
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[11px] text-red-300/80 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2">
+              This row shows <strong>{Math.abs(totalDiff)} {unit} less</strong> than what's linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.
+              <div className="mt-1.5">
+                <button onClick={handleGrow} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-3 py-1.5">
+                  → Increase this row by {Math.abs(totalDiff)} {unit} to match
+                </button>
+              </div>
+            </div>
+          )
+        )}
+        {mismatch && !canEdit && (
           <p className="text-[11px] text-amber-300/70 bg-amber-400/10 border border-amber-400/25 rounded-lg px-3 py-2">
-            This row's numbers were changed by hand after pooling, so they no longer match the customers behind it. Nothing is broken — the difference is simply untracked, like Buffer.
+            {anyPositive && !anyNegative
+              ? "This row has more linked than what's accounted for — either another customer order still needs adding, or it's genuine extra stock."
+              : "This row shows less than what's linked above — a size may have been edited down by hand, or the linked customers need more than this row currently has."}
           </p>
         )}
 

@@ -121,8 +121,9 @@ export default function Vendors() {
   // BOTH vendorOrders and orders at once — a customer's own row and the
   // vendor batch it's linked to must always agree on importedToVOId, so
   // they're saved together in one patch, never as two separate writes.
-  async function handleWhoChange(patch: { vendorOrders: VendorOrder[]; orders: Order[] }, auditDetail: string) {
-    const full: Partial<AppData> = { ...patch };
+  async function handleWhoChange(patch: { vendorOrders: VendorOrder[]; orders?: Order[] }, auditDetail: string) {
+    const full: Partial<AppData> = { vendorOrders: patch.vendorOrders };
+    if (patch.orders) full.orders = patch.orders;
     if (session?.username) {
       full.auditLog = buildAuditLog('Edit vendor order', auditDetail, session.username, data.auditLog ?? []);
     }

@@ -205,8 +205,17 @@ export interface VendorDesign {
   // PoolSource below. Absent on every pre-existing vendor order, which is
   // fine: those were always one-order-to-one-vendor.
   sources?: PoolSource[];
-  // Extra pieces deliberately made beyond customer demand, per size.
+  // Extra pieces deliberately made beyond customer demand, per size, tracked
+  // in `extraUnit` (which can be a FINER unit than the row's own — "1 pair"
+  // reads as a real quantity, "0.5 jotta" for the same amount looks like a
+  // fraction of a piece). Supersedes the older bufferSizes/stockSizes split
+  // (kept below, read-only, for vendor designs created before they were
+  // merged into this one field — see vendorWhoUtils.ts's extraInRowUnit()).
+  extraSizes?: Record<string, number>;
+  extraUnit?: string;
+  /** @deprecated superseded by extraSizes/extraUnit — still read for old data */
   bufferSizes?: Record<string, number>;  // cover for rejections
+  /** @deprecated superseded by extraSizes/extraUnit — still read for old data */
   stockSizes?: Record<string, number>;   // speculative / for stock
   // What the vendor actually returned for this line, per size (cumulative
   // across several part-deliveries).
@@ -217,6 +226,17 @@ export interface VendorDesign {
   // reshaping the type hierarchy for two fields.
   onHold?: boolean;
   holdReason?: string;
+  // True once this row's own quantity has been treated as independent of
+  // its linked customers — set the first time a customer is linked to a row
+  // that had a non-zero quantity but no sources yet (i.e. it was typed by
+  // hand or created before the multi-customer system existed, never built
+  // by Pooling). A genuinely Pooling-built row is defined AS the sum of its
+  // sources and is never flagged this way — linking/unlinking there
+  // continues to grow/shrink the row exactly as before. See
+  // vendorWhoUtils.ts's addSourceToVendorDesign() for the real bug this
+  // fixed: linking a customer to a manually-typed row used to silently ADD
+  // their quantity on top of the number already there.
+  manualSizes?: boolean;
 }
 
 // One customer's contribution to a pooled vendor-order line.
@@ -226,7 +246,12 @@ export interface PoolSource {
   client: string;
   designId: string;
   varietyId: string | null;  // null = flat/CNC row
-  sizes: Record<string, number>;
+  sizes: Record<string, number>;  // already converted into the vendor row's own unit
+  // The customer's own unit and sizes BEFORE conversion — kept for audit and
+  // so vendorWhoUtils.ts's finerUnitFor() can offer Extra in whichever unit
+  // among the row's own and its real contributors' is more natural.
+  origUnit?: string;
+  origSizes?: Record<string, number>;
 }
 
 // ─── Finished-goods stock ─────────────────────────────────────────────────────

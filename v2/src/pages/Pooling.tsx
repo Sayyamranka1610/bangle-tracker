@@ -335,7 +335,7 @@ export default function Pooling() {
     if (!selectedGroups.length) { showToast('Tick at least one batch first', 'info'); return; }
     if (!vendor.trim()) { showToast('Please choose a vendor', 'error'); return; }
 
-    const { designs, touched } = buildVendorDesigns(selectedGroups, extrasByKey);
+    const { designs, touched } = buildVendorDesigns(data, selectedGroups, extrasByKey);
     const vo: VendorOrder = {
       id: 'vo_' + Date.now(),
       orderId: genVendorOrderId(data.vendorOrders ?? []),

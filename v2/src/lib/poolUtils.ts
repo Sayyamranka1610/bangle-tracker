@@ -219,6 +219,7 @@ export interface BuildResult {
 }
 
 export function buildVendorDesigns(
+  data: AppData,
   groups: PoolGroup[],
   extrasByKey: Record<string, Extras>,
 ): BuildResult {
@@ -229,14 +230,35 @@ export function buildVendorDesigns(
     const extras = extrasByKey[g.key] ?? emptyExtras();
     const sizes = makeQty(g, extras);
 
-    const sources: PoolSource[] = g.contributors.map(c => ({
-      orderDbId: c.row.orderDbId,
-      orderLabel: c.row.orderLabel,
-      client: c.row.client,
-      designId: c.row.designId,
-      varietyId: c.row.varietyId,
-      sizes: { ...c.row.sizes },
-    }));
+    // Each contributor's sizes must be converted into the GROUP's resolved
+    // unit before being stored as a source — g.ordered (and so `sizes`
+    // above) already is, via buildPoolGroups()'s unit-aware math, but a
+    // contributor's own CatalogRow.sizes are still in ITS OWN unit. Storing
+    // those un-converted here would show the wrong quantity per customer in
+    // the who-modal and make remainderBySize() compare a converted row
+    // total against un-converted source sums — a real mismatch bug for
+    // every mixed-unit batch, not just a display quirk.
+    const targetPcs = unitPieces(data, g.unit);
+    const sources: PoolSource[] = g.contributors.map(c => {
+      const rowUnit = c.row.unit || 'pcs';
+      const rowPcs = unitPieces(data, rowUnit);
+      const factor = (targetPcs && rowPcs) ? rowPcs / targetPcs : 1;
+      const convSizes: Record<string, number> = {};
+      Object.entries(c.row.sizes ?? {}).forEach(([sz, n]) => {
+        const q = Number(n) || 0;
+        if (q > 0) convSizes[sz] = Math.round(q * factor * 10000) / 10000;
+      });
+      return {
+        orderDbId: c.row.orderDbId,
+        orderLabel: c.row.orderLabel,
+        client: c.row.client,
+        designId: c.row.designId,
+        varietyId: c.row.varietyId,
+        sizes: convSizes,
+        origUnit: rowUnit,
+        origSizes: { ...c.row.sizes },
+      };
+    });
 
     g.contributors.forEach(c => {
       touched.push({ orderDbId: c.row.orderDbId, designId: c.row.designId, varietyId: c.row.varietyId });
