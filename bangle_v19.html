@@ -4661,14 +4661,39 @@ function markDesignComplete(oi,di){
   const design=order&&order.designs[di];
   if(!design)return;
   const stages=design.stages||[];
-  const pending=stages.filter(st=>st.status!=='done').length;
   const label=design.code||(design.name||'this design');
+  // Owner-reported: once this tick was pressed there was no way to undo an
+  // accidental click — the function only ever wrote "done", never checked
+  // whether the design already was. Now it toggles like the variety ✓ button
+  // (markVarietyDone) already does.
+  const allStagesDone=stages.length>0&&stages.every(st=>st.status==='done');
+  const alreadyDone=!!design.done||allStagesDone;
+
+  if(alreadyDone){
+    if(!confirm(`Undo dispatch for "${label}"?\n\nThis reverses the ✓ Dispatch click — its ${stages.length} production stage${stages.length!==1?'s':''} go back to not done, and it'll need to be marked complete again once it's actually ready.`))return;
+    stages.forEach(st=>{ st.status='pending'; delete st.completionDate; });
+    design.done=false;
+    design.receivedFromKarigar=false;
+    design.dispatchedToClient=false;
+    design.pipeReceived=false;
+    design.karigarReceived=false;
+    design.platingReceived=false;
+    delete design.dispatchedAt;
+    save();
+    render();
+    showToast(`↩️ "${label}" un-marked — back to pending`,'red',3500);
+    audit('Design Complete undone',`${order.orderId} › ${label}`);
+    return;
+  }
+
+  const pending=stages.filter(st=>st.status!=='done').length;
   if(!confirm(`Mark all ${stages.length} production stage${stages.length!==1?'s':''} of "${label}" as Done?\n\nUse this when the design is dispatched.\n${pending} stage${pending!==1?'s are':' is'} currently not done.`))return;
   const today=new Date().toISOString().split('T')[0];
   stages.forEach(st=>{
     st.status='done';
     if(!st.completionDate)st.completionDate=today;
   });
+  design.done=true;
   design.receivedFromKarigar=true;
   design.dispatchedToClient=true;
   // Auto-tick all 3 vendor stage received flags on dispatch
@@ -5294,8 +5319,8 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
       const unitOpts='<option value=""'+(flatUnitStored?'':' selected')+'>\u2014 not set \u2014</option>'+(S.vocabulary.units||['pcs','pairs','jotta']).map(u=>'<option value="'+u+'"'+(u===flatUnitStored?' selected':'')+'>'+u+'</option>').join('');
       const codeEmpty=!(d.code||'').trim();
       const allStagesDone=(d.stages||[]).length>0&&(d.stages||[]).every(st=>st.status==='done');
-      const tickSty=allStagesDone?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0';
       const flatDone=!!d.done||allStagesDone;
+      const tickSty=flatDone?'background:#E1F5EE;color:#0F6E56;border-color:#9FE1CB':'background:#FCEBEB;color:#C0392B;border-color:#F5A0A0';
       tbody+='<tr style="background:#fff;border-left:'+(d.onHold?'4px solid #FF9800':(flatDone?'4px solid #4CAF50':'4px solid transparent'))+'">'
         +'<td>'
           +'<div style="display:flex;flex-direction:column;gap:3px">'
@@ -5320,7 +5345,7 @@ function buildDesignsGroupTable(order,oi,g,_voMap){
         +btNoteCell(oi,di,-1,_btFlatNote(d))
         +_coVendorCells(d,di,-1,d.code)
         +'<td class="no-print"><div style="display:flex;gap:3px;flex-wrap:wrap">'
-          +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="Dispatch — auto-ticks all stages">✓</button>'
+          +'<button class="icon-btn sm" style="'+tickSty+';font-weight:700" onclick="markDesignComplete('+oi+','+di+')" title="'+(flatDone?'Dispatched ✓ — click to undo':'Dispatch — auto-ticks all stages')+'">✓</button>'
           +_holdToggleBtnHtml(d,'toggleCOHold('+oi+','+di+',-1)')
           +(!isCnc?'<button class="icon-btn sm" onclick="addVariety('+oi+','+di+')" title="Add variety">+Var</button>':'')
           +'<button class="icon-btn danger sm" onclick="removeDesign('+oi+','+di+')" title="Remove">✕</button>'
@@ -17788,6 +17813,31 @@ function openAllFollowUpTrailsModal(){
   _modalDisableBackground();
 }
 
+// ── FOLLOW-UP LEDGER — collapsed-by-vendor redesign ─────────────────────────
+// Owner-reported: the old layout listed every one of the ~300 pending items
+// as a full-height card, one after another, so finding one vendor meant
+// scrolling past all the others, and nothing stood out as more or less
+// urgent at a glance. Fix: each vendor collapses to ONE line (name, item
+// count, oldest-overdue badge, colour-coded by severity) — you open only
+// the vendor you're about to call. Filter chips narrow the view; they never
+// hide anything, since every pending item must stay visible no matter its
+// age (owner-confirmed).
+// Ephemeral session-only UI state — never persisted, same treatment as
+// every other "is this panel open" flag in this file.
+let _fuOpenGroups=null; // null = not yet touched this session → auto-open the most overdue group
+let _fuSeverityFilter='all'; // 'all' | 'crit' | 'warn' | 'ok'
+function _fuSeverityOf(days){ return days>=60?'crit':days>=30?'warn':'ok'; }
+const _FU_SEV_COLORS={
+  crit:{bg:'#FCEBEB',tx:'#A32D2D',bd:'#F09595'},
+  warn:{bg:'#FFF3E0',tx:'#BF360C',bd:'#FFB74D'},
+  ok:  {bg:'#E9F7EF',tx:'#1B7A43',bd:'#A9DFBF'}
+};
+function _fuToggleGroup(key){
+  if(_fuOpenGroups.has(key))_fuOpenGroups.delete(key); else _fuOpenGroups.add(key);
+  openFollowUpsModal();
+}
+function _fuSetSeverityFilter(f){ _fuSeverityFilter=f; openFollowUpsModal(); }
+
 function openFollowUpsModal(){
   const items=computeFollowUps();
   const mc=document.getElementById('modal-container');
@@ -17798,40 +17848,58 @@ function openFollowUpsModal(){
   const vendorItems=items.filter(it=>it.vendor);
   const orderItems=items.filter(it=>!it.vendor);
 
-  let body='';
-
-  if(vendorItems.length){
-    const byVendor={};
-    vendorItems.forEach(it=>{(byVendor[it.vendor]=byVendor[it.vendor]||[]).push(it);});
-    // Vendor with the most overdue item first — that's who to call first.
-    const vendorNames=Object.keys(byVendor).sort((a,b)=>
-      Math.max(...byVendor[b].map(i=>i.overdueDays))-Math.max(...byVendor[a].map(i=>i.overdueDays)));
-    body+=`<div style="font-size:12px;font-weight:800;color:#3C3489;margin-bottom:8px">📞 Vendor-wise Follow-ups — jab call karo, sab kuch ek jagah</div>`;
-    body+=vendorNames.map(vendor=>{
-      const rows=byVendor[vendor].sort((a,b)=>b.overdueDays-a.overdueDays);
-      return `<div style="margin-bottom:14px;border:1.5px solid #D0CCF5;border-radius:12px;padding:10px 10px 6px;background:#FAFAFF">
-        <div style="font-size:12.5px;font-weight:800;color:#2D2D5F;margin-bottom:8px;display:flex;align-items:center;gap:8px">
-          🏭 ${esc(vendor)} <span style="font-size:10px;font-weight:700;background:#F0EFFF;color:#534AB7;border-radius:20px;padding:1px 9px">${rows.length} item${rows.length!==1?'s':''}</span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px">${rows.map(it=>_fuItemCardHtml(it,true)).join('')}</div>
-      </div>`;
-    }).join('');
-  }
-
+  const byVendor={};
+  vendorItems.forEach(it=>{(byVendor[it.vendor]=byVendor[it.vendor]||[]).push(it);});
+  const groups=Object.keys(byVendor).map(vendor=>{
+    const rows=byVendor[vendor].sort((a,b)=>b.overdueDays-a.overdueDays);
+    return {key:'v:'+vendor,label:vendor,icon:'🏭',rows,oldest:rows[0].overdueDays,isVendor:true};
+  });
   if(orderItems.length){
-    const grouped={};
-    orderItems.forEach(it=>{(grouped[it.rule.ruleKey]=grouped[it.rule.ruleKey]||[]).push(it);});
-    body+=`<div style="font-size:12px;font-weight:800;color:#3C3489;margin:${vendorItems.length?'18':'0'}px 0 8px">📋 Order-level Follow-ups</div>`;
-    body+=FOLLOWUP_RULE_ORDER.filter(k=>grouped[k]&&grouped[k].length).map(k=>{
-      const rule=FOLLOWUP_RULES[k], rows=grouped[k];
-      return `<div style="margin-bottom:14px">
-        <div style="font-size:11px;font-weight:700;color:#534AB7;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">${rule.icon} ${esc(rule.label)} (${rows.length})</div>
-        <div style="display:flex;flex-direction:column;gap:6px">${rows.map(it=>_fuItemCardHtml(it,false)).join('')}</div>
-      </div>`;
-    }).join('');
+    const rows=orderItems.sort((a,b)=>b.overdueDays-a.overdueDays);
+    groups.push({key:'v:__order_level__',label:'Order-level (koi vendor nahi)',icon:'📋',rows,oldest:rows[0].overdueDays,isVendor:false});
   }
+  // Most overdue group first — that's who to call/check first.
+  groups.sort((a,b)=>b.oldest-a.oldest);
 
-  if(!items.length)body=`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Abhi kuch bhi pending nahi hai — badhiya kaam!</div>`;
+  // First time this session: auto-open just the top group so the single most
+  // urgent thing is visible without any clicking, everything else starts
+  // collapsed. Once the owner has opened/closed anything themselves, respect
+  // that instead of re-forcing it open on every re-render.
+  if(_fuOpenGroups===null)_fuOpenGroups=new Set(groups.length?[groups[0].key]:[]);
+
+  const counts={crit:0,warn:0,ok:0};
+  items.forEach(it=>{counts[_fuSeverityOf(it.overdueDays)]++;});
+  const chip=(key,label,n)=>{
+    const active=_fuSeverityFilter===key;
+    return `<span onclick="_fuSetSeverityFilter('${key}')" style="cursor:pointer;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;border:1.5px solid ${active?'#534AB7':'#E0DFFF'};background:${active?'#534AB7':'#fff'};color:${active?'#fff':'#534AB7'};white-space:nowrap">${label} (${n})</span>`;
+  };
+  const filterBarHtml=items.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      ${chip('all','Sab',items.length)}
+      ${chip('crit','🔴 60+ din',counts.crit)}
+      ${chip('warn','🟠 30–60 din',counts.warn)}
+      ${chip('ok','🟡 Recent',counts.ok)}
+    </div>`:'';
+
+  const groupHtml=groups.map(g=>{
+    const visRows=g.rows.filter(it=>_fuSeverityFilter==='all'||_fuSeverityOf(it.overdueDays)===_fuSeverityFilter);
+    if(!visRows.length)return''; // this vendor has nothing matching the current filter
+    const isOpen=_fuOpenGroups.has(g.key);
+    const c=_FU_SEV_COLORS[_fuSeverityOf(g.oldest)];
+    const pdfBtn=g.isVendor?`<button class="sm" onclick="event.stopPropagation();openFollowUpVendorStatement('${esc(g.label).replace(/'/g,"\\'")}')" title="Print a pending-order statement for this vendor">🖨 PDF</button>`:'';
+    return `<div style="border:1.5px solid ${c.bd};border-left:4px solid ${c.tx};border-radius:11px;margin-bottom:9px;overflow:hidden;background:#fff">
+      <div onclick="_fuToggleGroup('${g.key}')" style="cursor:pointer;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;user-select:none">
+        <span style="font-size:14px">${g.icon}</span>
+        <span style="flex:1;min-width:100px;font-size:13px;font-weight:800;color:#2D2D5F">${esc(g.label)}</span>
+        <span style="font-size:10px;font-weight:700;background:${c.bg};color:${c.tx};border-radius:20px;padding:2px 9px;white-space:nowrap">${visRows.length} item${visRows.length!==1?'s':''}</span>
+        <span style="font-size:10px;font-weight:700;background:${c.bg};color:${c.tx};border-radius:20px;padding:2px 9px;white-space:nowrap">oldest · ${g.oldest} din</span>
+        ${pdfBtn}
+        <span style="color:#999;display:inline-block;transition:transform .15s;transform:rotate(${isOpen?90:0}deg)">▶</span>
+      </div>
+      ${isOpen?`<div style="padding:0 12px 12px;display:flex;flex-direction:column;gap:6px">${visRows.map(it=>_fuItemCardHtml(it,!g.isVendor)).join('')}</div>`:''}
+    </div>`;
+  }).join('');
+
+  const body=items.length?(filterBarHtml+groupHtml):`<div style="text-align:center;padding:2rem;color:#888"><div style="font-size:32px;margin-bottom:8px">✅</div>Abhi kuch bhi pending nahi hai — badhiya kaam!</div>`;
 
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
     <div class="modal" style="width:640px">
@@ -17848,6 +17916,114 @@ function openFollowUpsModal(){
     </div>
   </div>`;
   _modalDisableBackground();
+}
+
+// ── VENDOR REMINDER STATEMENT (printable, via the browser's own Print dialog) ──
+// One button per vendor group above. Lists every still-open vendor order for
+// that vendor, grouped by order, with each design's own photo and its
+// pending sizes laid out left-to-right (same as the size row on that
+// design's Order card) so the vendor can see exactly which bangle is still
+// owed. Reuses the same window.open + auto-print mechanism the existing
+// Vendor Orders print button already relies on (see openVendorPrintWindow)
+// — no new library, no server round-trip, and "Save as PDF" is just the
+// browser's own print destination picker.
+function openFollowUpVendorStatement(vendorName){
+  const vos=(S.vendorOrders||[]).filter(vo=>vo.vendor===vendorName && vo.status!=='delivered' && vo.status!=='dispatched');
+  if(!vos.length){showToast('No open vendor orders found for "'+vendorName+'"','amber');return;}
+
+  const totals={}; // unit → pending qty, across every row on this statement
+  const orderBlocks=vos.map(vo=>{
+    const rows=[];
+    (vo.designs||[]).forEach(d=>{
+      const varieties=d.varieties||[];
+      const hasOnlyDefault=varieties.length===1&&(varieties[0].name||'').trim().toLowerCase()==='default';
+      const isFlat=varieties.length===0||hasOnlyDefault;
+      if(isFlat){
+        if(d.received)return; // fully received — nothing pending on this row
+        const sizes=hasOnlyDefault?(varieties[0].sizes||{}):(d.sizes||{});
+        const qty=Object.values(sizes).reduce((a,n)=>a+(parseInt(n)||0),0);
+        if(qty<=0)return;
+        rows.push({code:d.code||'—',name:d.name||'',images:hasOnlyDefault?(varieties[0].images||[]):(d.images||[]),
+          sizes,unit:_validUnit(hasOnlyDefault?(varieties[0].unit||d.unit):d.unit),qty});
+      } else {
+        varieties.forEach(v=>{
+          if(v.received)return;
+          const sizes=v.sizes||{};
+          const qty=Object.values(sizes).reduce((a,n)=>a+(parseInt(n)||0),0);
+          if(qty<=0)return;
+          rows.push({code:d.code||'—',name:(d.name||'')+(v.name&&v.name!=='Default'?' — '+v.name:''),
+            images:(d.images&&d.images.length)?d.images:(v.images||[]),sizes,unit:_validUnit(v.unit),qty});
+        });
+      }
+    });
+    if(!rows.length)return null; // this vendor order is fully received
+
+    rows.forEach(r=>{ totals[r.unit]=(totals[r.unit]||0)+r.qty; });
+
+    const anchorDateStr=vo.startDate||(vo.createdAt?new Date(vo.createdAt).toISOString().split('T')[0]:'');
+    const anchorMs=anchorDateStr?new Date(anchorDateStr+'T00:00:00').getTime():(vo.createdAt?new Date(vo.createdAt).getTime():Date.now());
+    const daysPending=Math.max(0,Math.floor((Date.now()-anchorMs)/864e5));
+
+    const rowsHtml=rows.map(r=>{
+      const src=_resolveImgSrc((r.images||[])[0]);
+      const imgHtml=src
+        ?'<img src="'+src+'" style="width:40px;height:40px;object-fit:cover;border-radius:7px;border:1px solid #D9D2BC;flex-shrink:0">'
+        :'<div style="width:40px;height:40px;border-radius:7px;background:#F1ECDC;border:1px solid #D9D2BC;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px">💍</div>';
+      const szKeys=Object.keys(r.sizes).filter(k=>(parseInt(r.sizes[k])||0)>0)
+        .sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);});
+      const chipsHtml=szKeys.map(sz=>'<div style="display:flex;flex-direction:column;align-items:center;min-width:44px;padding:4px 8px;background:#F1ECDC;border:1px solid #D9D2BC;border-radius:6px">'
+        +'<span style="font:600 9px monospace;letter-spacing:.03em;color:#8A8368;text-transform:uppercase">'+esc(sz)+'</span>'
+        +'<span style="font:700 13px monospace;color:#2A2618">'+(parseInt(r.sizes[sz])||0)+'</span>'
+      +'</div>').join('');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #EFE9D8">'
+        +'<div style="display:flex;align-items:center;gap:9px;min-width:150px">'+imgHtml
+          +'<div><div style="font:700 12.5px system-ui;color:#2A2618">'+esc(r.code)+'<span style="display:block;font:500 11px system-ui;color:#8A8368">'+esc(r.name)+'</span></div></div>'
+        +'</div>'
+        +'<div style="display:flex;gap:7px;flex-wrap:wrap">'+chipsHtml+'</div>'
+      +'</div>';
+    }).join('');
+
+    return '<div style="margin-top:20px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:baseline;padding-bottom:6px;margin-bottom:2px">'
+        +'<span style="font:700 13px monospace;color:#2A2618">'+esc(vo.orderId||'VORD')+' <span style="font:500 11px system-ui;color:#8A8368">· ordered '+esc(fmtDate(anchorDateStr)||'—')+'</span></span>'
+        +'<span style="font:600 11px monospace;color:#8A2E2E;white-space:nowrap">'+daysPending+' days pending</span>'
+      +'</div>'
+      +rowsHtml
+    +'</div>';
+  }).filter(Boolean);
+
+  if(!orderBlocks.length){
+    showToast('Every order for "'+vendorName+'" is already fully received — nothing to put on a statement','green');
+    return;
+  }
+
+  const w=window.open('','_blank','width=900,height=780');
+  if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
+
+  const totalsStr=Object.keys(totals).filter(u=>totals[u]>0).sort().map(u=>totals[u]+' '+u).join(' + ')||'0 pcs';
+  const today=new Date().toISOString().split('T')[0];
+
+  w.document.write(`<!DOCTYPE html><html><head><title>Pending Order Statement — ${esc(vendorName)}</title>
+    <style>
+      @page{margin:14mm;size:A4 portrait}
+      body{font-family:system-ui;background:#F7F5FB;margin:0;padding:24px}
+      .stmt{max-width:640px;margin:0 auto;background:#FFFDF8;padding:34px 36px;border-radius:2px}
+      @media print{ body{background:#fff;padding:0} .stmt{padding:0} .print-toolbar{display:none!important} }
+    </style></head><body>
+    <div class="print-toolbar" style="max-width:640px;margin:0 auto 12px;text-align:right"><button onclick="window.print()" style="padding:7px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Print / Save as PDF</button></div>
+    <div class="stmt">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2A2618;padding-bottom:14px">
+        <div style="font:800 19px system-ui;color:#2A2618">SIDDHI BANGLES</div>
+        <div style="text-align:right;font:500 11.5px monospace;color:#5A5442">${esc(fmtDate(today))}</div>
+      </div>
+      <div style="margin-top:20px;font:700 14px system-ui;letter-spacing:.04em;text-transform:uppercase;color:#5A5442">Pending Order Statement</div>
+      <div style="margin-top:4px;font:600 15px system-ui;color:#2A2618">To: ${esc(vendorName)}</div>
+      ${orderBlocks.join('')}
+      <div style="margin-top:20px;font-size:12px;color:#5A5442;padding-top:12px">${orderBlocks.length} order${orderBlocks.length!==1?'s':''} totalling ${esc(totalsStr)} ${orderBlocks.length!==1?'are':'is'} still outstanding. Kindly confirm delivery status at the earliest.</div>
+    </div>
+    <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});<\/script>
+  </body></html>`);
+  w.document.close();
 }
 
 // Shows the checklist automatically once per day, per device (localStorage-gated
