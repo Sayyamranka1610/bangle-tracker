@@ -4539,11 +4539,14 @@ function buildVendorSummaryPanel(order, oi){
     const hod=_hasOnlyDefault(d);
     const isCnc=(order.bangleType==='cnc'||d.bangleType==='cnc');
     const isFlat=isCnc||!(d.varieties||[]).length||hod;
+    // Same fallback btRowsOfOrder already uses — a flat/CNC design can carry
+    // its unit on the design OR on its single 'Default' variety.
+    const flatU=(d.varieties&&d.varieties[0]&&d.varieties[0].unit)||'';
 
     if(isFlat){
       const vendor=d.assignedVendor||'';
       const rowSizes=hod?(d.varieties[0]?.sizes||{}):(d.sizes||{});
-      const row={designName:d.name||'',designCode:d.code||'',varName:null,sizes:rowSizes,importedToVOId:d.importedToVOId||null};
+      const row={designName:d.name||'',designCode:d.code||'',varName:null,sizes:rowSizes,unit:_validUnit(d.unit||flatU),importedToVOId:d.importedToVOId||null};
       if(vendor){
         if(!vendorGroups[vendor])vendorGroups[vendor]=[];
         vendorGroups[vendor].push(row);
@@ -4551,7 +4554,7 @@ function buildVendorSummaryPanel(order, oi){
     } else {
       (d.varieties||[]).forEach((v,vi)=>{
         const vendor=v.assignedVendor||'';
-        const row={designName:d.name||'',designCode:d.code||'',varName:v.name||('Variety '+(vi+1)),sizes:v.sizes||{},importedToVOId:v.importedToVOId||null};
+        const row={designName:d.name||'',designCode:d.code||'',varName:v.name||('Variety '+(vi+1)),sizes:v.sizes||{},unit:_validUnit(v.unit||d.unit||flatU),importedToVOId:v.importedToVOId||null};
         if(vendor){
           if(!vendorGroups[vendor])vendorGroups[vendor]=[];
           vendorGroups[vendor].push(row);
@@ -4594,6 +4597,7 @@ function buildVendorSummaryPanel(order, oi){
           const nonZeroSizes=Object.entries(r.sizes||{}).filter(([,v])=>(parseInt(v)||0)>0);
           const sizeHtml=nonZeroSizes.length
             ?nonZeroSizes.map(([sz,qty])=>`<span style="background:#F0EFFF;color:#3C3489;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin:1px">${esc(sz)}: ${qty}</span>`).join('')
+              +`<span style="color:#8A87A8;font-size:10px;font-weight:600;margin-left:2px;align-self:center">${esc(r.unit)}</span>`
             :'<span style="color:#aaa;font-size:10px">—</span>';
           const label=r.varName?`${esc(r.designName||'—')} <span style="color:#888">·</span> <em>${esc(r.varName)}</em>`
             :`${esc(r.designName||'—')}${r.designCode?' <span style="background:#F5F4FF;color:#534AB7;border-radius:4px;padding:0 5px;font-size:10px">'+esc(r.designCode)+'</span>':''}`;
@@ -4626,6 +4630,7 @@ function _buildUnassignedVendorRows(rows){
         const nonZeroSizes=Object.entries(r.sizes||{}).filter(([,v])=>(parseInt(v)||0)>0);
         const sizeHtml=nonZeroSizes.length
           ?nonZeroSizes.map(([sz,qty])=>`<span style="background:#FFF0EE;color:#C0392B;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin:1px">${esc(sz)}: ${qty}</span>`).join('')
+            +`<span style="color:#B08A87;font-size:10px;font-weight:600;margin-left:2px;align-self:center">${esc(r.unit)}</span>`
           :'<span style="color:#aaa;font-size:10px">—</span>';
         const label=r.varName?`${esc(r.designName||'—')} · <em>${esc(r.varName)}</em>`:`${esc(r.designName||'—')}${r.designCode?' ['+esc(r.designCode)+']':''}`;
         return`<div style="border-bottom:1px solid #FFF0EE;padding:5px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px">
