@@ -10882,6 +10882,20 @@ function _unlinkVO(vi, di, vri){
 // in sync (_setCOVendorField) so that box can never disagree with the
 // "→ VORD-xx" badge next to it.
 function _voQty(sizes){return Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);}
+// A flat/CNC vendor design's real unit can live on the design itself OR on
+// its single legacy 'Default' variety (same quirk btRowsOfOrder already
+// works around on the customer side) — the on-screen Unit dropdown already
+// checks both (see buildVendorDesignsPanel's flatUnit), but every unit read
+// in the linking/reconciliation code below was reading vd.unit alone,
+// silently defaulting to "pcs" for any row whose real unit sat on the
+// Default variety instead. That's what made "51 jotta" show up as "51 pcs"
+// in the Who-modal even though the table right next to it correctly said
+// jotta — same physical row, two different reads of its unit.
+function _voRowUnit(vd){
+  const varieties=vd.varieties||[];
+  const hasOnlyDefault=varieties.length===1&&(varieties[0].name||'').trim().toLowerCase()==='default';
+  return _validUnit(hasOnlyDefault?(varieties[0].unit||vd.unit):vd.unit);
+}
 // Backward-compat merge for vendor designs created before Buffer/Stock were
 // combined into one "Extra" field — Object.assign would silently DROP one
 // side's number whenever both had the same size key (5+5 becoming 5, not
@@ -10929,7 +10943,7 @@ function _migrateSourceCoIdToSources(vo,vd){
   vd.sources=[{
     orderDbId:vd.sourceCoId, orderLabel:vd.sourceCoNum||'CO', client:client,
     designId:designId, varietyId:null,
-    sizes:Object.assign({},vd.sizes), origUnit:vd.unit||'pcs', origSizes:Object.assign({},vd.sizes)
+    sizes:Object.assign({},vd.sizes), origUnit:_voRowUnit(vd), origSizes:Object.assign({},vd.sizes)
   }];
   // This row came from the OLD single-link picker — always a manually-typed
   // row, never a Pooling batch — so its quantity must stay independent of
@@ -10977,7 +10991,7 @@ function _openVOWhoModal(vi,di,showAdd){
     :'';
 
   const rowTotal=_voQty(vd.sizes);
-  const rowUnit=vd.unit||'pcs'; // owner-reported: this modal used to always say "pcs" even for a jotta/pairs row
+  const rowUnit=_voRowUnit(vd); // owner-reported: this modal used to always say "pcs" even for a jotta/pairs row
   const accounted=sources.reduce((a,s)=>a+_voQty(s.sizes),0)+extraQty;
   const mismatch=accounted!==rowTotal;
   const addends=sources.map(s=>_voQty(s.sizes)).concat(extraQty?[extraQty]:[]);
@@ -11073,7 +11087,7 @@ function _voWhoAdd(vi,di,ci){
   // raw number as if it were already the row's unit. That silent mismatch
   // is the same bug fixed on the create side; refuse rather than guess if
   // either unit's piece-count isn't defined yet.
-  const rowUnit=vd.unit||'pcs';
+  const rowUnit=_voRowUnit(vd);
   const candPcs=_unitPieces(c.unit), rowPcs=_unitPieces(rowUnit);
   if(!candPcs||!rowPcs){
     const badUnit=!candPcs?c.unit:rowUnit;
@@ -11171,7 +11185,7 @@ function _voWhoUnlink(vi,di,si){
   // the owner decided independently.
   const willShrink=!vd._manualSizes;
   if(!confirm('Remove '+(src.client||'this customer')+' ('+(src.orderLabel||'CO')+') from this row?'
-    +(willShrink?'\n\nTheir '+qty+' pcs will come back out of this vendor row, and their order row will reappear on the Pooling board.'
+    +(willShrink?'\n\nTheir '+qty+' '+_voRowUnit(vd)+' will come back out of this vendor row, and their order row will reappear on the Pooling board.'
                 :'\n\nThis row\'s own quantity stays exactly as it is — only the "who this is for" record is removed. Their order row will reappear on the Pooling board.')))return;
 
   if(willShrink){
@@ -11244,7 +11258,7 @@ function _voSweepRemainderToExtra(vi,di){
   const surplus={}; Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0)surplus[sz]=remainder[sz]; });
   if(!Object.keys(surplus).length){showToast('Nothing left over — already fully accounted for','green');return;}
   const total=Object.values(surplus).reduce((a,v)=>a+v,0);
-  const unit=vd.unit||'pcs';
+  const unit=_voRowUnit(vd);
   if(!confirm('Record '+total+' '+unit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(surplus).map(sz=>sz+': '+surplus[sz]).join(' · ')))return;
   vd.extraSizes=vd.extraSizes||{};
   Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+surplus[sz]; });
@@ -11272,7 +11286,7 @@ function _voGrowRowToMatchSources(vi,di){
   const shortfall={}; Object.keys(remainder).forEach(sz=>{ if(remainder[sz]<0)shortfall[sz]=-remainder[sz]; });
   if(!Object.keys(shortfall).length){showToast('Nothing short — already fully accounted for','green');return;}
   const total=Object.values(shortfall).reduce((a,v)=>a+v,0);
-  const unit=vd.unit||'pcs';
+  const unit=_voRowUnit(vd);
   if(!confirm('Increase this row by '+total+' '+unit+' to match its linked customers?\n\n'+Object.keys(shortfall).map(sz=>sz+': +'+shortfall[sz]).join(' · ')))return;
   vd.sizes=vd.sizes||{};
   Object.keys(shortfall).forEach(sz=>{ vd.sizes[sz]=(parseInt(vd.sizes[sz])||0)+shortfall[sz]; });
