@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { VendorOrder, VendorStatus, AppData, Order } from '../types';
 import { vendorAlert, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
@@ -16,7 +17,12 @@ export default function Vendors() {
   const canEdit = session?.role === 'owner' && hasLock;
 
   const [filter, setFilter]           = useState<FilterKey>('all');
-  const [search, setSearch]           = useState('');
+  // Jump-to-order-here from the Follow-ups list (?q=<vendor order ID>) —
+  // reuses the existing search box rather than building separate scroll-to
+  // infrastructure, since a vendor-order ID search already narrows to
+  // exactly one card.
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
   const [modalOrder, setModalOrder]   = useState<VendorOrder | null | undefined>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<VendorOrder | null>(null);
   const [saving, setSaving]           = useState(false);

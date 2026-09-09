@@ -297,6 +297,38 @@ export interface AppData {
   designFamilies?: Record<string, string>; // UPPERCASED design code -> family name
   familyNotes?: Record<string, string>;    // family name -> standing notes
   stockItems?: StockItem[];                // finished-goods stock
+  // ── Follow-up ledger ("Kya Bola?", Sept 2026) — see lib/followUpUtils.ts ──
+  // Per-entity scheduling state, keyed by a stable "kind:id:ruleKey" string.
+  followUps?: Record<string, FollowUpEntry>;
+  // Append-only record of every response ever submitted, bounded to a
+  // rolling 90-day window (older entries are dropped on each write).
+  followUpLog?: FollowUpLogEntry[];
+}
+
+// ─── Follow-up ledger ("Kya Bola?") ───────────────────────────────────────────
+// See lib/followUpUtils.ts for the rules engine that reads/writes these.
+
+export interface FollowUpEntry {
+  firstSeenAt: number;
+  lastFollowUpAt: number | null;
+  timesFollowedUp: number;
+  nextDueOverride?: number;
+  overrideKind?: 'promised_date' | 'retry_tomorrow';
+  promisedDate?: string;
+}
+
+export interface FollowUpLogEntry {
+  key: string;
+  ruleKey: string;
+  kind: 'vo' | 'co';
+  vendor: string | null;
+  title: string;
+  subtitle: string;
+  reasonKey: string;
+  reasonLabel: string;
+  detail: string;
+  loggedBy: string;
+  loggedAt: number;
 }
 
 // ─── Edit lock ───────────────────────────────────────────────────────────────

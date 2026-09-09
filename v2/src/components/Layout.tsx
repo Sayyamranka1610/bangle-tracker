@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
+import { computeFollowUps } from '../lib/followUpUtils';
 import ToastContainer from './ToastContainer';
 
 const navItems = [
@@ -11,6 +13,7 @@ const navItems = [
   { to: '/assign',    label: 'Assign',    icon: '↔️' },
   { to: '/pooling',   label: 'Pooling',   icon: '🧲' },
   { to: '/karigar-history', label: 'Karigar History', icon: '💡' },
+  { to: '/followups', label: 'Kya Bola?', icon: '💬' },
   { to: '/library',   label: 'Library',   icon: '🖼️' },
   { to: '/analytics', label: 'Analytics', icon: '📊' },
   { to: '/audit',     label: 'Audit',     icon: '🔍' },
@@ -19,7 +22,9 @@ const navItems = [
 
 export default function Layout() {
   const { state, logout } = useApp();
-  const { session, syncStatus } = state;
+  const { session, syncStatus, data } = state;
+
+  const followUpCount = useMemo(() => computeFollowUps(data).items.length, [data]);
 
   const isReadOnly = session && session.role !== 'owner';
 
@@ -60,6 +65,11 @@ export default function Layout() {
               >
                 <span>{item.icon}</span>
                 {item.label}
+                {item.to === '/followups' && followUpCount > 0 && (
+                  <span className="ml-auto text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                    {followUpCount}
+                  </span>
+                )}
               </NavLink>
             );
           })}
