@@ -10881,7 +10881,10 @@ function _unlinkVO(vi, di, vri){
 // Every action here also keeps the customer's Karigar/Pipe/Plating dropdown
 // in sync (_setCOVendorField) so that box can never disagree with the
 // "→ VORD-xx" badge next to it.
-function _voQty(sizes){return Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);}
+// Number, not parseInt — a converted size can legitimately be a fraction of
+// a piece in one unit while being a whole number of pieces in another
+// (e.g. 0.5 jotta is exactly 1 pair); parseInt truncated that away silently.
+function _voQty(sizes){return Object.values(sizes||{}).reduce((a,v)=>a+(Number(v)||0),0);}
 // A flat/CNC vendor design's real unit can live on the design itself OR on
 // its single legacy 'Default' variety (same quirk btRowsOfOrder already
 // works around on the customer side) — the on-screen Unit dropdown already
@@ -10902,11 +10905,11 @@ function _voRowUnit(vd){
 // 10). Sum instead.
 function _mergeSizeMaps(a,b){
   const out=Object.assign({},a);
-  Object.keys(b||{}).forEach(sz=>{out[sz]=(parseInt(out[sz])||0)+(parseInt(b[sz])||0);});
+  Object.keys(b||{}).forEach(sz=>{out[sz]=(Number(out[sz])||0)+(Number(b[sz])||0);});
   return out;
 }
 function _voSizeStr(sizes){
-  return Object.keys(sizes||{}).filter(k=>(parseInt(sizes[k])||0)>0)
+  return Object.keys(sizes||{}).filter(k=>(Number(sizes[k])||0)>0)
     .sort((a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);})
     .map(k=>k+': '+sizes[k]).join(' · ');
 }
@@ -11094,14 +11097,16 @@ function _voWhoAdd(vi,di,ci){
     showToast('"'+badUnit+'" has no piece-count set — add it in Masters → Units before adding this customer','amber',5000);
     return;
   }
-  // Rounded to a WHOLE number, not 2 decimals — a bangle is a physical piece,
-  // so "12.5 jotta of size 2/4" isn't a real quantity anyone can hold. Any
-  // rounding slop this introduces (at most a fraction of one piece per size)
-  // shows up honestly as a small leftover in the "Row total" check below,
-  // where it can be swept into Extra with one click — never silently lost.
+  // Owner-corrected: NOT rounded. Rounding "12.5 jotta of size 2/4" up to 13
+  // silently manufactured or erased up to half a piece per size — small
+  // per size, but it can shift the true surplus/shortfall by whole pairs
+  // once summed (this is exactly what made 51 jotta vs 100 pairs — a real
+  // 1-jotta/2-pair surplus — look like it "matched exactly"). Kept exact
+  // instead; rounded only to 4 decimals to clean up floating-point noise,
+  // never to hide a real fraction of a piece.
   const factor=candPcs/rowPcs;
   const convSizes={};
-  Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor);});
+  Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*10000)/10000;});
 
   // Owner-reported: linking a customer to a row that was typed BY HAND
   // ("+ Add manually", never pooled) was silently ADDING that customer's
@@ -11144,7 +11149,7 @@ function _voWhoAdd(vi,di,ci){
   if(growSizes){
     vd.sizes=vd.sizes||{};
     Object.keys(convSizes).forEach(sz=>{
-      vd.sizes[sz]=Math.round((Number(vd.sizes[sz])||0)+convSizes[sz]);
+      vd.sizes[sz]=Math.round(((Number(vd.sizes[sz])||0)+convSizes[sz])*10000)/10000;
     });
   }
   vd.sources=vd.sources||[];
@@ -11164,7 +11169,7 @@ function _voWhoAdd(vi,di,ci){
       Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0){surplus[sz]=remainder[sz]; surplusTotal+=remainder[sz];} });
       if(surplusTotal>0&&confirm('Is row mein '+surplusTotal+' '+rowUnit+' zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?')){
         vd.extraSizes=vd.extraSizes||{};
-        Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+surplus[sz]; });
+        Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=Math.round(((Number(vd.extraSizes[sz])||0)+surplus[sz])*10000)/10000; });
         delete vd.bufferSizes; delete vd.stockSizes;
       }
     }
@@ -11193,9 +11198,9 @@ function _voWhoUnlink(vi,di,si){
     // row's numbers were already hand-edited down since this source was added.
     vd.sizes=vd.sizes||{};
     Object.keys(src.sizes||{}).forEach(sz=>{
-      const n=parseInt(src.sizes[sz])||0; if(n<=0)return;
-      const cur=parseInt(vd.sizes[sz])||0;
-      const next=Math.max(0,cur-n);
+      const n=Number(src.sizes[sz])||0; if(n<=0)return;
+      const cur=Number(vd.sizes[sz])||0;
+      const next=Math.max(0,Math.round((cur-n)*10000)/10000);
       if(next<=0)delete vd.sizes[sz]; else vd.sizes[sz]=next;
     });
   }
@@ -11237,10 +11242,12 @@ function _voRemainderBySize(vd,sourcesOverride){
   const remainder={};
   let anyNegative=false,anyPositive=false;
   szKeys.forEach(sz=>{
-    const total=parseInt((vd.sizes||{})[sz])||0;
-    const fromSources=sources.reduce((a,s)=>a+(parseInt((s.sizes||{})[sz])||0),0);
-    const fromExtra=parseInt(extraSizes[sz])||0;
-    const diff=total-fromSources-fromExtra;
+    const total=Number((vd.sizes||{})[sz])||0;
+    const fromSources=sources.reduce((a,s)=>a+(Number((s.sizes||{})[sz])||0),0);
+    const fromExtra=Number(extraSizes[sz])||0;
+    // Rounded only to clean up floating-point noise (e.g. 0.30000000000000004
+    // from repeated fraction math) — never to hide a real fractional piece.
+    const diff=Math.round((total-fromSources-fromExtra)*10000)/10000;
     if(diff!==0)remainder[sz]=diff;
     if(diff>0)anyPositive=true;
     if(diff<0)anyNegative=true;
@@ -11261,7 +11268,7 @@ function _voSweepRemainderToExtra(vi,di){
   const unit=_voRowUnit(vd);
   if(!confirm('Record '+total+' '+unit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(surplus).map(sz=>sz+': '+surplus[sz]).join(' · ')))return;
   vd.extraSizes=vd.extraSizes||{};
-  Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+surplus[sz]; });
+  Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=Math.round(((Number(vd.extraSizes[sz])||0)+surplus[sz])*10000)/10000; });
   delete vd.bufferSizes; delete vd.stockSizes; // fully migrated into the merged Extra field now
   audit('Extra stock recorded',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+unit);
   save();render();
@@ -11289,7 +11296,7 @@ function _voGrowRowToMatchSources(vi,di){
   const unit=_voRowUnit(vd);
   if(!confirm('Increase this row by '+total+' '+unit+' to match its linked customers?\n\n'+Object.keys(shortfall).map(sz=>sz+': +'+shortfall[sz]).join(' · ')))return;
   vd.sizes=vd.sizes||{};
-  Object.keys(shortfall).forEach(sz=>{ vd.sizes[sz]=(parseInt(vd.sizes[sz])||0)+shortfall[sz]; });
+  Object.keys(shortfall).forEach(sz=>{ vd.sizes[sz]=Math.round(((Number(vd.sizes[sz])||0)+shortfall[sz])*10000)/10000; });
   audit('Row increased to match customers',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+unit);
   save();render();
   showToast('✅ Row increased by '+total+' '+unit,'green');
@@ -18879,10 +18886,12 @@ function btPoolGroups(){
             const rowPcs=_unitPieces(r.unit);
             if(!rowPcs){missing=_validUnit(r.unit);return;}
             const factor=rowPcs/targetPcs;
-            // Whole numbers only — see the comment in _voWhoAdd for why.
+            // Owner-corrected: not rounded to whole numbers — see _voQty's
+            // comment for why. Rounded only to 4 decimals to clean up
+            // floating-point noise.
             Object.keys(r.sizes||{}).forEach(sz=>{
               const n=Number(r.sizes[sz])||0; if(n<=0)return;
-              G.ordered[sz]=Math.round((G.ordered[sz]||0)+n*factor);
+              G.ordered[sz]=Math.round(((G.ordered[sz]||0)+n*factor)*10000)/10000;
             });
           });
           G.blocked=missing?('undefinedRow:'+missing):null;
@@ -19301,8 +19310,10 @@ function btPoolCreate(){
         const rowPcs=_unitPieces(r.unit), targetPcs=_unitPieces(G.unit);
         const factor=(rowPcs&&targetPcs)?rowPcs/targetPcs:1;
         const convSizes={};
-        // Whole numbers only — see the comment in _voWhoAdd for why.
-        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor);});
+        // Owner-corrected: not rounded to whole numbers — see _voQty's
+        // comment for why. Rounded only to 4 decimals to clean up
+        // floating-point noise.
+        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*10000)/10000;});
         return {orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
           designId:r.designId,varietyId:r.varietyId,sizes:convSizes,
           origUnit:_validUnit(r.unit),origSizes:Object.assign({},r.sizes)};
