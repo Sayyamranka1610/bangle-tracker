@@ -10930,6 +10930,10 @@ function _migrateSourceCoIdToSources(vo,vd){
     designId:designId, varietyId:null,
     sizes:Object.assign({},vd.sizes), origUnit:vd.unit||'pcs', origSizes:Object.assign({},vd.sizes)
   }];
+  // This row came from the OLD single-link picker — always a manually-typed
+  // row, never a Pooling batch — so its quantity must stay independent of
+  // whoever gets linked/unlinked from here on (see _voWhoAdd).
+  vd._manualSizes=true;
   // Now redundant — sources[0] carries this; clearing avoids the old green
   // "🔗 CO" badge reappearing later if this one customer is ever unlinked
   // and sources goes back to empty (badge logic checks sources first, then
@@ -10977,9 +10981,28 @@ function _openVOWhoModal(vi,di,showAdd){
   const mismatch=accounted!==rowTotal;
   const addends=sources.map(s=>_voQty(s.sizes)).concat(extraQty?[extraQty]:[]);
   const totalHtml='<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:'+(mismatch?'#FFF8E1':'#F7F6FF')+';border-radius:9px;margin-top:4px;font-size:13px;font-weight:700;color:#3C3489">'
-    +'<span>Row total ('+rowTotal+')</span>'
+    +'<span>Row total ('+rowTotal+' '+esc(rowUnit)+')</span>'
     +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(rowTotal-accounted)+' '+esc(rowUnit)+' unaccounted for':' — matches')+'</span></div>';
-  const mismatchNote=mismatch?'<div style="font-size:11px;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:7px;padding:7px 10px;margin-top:10px">This row\'s numbers were changed by hand after pooling, so they no longer match the customers behind it. Nothing is broken — the difference is simply untracked, like Buffer.</div>':'';
+  // Owner-reported: "unaccounted for" alone doesn't tell you WHAT to do about
+  // it — a small leftover after linking a customer (e.g. this row is 51
+  // jotta, the customer is 100 pairs = 50 jotta, the remaining 1 jotta is
+  // genuine extra stock) is normal, not a problem, and should be one click
+  // away from being recorded as Extra instead of sitting as an unexplained
+  // warning forever. Only offer that button when the row has MORE than its
+  // sources+extra account for — if it has LESS, something was hand-edited
+  // down and a size needs fixing, not a sweep.
+  const remainder=rowTotal-accounted;
+  const mismatchNote=mismatch
+    ?(remainder>0
+      ?'<div style="font-size:11px;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:7px;padding:7px 10px;margin-top:10px">'
+        +'This row has <strong>'+remainder+' '+esc(rowUnit)+'</strong> more than what\'s linked above — either another customer order still needs adding, or that '+remainder+' '+esc(rowUnit)+' is genuine extra stock made beyond any order.'
+        +'<div style="margin-top:7px"><button onclick="_voSweepRemainderToExtra('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Record '+remainder+' '+esc(rowUnit)+' as Extra stock</button></div>'
+      +'</div>'
+      :'<div style="font-size:11px;color:#A32D2D;background:#FCEBEB;border:1px solid #F09595;border-radius:7px;padding:7px 10px;margin-top:10px">'
+        +'This row shows <strong>'+Math.abs(remainder)+' '+esc(rowUnit)+' less</strong> than what\'s linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.'
+        +'<div style="margin-top:7px"><button onclick="_voGrowRowToMatchSources('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Increase this row by '+Math.abs(remainder)+' '+esc(rowUnit)+' to match</button></div>'
+      +'</div>')
+    :'';
 
   // "Add customer" candidates: other customer orders with this same design
   // code whose matching row isn't already sent to any vendor.
@@ -11056,14 +11079,40 @@ function _voWhoAdd(vi,di,ci){
     showToast('"'+badUnit+'" has no piece-count set — add it in Masters → Units before adding this customer','amber',5000);
     return;
   }
+  // Rounded to a WHOLE number, not 2 decimals — a bangle is a physical piece,
+  // so "12.5 jotta of size 2/4" isn't a real quantity anyone can hold. Any
+  // rounding slop this introduces (at most a fraction of one piece per size)
+  // shows up honestly as a small leftover in the "Row total" check below,
+  // where it can be swept into Extra with one click — never silently lost.
   const factor=candPcs/rowPcs;
   const convSizes={};
-  Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*100)/100;});
+  Object.keys(c.sizes||{}).forEach(sz=>{const n=Number(c.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor);});
 
-  vd.sizes=vd.sizes||{};
-  Object.keys(convSizes).forEach(sz=>{
-    vd.sizes[sz]=Math.round(((Number(vd.sizes[sz])||0)+convSizes[sz])*100)/100;
-  });
+  // Owner-reported: linking a customer to a row that was typed BY HAND
+  // ("+ Add manually", never pooled) was silently ADDING that customer's
+  // quantity on top of the number already there — a manually-typed 51 jotta
+  // became 102 the moment one customer was linked, even though the row's
+  // own quantity was already a deliberate decision, not something to grow.
+  // A genuinely pooled row (built by selecting customers on the Pooling
+  // board) IS defined as the sum of its customers, so adding one more there
+  // correctly grows it — that's the tested, intended behaviour and stays
+  // unchanged. The two are told apart like this: a pooled row is never
+  // empty of sources while carrying a real quantity (btPoolCreate always
+  // seeds both together), so a row with NO sources yet but a non-zero
+  // quantity can only be a manually-typed row getting its first link —
+  // from that point on it's remembered (vd._manualSizes) so a second link
+  // behaves the same way, instead of switching behaviour mid-row.
+  const isFirstLink=!(vd.sources&&vd.sources.length);
+  const existingTotal=_voQty(vd.sizes);
+  const growSizes=!vd._manualSizes&&(!isFirstLink||existingTotal===0);
+  if(!growSizes&&isFirstLink)vd._manualSizes=true;
+
+  if(growSizes){
+    vd.sizes=vd.sizes||{};
+    Object.keys(convSizes).forEach(sz=>{
+      vd.sizes[sz]=Math.round((Number(vd.sizes[sz])||0)+convSizes[sz]);
+    });
+  }
   vd.sources=vd.sources||[];
   vd.sources.push({orderDbId:c.orderDbId,orderLabel:c.orderLabel,client:c.client,designId:c.designId,varietyId:c.varietyId,
     sizes:convSizes,origUnit:c.unit,origSizes:Object.assign({},c.sizes)});
@@ -11071,7 +11120,7 @@ function _voWhoAdd(vi,di,ci){
   if(vo.vendor)_setCOVendorField(holder,mode,vo.vendor);
 
   save();render();
-  showToast('✅ Added '+c.client+' ('+c.orderLabel+') to this row','green');
+  showToast(growSizes?'✅ Added '+c.client+' ('+c.orderLabel+') to this row':'🔗 Linked '+c.client+' ('+c.orderLabel+') — row quantity unchanged','green');
   _openVOWhoModal(vi,di,false);
 }
 function _voWhoUnlink(vi,di,si){
@@ -11079,17 +11128,26 @@ function _voWhoUnlink(vi,di,si){
   const vd=vo.designs[di]; if(!vd)return;
   const src=(vd.sources||[])[si]; if(!src)return;
   const qty=_voQty(src.sizes);
-  if(!confirm('Remove '+(src.client||'this customer')+' ('+(src.orderLabel||'CO')+') from this row?\n\nTheir '+qty+' pcs will come back out of this vendor row, and their order row will reappear on the Pooling board.'))return;
+  // A manually-typed row's own quantity is never touched by linking — see
+  // the comment in _voWhoAdd — so unlinking must symmetrically leave it
+  // alone too, instead of subtracting a customer's pieces out of a number
+  // the owner decided independently.
+  const willShrink=!vd._manualSizes;
+  if(!confirm('Remove '+(src.client||'this customer')+' ('+(src.orderLabel||'CO')+') from this row?'
+    +(willShrink?'\n\nTheir '+qty+' pcs will come back out of this vendor row, and their order row will reappear on the Pooling board.'
+                :'\n\nThis row\'s own quantity stays exactly as it is — only the "who this is for" record is removed. Their order row will reappear on the Pooling board.')))return;
 
-  // Subtract their sizes out of the vendor row — never below 0, in case the
-  // row's numbers were already hand-edited down since this source was added.
-  vd.sizes=vd.sizes||{};
-  Object.keys(src.sizes||{}).forEach(sz=>{
-    const n=parseInt(src.sizes[sz])||0; if(n<=0)return;
-    const cur=parseInt(vd.sizes[sz])||0;
-    const next=Math.max(0,cur-n);
-    if(next<=0)delete vd.sizes[sz]; else vd.sizes[sz]=next;
-  });
+  if(willShrink){
+    // Subtract their sizes out of the vendor row — never below 0, in case the
+    // row's numbers were already hand-edited down since this source was added.
+    vd.sizes=vd.sizes||{};
+    Object.keys(src.sizes||{}).forEach(sz=>{
+      const n=parseInt(src.sizes[sz])||0; if(n<=0)return;
+      const cur=parseInt(vd.sizes[sz])||0;
+      const next=Math.max(0,cur-n);
+      if(next<=0)delete vd.sizes[sz]; else vd.sizes[sz]=next;
+    });
+  }
   vd.sources.splice(si,1);
 
   // Release the customer's row, and — only if it still points at this vendor,
@@ -11105,6 +11163,85 @@ function _voWhoUnlink(vi,di,si){
 
   save();render();
   showToast('Unlinked '+(src.client||'')+' — back on the Pooling board','amber');
+  _openVOWhoModal(vi,di,false);
+}
+
+// Takes whatever this row has left over after its linked customers + existing
+// Extra are subtracted out, and records THAT — per size, not just the total
+// — as Extra stock. Owner-reported: after linking a customer, a small
+// leftover (e.g. this row is 51 jotta, the one linked customer is 100 pairs
+// = 50 jotta, so 1 jotta is left) showed only as a vague "unaccounted for"
+// warning with no way to actually record it. Refuses to touch anything if
+// the row is instead SHORT of what's linked (accounted > row total) — that
+// means a size was hand-edited down, which needs fixing by hand, not sweeping.
+function _voSweepRemainderToExtra(vi,di){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const sources=vd.sources||[];
+  const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
+  const szKeys=new Set([...Object.keys(vd.sizes||{}),...Object.keys(extraSizes||{})]);
+  const remainder={};
+  let anyNegative=false;
+  szKeys.forEach(sz=>{
+    const total=parseInt((vd.sizes||{})[sz])||0;
+    const fromSources=sources.reduce((a,s)=>a+(parseInt((s.sizes||{})[sz])||0),0);
+    const fromExtra=parseInt(extraSizes[sz])||0;
+    const diff=total-fromSources-fromExtra;
+    if(diff>0)remainder[sz]=diff;
+    if(diff<0)anyNegative=true;
+  });
+  if(anyNegative){
+    showToast('Some sizes show less than what\'s already linked — fix those by hand first; only a genuine surplus can be swept to Extra','amber',5000);
+    return;
+  }
+  if(!Object.keys(remainder).length){showToast('Nothing left over — already fully accounted for','green');return;}
+  const total=Object.values(remainder).reduce((a,v)=>a+v,0);
+  const unit=vd.unit||'pcs';
+  if(!confirm('Record '+total+' '+unit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(remainder).map(sz=>sz+': '+remainder[sz]).join(' · ')))return;
+  vd.extraSizes=vd.extraSizes||{};
+  Object.keys(remainder).forEach(sz=>{ vd.extraSizes[sz]=(parseInt(vd.extraSizes[sz])||0)+remainder[sz]; });
+  delete vd.bufferSizes; delete vd.stockSizes; // fully migrated into the merged Extra field now
+  audit('Extra stock recorded',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+unit);
+  save();render();
+  showToast('✅ '+total+' '+unit+' recorded as Extra','green');
+  _openVOWhoModal(vi,di,false);
+}
+
+// The mirror image of the sweep above: the customers linked to this row need
+// MORE made than the row currently has (e.g. a size was edited down by hand,
+// or a customer was linked to a manually-typed row whose own quantity never
+// grows automatically — see _voWhoAdd). Raises each short size up to match
+// what's linked; never lowers anything, and refuses if the row is instead
+// already ahead (that's what Extra is for, above).
+function _voGrowRowToMatchSources(vi,di){
+  const vo=S.vendorOrders[vi]; if(!vo)return;
+  const vd=vo.designs[di]; if(!vd)return;
+  const sources=vd.sources||[];
+  const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
+  const szKeys=new Set([...Object.keys(vd.sizes||{}),...sources.flatMap(s=>Object.keys(s.sizes||{})),...Object.keys(extraSizes||{})]);
+  const shortfall={};
+  let anyPositive=false;
+  szKeys.forEach(sz=>{
+    const total=parseInt((vd.sizes||{})[sz])||0;
+    const fromSources=sources.reduce((a,s)=>a+(parseInt((s.sizes||{})[sz])||0),0);
+    const fromExtra=parseInt(extraSizes[sz])||0;
+    const diff=total-fromSources-fromExtra;
+    if(diff<0)shortfall[sz]=-diff;
+    if(diff>0)anyPositive=true;
+  });
+  if(anyPositive){
+    showToast('Some sizes already show more than what\'s linked — that surplus belongs in Extra, not mixed with a shortfall elsewhere','amber',5000);
+    return;
+  }
+  if(!Object.keys(shortfall).length){showToast('Nothing short — already fully accounted for','green');return;}
+  const total=Object.values(shortfall).reduce((a,v)=>a+v,0);
+  const unit=vd.unit||'pcs';
+  if(!confirm('Increase this row by '+total+' '+unit+' to match its linked customers?\n\n'+Object.keys(shortfall).map(sz=>sz+': +'+shortfall[sz]).join(' · ')))return;
+  vd.sizes=vd.sizes||{};
+  Object.keys(shortfall).forEach(sz=>{ vd.sizes[sz]=(parseInt(vd.sizes[sz])||0)+shortfall[sz]; });
+  audit('Row increased to match customers',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+unit);
+  save();render();
+  showToast('✅ Row increased by '+total+' '+unit,'green');
   _openVOWhoModal(vi,di,false);
 }
 
@@ -18591,9 +18728,10 @@ function btPoolGroups(){
             const rowPcs=_unitPieces(r.unit);
             if(!rowPcs){missing=_validUnit(r.unit);return;}
             const factor=rowPcs/targetPcs;
+            // Whole numbers only — see the comment in _voWhoAdd for why.
             Object.keys(r.sizes||{}).forEach(sz=>{
               const n=Number(r.sizes[sz])||0; if(n<=0)return;
-              G.ordered[sz]=Math.round(((G.ordered[sz]||0)+n*factor)*100)/100;
+              G.ordered[sz]=Math.round((G.ordered[sz]||0)+n*factor);
             });
           });
           G.blocked=missing?('undefinedRow:'+missing):null;
@@ -19012,7 +19150,8 @@ function btPoolCreate(){
         const rowPcs=_unitPieces(r.unit), targetPcs=_unitPieces(G.unit);
         const factor=(rowPcs&&targetPcs)?rowPcs/targetPcs:1;
         const convSizes={};
-        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor*100)/100;});
+        // Whole numbers only — see the comment in _voWhoAdd for why.
+        Object.keys(r.sizes||{}).forEach(sz=>{const n=Number(r.sizes[sz])||0; if(n>0)convSizes[sz]=Math.round(n*factor);});
         return {orderDbId:r.orderId,orderLabel:r.orderLabel,client:r.client,
           designId:r.designId,varietyId:r.varietyId,sizes:convSizes,
           origUnit:_validUnit(r.unit),origSizes:Object.assign({},r.sizes)};
