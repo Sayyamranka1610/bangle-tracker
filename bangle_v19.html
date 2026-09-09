@@ -12745,7 +12745,11 @@ function _printHeaderWithGallery(headerHtml, imgs){
 // guarantees they always line up, at the cost of the Code column growing a
 // little wider to fit a customer's name.
 function _vprintForRowHtml(sources,extraSizes,szKeys,sourceCoId,sourceCoNum,rowTotal,imgMode,includeRate){
-  const qtyOf=sizes=>Object.values(sizes||{}).reduce((a,v)=>a+(parseInt(v)||0),0);
+  // Number, not parseInt — extraSizes arriving here is already converted
+  // into the row's own unit and can legitimately be a fraction of a piece
+  // (e.g. "1 pair" recorded as Extra shows as 0.5 once converted to jotta
+  // for this shared table) — parseInt truncated that away silently.
+  const qtyOf=sizes=>Object.values(sizes||{}).reduce((a,v)=>a+(Number(v)||0),0);
   const imgTd=imgMode==='inline'?'<td></td>':'';
   const rateTd=includeRate?'<td></td>':'';
   const totalCols=1+(imgMode==='inline'?1:0)+szKeys.length+2+(includeRate?1:0);
@@ -12758,24 +12762,25 @@ function _vprintForRowHtml(sources,extraSizes,szKeys,sourceCoId,sourceCoNum,rowT
     // "too small to read" on a printed page (owner-reported). A "sub-row"
     // can be a touch smaller than the row it explains, but never this drastic.
     const addRow=(label,sizes,italic)=>{
-      szKeys.forEach(sz=>{szTotals[sz]+=(parseInt((sizes||{})[sz])||0);});
+      szKeys.forEach(sz=>{szTotals[sz]+=(Number((sizes||{})[sz])||0);});
       const clr=italic?'#7A7768':'#6B5215';
       rows+='<tr style="background:'+(italic?'#F5F3EC':'#FFF9EE')+'">'
         +'<td style="padding:7px 10px;padding-left:22px;font-size:14px;color:'+clr+(italic?';font-style:italic':';font-weight:700')+'">└ '+esc(label)+'</td>'
         +imgTd
-        +szKeys.map(sz=>'<td style="padding:7px 8px;text-align:center;font-size:14px;color:'+clr+(italic?';font-style:italic':'')+'">'+(parseInt((sizes||{})[sz])||0)+'</td>').join('')
+        +szKeys.map(sz=>'<td style="padding:7px 8px;text-align:center;font-size:14px;color:'+clr+(italic?';font-style:italic':'')+'">'+(Number((sizes||{})[sz])||0)+'</td>').join('')
         +'<td style="padding:7px 8px;text-align:center;font-size:14px;font-weight:700;color:'+clr+'">'+qtyOf(sizes)+'</td>'
         +'<td></td>'+rateTd
       +'</tr>';
     };
     sources.forEach(s=>addRow((s.orderLabel||'CO')+' · '+(s.client||''),s.sizes,false));
     if(qtyOf(extraSizes)>0)addRow('Extra (buffer/stock)',extraSizes,true);
-    const accounted=Object.values(szTotals).reduce((a,v)=>a+v,0);
+    const accounted=Math.round(Object.values(szTotals).reduce((a,v)=>a+v,0)*10000)/10000;
     // Only speak up when the customer breakdown doesn't add up to the row
     // above it — when it matches, that's already obvious since the numbers
     // sit in the very same columns, so a repeated "Row total" line would
-    // just be noise.
-    if(accounted!==rowTotal){
+    // just be noise. Epsilon compare — fraction math can leave floating-
+    // point noise like 20.999999999999996 that isn't a real mismatch.
+    if(Math.abs(accounted-rowTotal)>1e-6){
       rows+='<tr><td colspan="'+totalCols+'" style="background:#FFF8E1;border-top:1px solid #FFD54F;padding:8px 10px;font-size:13px;color:#8A5A00">⚠ Adds up to '+accounted+', but this row shows '+rowTotal+' — it was changed by hand after pooling; check before sending.</td></tr>';
     }
     return rows;
@@ -12852,7 +12857,13 @@ function openVendorPrintWindow(title,orders,imgMode,includeRate,internal){
             +`<td style="padding:6px 8px;text-align:center;font-size:12px;color:#777">${esc(unit)}</td>`
             +vRateTd(hod?(varieties[0].rate||d.rate):d.rate)
           +`</tr>`;
-          trows+=forTr(d.sources,d.extraSizes||_mergeSizeMaps(d.bufferSizes,d.stockSizes),d.sourceCoId,d.sourceCoNum,rt);
+          // Extra can be tracked in a different (finer) unit than the row
+          // itself (e.g. row is jotta, Extra is recorded in pairs — see
+          // _voAddToExtra) — convert it into the row's own unit before
+          // sharing this table's columns with it, same as the Who-modal
+          // already does, otherwise a "1 pair" would print as a bare "1"
+          // sitting under a jotta-labelled column, reading as 1 jotta.
+          trows+=forTr(d.sources,_voExtraInRowUnit(d),d.sourceCoId,d.sourceCoNum,rt);
         } else {
           const colT={};szKeys.forEach(s=>{colT[s]=varieties.reduce((a,v)=>a+(parseInt((v.sizes||{})[s])||0),0);grpTotals[s]+=colT[s];});
           const dTotal=Object.values(colT).reduce((a,v)=>a+v,0);
