@@ -10899,6 +10899,55 @@ function _voRowUnit(vd){
   const hasOnlyDefault=varieties.length===1&&(varieties[0].name||'').trim().toLowerCase()==='default';
   return _validUnit(hasOnlyDefault?(varieties[0].unit||vd.unit):vd.unit);
 }
+// Owner-requested: a surplus/shortfall recorded as Extra should read as a
+// whole number, not a decimal — "1 pair" instead of "0.5 jotta" for the
+// exact same amount. Picks whichever unit, among the row's own unit and
+// every customer actually linked to it, has the SMALLER piece-count (the
+// finer-grained one) — jotta (4 pcs) vs pairs (2 pcs) picks pairs. Once
+// Extra already has something recorded in a unit, keep using that same
+// unit so it never silently mixes two units in one field.
+function _voFinerUnitFor(vd){
+  const rowUnit=_voRowUnit(vd);
+  const units=[rowUnit];
+  (vd.sources||[]).forEach(s=>{ if(s.origUnit)units.push(_validUnit(s.origUnit)); });
+  let best=rowUnit,bestPieces=_unitPieces(rowUnit)||Infinity;
+  units.forEach(u=>{ const p=_unitPieces(u); if(p&&p<bestPieces){best=u;bestPieces=p;} });
+  return best;
+}
+function _voExtraUnit(vd){
+  if(vd.extraUnit&&_voQty(vd.extraSizes)>0)return vd.extraUnit;
+  return _voFinerUnitFor(vd);
+}
+// Adds `amountsInRowUnit` (a {size:qty} map already in the row's OWN unit —
+// e.g. what _voRemainderBySize returns) into vd.extraSizes, converting into
+// whichever unit Extra is tracked in (see _voExtraUnit) so it's recorded as
+// a real whole quantity rather than a fraction of the row's unit.
+function _voAddToExtra(vd,amountsInRowUnit){
+  const rowUnit=_voRowUnit(vd);
+  const extraUnit=_voExtraUnit(vd);
+  const rowPcs=_unitPieces(rowUnit),extraPcs=_unitPieces(extraUnit);
+  const factor=(rowPcs&&extraPcs)?rowPcs/extraPcs:1;
+  vd.extraSizes=vd.extraSizes||{};
+  vd.extraUnit=extraUnit;
+  Object.keys(amountsInRowUnit).forEach(sz=>{
+    const converted=Math.round(amountsInRowUnit[sz]*factor*10000)/10000;
+    vd.extraSizes[sz]=Math.round(((Number(vd.extraSizes[sz])||0)+converted)*10000)/10000;
+  });
+  delete vd.bufferSizes; delete vd.stockSizes; // fully migrated into the merged Extra field now
+}
+// The reverse — how much of vd.extraSizes (stored in vd.extraUnit) equals
+// in the ROW's own unit, per size. Used everywhere Extra needs to be
+// compared against sources/sizes that are already in the row's unit.
+function _voExtraInRowUnit(vd){
+  const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
+  const rowUnit=_voRowUnit(vd);
+  const extraUnit=vd.extraUnit||rowUnit; // legacy Extra with no unit tag was always stored in the row's own unit
+  const rowPcs=_unitPieces(rowUnit),extraPcs=_unitPieces(extraUnit);
+  const factor=(rowPcs&&extraPcs)?extraPcs/rowPcs:1;
+  const out={};
+  Object.keys(extraSizes).forEach(sz=>{ out[sz]=Math.round((Number(extraSizes[sz])||0)*factor*10000)/10000; });
+  return out;
+}
 // Backward-compat merge for vendor designs created before Buffer/Stock were
 // combined into one "Extra" field — Object.assign would silently DROP one
 // side's number whenever both had the same size key (5+5 becoming 5, not
@@ -10984,23 +11033,33 @@ function _openVOWhoModal(vi,di,showAdd){
   // created since then carry it as vd.extraSizes. Older ones created
   // before this change may still carry the two separate fields — read
   // both so nothing already-created loses its numbers.
+  const rowUnit=_voRowUnit(vd); // owner-reported: this modal used to always say "pcs" even for a jotta/pairs row
+  // Extra can be tracked in a different (finer) unit than the row itself —
+  // owner-requested: "1 pair" reads as a real whole quantity, "0.5 jotta"
+  // for the same amount looks like a fraction of a piece.
   const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
-  const extraQty=_voQty(extraSizes);
+  const extraUnit=vd.extraUnit||rowUnit;
+  const extraQty=_voQty(extraSizes); // in Extra's own unit, for its own display line
   const extraHtml=extraQty>0
     ?'<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:9px;border:1.5px dashed #D8D5EE;margin-bottom:7px;background:#fbfbfb">'
       +'<span style="background:#8A87A8;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">Extra</span>'
       +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#555">Buffer/stock — nobody\'s</div><div style="font-size:10px;color:#888;margin-top:2px">'+esc(_voSizeStr(extraSizes))+'</div></div>'
-      +'<div style="font-size:13px;font-weight:700;color:#8A87A8;flex-shrink:0">'+extraQty+'</div></div>'
+      +'<div style="font-size:13px;font-weight:700;color:#8A87A8;flex-shrink:0">'+extraQty+' <span style="font-size:10px;font-weight:600;color:#8A87A8">'+esc(extraUnit)+'</span></div></div>'
     :'';
 
   const rowTotal=_voQty(vd.sizes);
-  const rowUnit=_voRowUnit(vd); // owner-reported: this modal used to always say "pcs" even for a jotta/pairs row
-  const accounted=sources.reduce((a,s)=>a+_voQty(s.sizes),0)+extraQty;
-  const mismatch=accounted!==rowTotal;
-  const addends=sources.map(s=>_voQty(s.sizes)).concat(extraQty?[extraQty]:[]);
+  // Single source of truth with the sweep/grow buttons and _voWhoAdd's own
+  // prompt (_voRemainderBySize) — converts Extra into the row's unit before
+  // comparing, so this never drifts from what those actions actually do.
+  const{remainder:remainderBySize}=_voRemainderBySize(vd);
+  const totalDiff=Math.round(Object.values(remainderBySize).reduce((a,v)=>a+v,0)*10000)/10000; // rowTotal - accounted
+  const accounted=Math.round((rowTotal-totalDiff)*10000)/10000;
+  const mismatch=Math.abs(totalDiff)>1e-9;
+  const extraInRowUnitQty=_voQty(_voExtraInRowUnit(vd));
+  const addends=sources.map(s=>_voQty(s.sizes)).concat(extraInRowUnitQty?[extraInRowUnitQty]:[]);
   const totalHtml='<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:'+(mismatch?'#FFF8E1':'#F7F6FF')+';border-radius:9px;margin-top:4px;font-size:13px;font-weight:700;color:#3C3489">'
     +'<span>Row total ('+rowTotal+' '+esc(rowUnit)+')</span>'
-    +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(rowTotal-accounted)+' '+esc(rowUnit)+' unaccounted for':' — matches')+'</span></div>';
+    +'<span style="color:'+(mismatch?'#8A5A00':'#27AE60')+';text-align:right">'+(mismatch?'⚠ ':'✓ ')+(addends.length?addends.join(' + ')+' = ':'')+accounted+(mismatch?' — '+Math.abs(totalDiff)+' '+esc(rowUnit)+' unaccounted for':' — matches')+'</span></div>';
   // Owner-reported: "unaccounted for" alone doesn't tell you WHAT to do about
   // it — a small leftover after linking a customer (e.g. this row is 51
   // jotta, the customer is 100 pairs = 50 jotta, the remaining 1 jotta is
@@ -11008,17 +11067,24 @@ function _openVOWhoModal(vi,di,showAdd){
   // away from being recorded as Extra instead of sitting as an unexplained
   // warning forever. Only offer that button when the row has MORE than its
   // sources+extra account for — if it has LESS, something was hand-edited
-  // down and a size needs fixing, not a sweep.
-  const remainder=rowTotal-accounted;
+  // down and a size needs fixing, not a sweep. The button itself shows the
+  // amount in whichever unit it'll actually be recorded in (see
+  // _voFinerUnitFor) so the number here matches what the sweep confirms.
   const mismatchNote=mismatch
-    ?(remainder>0
-      ?'<div style="font-size:11px;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:7px;padding:7px 10px;margin-top:10px">'
-        +'This row has <strong>'+remainder+' '+esc(rowUnit)+'</strong> more than what\'s linked above — either another customer order still needs adding, or that '+remainder+' '+esc(rowUnit)+' is genuine extra stock made beyond any order.'
-        +'<div style="margin-top:7px"><button onclick="_voSweepRemainderToExtra('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Record '+remainder+' '+esc(rowUnit)+' as Extra stock</button></div>'
-      +'</div>'
+    ?(totalDiff>0
+      ?(()=>{
+        const finerUnit=_voFinerUnitFor(vd);
+        const finerPcs=_unitPieces(finerUnit),rowPcsHere=_unitPieces(rowUnit);
+        const toFiner=(finerPcs&&rowPcsHere)?rowPcsHere/finerPcs:1;
+        const diffInFiner=Math.round(totalDiff*toFiner*10000)/10000;
+        return'<div style="font-size:11px;color:#8A5A00;background:#FFF8E1;border:1px solid #FFD54F;border-radius:7px;padding:7px 10px;margin-top:10px">'
+          +'This row has <strong>'+diffInFiner+' '+esc(finerUnit)+'</strong> more than what\'s linked above — either another customer order still needs adding, or that '+diffInFiner+' '+esc(finerUnit)+' is genuine extra stock made beyond any order.'
+          +'<div style="margin-top:7px"><button onclick="_voSweepRemainderToExtra('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Record '+diffInFiner+' '+esc(finerUnit)+' as Extra stock</button></div>'
+        +'</div>';
+      })()
       :'<div style="font-size:11px;color:#A32D2D;background:#FCEBEB;border:1px solid #F09595;border-radius:7px;padding:7px 10px;margin-top:10px">'
-        +'This row shows <strong>'+Math.abs(remainder)+' '+esc(rowUnit)+' less</strong> than what\'s linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.'
-        +'<div style="margin-top:7px"><button onclick="_voGrowRowToMatchSources('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Increase this row by '+Math.abs(remainder)+' '+esc(rowUnit)+' to match</button></div>'
+        +'This row shows <strong>'+Math.abs(totalDiff)+' '+esc(rowUnit)+' less</strong> than what\'s linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.'
+        +'<div style="margin-top:7px"><button onclick="_voGrowRowToMatchSources('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Increase this row by '+Math.abs(totalDiff)+' '+esc(rowUnit)+' to match</button></div>'
       +'</div>')
     :'';
 
@@ -11165,12 +11231,18 @@ function _voWhoAdd(vi,di,ci){
   if(!growSizes){
     const{remainder,anyNegative}=_voRemainderBySize(vd);
     if(!anyNegative){
-      const surplus={}; let surplusTotal=0;
-      Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0){surplus[sz]=remainder[sz]; surplusTotal+=remainder[sz];} });
-      if(surplusTotal>0&&confirm('Is row mein '+surplusTotal+' '+rowUnit+' zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?')){
-        vd.extraSizes=vd.extraSizes||{};
-        Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=Math.round(((Number(vd.extraSizes[sz])||0)+surplus[sz])*10000)/10000; });
-        delete vd.bufferSizes; delete vd.stockSizes;
+      const surplus={}; Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0)surplus[sz]=remainder[sz]; });
+      if(Object.keys(surplus).length){
+        // Shown/recorded in the finer of the row's unit and its customers'
+        // units — "1 pair" instead of "0.5 jotta" for the same amount.
+        const extraUnit=_voExtraUnit(vd);
+        const extraPcs=_unitPieces(extraUnit),rowPcsForExtra=_unitPieces(rowUnit);
+        const extraFactor=(rowPcsForExtra&&extraPcs)?rowPcsForExtra/extraPcs:1;
+        const surplusInExtraUnit={}; let surplusTotal=0;
+        Object.keys(surplus).forEach(sz=>{ const v=Math.round(surplus[sz]*extraFactor*10000)/10000; surplusInExtraUnit[sz]=v; surplusTotal+=v; });
+        if(surplusTotal>0&&confirm('Is row mein '+surplusTotal+' '+extraUnit+' zyada hai jo kisi customer ke liye nahi hai.\n\nIse Extra stock mein daal doon?')){
+          _voAddToExtra(vd,surplus);
+        }
       }
     }
   }
@@ -11237,14 +11309,18 @@ function _voWhoUnlink(vi,di,si){
 // actually added, without mutating anything.
 function _voRemainderBySize(vd,sourcesOverride){
   const sources=sourcesOverride||vd.sources||[];
-  const extraSizes=vd.extraSizes||_mergeSizeMaps(vd.bufferSizes,vd.stockSizes);
-  const szKeys=new Set([...Object.keys(vd.sizes||{}),...sources.flatMap(s=>Object.keys(s.sizes||{})),...Object.keys(extraSizes||{})]);
+  // Extra can be tracked in a DIFFERENT unit than the row itself (e.g. the
+  // row is jotta but Extra is recorded in pairs, per owner's request) —
+  // convert it into the row's own unit before comparing, same as sources
+  // (which are already stored in the row's unit) already are.
+  const extraInRowUnit=_voExtraInRowUnit(vd);
+  const szKeys=new Set([...Object.keys(vd.sizes||{}),...sources.flatMap(s=>Object.keys(s.sizes||{})),...Object.keys(extraInRowUnit||{})]);
   const remainder={};
   let anyNegative=false,anyPositive=false;
   szKeys.forEach(sz=>{
     const total=Number((vd.sizes||{})[sz])||0;
     const fromSources=sources.reduce((a,s)=>a+(Number((s.sizes||{})[sz])||0),0);
-    const fromExtra=Number(extraSizes[sz])||0;
+    const fromExtra=Number(extraInRowUnit[sz])||0;
     // Rounded only to clean up floating-point noise (e.g. 0.30000000000000004
     // from repeated fraction math) — never to hide a real fractional piece.
     const diff=Math.round((total-fromSources-fromExtra)*10000)/10000;
@@ -11264,15 +11340,21 @@ function _voSweepRemainderToExtra(vi,di){
   }
   const surplus={}; Object.keys(remainder).forEach(sz=>{ if(remainder[sz]>0)surplus[sz]=remainder[sz]; });
   if(!Object.keys(surplus).length){showToast('Nothing left over — already fully accounted for','green');return;}
-  const total=Object.values(surplus).reduce((a,v)=>a+v,0);
-  const unit=_voRowUnit(vd);
-  if(!confirm('Record '+total+' '+unit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(surplus).map(sz=>sz+': '+surplus[sz]).join(' · ')))return;
-  vd.extraSizes=vd.extraSizes||{};
-  Object.keys(surplus).forEach(sz=>{ vd.extraSizes[sz]=Math.round(((Number(vd.extraSizes[sz])||0)+surplus[sz])*10000)/10000; });
-  delete vd.bufferSizes; delete vd.stockSizes; // fully migrated into the merged Extra field now
-  audit('Extra stock recorded',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+unit);
+
+  // Shown and recorded in the finer of the row's unit and its customers'
+  // units — "1 pair" instead of "0.5 jotta" for the exact same amount.
+  const extraUnit=_voExtraUnit(vd);
+  const rowUnit=_voRowUnit(vd);
+  const rowPcs=_unitPieces(rowUnit),extraPcs=_unitPieces(extraUnit);
+  const factor=(rowPcs&&extraPcs)?rowPcs/extraPcs:1;
+  const surplusInExtraUnit={};
+  Object.keys(surplus).forEach(sz=>{ surplusInExtraUnit[sz]=Math.round(surplus[sz]*factor*10000)/10000; });
+  const total=Object.values(surplusInExtraUnit).reduce((a,v)=>a+v,0);
+  if(!confirm('Record '+total+' '+extraUnit+' as Extra stock (nobody\'s — buffer)?\n\n'+Object.keys(surplusInExtraUnit).map(sz=>sz+': '+surplusInExtraUnit[sz]).join(' · ')))return;
+  _voAddToExtra(vd,surplus);
+  audit('Extra stock recorded',vo.orderId+' › '+(vd.code||'')+': +'+total+' '+extraUnit);
   save();render();
-  showToast('✅ '+total+' '+unit+' recorded as Extra','green');
+  showToast('✅ '+total+' '+extraUnit+' recorded as Extra','green');
   _openVOWhoModal(vi,di,false);
 }
 
