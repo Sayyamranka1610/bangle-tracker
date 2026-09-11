@@ -18369,19 +18369,22 @@ function openFollowUpVendorStatement(vendorName){
 
     const rowsHtml=rows.map(r=>{
       const src=_resolveImgSrc((r.images||[])[0]);
-      // Owner-reported: the old thumbnail was too small to make out the
-      // design at all — sized to match how a design's photo actually reads
-      // in the Customer/Vendor Order tables on screen, not an icon-sized hint.
+      // Owner-reported (twice): still too small to make out the design.
+      // 22mm → 48mm — literal "5x wider" (110mm) would leave no room for
+      // the size columns next to it on an A4 page, so this is ~5x the
+      // visual AREA instead (2.2x each side), which is the largest square
+      // that still leaves space for Design + every size column + Total +
+      // Unit without the table overflowing the page.
       const imgHtml=src
-        ?'<img src="'+src+'" style="width:22mm;height:22mm;object-fit:cover;border-radius:6px;border:1px solid #D9D2BC">'
-        :'<div style="width:22mm;height:22mm;border-radius:6px;background:#F1ECDC;border:1px solid #D9D2BC;display:flex;align-items:center;justify-content:center;font-size:22px">💍</div>';
-      const szCells=szKeys.map(sz=>'<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;font-weight:600">'+((parseInt(r.sizes[sz])||0)>0?parseInt(r.sizes[sz]):'—')+'</td>').join('');
-      return '<tr>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2">'+imgHtml+'</td>'
-        +'<td style="padding:6px 10px;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;text-align:left"><div style="font-weight:700;font-size:13px;color:#2A2618">'+esc(r.code)+'</div><div style="font-size:11.5px;color:#8A8368">'+esc(r.name)+'</div></td>'
+        ?'<img src="'+src+'" style="width:48mm;height:48mm;object-fit:cover;border-radius:8px;border:1px solid #D9D2BC">'
+        :'<div style="width:48mm;height:48mm;border-radius:8px;background:#F1ECDC;border:1px solid #D9D2BC;display:flex;align-items:center;justify-content:center;font-size:40px">💍</div>';
+      const szCells=szKeys.map(sz=>'<td style="text-align:center;vertical-align:middle;padding:6px 8px;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;font-weight:600">'+((parseInt(r.sizes[sz])||0)>0?parseInt(r.sizes[sz]):'—')+'</td>').join('');
+      return '<tr style="break-inside:avoid;page-break-inside:avoid">'
+        +'<td style="padding:6px 8px;vertical-align:middle;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2">'+imgHtml+'</td>'
+        +'<td style="padding:6px 10px;vertical-align:middle;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;text-align:left"><div style="font-weight:700;font-size:13px;color:#2A2618">'+esc(r.code)+'</div><div style="font-size:11.5px;color:#8A8368">'+esc(r.name)+'</div></td>'
         +szCells
-        +'<td style="padding:6px 8px;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;text-align:center;font-weight:800;color:#534AB7;background:#F1ECDC">'+r.qty+'</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid #E8E3D2;text-align:center;color:#5A5442">'+esc(r.unit)+'</td>'
+        +'<td style="padding:6px 8px;vertical-align:middle;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;text-align:center;font-weight:800;color:#534AB7;background:#F1ECDC">'+r.qty+'</td>'
+        +'<td style="padding:6px 8px;vertical-align:middle;border-bottom:1px solid #E8E3D2;text-align:center;color:#5A5442">'+esc(r.unit)+'</td>'
       +'</tr>';
     }).join('');
 
