@@ -7,6 +7,7 @@ import {
   computeFollowUps, groupByVendor, severityOf, lastLogFor, submitFollowUpResponse,
   SEV_COLORS, type FollowUpItem, type FuReason, type FuSeverity,
 } from '../lib/followUpUtils';
+import { buildVendorStatement, printVendorStatement } from '../lib/vendorStatementUtils';
 import FollowUpResponseModal from '../components/followups/FollowUpResponseModal';
 
 type SevFilter = 'all' | FuSeverity;
@@ -49,6 +50,17 @@ export default function FollowUps() {
     const next = new Set(effectiveOpen);
     if (next.has(key)) next.delete(key); else next.add(key);
     setOpenGroups(next);
+  }
+
+  // Ports Phase 1's openFollowUpVendorStatement() — a printable "what do I
+  // still owe you" page for one vendor, usable independently of the ledger.
+  function printStatement(vendorName: string) {
+    const statement = buildVendorStatement(data, vendorName);
+    if (!statement) {
+      showToast(`Every order for "${vendorName}" is already fully received — nothing to put on a statement`, 'success');
+      return;
+    }
+    printVendorStatement(statement);
   }
 
   function goToTarget(it: FollowUpItem) {
@@ -125,21 +137,29 @@ export default function FollowUps() {
           const colors = SEV_COLORS[sev];
           return (
             <div key={g.key} className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
-              <button onClick={() => toggleGroup(g.key)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-left">
+              <div role="button" tabIndex={0} onClick={() => toggleGroup(g.key)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') toggleGroup(g.key); }}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="flex-shrink-0">{g.icon}</span>
                   <span className="font-semibold text-white text-sm truncate">{g.label}</span>
                   <span className="text-xs text-white/40 flex-shrink-0">({visRows.length})</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {g.isVendor && (
+                    <button onClick={e => { e.stopPropagation(); printStatement(g.label); }}
+                      title="Print a pending-order statement for this vendor"
+                      className="text-[10px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-2 py-0.5 text-white/70">
+                      🖨 PDF
+                    </button>
+                  )}
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
                     style={{ background: colors.bg, color: colors.tx, borderColor: colors.bd }}>
                     {g.oldest <= 0 ? 'Aaj se due' : `${g.oldest} din`}
                   </span>
                   <span className="text-white/40 text-xs transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
                 </div>
-              </button>
+              </div>
               {isOpen && (
                 <div className="px-4 pb-4 flex flex-col gap-2">
                   {visRows.map(it => {
