@@ -20,7 +20,19 @@ export type PoolMode = 'pipe' | 'karigar' | 'plating';
 export interface PoolContributor {
   row: CatalogRow;
   qty: number;
+  /** True when the owner deliberately left this customer's pieces out of
+   *  the batch about to be created (see poolRowKey/excludedKeys below) —
+   *  still listed here for display, but excluded from `ordered`/`clients`/
+   *  `units` and from what buildVendorDesigns() actually sends. */
+  excluded: boolean;
 }
+
+/** Stable identity for one contributing row, independent of which pool
+ *  group it currently belongs to — lets a customer be excluded from a
+ *  batch by identity (order/design/variety) rather than by array position,
+ *  so the exclusion survives re-renders and a code/finish regroup alike. */
+export const poolRowKey = (row: CatalogRow): string =>
+  `${row.orderDbId}|${row.designId}|${row.varietyId ?? ''}`;
 
 // Why a group's total can't be shown yet — set only when its contributors
 // don't all share one unit (see buildPoolGroups()'s unit-conversion note).
@@ -83,8 +95,22 @@ export function isPoolable(order: Order, row: CatalogRow): boolean {
  * whose contributors don't all share one unit (see PoolGroup.blocked).
  * Transient UI state — Pooling.tsx holds it in React state, cleared once a
  * batch is created, exactly like the rest of the board's in-progress choices.
+ *
+ * `excludedKeys` (poolRowKey identities): rows the owner has deliberately
+ * left OUT of the batch about to be created — e.g. "not making this for
+ * Vijay Bhai this time" — without touching their order at all. They stay
+ * listed in `contributors` (for the "Who ordered this" list to show,
+ * struck through) but never count toward `ordered`/`clients`/`units`, so
+ * they don't affect the batch total, the mixed-unit check, or what actually
+ * gets sent — and they stay poolable again next time. Ports Phase 1's
+ * `_poolExcluded`/`btPoolToggleRow()` (`06be407`).
  */
-export function buildPoolGroups(data: AppData, mode: PoolMode, unitChoice: Record<string, string> = {}): PoolGroup[] {
+export function buildPoolGroups(
+  data: AppData,
+  mode: PoolMode,
+  unitChoice: Record<string, string> = {},
+  excludedKeys: Set<string> = new Set(),
+): PoolGroup[] {
   const groups = new Map<string, PoolGroup>();
 
   (data.orders ?? [])
@@ -117,13 +143,16 @@ export function buildPoolGroups(data: AppData, mode: PoolMode, unitChoice: Recor
           });
         }
         const g = groups.get(key)!;
+        const excluded = excludedKeys.has(poolRowKey(row));
         if (row.name && !g.names.includes(row.name)) g.names.push(row.name);
         if (row.finish && row.finish !== '—' && !g.finishes.includes(row.finish)) g.finishes.push(row.finish);
         if (!g.image && row.images?.[0]?.data) g.image = row.images[0].data;
-        if (!g.clients.includes(row.client)) g.clients.push(row.client);
-        const rowUnit = row.unit || 'pcs';
-        if (!g.units.includes(rowUnit)) g.units.push(rowUnit);
-        g.contributors.push({ row, qty: row.qty });
+        if (!excluded) {
+          if (!g.clients.includes(row.client)) g.clients.push(row.client);
+          const rowUnit = row.unit || 'pcs';
+          if (!g.units.includes(rowUnit)) g.units.push(rowUnit);
+        }
+        g.contributors.push({ row, qty: row.qty, excluded });
       });
     });
 
@@ -140,10 +169,12 @@ export function buildPoolGroups(data: AppData, mode: PoolMode, unitChoice: Recor
   out.forEach(g => {
     g.mixedUnits = g.units.length > 1;
 
+    const activeContributors = g.contributors.filter(c => !c.excluded);
+
     if (!g.mixedUnits) {
       g.unit = g.units[0] || 'pcs';
       g.blocked = null;
-      g.contributors.forEach(c => addInto(g.ordered, c.row.sizes));
+      activeContributors.forEach(c => addInto(g.ordered, c.row.sizes));
     } else {
       g.unit = unitChoice[g.key] || '';
       if (!g.unit) {
@@ -154,7 +185,7 @@ export function buildPoolGroups(data: AppData, mode: PoolMode, unitChoice: Recor
           g.blocked = { reason: 'undefinedTarget', unit: g.unit };
         } else {
           let missingUnit: string | null = null;
-          g.contributors.forEach(c => {
+          activeContributors.forEach(c => {
             const rowUnit = c.row.unit || 'pcs';
             const rowPcs = unitPieces(data, rowUnit);
             if (!rowPcs) { missingUnit = rowUnit; return; }
@@ -238,8 +269,12 @@ export function buildVendorDesigns(
     // the who-modal and make remainderBySize() compare a converted row
     // total against un-converted source sums — a real mismatch bug for
     // every mixed-unit batch, not just a display quirk.
+    // Excluded contributors never become a source and are never touched —
+    // their order stays completely untouched and they remain poolable again
+    // next time, exactly like Phase 1's exclude checkbox.
+    const activeContributors = g.contributors.filter(c => !c.excluded);
     const targetPcs = unitPieces(data, g.unit);
-    const sources: PoolSource[] = g.contributors.map(c => {
+    const sources: PoolSource[] = activeContributors.map(c => {
       const rowUnit = c.row.unit || 'pcs';
       const rowPcs = unitPieces(data, rowUnit);
       const factor = (targetPcs && rowPcs) ? rowPcs / targetPcs : 1;
@@ -260,7 +295,7 @@ export function buildVendorDesigns(
       };
     });
 
-    g.contributors.forEach(c => {
+    activeContributors.forEach(c => {
       touched.push({ orderDbId: c.row.orderDbId, designId: c.row.designId, varietyId: c.row.varietyId });
     });
 

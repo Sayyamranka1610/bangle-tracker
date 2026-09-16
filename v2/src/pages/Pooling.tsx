@@ -3,7 +3,7 @@ import { useApp } from '../store/AppContext';
 import type { AppData, Priority, VendorOrder, VendorOrderType, VendorStatus } from '../types';
 import {
   buildPoolGroups, groupByFamily, makeQty, emptyExtras, sumSizes,
-  buildVendorDesigns, markPooled,
+  buildVendorDesigns, markPooled, poolRowKey,
   type PoolMode, type PoolGroup, type Extras,
 } from '../lib/poolUtils';
 import { genVendorOrderId } from '../lib/vendorUtils';
@@ -32,7 +32,7 @@ const MODES: { id: PoolMode; label: string; hint: string }[] = [
 // ─── One pooled batch ────────────────────────────────────────────────────────
 
 function PoolCard({
-  group, extras, selected, canEdit, onToggle, onExtras, familyNote, suggestion, knownUnits, onChooseUnit,
+  group, extras, selected, canEdit, onToggle, onExtras, familyNote, suggestion, knownUnits, onChooseUnit, onToggleExcludeRow,
 }: {
   group: PoolGroup;
   extras: Extras;
@@ -47,6 +47,9 @@ function PoolCard({
   suggestion?: KarigarSuggestion | null;
   knownUnits: string[];
   onChooseUnit: (unit: string | null) => void;
+  /** Leave one customer's pieces out of the batch about to be created,
+   *  without touching their order — see poolUtils.ts's poolRowKey. */
+  onToggleExcludeRow: (rowKey: string) => void;
 }) {
   const [showWho, setShowWho] = useState(false);
   const [zoomed, setZoomed] = useState(false);
@@ -231,21 +234,36 @@ function PoolCard({
       </button>
       {showWho && (
         <div className="px-3 pb-2 divide-y divide-white/5 border-t border-white/5">
-          {group.contributors.map((c, i) => (
-            <div key={`${c.row.designId}-${c.row.varietyId ?? 'flat'}-${i}`} className="py-1.5 flex justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs text-white truncate">
-                  {c.row.client}
-                  {c.row.note && <span className="ml-1.5 text-[10px] text-amber-300" title={c.row.note}>📌</span>}
-                </div>
-                <div className="text-[10px] text-white/35 truncate">
-                  {c.row.orderLabel}{c.row.varName ? ` · ${c.row.varName}` : ''} · {c.row.finish} ·{' '}
-                  {orderSizes(Object.keys(c.row.sizes)).map(s => `${s}×${c.row.sizes[s]}`).join(', ')}
-                </div>
+          {canEdit && (
+            <p className="text-[10px] text-white/30 py-1.5">
+              Uncheck a customer to leave their pieces out of this batch — their order is untouched and they stay available to pool next time.
+            </p>
+          )}
+          {group.contributors.map((c, i) => {
+            const rowKey = poolRowKey(c.row);
+            return (
+              <div key={`${c.row.designId}-${c.row.varietyId ?? 'flat'}-${i}`} className="py-1.5 flex items-start justify-between gap-3">
+                <label className={`flex items-start gap-2 min-w-0 flex-1 ${canEdit ? 'cursor-pointer' : ''}`}>
+                  {canEdit && (
+                    <input type="checkbox" checked={!c.excluded} onChange={() => onToggleExcludeRow(rowKey)}
+                      className="mt-0.5 w-3.5 h-3.5 accent-[#534AB7] cursor-pointer flex-shrink-0" />
+                  )}
+                  <div className={`min-w-0 ${c.excluded ? 'opacity-40 line-through' : ''}`}>
+                    <div className="text-xs text-white truncate">
+                      {c.row.client}
+                      {c.row.note && <span className="ml-1.5 text-[10px] text-amber-300 no-underline" title={c.row.note}>📌</span>}
+                      {c.excluded && <span className="ml-1.5 text-[10px] font-bold text-red-300 no-underline">excluded</span>}
+                    </div>
+                    <div className="text-[10px] text-white/35 truncate">
+                      {c.row.orderLabel}{c.row.varName ? ` · ${c.row.varName}` : ''} · {c.row.finish} ·{' '}
+                      {orderSizes(Object.keys(c.row.sizes)).map(s => `${s}×${c.row.sizes[s]}`).join(', ')}
+                    </div>
+                  </div>
+                </label>
+                <div className={`text-xs font-bold flex-shrink-0 ${c.excluded ? 'opacity-40 line-through text-white/40' : 'text-[#a89fff]'}`}>{c.qty}</div>
               </div>
-              <div className="text-xs font-bold text-[#a89fff] flex-shrink-0">{c.qty}</div>
-            </div>
-          ))}
+            );
+          })}
           {(bufferTotal > 0 || stockTotal > 0) && (
             <div className="py-1.5 flex justify-between gap-3">
               <div>
@@ -274,6 +292,9 @@ export default function Pooling() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [extrasByKey, setExtrasByKey] = useState<Record<string, Extras>>({});
   const [unitChoiceByKey, setUnitChoiceByKey] = useState<Record<string, string>>({});
+  // Rows (by poolRowKey identity) temporarily left out of whichever batch
+  // they'd otherwise be part of — see poolUtils.ts's buildPoolGroups().
+  const [excludedRowKeys, setExcludedRowKeys] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   // Vendor order form
@@ -283,7 +304,10 @@ export default function Pooling() {
   const [priority, setPriority] = useState<Priority>('normal');
   const [notes, setNotes] = useState('');
 
-  const allGroups = useMemo(() => buildPoolGroups(data, mode, unitChoiceByKey), [data, mode, unitChoiceByKey]);
+  const allGroups = useMemo(
+    () => buildPoolGroups(data, mode, unitChoiceByKey, excludedRowKeys),
+    [data, mode, unitChoiceByKey, excludedRowKeys],
+  );
   const khist = useMemo(() => karigarHistory(data), [data]);
 
   const groups = useMemo(() => {
@@ -308,7 +332,12 @@ export default function Pooling() {
     return [...new Set([...typed, ...fromVocab])];
   }, [data.vocabulary, data.vendorTypes, mode]);
 
-  const selectedGroups = groups.filter(g => selected.has(g.key));
+  // Looked up against `allGroups` (unfiltered), not the search-filtered
+  // `groups` — otherwise ticking a batch, then searching for something
+  // else, would silently drop it from this count/total (and from what
+  // "Create" actually sends) even though it's still selected. Ports Phase
+  // 1's fix for the identical bug (06be407).
+  const selectedGroups = allGroups.filter(g => selected.has(g.key));
   const selectedMake = selectedGroups.reduce(
     (a, g) => a + sumSizes(makeQty(g, extrasByKey[g.key] ?? emptyExtras())), 0);
 
@@ -326,6 +355,14 @@ export default function Pooling() {
     setUnitChoiceByKey(prev => {
       const next = { ...prev };
       if (unit) next[key] = unit; else delete next[key];
+      return next;
+    });
+  }
+
+  function toggleExcludeRow(rowKey: string) {
+    setExcludedRowKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) next.delete(rowKey); else next.add(rowKey);
       return next;
     });
   }
@@ -456,7 +493,8 @@ export default function Pooling() {
                   familyNote={data.familyNotes?.[family]}
                   suggestion={mode === 'karigar' ? suggestionFor(khist, g.code, '') : null}
                   knownUnits={knownUnits}
-                  onChooseUnit={u => chooseUnit(g.key, u)} />
+                  onChooseUnit={u => chooseUnit(g.key, u)}
+                  onToggleExcludeRow={toggleExcludeRow} />
               ))}
             </div>
           ))}
