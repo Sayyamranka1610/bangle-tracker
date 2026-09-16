@@ -6205,6 +6205,21 @@ function archiveAllCompletedOrders(){
   try{fbPushNow();}catch(e){}
   showToast(`📦 ${targets.length} order${targets.length!==1?'s':''} archived`,'green');
 }
+// Wipes every field that ties a customer-order design/variety to a specific
+// vendor order or production run — used when duplicating an order (the copy
+// is a brand-new run and has never actually been sent to any vendor yet).
+function _resetProductionFields(holder){
+  delete holder.importedToVOId;
+  delete holder.assignedVendor; delete holder.assignedVendorAt;
+  delete holder.pipeVendor; delete holder.pipeVendorAt; delete holder.pipeVoId; delete holder.pipeVoLabel;
+  delete holder.platingVendor; delete holder.platingVendorAt; delete holder.platingVoId; delete holder.platingVoLabel;
+  delete holder.pipeReceived; delete holder.pipeReceivedAt;
+  delete holder.karigarReceived; delete holder.karigarReceivedAt;
+  delete holder.platingReceived; delete holder.platingReceivedAt;
+  delete holder.receivedFromKarigar; delete holder.dispatchedToClient; delete holder.dispatchedAt;
+  delete holder.done;
+  holder.onHold=false; delete holder.holdReason;
+}
 function duplicateOrder(orderId){
   const src=S.orders.find(o=>o.id===orderId);
   if(!src)return;
@@ -6226,6 +6241,15 @@ function duplicateOrder(orderId){
     // Give every design and variety a new id so edits don't collide
     d.id=uid();
     (d.varieties||[]).forEach(v=>{ v.id=uid(); });
+    // Clear every vendor-order link and received/dispatch flag on both the
+    // design and its varieties. Without this, a duplicated order silently
+    // carried over its ORIGINAL run's importedToVOId — so the new order
+    // showed a "→ VORD-XX" badge pointing at a vendor order it was never
+    // actually imported into (that vendor order was, and stayed, linked to
+    // the order it was duplicated FROM), and the real received-from-karigar
+    // sync had nothing to sync against on the new copy at all.
+    _resetProductionFields(d);
+    (d.varieties||[]).forEach(v=>_resetProductionFields(v));
   });
   S.orders.unshift(copy);
   S.openOrders.add(copy.id);
@@ -11602,23 +11626,44 @@ function toggleCOStageRcvd(oi,di,vri,stage){
 }
 
 // ── ORPHAN LINK CLEANUP ───────────────────────────────────────────────────────
-// Scans ALL customer order rows and clears any importedToVOId that points to a
-// vendor order that no longer exists in S.vendorOrders.
+// Scans ALL customer order rows and clears any importedToVOId that:
+//   (a) points to a vendor order that no longer exists in S.vendorOrders, OR
+//   (b) points to a vendor order that exists and still has this design code,
+//       but whose own link (sourceCoId / sources[]) does NOT actually point
+//       back to THIS customer order — a "ghost" link. This happens when an
+//       order gets duplicated (duplicateOrder now resets it going forward,
+//       see _resetProductionFields) — the copy carried over the ORIGINAL
+//       order's importedToVOId, so it showed a "→ VORD-XX" badge for a
+//       vendor order it was never actually imported into, and the real
+//       received-from-karigar sync silently had nothing to match against.
 // Called: (1) when a vendor order is deleted — rows immediately unfreeze,
 //         (2) on startup after Firebase loads — fixes retroactive frozen rows,
 //         (3) when the import picker opens — last-resort safety net.
 // Returns the number of rows that were un-frozen.
 function _pruneOrphanedVOLinks(){
-  const validVOIds=new Set((S.vendorOrders||[]).map(v=>v.id));
+  const voById={};
+  (S.vendorOrders||[]).forEach(v=>{voById[v.id]=v;});
   let pruned=0;
   (S.orders||[]).forEach(order=>{
     (order.designs||[]).forEach(d=>{
-      if(d.importedToVOId && !validVOIds.has(d.importedToVOId)){
-        d.importedToVOId=null; pruned++;
+      if(d.importedToVOId){
+        const vo=voById[d.importedToVOId];
+        const code=(d.code||'').trim();
+        const stillLinked=vo && (vo.designs||[]).some(vd=>
+          (vd.code||'').trim()===code &&
+          (vd.sourceCoId===order.id || (vd.sources||[]).some(s=>s.orderDbId===order.id))
+        );
+        if(!stillLinked){ d.importedToVOId=null; pruned++; }
       }
       (d.varieties||[]).forEach(v=>{
-        if(v.importedToVOId && !validVOIds.has(v.importedToVOId)){
-          v.importedToVOId=null; pruned++;
+        if(v.importedToVOId){
+          const vo=voById[v.importedToVOId];
+          const code=(d.code||'').trim();
+          const stillLinked=vo && (vo.designs||[]).some(vd=>
+            (vd.code||'').trim()===code &&
+            (vd.varieties||[]).some(vv=>vv.sourceCoId===order.id)
+          );
+          if(!stillLinked){ v.importedToVOId=null; pruned++; }
         }
       });
     });
