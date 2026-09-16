@@ -233,7 +233,7 @@ export interface VendorDesign {
   // by Pooling). A genuinely Pooling-built row is defined AS the sum of its
   // sources and is never flagged this way — linking/unlinking there
   // continues to grow/shrink the row exactly as before. See
-  // vendorWhoUtils.ts's addSourceToVendorDesign() for the real bug this
+  // vendorWhoUtils.ts's addSourcesToVendorDesign() for the real bug this
   // fixed: linking a customer to a manually-typed row used to silently ADD
   // their quantity on top of the number already there.
   manualSizes?: boolean;

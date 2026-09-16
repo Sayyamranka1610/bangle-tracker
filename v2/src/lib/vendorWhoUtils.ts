@@ -3,9 +3,9 @@ import { setPipeVendor, setPlatingVendor, setKarigarVendor } from './coStageUtil
 import { catalogRows } from './familyUtils';
 
 // ─── "Who is this row for?" — multi-customer vendor-order rows ───────────────
-// Ports Phase 1's _openVOWhoModal()/_voWhoAdd()/_voWhoUnlink() (and its
-// Sept 2026 correction pass — f9879a2, 70cf572, dabb3cf, 84986c4, 6a3db87,
-// 762d811) exactly. A pooled vendor-order design carries `sources[]` (see
+// Ports Phase 1's _openVOWhoModal()/_voWhoAddSelected()/_voWhoUnlink() (and
+// its Sept 2026 correction passes — f9879a2, 70cf572, dabb3cf, 84986c4,
+// 6a3db87, 762d811, 8c70599) exactly. A pooled vendor-order design carries `sources[]` (see
 // poolUtils.ts's buildVendorDesigns) recording which customer contributed
 // how much; this lets the owner view that after the fact, unlink a customer
 // (their row reappears on Pooling), or link in another customer order
@@ -191,28 +191,42 @@ export function addCandidatesFor(data: AppData, code: string, linkedKeys: Set<st
   return out;
 }
 
-// ─── Adding a candidate onto an existing vendor-order row ────────────────────
+// ─── Adding candidates onto an existing vendor-order row ─────────────────────
 
 export interface SurplusOffer { unit: string; total: number; bySize: Record<string, number> }
 
-export type AddSourceOutcome =
-  | { ok: true; vendorOrders: VendorOrder[]; orders: Order[]; grew: boolean; offerSweepSurplus?: SurplusOffer }
-  | { ok: false; reason: 'unit-undefined'; badUnit: string }
-  | { ok: false; reason: 'conflict'; current: string; label: string }
-  | { ok: false; reason: 'shortfall-confirm'; shortfallTotal: number; unit: string }
-  | { ok: false; reason: 'not-found' };
+// ─── Adding MULTIPLE candidates at once (multi-select "Add selected") ────────
+// Ports Phase 1's Sept 2026 fix (`8c70599`): _voWhoAdd's old one-candidate-
+// at-a-time flow fired a native confirm() the instant a click landed on a
+// candidate that alone was short of the row's quantity — missing it, or
+// declining it while trying to add a SECOND customer, silently added
+// nothing, which read as "the button doesn't work". This lets the owner
+// tick several candidates first, then runs ONE combined shortfall check
+// across everyone ticked instead of one question per candidate. A declined
+// Karigar/Pipe/Plating conflict on one candidate only drops that one — it
+// never blocks the rest of the batch.
 
-export interface AddSourceOpts {
-  /** Pass true only after the owner confirmed overwriting an existing
-   *  Pipe/Karigar/Plating value on the customer's row. */
-  allowConflictOverride?: boolean;
-  /** Pass true only after the owner confirmed linking despite this row
-   *  (a manually-typed one) having less than its customers now need. */
+export const candidateKey = (c: { orderDbId: string; designId: string; varietyId: string | null }): string =>
+  `${c.orderDbId}|${c.designId}|${c.varietyId ?? ''}`;
+
+export interface AddSourcesOpts {
+  /** Per-candidate (keyed by candidateKey) decision on an already-surfaced
+   *  Karigar/Pipe/Plating conflict: true = overwrite, false = leave this one out. */
+  conflictDecisions?: Record<string, boolean>;
+  /** Pass true only after the owner confirmed the ONE combined shortfall
+   *  question covering every candidate still in the batch at that point. */
   allowShortfall?: boolean;
 }
 
+export type AddSourcesOutcome =
+  | { ok: true; vendorOrders: VendorOrder[]; orders: Order[]; grew: boolean; added: AddCandidate[]; offerSweepSurplus?: SurplusOffer }
+  | { ok: false; reason: 'no-candidates' }
+  | { ok: false; reason: 'conflict'; candidate: AddCandidate; current: string; label: string }
+  | { ok: false; reason: 'shortfall-confirm'; shortfallTotal: number; unit: string; names: string[] };
+
 /**
- * Links one candidate customer-order row onto a vendor-order design.
+ * Links one or more candidate customer-order rows onto a vendor-order design
+ * at once — see the comment block above for why (Phase 1's `8c70599`).
  *
  * A row built by Pooling IS DEFINED as the sum of its customers — linking
  * here grows it, exactly as before. A row that was typed by hand (or
@@ -224,64 +238,69 @@ export interface AddSourceOpts {
  * real bug Phase 1 shipped and fixed (a manually-typed 51 jotta became 102
  * the instant one customer was linked) — see `manualSizes` on VendorDesign.
  */
-export function addSourceToVendorDesign(
+export function addSourcesToVendorDesign(
   data: AppData,
   vo: VendorOrder,
   vendorDesignId: string,
-  candidate: AddCandidate,
-  opts: AddSourceOpts = {},
-): AddSourceOutcome {
+  candidates: AddCandidate[],
+  opts: AddSourcesOpts = {},
+): AddSourcesOutcome {
   const orders = data.orders ?? [];
-  const found = findSourceHolder(orders, candidate);
-  if (!found) return { ok: false, reason: 'not-found' };
+  const vendorOrder = (data.vendorOrders ?? []).find(v => v.id === vo.id);
+  const vd = vendorOrder?.designs?.find(d => d.id === vendorDesignId);
+  if (!vd) return { ok: false, reason: 'no-candidates' };
 
   const field = coVendorField(vo.type);
   const label = vo.type === 'pipe' ? 'Pipe' : vo.type === 'plating' ? 'Plating' : 'Karigar';
-  const cur = found.holder[field];
-  if (!opts.allowConflictOverride && vo.vendor && cur && cur !== vo.vendor) {
-    return { ok: false, reason: 'conflict', current: cur, label };
-  }
-
-  const vendorOrder = (data.vendorOrders ?? []).find(v => v.id === vo.id);
-  const vd = vendorOrder?.designs?.find(d => d.id === vendorDesignId);
-  if (!vd) return { ok: false, reason: 'not-found' };
-
   const ru = rowUnit(vd);
-  const candPcs = unitPieces(data, candidate.unit);
-  const rowPcs = unitPieces(data, ru);
-  if (!candPcs || !rowPcs) {
-    return { ok: false, reason: 'unit-undefined', badUnit: !candPcs ? candidate.unit : ru };
+  const decisions = opts.conflictDecisions ?? {};
+
+  // Resolve each candidate + surface (one at a time) any conflict that
+  // hasn't been decided yet. A candidate whose conflict was declined
+  // (decision === false) is simply left out of the batch, same as a
+  // not-found row — it never blocks anyone else.
+  type Resolved = { candidate: AddCandidate; convSizes: Record<string, number> };
+  const resolved: Resolved[] = [];
+  for (const candidate of candidates) {
+    const key = candidateKey(candidate);
+    if (decisions[key] === false) continue;
+    const found = findSourceHolder(orders, candidate);
+    if (!found) continue; // deleted since the modal opened — silently skipped, same as Phase 1's toast-and-continue
+    const cur = found.holder[field];
+    if (vo.vendor && cur && cur !== vo.vendor && decisions[key] !== true) {
+      return { ok: false, reason: 'conflict', candidate, current: cur, label };
+    }
+    const candPcs = unitPieces(data, candidate.unit);
+    const rowPcs = unitPieces(data, ru);
+    if (!candPcs || !rowPcs) continue; // "no piece-count set" — same as Phase 1, skip this one rather than block the batch
+    const factor = candPcs / rowPcs;
+    const convSizes: Record<string, number> = {};
+    Object.entries(candidate.sizes).forEach(([sz, n]) => {
+      const q = Number(n) || 0;
+      if (q > 0) convSizes[sz] = clean(q * factor);
+    });
+    resolved.push({ candidate, convSizes });
   }
+  if (!resolved.length) return { ok: false, reason: 'no-candidates' };
 
-  const factor = candPcs / rowPcs;
-  const convSizes: Record<string, number> = {};
-  Object.entries(candidate.sizes).forEach(([sz, n]) => {
-    const q = Number(n) || 0;
-    if (q > 0) convSizes[sz] = clean(q * factor);
-  });
-
-  // A pooled row is never empty of sources while carrying a real quantity
-  // (buildVendorDesigns always seeds both together) — so a row with NO
-  // sources yet but a non-zero quantity can only be manually-typed / legacy
-  // data getting its first link. Once flagged, it stays flagged.
   const isFirstLink = !(vd.sources?.length);
   const existingTotal = voQty(vd.sizes);
   const grow = !vd.manualSizes && (!isFirstLink || existingTotal === 0);
 
   if (!grow) {
-    const hypotheticalSources = [...(vd.sources ?? []), { sizes: convSizes } as PoolSource];
+    const hypotheticalSources = [...(vd.sources ?? []), ...resolved.map(r => ({ sizes: r.convSizes } as PoolSource))];
     const { remainder } = remainderBySize(data, vd, hypotheticalSources);
     const shortfallTotal = clean(Object.values(remainder).filter(n => n < 0).reduce((a, n) => a - n, 0));
     if (shortfallTotal > 0 && !opts.allowShortfall) {
-      return { ok: false, reason: 'shortfall-confirm', shortfallTotal, unit: ru };
+      return { ok: false, reason: 'shortfall-confirm', shortfallTotal, unit: ru, names: resolved.map(r => r.candidate.client) };
     }
   }
 
-  const newSource: PoolSource = {
+  const newSources: PoolSource[] = resolved.map(({ candidate, convSizes }) => ({
     orderDbId: candidate.orderDbId, orderLabel: candidate.orderLabel, client: candidate.client,
     designId: candidate.designId, varietyId: candidate.varietyId, sizes: convSizes,
     origUnit: candidate.unit, origSizes: { ...candidate.sizes },
-  };
+  }));
 
   let updatedVd: VendorDesign | null = null;
   const nextVendorOrders = (data.vendorOrders ?? []).map(v => {
@@ -293,9 +312,11 @@ export function addSourceToVendorDesign(
         let sizes = d.sizes;
         if (grow) {
           sizes = { ...(d.sizes ?? {}) };
-          Object.entries(convSizes).forEach(([sz, q]) => { sizes![sz] = clean((Number(sizes![sz]) || 0) + q); });
+          resolved.forEach(({ convSizes }) => {
+            Object.entries(convSizes).forEach(([sz, q]) => { sizes![sz] = clean((Number(sizes![sz]) || 0) + q); });
+          });
         }
-        const next: VendorDesign = { ...d, sizes, sources: [...(d.sources ?? []), newSource] };
+        const next: VendorDesign = { ...d, sizes, sources: [...(d.sources ?? []), ...newSources] };
         if (!grow && isFirstLink) next.manualSizes = true;
         updatedVd = next;
         return next;
@@ -303,33 +324,35 @@ export function addSourceToVendorDesign(
     };
   });
 
-  const nextOrders = orders.map(o => {
-    if (o.id !== candidate.orderDbId) return o;
-    return {
-      ...o,
-      designs: o.designs.map(d => {
-        if (d.id !== candidate.designId) return d;
-        if (candidate.varietyId === null) {
-          let next = { ...d, importedToVOId: vo.id };
-          if (vo.vendor) next = setCoVendorField(next, vo.type, vo.vendor);
-          return next;
-        }
-        return {
-          ...d,
-          varieties: (d.varieties ?? []).map(v => {
-            if (v.id !== candidate.varietyId) return v;
-            let next = { ...v, importedToVOId: vo.id };
+  let nextOrders = orders;
+  resolved.forEach(({ candidate }) => {
+    nextOrders = nextOrders.map(o => {
+      if (o.id !== candidate.orderDbId) return o;
+      return {
+        ...o,
+        designs: o.designs.map(d => {
+          if (d.id !== candidate.designId) return d;
+          if (candidate.varietyId === null) {
+            let next = { ...d, importedToVOId: vo.id };
             if (vo.vendor) next = setCoVendorField(next, vo.type, vo.vendor);
             return next;
-          }),
-        };
-      }),
-    };
+          }
+          return {
+            ...d,
+            varieties: (d.varieties ?? []).map(v => {
+              if (v.id !== candidate.varietyId) return v;
+              let next = { ...v, importedToVOId: vo.id };
+              if (vo.vendor) next = setCoVendorField(next, vo.type, vo.vendor);
+              return next;
+            }),
+          };
+        }),
+      };
+    });
   });
 
-  // If this leaves a clean SURPLUS (never mixed with a shortfall elsewhere
-  // on the same row), offer to record it as Extra right away instead of
-  // leaving it as a banner the owner has to notice separately.
+  // Same "offer to sweep a clean surplus into Extra" as the single-add path,
+  // computed once for the whole batch instead of once per candidate.
   let offerSweepSurplus: SurplusOffer | undefined;
   if (!grow && updatedVd) {
     const { remainder, anyNegative } = remainderBySize(data, updatedVd);
@@ -348,7 +371,7 @@ export function addSourceToVendorDesign(
     }
   }
 
-  return { ok: true, vendorOrders: nextVendorOrders, orders: nextOrders, grew: grow, offerSweepSurplus };
+  return { ok: true, vendorOrders: nextVendorOrders, orders: nextOrders, grew: grow, added: resolved.map(r => r.candidate), offerSweepSurplus };
 }
 
 // ─── Unlinking a source from a vendor-order row ───────────────────────────────
@@ -365,7 +388,7 @@ export function unlinkSourceFromVendorDesign(
   if (!vd || !src) return null;
 
   // A manually-typed row's own quantity is never touched by linking (see
-  // addSourceToVendorDesign) — so unlinking must symmetrically leave it
+  // addSourcesToVendorDesign) — so unlinking must symmetrically leave it
   // alone too, instead of subtracting a customer's pieces out of a number
   // the owner decided independently.
   const willShrink = !vd.manualSizes;
@@ -422,9 +445,9 @@ export function unlinkSourceFromVendorDesign(
 }
 
 /**
- * Records a `SurplusOffer` (as returned inline by addSourceToVendorDesign)
+ * Records a `SurplusOffer` (as returned inline by addSourcesToVendorDesign)
  * into a vendor design's Extra field. Takes an ALREADY-UPDATED vendorOrders
- * array — the one addSourceToVendorDesign just produced — rather than
+ * array — the one addSourcesToVendorDesign just produced — rather than
  * re-deriving the surplus from fresh `data`, which would still be the
  * pre-add state at the moment the owner confirms the follow-up prompt (the
  * add itself is saved asynchronously). This is the one write in this file

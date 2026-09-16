@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { AppData, Order, VendorOrder } from '../../types';
 import {
   voQty, voSizeStr, rowUnit, extraInRowUnit, remainderBySize, finerUnitFor,
-  addCandidatesFor, addSourceToVendorDesign, unlinkSourceFromVendorDesign,
-  sweepRemainderToExtra, growRowToMatchSources, applySurplusOffer,
+  addCandidatesFor, addSourcesToVendorDesign, unlinkSourceFromVendorDesign,
+  sweepRemainderToExtra, growRowToMatchSources, applySurplusOffer, candidateKey,
   type AddCandidate,
 } from '../../lib/vendorWhoUtils';
 
@@ -27,6 +27,9 @@ interface Props {
 // 6a3db87, 762d811).
 export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onChange, onClose }: Props) {
   const [showAdd, setShowAdd] = useState(false);
+  // Ticked-but-not-yet-added candidates, keyed by candidateKey() — see
+  // Phase 1's Sept 2026 multi-select fix (8c70599) ported below.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Read fresh from `data` every render so an add/unlink is reflected
   // immediately without needing to close and reopen the modal.
@@ -65,36 +68,54 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
     onChange(result, `Unlinked ${src.client || ''} (${src.orderLabel || ''}) from ${vd!.code || vd!.name || 'row'} in ${liveVo.orderId}`);
   }
 
-  function handleAdd(candidate: AddCandidate, opts: { allowConflictOverride?: boolean; allowShortfall?: boolean } = {}) {
-    const result = addSourceToVendorDesign(data, liveVo, vendorDesignId, candidate, opts);
+  function toggleSelect(c: AddCandidate) {
+    const key = candidateKey(c);
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  // Ports Phase 1's _voWhoAddSelected() (Sept 2026, `8c70599`): adds every
+  // ticked candidate at once with ONE combined shortfall check instead of
+  // one confirm() per candidate. A declined Karigar/Pipe/Plating conflict on
+  // one candidate only drops that one — it never blocks the rest of the batch.
+  function handleAddSelected(
+    conflictDecisions: Record<string, boolean> = {},
+    allowShortfall = false,
+  ) {
+    const chosen = candidates.filter(c => selected.has(candidateKey(c)));
+    if (!chosen.length) return;
+    const result = addSourcesToVendorDesign(data, liveVo, vendorDesignId, chosen, { conflictDecisions, allowShortfall });
 
     if (!result.ok) {
       if (result.reason === 'conflict') {
         const ok = confirm(
-          `Design "${vd!.code || ''}" in ${candidate.orderLabel} already has "${result.current}" as ${result.label}.\n\n` +
+          `Design "${vd!.code || ''}" in ${result.candidate.orderLabel} already has "${result.current}" as ${result.label}.\n\n` +
           `Replace with "${liveVo.vendor}"?\n\n(Click Cancel to leave this customer out of the vendor order.)`,
         );
-        if (ok) handleAdd(candidate, { ...opts, allowConflictOverride: true });
+        handleAddSelected({ ...conflictDecisions, [candidateKey(result.candidate)]: ok }, allowShortfall);
         return;
       }
       if (result.reason === 'shortfall-confirm') {
         const proceed = confirm(
-          `${candidate.client} ka order is row mein abhi jitna banaya ja raha hai usse zyada hai — ${result.shortfallTotal} ${result.unit} kam hai.\n\n` +
+          `${result.names.join(', ')} ka order(s) is row mein abhi jitna banaya ja raha hai usse zyada hai — ${result.shortfallTotal} ${result.unit} kam hai.\n\n` +
           `Customer order ki quantity vendor order se zyada hai jisse link karna hai. Aage badhein?`,
         );
-        if (proceed) handleAdd(candidate, { ...opts, allowShortfall: true });
-        else alert(`Link nahi hua — pehle row ki quantity badhao ya ${candidate.orderLabel} ka order check karo`);
+        if (proceed) handleAddSelected(conflictDecisions, true);
+        else alert('Link nahi hua — pehle row ki quantity badhao ya order check karo');
         return;
       }
-      if (result.reason === 'unit-undefined') {
-        alert(`"${result.badUnit}" has no piece-count set — add it in Masters → Units before adding this customer.`);
-        return;
-      }
-      alert('That customer order row could not be found — it may have been deleted.');
+      // 'no-candidates' — every ticked candidate was deleted or had an
+      // undefined unit since the modal opened; nothing left to add.
+      alert('Nothing could be added — those rows may have been deleted, or their unit has no piece-count set in Masters → Units.');
       return;
     }
 
-    const addDetail = `${result.grew ? 'Added' : 'Linked'} ${candidate.client} (${candidate.orderLabel}) to ${vd!.code || vd!.name || 'row'} in ${liveVo.orderId}`;
+    const addDetail = `Added ${result.added.length} customer${result.added.length !== 1 ? 's' : ''} (${result.added.map(c => c.client).join(', ')}) to ${vd!.code || vd!.name || 'row'} in ${liveVo.orderId}`;
+
+    setSelected(new Set());
 
     if (result.offerSweepSurplus) {
       const { total, unit: extraUnit } = result.offerSweepSurplus;
@@ -179,18 +200,32 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
           showAdd ? (
             candidates.length ? (
               <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] text-white/30">Add which customer order?</p>
-                {candidates.map((c, ci) => (
-                  <button key={ci} onClick={() => handleAdd(c)}
-                    className="flex items-start gap-2.5 border border-[#534AB7]/30 hover:bg-[#534AB7]/10 rounded-lg px-3 py-2 text-left transition-colors">
-                    <span className="text-[10px] font-bold text-white bg-[#534AB7] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">{c.orderLabel || 'CO'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold text-white truncate">{c.client}</p>
-                      <p className="text-[10px] text-white/40 mt-0.5">{voSizeStr(c.sizes)}</p>
+                <p className="text-[11px] text-white/30">Add which customer order(s)? Tick one or more, then confirm.</p>
+                {candidates.map((c, ci) => {
+                  const key = candidateKey(c);
+                  const checked = selected.has(key);
+                  return (
+                    <div key={ci} onClick={() => toggleSelect(c)}
+                      className={`flex items-start gap-2.5 border rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+                        checked ? 'border-[#534AB7] bg-[#534AB7]/10' : 'border-[#534AB7]/30 hover:bg-[#534AB7]/10'
+                      }`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleSelect(c)} onClick={e => e.stopPropagation()}
+                        className="mt-0.5 w-4 h-4 accent-[#534AB7] flex-shrink-0 cursor-pointer" />
+                      <span className="text-[10px] font-bold text-white bg-[#534AB7] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">{c.orderLabel || 'CO'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-white truncate">{c.client}</p>
+                        <p className="text-[10px] text-white/40 mt-0.5">{voSizeStr(c.sizes)}</p>
+                      </div>
+                      <span className="text-[13px] font-bold text-[#a89fff] flex-shrink-0">{c.qty} <span className="text-[10px] font-medium text-white/40">{c.unit}</span></span>
                     </div>
-                    <span className="text-[13px] font-bold text-[#a89fff] flex-shrink-0">{c.qty} <span className="text-[10px] font-medium text-white/40">{c.unit}</span></span>
+                  );
+                })}
+                {selected.size > 0 && (
+                  <button onClick={() => handleAddSelected()}
+                    className="w-full mt-0.5 bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg py-2 text-xs font-bold">
+                    ✅ Add selected ({selected.size})
                   </button>
-                ))}
+                )}
               </div>
             ) : (
               <p className="text-[11px] text-white/30 text-center py-2.5 border border-dashed border-white/15 rounded-lg">
