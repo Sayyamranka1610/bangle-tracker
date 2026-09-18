@@ -9962,7 +9962,10 @@ function renderVendorOrders(){
   ${buildVendorStatsBar()}
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
     <div style="font-size:13px;font-weight:700;color:var(--indigo)">🏭 Vendor Orders</div>
-    <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="icon-btn" style="background:#EEEDFE;color:#534AB7;border-color:#C6C1F0;font-weight:700" onclick="reconcileAllVendorCustomerStatus()" title="Checks every customer order ↔ vendor order link for received-status mismatches and fixes them — asks first for anything ambiguous">🔄 Reconcile Status</button>
+      <button class="primary" onclick="openNewVendorOrderModal()">+ New Vendor Order</button>
+    </div>
   </div>
   ${typeTabs}
   <div class="orders-split">
@@ -11594,6 +11597,82 @@ function _syncCOReceivedForVORow(vd,holder,stage){
       if(h[field])h[field+'At']=Date.now(); else delete h[field+'At'];
     }
   });
+}
+
+// ── FULL CO ↔ VO STATUS RECONCILIATION ────────────────────────────────────
+// Owner-requested, before a vendor meeting: sweep every linked row across the
+// WHOLE app and apply the exact same rule the live tick already applies —
+// just once, everywhere, instead of waiting for someone to click each row.
+//   • Vendor row already marked received → every linked customer must agree
+//     too (no question — a physical batch either came back for everyone in
+//     it or it didn't; this is the same rule _syncCOReceivedForVORow uses).
+//   • Vendor row not yet received, but EVERY linked customer already says
+//     received → the vendor row just never got ticked; mark it, no question.
+//   • Vendor row not yet received, and only SOME linked customers say
+//     received (a pooled row where the rest haven't been confirmed) → this
+//     is genuinely ambiguous, so ask — once per row, listing exactly who's
+//     still outstanding, same Hinglish question the live tick asks.
+//   • Nobody says received yet → still genuinely pending, left untouched.
+// After this runs, save()+render() so the Follow-ups screen and any Pending
+// Order Statement generated afterward reflect the corrected state.
+function reconcileAllVendorCustomerStatus(){
+  let voMarkedDone=0, coMarkedDone=0, askedYes=0, askedNo=0;
+
+  (S.vendorOrders||[]).forEach(vo=>{
+    if(vo.archived)return;
+    const stage=vo.type||'karigar';
+    const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
+
+    (vo.designs||[]).forEach(vd=>{
+      _migrateSourceCoIdToSources(vo,vd); // normalize legacy single-customer links into sources[]
+      const varieties=vd.varieties||[];
+      const holders=varieties.length?varieties:[vd];
+
+      holders.forEach(holder=>{
+        const coHolders=_findCOHoldersForVORow(vd,holder);
+        if(!coHolders.length)return; // not linked to any customer order — nothing to reconcile
+
+        if(holder.received){
+          coHolders.forEach(h=>{
+            if(!h[field]){ h[field]=true; h[field+'At']=Date.now(); coMarkedDone++; }
+          });
+          return;
+        }
+
+        const doneOnes=coHolders.filter(h=>!!h[field]);
+        const pendingOnes=coHolders.filter(h=>!h[field]);
+        if(!doneOnes.length)return; // genuinely still pending on every side — leave it
+        if(!pendingOnes.length){
+          holder.received=true; holder.receivedAt=Date.now(); voMarkedDone++;
+          return;
+        }
+
+        // Ambiguous pooled case: some customers already say received, at
+        // least one doesn't yet. Only possible on a flat row's sources[] —
+        // a variety-row link is always single, so pendingOnes here would
+        // already have been caught by the two branches above.
+        const srcFor=h=>(holder.sources||[]).find(s=>{const f=_voSourceHolder(s);return f&&f.holder===h;});
+        const label=h=>{const s=srcFor(h);return s?(_voQty(s.sizes)+' '+(s.origUnit||'')+' — '+(s.client||'')+' ('+(s.orderLabel||'CO')+')'):'';};
+        const lines=pendingOnes.map(h=>'• '+label(h)).join('\n');
+        const q=pendingOnes.length>1
+          ?'Design "'+(vd.code||'')+'" ('+(vo.orderId||'VO')+') ka in customer order(s) ka bhi hissa tha:\n'+lines+'\n\nKya yeh sab bhi '+(vo.vendor||'vendor')+' se aa gaya hai?'
+          :'Design "'+(vd.code||'')+'" ('+(vo.orderId||'VO')+') ka '+label(pendingOnes[0])+' ka order bhi tha, kya woh bhi '+(vo.vendor||'vendor')+' se aa gaya hai?';
+        if(confirm(q)){
+          pendingOnes.forEach(h=>{ h[field]=true; h[field+'At']=Date.now(); });
+          holder.received=true; holder.receivedAt=Date.now();
+          voMarkedDone++; askedYes++;
+        } else {
+          askedNo++;
+        }
+      });
+    });
+  });
+
+  save(); render();
+  const msg='🔄 Reconcile complete — '+voMarkedDone+' vendor row(s) and '+coMarkedDone+' customer row(s) updated'
+    +((askedYes||askedNo)?(' · '+askedYes+' confirmed, '+askedNo+' left pending'):' · everything else already matched');
+  showToast(msg,'green',6000);
+  return {voMarkedDone,coMarkedDone,askedYes,askedNo};
 }
 
 // Returns {received: n, total: n} counting every design/variety row in the vendor order.
