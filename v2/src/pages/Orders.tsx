@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { Order, AppData } from '../types';
 import { computeStats, renumberOrders } from '../lib/orderUtils';
-import { orderStatus } from '../lib/coStageUtils';
+import { orderStatus, resetProductionFields } from '../lib/coStageUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import { rebuildVocab } from '../lib/vocabUtils';
 import { uid } from '../lib/orderUtils';
@@ -222,6 +222,15 @@ export default function Orders() {
       archived: false,
       archivedAt: undefined,
     };
+    // A duplicate is a brand-new production run — it must not inherit which
+    // vendor order (if any) the original run was sent to, any received/
+    // dispatch state, or its designs'/varieties' own ids (which could
+    // otherwise collide with the original's). See resetProductionFields().
+    copy.designs = copy.designs.map(d => {
+      const nd = resetProductionFields({ ...d, id: uid() });
+      if (nd.varieties?.length) nd.varieties = nd.varieties.map(v => resetProductionFields({ ...v, id: uid() }));
+      return nd;
+    });
     const next = [copy, ...allOrders];
     showToast(`Duplicated as new order for ${copy.client}`, 'success');
     await persistOrders(next, 'Create order', `Order duplicated from ${order.orderId} for ${copy.client}`);

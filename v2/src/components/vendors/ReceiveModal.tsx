@@ -4,7 +4,8 @@ import { useApp } from '../../store/AppContext';
 import {
   initReceiveLines, recomputeGood, suggestEvenSplit, allocatedTotal,
   validateReceive, applyAllocation, applyVendorReceipt, applyToStock,
-  demandOf, receivableDesigns, alreadyReceivedFrom, remainingOf, type ReceiveLine,
+  demandOf, receivableDesigns, alreadyReceivedFrom, remainingOf,
+  syncReceivedFlagsForAllocation, type ReceiveLine,
 } from '../../lib/receiveUtils';
 import { buildAuditLog } from '../../lib/auditUtils';
 import { familyOf } from '../../lib/familyUtils';
@@ -61,7 +62,11 @@ export default function ReceiveModal({ vo, onClose }: { vo: VendorOrder; onClose
     if (!validation.ok) { showToast('Fix the highlighted problems first', 'error'); return; }
     if (totalReceived <= 0) { showToast('Enter how many pieces came back', 'info'); return; }
 
-    const nextOrders = applyAllocation(data.orders ?? [], design, lines);
+    const allocatedOrders = applyAllocation(data.orders ?? [], design, lines);
+    // Any customer whose allocation now fully covers what they ordered gets
+    // their own pipeReceived/karigarReceived/platingReceived ticked too —
+    // the real signal this drives off of (recvQty) was just written above.
+    const { orders: nextOrders } = syncReceivedFlagsForAllocation(allocatedOrders, vo.type, design);
     const nextVOs = applyVendorReceipt(data.vendorOrders ?? [], vo.id, design.id, lines);
     const family = familyOf(data, design.code ?? '', design.name ?? '');
     const nextStock = applyToStock(data.stockItems ?? [], design, lines, family);

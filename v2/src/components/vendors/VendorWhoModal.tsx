@@ -51,7 +51,7 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
 
   const code = (vd.code || '').trim();
   const linkedKeys = new Set(sources.map(s => `${s.orderDbId}|${s.designId}|${s.varietyId ?? ''}`));
-  const candidates = showAdd ? addCandidatesFor(data, code, linkedKeys) : [];
+  const candidates = showAdd ? addCandidatesFor(data, liveVo, code, linkedKeys) : [];
 
   function handleUnlink(si: number) {
     const src = sources[si];

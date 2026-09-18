@@ -230,6 +230,114 @@ export function applyVendorReceipt(
   });
 }
 
+// ─── Syncing "received" onto the customer's own row ───────────────────────────
+// Phase 1 tracks a per-row boolean `received` on the vendor-order side and
+// keeps it in sync with each customer's own pipeReceived/karigarReceived/
+// platingReceived flags (`_syncVOReceivedForCOHolder`/`_syncCOReceivedForVORow`,
+// `e58de9b`; refined with a "ask about pooled siblings" confirm in `11f6af3`;
+// swept retroactively across the whole app via a "Reconcile Status" button in
+// `7fe0b19`). Phase 2 has no such boolean and doesn't need one: it already
+// tracks the REAL, finer-grained signal — `recvQty` per size, written by
+// applyAllocation() above — so "has this customer fully received what they
+// ordered" is simply "does recvQty cover demand for every size", computed
+// from data that already exists rather than a second field to keep in sync.
+// That also means Phase 2 needs no Hinglish confirm() for the ambiguous
+// "some customers say yes, some don't" case Phase 1 has to ask about — a
+// quantity either covers the demand or it doesn't, no guessing required.
+
+function receivedFieldFor(voType: VendorOrder['type']): 'pipeReceived' | 'karigarReceived' | 'platingReceived' {
+  return voType === 'pipe' ? 'pipeReceived' : voType === 'plating' ? 'platingReceived' : 'karigarReceived';
+}
+
+/**
+ * Sets pipeReceived/karigarReceived/platingReceived (matching `voType`) on
+ * every customer holder linked to `design` whose allocation now fully
+ * covers what they ordered — reading `orders` FRESH (i.e. after
+ * applyAllocation has already run), so it sees the allocation just made.
+ * Already-set flags are left alone; a customer still short of their order
+ * is left untouched, exactly like every other "received" check in this file.
+ */
+export interface SyncReceivedFlagsResult {
+  orders: Order[];
+  /** How many customer design/variety rows this call newly marked received. */
+  touchedCount: number;
+}
+
+export function syncReceivedFlagsForAllocation(
+  orders: Order[],
+  voType: VendorOrder['type'],
+  design: VendorDesign,
+): SyncReceivedFlagsResult {
+  const sources = design.sources ?? [];
+  if (!sources.length) return { orders, touchedCount: 0 };
+  const field = receivedFieldFor(voType);
+  const atField = `${field}At` as const;
+  const already = alreadyReceivedFrom(orders, sources);
+
+  const coveredIdx = new Set<number>();
+  sources.forEach((s, i) => {
+    const sizes = Object.keys(s.sizes ?? {}).filter(sz => (Number(s.sizes[sz]) || 0) > 0);
+    if (sizes.length && sizes.every(sz => remainingOf(sources, i, sz, already) === 0)) coveredIdx.add(i);
+  });
+  if (!coveredIdx.size) return { orders, touchedCount: 0 };
+
+  let touchedCount = 0;
+  const nextOrders = orders.map(o => {
+    let touched = false;
+    const nextDesigns = o.designs.map(d => {
+      let nd = d;
+      sources.forEach((s, i) => {
+        if (!coveredIdx.has(i) || s.orderDbId !== o.id || s.designId !== d.id) return;
+        if (s.varietyId === null) {
+          if (!nd[field]) { nd = { ...nd, [field]: true, [atField]: Date.now() }; touched = true; touchedCount++; }
+        } else {
+          const vi = (nd.varieties ?? []).findIndex(v => v.id === s.varietyId);
+          if (vi >= 0 && !nd.varieties![vi][field]) {
+            const varieties = [...nd.varieties!];
+            varieties[vi] = { ...varieties[vi], [field]: true, [atField]: Date.now() };
+            nd = { ...nd, varieties };
+            touched = true; touchedCount++;
+          }
+        }
+      });
+      return nd;
+    });
+    return touched ? { ...o, designs: nextDesigns } : o;
+  });
+  return { orders: nextOrders, touchedCount };
+}
+
+export interface ReconcileResult {
+  orders: Order[];
+  /** Customer design/variety rows whose received flag this pass turned on. */
+  updatedCount: number;
+}
+
+/**
+ * Retroactive, whole-app sweep — for `recvQty` already recorded before this
+ * sync existed (or from any other path), catches up every customer row that
+ * is fully covered but whose received flag was never set. Ports the intent
+ * of Phase 1's `reconcileAllVendorCustomerStatus()` (`7fe0b19`), adapted to
+ * Phase 2's quantity-based model (see the comment above
+ * syncReceivedFlagsForAllocation) — no confirm() prompts needed, and running
+ * it twice is a no-op the second time for the same reason: nothing left to
+ * catch up once every recvQty is already reflected.
+ */
+export function reconcileReceivedStatus(data: AppData): ReconcileResult {
+  let orders = data.orders ?? [];
+  let updatedCount = 0;
+
+  (data.vendorOrders ?? []).forEach(vo => {
+    receivableDesigns(vo).forEach(design => {
+      const result = syncReceivedFlagsForAllocation(orders, vo.type, design);
+      orders = result.orders;
+      updatedCount += result.touchedCount;
+    });
+  });
+
+  return { orders, updatedCount };
+}
+
 /** Adds the unallocated leftover into finished-goods stock. */
 export function applyToStock(
   stock: StockItem[],

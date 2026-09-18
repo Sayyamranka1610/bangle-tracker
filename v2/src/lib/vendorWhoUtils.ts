@@ -171,10 +171,19 @@ export interface AddCandidate {
   unit: string;
 }
 
-export function addCandidatesFor(data: AppData, code: string, linkedKeys: Set<string>): AddCandidate[] {
+/**
+ * `vo`: candidates are further restricted to customer orders whose matching
+ * Pipe/Karigar/Plating field (matching `vo.type`) is assigned to `vo.vendor`
+ * — a real, owner-reported bug (Phase 1 `1a8c033`): without this, a design
+ * decided for one karigar showed up as linkable under a totally different
+ * one's vendor order. If `vo` has no vendor name set yet, nothing is
+ * filtered on this basis (there's nothing to match against).
+ */
+export function addCandidatesFor(data: AppData, vo: VendorOrder, code: string, linkedKeys: Set<string>): AddCandidate[] {
   const c = (code || '').trim();
   if (!c) return [];
   const orders = data.orders ?? [];
+  const field = coVendorField(vo.type);
   const out: AddCandidate[] = [];
   catalogRows(data).forEach(row => {
     if ((row.code || '').trim() !== c || row.qty <= 0) return;
@@ -182,6 +191,7 @@ export function addCandidatesFor(data: AppData, code: string, linkedKeys: Set<st
     if (linkedKeys.has(key)) return;
     const found = findSourceHolder(orders, { orderDbId: row.orderDbId, designId: row.designId, varietyId: row.varietyId });
     if (!found || found.holder.importedToVOId) return;
+    if (vo.vendor && (found.holder[field] || '') !== vo.vendor) return;
     out.push({
       orderDbId: row.orderDbId, orderLabel: row.orderLabel, client: row.client,
       designId: row.designId, varietyId: row.varietyId,

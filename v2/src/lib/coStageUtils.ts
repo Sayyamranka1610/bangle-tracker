@@ -102,6 +102,39 @@ export function setKarigarVendor<T extends VendorPipelineFields>(holder: T, val:
   return next;
 }
 
+/**
+ * Clears every field that ties a customer-order design/variety to a specific
+ * vendor order or production run — used when duplicating an order (the copy
+ * is a brand-new run that has never actually been sent to any vendor yet).
+ * Ports Phase 1's `_resetProductionFields()` (`e7ec07e`) — a real, confirmed
+ * bug found live in Phase 2 too while auditing that commit: without this, a
+ * duplicated order silently inherited its ORIGINAL run's `importedToVOId`,
+ * so it showed a "→ VORD-xx" link to a vendor order it was never actually
+ * sent to (that vendor order stays genuinely linked to the order it was
+ * duplicated FROM), plus every assigned-vendor/received/dispatch flag —
+ * so a brand-new, untouched run could read as already dispatched. Also
+ * clears `recvQty`/`rejQty`, the per-size quantities this codebase tracks
+ * that Phase 1 doesn't have (see receiveUtils.ts) — same reasoning, a
+ * duplicate has never actually received anything from a vendor.
+ */
+export function resetProductionFields<T extends VendorPipelineFields>(holder: T): T {
+  const next: VendorPipelineFields = { ...holder };
+  delete next.importedToVOId;
+  delete next.assignedVendor; delete next.assignedVendorAt;
+  delete next.pipeVendor; delete next.pipeVendorAt;
+  delete next.platingVendor; delete next.platingVendorAt;
+  delete next.pipeReceived; delete next.pipeReceivedAt;
+  delete next.karigarReceived; delete next.karigarReceivedAt;
+  delete next.platingReceived; delete next.platingReceivedAt;
+  delete next.receivedFromKarigar;
+  delete next.dispatchedToClient; delete next.dispatchedAt;
+  delete next.done;
+  delete next.recvQty; delete next.rejQty;
+  next.onHold = false;
+  delete next.holdReason;
+  return next as T;
+}
+
 export function toggleReceived<T extends VendorPipelineFields>(holder: T, stage: 'pipe' | 'karigar' | 'plating'): T {
   const field = stage === 'pipe' ? 'pipeReceived' : stage === 'plating' ? 'platingReceived' : 'karigarReceived';
   const atField = `${field}At` as const;

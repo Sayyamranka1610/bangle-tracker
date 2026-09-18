@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { VendorOrder, VendorStatus, AppData, Order } from '../types';
 import { vendorAlert, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
+import { reconcileReceivedStatus } from '../lib/receiveUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import VendorOrderCard from '../components/vendors/VendorOrderCard';
 import VendorModal from '../components/vendors/VendorModal';
@@ -143,6 +144,38 @@ export default function Vendors() {
     }
   }
 
+  // Ports Phase 1's reconcileAllVendorCustomerStatus() (`7fe0b19`) — sweeps
+  // every customer order for recvQty already recorded (e.g. from before
+  // syncReceivedFlagsForAllocation existed, or receives already recorded
+  // before that wiring landed) and catches up any pipeReceived/
+  // karigarReceived/platingReceived flag that's still behind it. No
+  // confirm() prompts needed (unlike Phase 1's ambiguous-batch case) — see
+  // the comment above syncReceivedFlagsForAllocation in receiveUtils.ts.
+  async function handleReconcile() {
+    if (!canEdit) return;
+    const { orders: nextOrders, updatedCount } = reconcileReceivedStatus(data);
+    if (!updatedCount) {
+      showToast('Already up to date — nothing to reconcile', 'success');
+      return;
+    }
+    const patch: Partial<AppData> = { orders: nextOrders };
+    if (session?.username) {
+      patch.auditLog = buildAuditLog(
+        'Reconcile status',
+        `${updatedCount} customer row(s) caught up to match what's already been received`,
+        session.username, data.auditLog ?? []);
+    }
+    setSaving(true);
+    try {
+      await saveAppData(patch, { immediate: true });
+      showToast(`🔄 Reconciled — ${updatedCount} customer row(s) updated`, 'success');
+    } catch {
+      showToast('Failed to save — check your connection', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     const next = vendorOrders.filter(o => o.id !== deleteTarget.id);
@@ -185,6 +218,15 @@ export default function Vendors() {
             <span className="text-xs text-yellow-400 bg-yellow-500/10 px-3 py-1.5 rounded-lg">
               Edit lock not held — read only
             </span>
+          )}
+          {canEdit && (
+            <button
+              onClick={handleReconcile}
+              title="Checks every customer order ↔ vendor order link for received-status mismatches and catches them up"
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-[#534AB7]/40 text-[#a89fff] px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              🔄 Reconcile Status
+            </button>
           )}
           {canEdit && (
             <button
