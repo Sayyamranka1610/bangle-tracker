@@ -11617,18 +11617,68 @@ function _voRowsProgress(vo){
   return {received,total};
 }
 
-// toggleCOStageRcvd: marks pipe material or karigar finished piece as received/pending.
-//   stage = 'pipe' | 'karigar'
+// For a customer-order holder whose design/variety is part of a MULTI-
+// customer POOLED vendor-order row (vd.sources.length>1), returns every
+// OTHER customer sharing that same vendor-order slot — used by
+// toggleCOStageRcvd to ask about them before deciding whether the vendor
+// order itself can be marked complete. A row linked to just one customer
+// has no siblings — nothing to ask, the existing silent sync already
+// handles it correctly.
+function _siblingCOHoldersOnSameVORow(orderId,designId,varietyId,stage){
+  const out=[];
+  _findVORowsForCOHolder(orderId,designId,varietyId,stage).forEach(({vo,vd})=>{
+    const sources=vd.sources||[];
+    if(sources.length<2)return;
+    sources.forEach(s=>{
+      if(s.orderDbId===orderId&&s.designId===designId&&(s.varietyId||null)===(varietyId||null))return; // skip self
+      const found=_voSourceHolder(s);
+      if(!found)return;
+      out.push({sibHolder:found.holder,sibOrder:found.order,vo,source:s});
+    });
+  });
+  return out;
+}
+// toggleCOStageRcvd: marks pipe material, karigar finished piece, or plating
+// as received/pending.
+//   stage = 'pipe' | 'karigar' | 'plating'
 function toggleCOStageRcvd(oi,di,vri,stage){
   const order=S.orders[oi]; if(!order)return;
   const d=order.designs[di]; if(!d)return;
   const holder=(vri>=0)?((d.varieties||[])[vri]||null):d;
   if(!holder)return;
   const field=stage==='pipe'?'pipeReceived':stage==='plating'?'platingReceived':'karigarReceived';
-  holder[field]=!holder[field];
+  const turningOn=!holder[field];
+  holder[field]=turningOn;
   // Timestamp companion — used by the follow-up system to count days since received.
   if(holder[field])holder[field+'At']=Date.now(); else delete holder[field+'At'];
   const varietyId=vri>=0?(holder.id||null):null;
+
+  // Owner-requested: a vendor-order row can be one physical batch shared by
+  // several customers (e.g. Customer A's 200 pairs + Customer B's 100 pairs
+  // of design 8323, both sent to Vendor C as one VORD). Ticking Customer A's
+  // row received doesn't by itself mean Customer B's pieces came back too —
+  // ask, once, in Hinglish, for every such sibling that isn't already
+  // marked. Answering yes marks them received as well (so the vendor order
+  // can go complete); answering no leaves them untouched — only this one
+  // customer's row is marked, and the vendor order stays pending, exactly
+  // as _syncVOReceivedForCOHolder below already requires ALL linked
+  // customers to agree before marking the vendor row done.
+  if(turningOn){
+    const siblings=_siblingCOHoldersOnSameVORow(order.id,d.id,varietyId,stage)
+      .filter(sib=>!sib.sibHolder[field]);
+    if(siblings.length){
+      // Plain text for confirm() — no HTML escaping here, this isn't rendered as markup.
+      const lines=siblings.map(sib=>'• '+_voQty(sib.source.sizes)+' '+(sib.source.origUnit||'')+' — '+(sib.sibOrder.client||'')+' ('+(sib.source.orderLabel||'CO')+')').join('\n');
+      const vo=siblings[0].vo;
+      const q=(siblings.length>1
+        ?'Iss design ka in customer order(s) ka bhi hissa tha:\n'+lines+'\n\nKya yeh sab bhi '+(vo.vendor||'vendor')+' se ('+(vo.orderId||'VO')+') aa gaya hai?'
+        :'Iss design ka '+_voQty(siblings[0].source.sizes)+' '+(siblings[0].source.origUnit||'')+' ka order '+(siblings[0].sibOrder.client||'')+' ('+(siblings[0].source.orderLabel||'CO')+') ka bhi tha, kya woh bhi '+(vo.vendor||'vendor')+' se ('+(vo.orderId||'VO')+') aa gaya hai?');
+      if(confirm(q)){
+        siblings.forEach(sib=>{ sib.sibHolder[field]=true; sib.sibHolder[field+'At']=Date.now(); });
+      }
+    }
+  }
+
   _syncVOReceivedForCOHolder(order.id,d.id,varietyId,stage);
   save(); render();
   showToast(holder[field]?'✅ Marked received':'↩️ Marked pending',holder[field]?'green':'red',2000);
