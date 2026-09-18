@@ -18422,6 +18422,17 @@ function openFollowUpsModal(){
   const mc=document.getElementById('modal-container');
   if(!mc)return;
 
+  // Owner-reported: clicking any item down in the list "jumped back to the
+  // first item". Every click here (toggling a vendor group open/closed,
+  // switching the severity filter, submitting a "Ho gaya" response) calls
+  // this function again, which replaces the WHOLE modal's innerHTML —
+  // including the scrollable list itself, so the browser has no choice but
+  // to reset its scroll to the top. The list contents were never the
+  // problem; only its scroll position was being thrown away on every
+  // re-render. Save it before rebuilding, restore it after.
+  const _fuScrollEl=mc.querySelector('.fu-list');
+  const _fuScrollTop=_fuScrollEl?_fuScrollEl.scrollTop:0;
+
   // Split: vendor-attributable items (something to call someone about) vs
   // order-level items (nobody external to call — assignment/dispatch/packing).
   const vendorItems=items.filter(it=>it.vendor);
@@ -18486,7 +18497,7 @@ function openFollowUpsModal(){
         <div class="modal-icon" style="background:#FCEBEB;color:#A32D2D">🔔</div>
         <h3>Aaj ke Follow-ups ${items.length?`<span style="font-size:12px;font-weight:400;color:#888">(${items.length})</span>`:''}</h3>
       </div>
-      <div style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
+      <div class="fu-list" style="max-height:60vh;overflow-y:auto;padding-right:2px">${body}</div>
       <div class="modal-actions">
         <button onclick="openAllFollowUpTrailsModal()">📜 Saare Trails</button>
         ${_currentUser&&_currentUser.role==='owner'?`<button onclick="openTodayFollowUpLogModal()">📋 Aaj ka Log</button>`:''}
@@ -18495,6 +18506,8 @@ function openFollowUpsModal(){
     </div>
   </div>`;
   _modalDisableBackground();
+  const _fuNewScrollEl=mc.querySelector('.fu-list');
+  if(_fuNewScrollEl)_fuNewScrollEl.scrollTop=_fuScrollTop;
 }
 
 // ── VENDOR REMINDER STATEMENT (printable, via the browser's own Print dialog) ──
