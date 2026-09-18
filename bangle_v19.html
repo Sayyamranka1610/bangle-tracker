@@ -18504,7 +18504,20 @@ function openFollowUpsModal(){
 // — no new library, no server round-trip, and "Save as PDF" is just the
 // browser's own print destination picker.
 function openFollowUpVendorStatement(vendorName){
-  const vos=(S.vendorOrders||[]).filter(vo=>vo.vendor===vendorName && vo.status!=='delivered' && vo.status!=='dispatched');
+  // Owner-reported: an ARCHIVED vendor order (fully received, tucked away by
+  // the owner) was still showing up here as pending — this filter only ever
+  // checked vo.status, never vo.archived or "every row already ticked
+  // received", so an order that was done in every real sense kept printing
+  // as outstanding. The Follow-ups screen (computeFollowUps) already gets
+  // this right with all three checks; use the exact same rule here so the
+  // two screens can never disagree about whether an order is still pending.
+  const vos=(S.vendorOrders||[]).filter(vo=>{
+    if(vo.vendor!==vendorName||vo.archived)return false;
+    if(vo.status==='delivered'||vo.status==='dispatched')return false;
+    const p=_voRowsProgress(vo);
+    if(p.total>0&&p.received===p.total)return false; // every row already received
+    return true;
+  });
   if(!vos.length){showToast('No open vendor orders found for "'+vendorName+'"','amber');return;}
 
   const sortSz=(a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);};
