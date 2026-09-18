@@ -18422,16 +18422,24 @@ function openFollowUpVendorStatement(vendorName){
     const szKeys=[...szSet].sort(sortSz);
 
     const rowsHtml=rows.map(r=>{
-      const src=_resolveImgSrc((r.images||[])[0]);
+      const firstImg=(r.images||[])[0];
+      const src=_resolveImgSrc(firstImg);
       // Owner-reported (twice): still too small to make out the design.
       // 22mm → 48mm — literal "5x wider" (110mm) would leave no room for
       // the size columns next to it on an A4 page, so this is ~5x the
       // visual AREA instead (2.2x each side), which is the largest square
       // that still leaves space for Design + every size column + Total +
       // Unit without the table overflowing the page.
+      // Two different reasons a photo can be missing here — distinguish
+      // them (same as the main Vendor Order screen already does) so a
+      // photo that's just stuck on another device doesn't read as "no
+      // photo was ever added": that one needs ☁️ Migrate Images on the
+      // device that has it, not a re-upload.
       const imgHtml=src
         ?'<img src="'+src+'" style="width:48mm;height:48mm;object-fit:cover;border-radius:8px;border:1px solid #D9D2BC">'
-        :'<div style="width:48mm;height:48mm;border-radius:8px;background:#F1ECDC;border:1px solid #D9D2BC;display:flex;align-items:center;justify-content:center;font-size:40px">💍</div>';
+        :_imgIsDeviceLocal(firstImg)
+          ?'<div style="width:48mm;height:48mm;border-radius:8px;background:#FFF3E0;border:1.5px dashed #FF9800;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:#E65100;text-align:center;padding:6px;line-height:1.4">📷<br>Photo is on<br>another device</div>'
+          :'<div style="width:48mm;height:48mm;border-radius:8px;background:#F1ECDC;border:1px solid #D9D2BC;display:flex;align-items:center;justify-content:center;font-size:40px">💍</div>';
       const szCells=szKeys.map(sz=>'<td style="text-align:center;vertical-align:middle;padding:8px 8px;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2;font-weight:700;font-size:17px">'+((parseInt(r.sizes[sz])||0)>0?parseInt(r.sizes[sz]):'—')+'</td>').join('');
       return '<tr style="break-inside:avoid;page-break-inside:avoid">'
         +'<td style="padding:6px 8px;vertical-align:middle;border-bottom:1px solid #E8E3D2;border-right:1px solid #E8E3D2">'+imgHtml+'</td>'
