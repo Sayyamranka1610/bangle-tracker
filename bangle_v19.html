@@ -18538,6 +18538,7 @@ function openFollowUpVendorStatement(vendorName){
 
   const sortSz=(a,b)=>{const na=parseInt((a||'').split('/')[1])||0,nb=parseInt((b||'').split('/')[1])||0;return na!==nb?na-nb:a.localeCompare(b);};
   const totals={}; // unit → pending qty, across every row on this statement
+  let designCount=0; // owner-requested: a total count of pending design rows, shown up top
   const orderBlocks=vos.map(vo=>{
     const rows=[];
     (vo.designs||[]).forEach(d=>{
@@ -18564,6 +18565,7 @@ function openFollowUpVendorStatement(vendorName){
     });
     if(!rows.length)return null; // this vendor order is fully received
 
+    designCount+=rows.length;
     rows.forEach(r=>{ totals[r.unit]=(totals[r.unit]||0)+r.qty; });
 
     const anchorDateStr=vo.startDate||(vo.createdAt?new Date(vo.createdAt).toISOString().split('T')[0]:'');
@@ -18634,7 +18636,12 @@ function openFollowUpVendorStatement(vendorName){
   const w=window.open('','_blank','width=980,height=780');
   if(!w)return alert('Pop-up blocked — please allow pop-ups for this page.');
 
-  const totalsStr=Object.keys(totals).filter(u=>totals[u]>0).sort().map(u=>totals[u]+' '+u).join(' + ')||'0 pcs';
+  // Owner-requested: sum each unit separately, never convert across units —
+  // "2000 pcs, 600 pairs and 400 jotta", not one blended number.
+  const totalsParts=Object.keys(totals).filter(u=>totals[u]>0).sort().map(u=>totals[u]+' '+u);
+  const totalsStr=totalsParts.length
+    ?totalsParts.reduce((acc,cur,i)=>i===0?cur:(i===totalsParts.length-1?acc+' and '+cur:acc+', '+cur))
+    :'0 pcs';
   const today=new Date().toISOString().split('T')[0];
 
   // Same page setup (@page margin, zoom, font size) the Vendor/Customer
@@ -18657,8 +18664,12 @@ function openFollowUpVendorStatement(vendorName){
     </div>
     <div style="margin-top:14px;font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:#5A5442">Pending Order Statement</div>
     <div style="margin-top:4px;font-weight:600;font-size:15px;color:#2A2618">To: ${esc(vendorName)}</div>
+    <div style="margin-top:10px;display:flex;gap:24px;flex-wrap:wrap;padding:10px 14px;background:#F1ECDC;border:1px solid #D9D2BC;border-radius:8px">
+      <div><span style="font-weight:800;font-size:18px;color:#534AB7">${designCount}</span> <span style="font-size:12px;color:#5A5442;font-weight:600">design${designCount!==1?'s':''} pending</span></div>
+      <div><span style="font-weight:800;font-size:18px;color:#534AB7">${esc(totalsStr)}</span> <span style="font-size:12px;color:#5A5442;font-weight:600">quantity pending</span></div>
+    </div>
     ${orderBlocks.join('')}
-    <div style="margin-top:18px;font-size:12px;color:#5A5442;padding-top:10px;border-top:1px solid #E8E3D2">${orderBlocks.length} order${orderBlocks.length!==1?'s':''} totalling ${esc(totalsStr)} ${orderBlocks.length!==1?'are':'is'} still outstanding. Kindly confirm delivery status at the earliest.</div>
+    <div style="margin-top:18px;font-size:12px;color:#5A5442;padding-top:10px;border-top:1px solid #E8E3D2">${orderBlocks.length} order${orderBlocks.length!==1?'s':''} still outstanding. Kindly confirm delivery status at the earliest.</div>
     <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});<\/script>
   </body></html>`);
   w.document.close();
