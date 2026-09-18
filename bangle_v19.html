@@ -11124,15 +11124,24 @@ function _openVOWhoModal(vi,di,showAdd){
     :'';
 
   // "Add customer" candidates: other customer orders with this same design
-  // code whose matching row isn't already sent to any vendor.
+  // code, assigned (Pipe/Karigar/Plating, matching this vendor order's own
+  // type) to THIS vendor order's vendor, whose matching row isn't already
+  // sent to any vendor. Owner-reported: this used to show every customer
+  // order with the code regardless of who it was assigned to — e.g. a
+  // design decided for "Mohan bhai" showed up as linkable under "L S"'s
+  // vendor order too. If this vendor order has no vendor name yet, every
+  // matching row is still shown (nothing to filter against).
   const code=(vd.code||'').trim();
   const linkedKeys=new Set(sources.map(s=>s.orderDbId+'|'+s.designId+'|'+(s.varietyId||'')));
   const candidates=[];
+  const _whoMode=vo.type||'karigar';
+  const _whoVendorField=_coVendorFieldFor(_whoMode);
   if(code){
     (S.orders||[]).filter(o=>!o.archived).forEach(order=>{
       btRowsOfOrder(order).forEach(r=>{
         if((r.code||'').trim()!==code||r.qty<=0)return;
         if(r.holder.importedToVOId)return;
+        if(vo.vendor&&(r.holder[_whoVendorField]||'')!==vo.vendor)return;
         const key=order.id+'|'+r.designId+'|'+(r.varietyId||'');
         if(linkedKeys.has(key))return;
         candidates.push({orderDbId:order.id,orderLabel:order.orderId,client:order.client,designId:r.designId,varietyId:r.varietyId,sizes:r.sizes,qty:r.qty,unit:_validUnit(r.unit)});
