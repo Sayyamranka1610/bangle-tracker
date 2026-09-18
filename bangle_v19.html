@@ -9256,7 +9256,10 @@ function renderAssign(){
   const isMobile=window.innerWidth<700;
   const today=new Date().toISOString().split('T')[0];
   const uniqueVendors=[...new Set(((S.vocabulary&&S.vocabulary.vendors)||[]).concat((S.vendorOrders||[]).map(v=>v.vendor).filter(Boolean)))].sort();
-  const openVOs=(S.vendorOrders||[]).filter(vo=>vo.status!=='delivered'&&vo.status!=='dispatched');
+  // Same gap as the Pending Order Statement had (fixed in e9d4c72): an
+  // archived vendor order was never excluded here either, so it could show
+  // up as a target to add brand-new work into even though it's closed.
+  const openVOs=(S.vendorOrders||[]).filter(vo=>!vo.archived&&vo.status!=='delivered'&&vo.status!=='dispatched');
   const rightTab=window._assignRightTab||'new';
   const ls='font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:3px';
   const is='width:100%;box-sizing:border-box;font-size:12px;padding:7px 9px;border-radius:7px;border:1px solid #D0CCF5;color:#222;background:#fff';
