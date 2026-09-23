@@ -11123,10 +11123,36 @@ function _openVOWhoModal(vi,di,showAdd){
           +'<div style="margin-top:7px"><button onclick="_voSweepRemainderToExtra('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Record '+diffInFiner+' '+esc(finerUnit)+' as Extra stock</button></div>'
         +'</div>';
       })()
-      :'<div style="font-size:11px;color:#A32D2D;background:#FCEBEB;border:1px solid #F09595;border-radius:7px;padding:7px 10px;margin-top:10px">'
-        +'This row shows <strong>'+Math.abs(totalDiff)+' '+esc(rowUnit)+' less</strong> than what\'s linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.'
-        +'<div style="margin-top:7px"><button onclick="_voGrowRowToMatchSources('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Increase this row by '+Math.abs(totalDiff)+' '+esc(rowUnit)+' to match</button></div>'
-      +'</div>')
+      :(()=>{
+        const shortAmt=Math.abs(totalDiff);
+        // Owner-requested: before just saying "X short", check whether this
+        // design already has finished pieces sitting in the Inventory
+        // Ledger — stock made earlier but not yet sent to any customer.
+        // invBalance() gives that in pcs regardless of this row's own unit,
+        // so convert it into rowUnit before comparing. This is informational
+        // only — it never touches the ledger or changes what the button
+        // below does; it just tells the owner how much of the shortfall,
+        // if any, doesn't actually need fresh production.
+        const code=(vd.code||'').trim();
+        const todayStr=new Date().toISOString().split('T')[0];
+        const stockFinPcs=code?invBalance(code,'designCode',todayStr).fin:0;
+        const rowPcsForStock=_unitPieces(rowUnit);
+        const stockInRowUnit=(stockFinPcs&&rowPcsForStock)?Math.round((stockFinPcs/rowPcsForStock)*10000)/10000:0;
+        const coveredByStock=Math.min(shortAmt,stockInRowUnit);
+        const stillShort=Math.round((shortAmt-coveredByStock)*10000)/10000;
+        const stockLine=stockInRowUnit>0
+          ?'<div style="margin-top:6px;color:#1B5E20">📦 '+stockInRowUnit+' '+esc(rowUnit)+' of this design ('+esc(code||'—')+') is already in stock. '
+            +(stillShort<=1e-9
+              ?'All '+shortAmt+' '+esc(rowUnit)+' short can be covered from stock — nothing new needs to be made.'
+              :'Out of the '+shortAmt+' '+esc(rowUnit)+' short, '+coveredByStock+' '+esc(rowUnit)+' can be covered from stock — '+stillShort+' '+esc(rowUnit)+' still genuinely needs to be made.')
+            +'</div>'
+          :'';
+        return '<div style="font-size:11px;color:#A32D2D;background:#FCEBEB;border:1px solid #F09595;border-radius:7px;padding:7px 10px;margin-top:10px">'
+          +'This row shows <strong>'+shortAmt+' '+esc(rowUnit)+' less</strong> than what\'s linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.'
+          +stockLine
+          +'<div style="margin-top:7px"><button onclick="_voGrowRowToMatchSources('+vi+','+di+')" style="background:#534AB7;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">→ Increase this row by '+shortAmt+' '+esc(rowUnit)+' to match</button></div>'
+        +'</div>';
+      })())
     :'';
 
   // "Add customer" candidates: other customer orders with this same design
