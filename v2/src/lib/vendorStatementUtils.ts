@@ -21,6 +21,10 @@ import type { AppData, VendorOrder } from '../types';
 // no meaningful per-variety receiving (Pooling — the source of nearly every
 // real vendor design — always builds flat, variety-less rows), so unlike
 // Phase 1 this reads only the design-level `sizes`/`recvQty`, not varieties.
+//
+// Also ports Phase 1's `717b8c3` (owner-requested top-of-statement summary:
+// total pending design count + total pending quantity, summed separately
+// per unit) exactly.
 
 function sizeOrder(keys: string[]): string[] {
   return [...keys].sort((a, b) => {
@@ -51,6 +55,9 @@ export interface VendorStatement {
   blocks: StatementBlock[];
   /** unit -> total pending qty across every block on this statement. */
   totals: Record<string, number>;
+  /** Total pending design rows across every order on this statement — a
+   *  quick backlog gauge without counting rows block by block. */
+  designCount: number;
 }
 
 /** Pure — returns null when the vendor has nothing open, or everything open
@@ -101,7 +108,8 @@ export function buildVendorStatement(data: AppData, vendorName: string, now: num
   });
 
   if (!blocks.length) return null;
-  return { vendor: vendorName, blocks, totals };
+  const designCount = blocks.reduce((a, b) => a + b.rows.length, 0);
+  return { vendor: vendorName, blocks, totals, designCount };
 }
 
 function esc(s: string): string {
@@ -125,11 +133,16 @@ export function printVendorStatement(statement: VendorStatement): void {
   const w = window.open('', '_blank', 'width=980,height=780');
   if (!w) { alert('Pop-up blocked — please allow pop-ups for this page.'); return; }
 
-  const totalsStr = Object.entries(statement.totals)
+  // Owner-requested (717b8c3): sum each unit separately, joined in prose
+  // ("2000 pcs, 600 pairs and 400 jotta") — never converted or blended into
+  // one number, since jotta/pairs/pcs aren't the same thing.
+  const totalsParts = Object.entries(statement.totals)
     .filter(([, n]) => n > 0)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([u, n]) => `${n} ${u}`)
-    .join(' + ') || '0 pcs';
+    .map(([u, n]) => `${n} ${u}`);
+  const totalsStr = totalsParts.length
+    ? totalsParts.reduce((acc, cur, i) => i === 0 ? cur : (i === totalsParts.length - 1 ? `${acc} and ${cur}` : `${acc}, ${cur}`))
+    : '0 pcs';
 
   const orderBlocksHtml = statement.blocks.map(({ vo, rows, szKeys, daysPending }) => {
     const rowsHtml = rows.map(r => {
@@ -180,8 +193,12 @@ export function printVendorStatement(statement: VendorStatement): void {
     </div>
     <div style="margin-top:14px;font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:#5A5442">Pending Order Statement</div>
     <div style="margin-top:4px;font-weight:600;font-size:15px;color:#2A2618">To: ${esc(statement.vendor)}</div>
+    <div style="margin-top:10px;display:flex;gap:24px;flex-wrap:wrap;padding:10px 14px;background:#F1ECDC;border:1px solid #D9D2BC;border-radius:8px">
+      <div><span style="font-weight:800;font-size:18px;color:#534AB7">${statement.designCount}</span> <span style="font-size:12px;color:#5A5442;font-weight:600">design${statement.designCount !== 1 ? 's' : ''} pending</span></div>
+      <div><span style="font-weight:800;font-size:18px;color:#534AB7">${esc(totalsStr)}</span> <span style="font-size:12px;color:#5A5442;font-weight:600">quantity pending</span></div>
+    </div>
     ${orderBlocksHtml}
-    <div style="margin-top:18px;font-size:12px;color:#5A5442;padding-top:10px;border-top:1px solid #E8E3D2">${statement.blocks.length} order${statement.blocks.length !== 1 ? 's' : ''} totalling ${esc(totalsStr)} ${statement.blocks.length !== 1 ? 'are' : 'is'} still outstanding. Kindly confirm delivery status at the earliest.</div>
+    <div style="margin-top:18px;font-size:12px;color:#5A5442;padding-top:10px;border-top:1px solid #E8E3D2">${statement.blocks.length} order${statement.blocks.length !== 1 ? 's' : ''} still outstanding. Kindly confirm delivery status at the earliest.</div>
     <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});</script>
   </body></html>`);
   w.document.close();

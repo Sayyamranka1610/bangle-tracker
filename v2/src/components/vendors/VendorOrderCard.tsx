@@ -6,6 +6,7 @@ import { receivableDesigns } from '../../lib/receiveUtils';
 import { voQty } from '../../lib/vendorWhoUtils';
 import { printVendorOrder } from '../../lib/vendorPrintUtils';
 import { vendorAlert, STATUS_PCT, STATUS_LABELS, ALL_STATUSES, ALERT_CONFIG } from '../../lib/vendorUtils';
+import FollowUpTrail from '../followups/FollowUpTrail';
 
 interface Props {
   order: VendorOrder;
@@ -194,6 +195,8 @@ export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete
       {order.notes && (
         <p className="text-xs text-white/30 mt-2 truncate">{order.notes}</p>
       )}
+
+      <FollowUpTrail data={data} kind="vo" id={order.id} />
     </div>
   );
 }

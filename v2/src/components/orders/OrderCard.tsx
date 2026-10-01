@@ -6,6 +6,7 @@ import { makeStageFresh, DEFAULT_SIZES } from '../../lib/designUtils';
 import { computeOrderValue, formatMoney } from '../../lib/familyUtils';
 import DesignsTab from './DesignsTab';
 import VendorSummaryTab from './VendorSummaryTab';
+import FollowUpTrail from '../followups/FollowUpTrail';
 
 type Tab = 'details' | 'designs' | 'vendor';
 
@@ -338,6 +339,7 @@ export default function OrderCard({
                 </div>
               </div>
             )}
+            {activeTab === 'details' && <FollowUpTrail data={data} kind="co" id={order.id} />}
 
             {/* ── Designs & Varieties tab ── */}
             {activeTab === 'designs' && (

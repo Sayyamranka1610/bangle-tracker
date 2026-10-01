@@ -33,6 +33,7 @@ const MODES: { id: PoolMode; label: string; hint: string }[] = [
 
 function PoolCard({
   group, extras, selected, canEdit, onToggle, onExtras, familyNote, suggestion, knownUnits, onChooseUnit, onToggleExcludeRow,
+  extraSizeKeys, onAddSize, onRemoveSize,
 }: {
   group: PoolGroup;
   extras: Extras;
@@ -50,16 +51,25 @@ function PoolCard({
   /** Leave one customer's pieces out of the batch about to be created,
    *  without touching their order — see poolUtils.ts's poolRowKey. */
   onToggleExcludeRow: (rowKey: string) => void;
+  /** Sizes pinned open with 0 ordered so Buffer/Extra can be typed into them
+   *  even though no customer ordered that size — see Pooling()'s `addSize`. */
+  extraSizeKeys: string[];
+  onAddSize: (size: string) => void;
+  onRemoveSize: (size: string) => void;
 }) {
   const [showWho, setShowWho] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const [pendingUnit, setPendingUnit] = useState('');
+  const [addingSize, setAddingSize] = useState(false);
+  const [newSize, setNewSize] = useState('');
+  const [addSizeError, setAddSizeError] = useState('');
 
   const make = makeQty(group, extras);
   const sizes = orderSizes([...new Set([
     ...Object.keys(group.ordered),
     ...Object.keys(extras.buffer),
     ...Object.keys(extras.stock),
+    ...extraSizeKeys,
   ])]);
   const makeTotal = sumSizes(make);
   const bufferTotal = sumSizes(extras.buffer);
@@ -184,7 +194,15 @@ function PoolCard({
           <thead>
             <tr className="border-b border-white/10">
               <th className="text-left px-3 py-1.5 text-white/40 font-normal whitespace-nowrap">Size</th>
-              {sizes.map(s => <th key={s} className="px-2 py-1.5 text-white/40 font-normal text-center">{s}</th>)}
+              {sizes.map(s => (
+                <th key={s} className="px-2 py-1.5 text-white/40 font-normal text-center whitespace-nowrap">
+                  {s}
+                  {canEdit && extraSizeKeys.includes(s) && (
+                    <span onClick={() => onRemoveSize(s)} title="Remove this size column"
+                      className="ml-1 text-red-400 hover:text-red-300 cursor-pointer font-bold">✕</span>
+                  )}
+                </th>
+              ))}
               <th className="px-3 py-1.5 text-[#a89fff] font-normal text-center border-l border-white/10">Total</th>
             </tr>
           </thead>
@@ -226,6 +244,48 @@ function PoolCard({
           </tbody>
         </table>
       </div>}
+
+      {canEdit && !group.blocked && (
+        <div className="px-3 py-1.5 border-t border-white/5">
+          <button onClick={() => { setAddingSize(true); setNewSize(''); setAddSizeError(''); }}
+            className="text-[11px] text-[#a89fff] hover:text-white transition-colors">
+            + Add size
+          </button>
+        </div>
+      )}
+      {addingSize && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setAddingSize(false)}>
+          <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-xs p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-[#a89fff]">➕ Add Size Column</h3>
+            <p className="text-xs text-white/50">
+              Type the size you want to add — e.g. <strong className="text-white/70">2/10</strong>. It'll show up with 0 ordered, so you can put a number straight into Buffer or Extra for stock.
+            </p>
+            <input value={newSize} autoFocus placeholder="e.g. 2/10"
+              onChange={e => { setNewSize(e.target.value); setAddSizeError(''); }}
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return;
+                const sz = newSize.trim();
+                if (!sz) { setAddSizeError('Please enter a size (e.g. 2/10).'); return; }
+                if (sizes.includes(sz)) { setAddSizeError(`Size "${sz}" is already shown on this card.`); return; }
+                onAddSize(sz);
+                setAddingSize(false);
+              }}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7]" />
+            {addSizeError && <p className="text-[11px] text-red-300">{addSizeError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setAddingSize(false)}
+                className="text-xs font-semibold bg-white/5 hover:bg-white/10 rounded-lg px-4 py-2 text-white/70">Cancel</button>
+              <button onClick={() => {
+                const sz = newSize.trim();
+                if (!sz) { setAddSizeError('Please enter a size (e.g. 2/10).'); return; }
+                if (sizes.includes(sz)) { setAddSizeError(`Size "${sz}" is already shown on this card.`); return; }
+                onAddSize(sz);
+                setAddingSize(false);
+              }} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] rounded-lg px-4 py-2 text-white">Add Column</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* who ordered it */}
       <button onClick={() => setShowWho(v => !v)}
@@ -295,6 +355,11 @@ export default function Pooling() {
   // Rows (by poolRowKey identity) temporarily left out of whichever batch
   // they'd otherwise be part of — see poolUtils.ts's buildPoolGroups().
   const [excludedRowKeys, setExcludedRowKeys] = useState<Set<string>>(new Set());
+  // Sizes nobody has ordered yet, pinned open per batch (by group key) so a
+  // Buffer/Extra-for-stock column exists to type into — e.g. building stock
+  // in a size with zero customer demand. Same not-persisted lifecycle as
+  // extrasByKey/unitChoiceByKey: reset on reload, never sent to Firebase.
+  const [extraSizesByKey, setExtraSizesByKey] = useState<Record<string, string[]>>({});
   const [saving, setSaving] = useState(false);
 
   // Vendor order form
@@ -364,6 +429,23 @@ export default function Pooling() {
       const next = new Set(prev);
       if (next.has(rowKey)) next.delete(rowKey); else next.add(rowKey);
       return next;
+    });
+  }
+
+  function addSize(key: string, size: string) {
+    setExtraSizesByKey(prev => ({ ...prev, [key]: [...new Set([...(prev[key] ?? []), size])] }));
+  }
+
+  function removeSize(key: string, size: string) {
+    setExtraSizesByKey(prev => ({ ...prev, [key]: (prev[key] ?? []).filter(s => s !== size) }));
+    // Also clear any Buffer/Extra value already typed into that size — same
+    // not-persisted lifecycle as the column itself (Phase 1's
+    // btPoolRemoveExtraSize does the same).
+    setExtrasByKey(prev => {
+      const e = prev[key] ?? emptyExtras();
+      const buffer = { ...e.buffer }; delete buffer[size];
+      const stock = { ...e.stock }; delete stock[size];
+      return { ...prev, [key]: { buffer, stock } };
     });
   }
 
@@ -494,7 +576,10 @@ export default function Pooling() {
                   suggestion={mode === 'karigar' ? suggestionFor(khist, g.code, '') : null}
                   knownUnits={knownUnits}
                   onChooseUnit={u => chooseUnit(g.key, u)}
-                  onToggleExcludeRow={toggleExcludeRow} />
+                  onToggleExcludeRow={toggleExcludeRow}
+                  extraSizeKeys={extraSizesByKey[g.key] ?? []}
+                  onAddSize={sz => addSize(g.key, sz)}
+                  onRemoveSize={sz => removeSize(g.key, sz)} />
               ))}
             </div>
           ))}
