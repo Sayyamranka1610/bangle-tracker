@@ -1,16 +1,45 @@
 import { useState } from 'react';
-import type { AppData } from '../../types';
+import type { AppData, FollowUpLogEntry } from '../../types';
 import { trailFor } from '../../lib/followUpUtils';
+
+// Ports Phase 1's _followUpTrailHtml() (bangle_v19.html ~L18253) — a vertical
+// timeline, each entry showing when/who/what was said, skipping the detail
+// text for the two fixed-instruction reasons (no_pipe/no_pickup) since those
+// carry no free text worth repeating. `entries` must already be filtered/
+// sorted oldest→newest by the caller. Shared by FollowUpTrail (below, one
+// entity's full history) and SaareTrailsModal (one entity+rule-type's history).
+export function FollowUpTimeline({ entries }: { entries: FollowUpLogEntry[] }) {
+  return (
+    <div className="pl-5 relative">
+      <div className="absolute left-[18px] top-1 bottom-3 w-px bg-[#534AB7]/25" />
+      <div className="flex flex-col gap-3">
+        {entries.map((e, i) => (
+          <div key={i} className="relative pl-3">
+            <div className="absolute -left-[3.5px] top-1 w-2 h-2 rounded-full bg-[#534AB7] ring-2 ring-[#1a1750]" />
+            <p className="text-[10px] text-white/40">
+              {new Date(e.loggedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {' · '}
+              {new Date(e.loggedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              {' · '}{e.loggedBy}
+            </p>
+            <p className="text-xs font-semibold text-white mt-0.5">{e.subtitle || e.title}</p>
+            <p className="text-[11px] text-[#a89fff] mt-0.5">
+              🗣️ {e.reasonLabel}
+              {(e.reasonKey !== 'no_pipe' && e.reasonKey !== 'no_pickup') && e.detail ? ` — ${e.detail}` : ''}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Small collapsible block embedded inside an order's / vendor order's own
 // Details tab — the follow-up ("Kya Bola?") conversation history for THIS
 // entity only, visible to anyone who opens it. Ports Phase 1's
-// _followUpTrailSectionHtml()/_followUpTrailHtml() (bangle_v19.html
-// ~L18253) exactly: a vertical timeline, each entry showing when/who/what
-// was said, skipping the detail text for the two fixed-instruction reasons
-// (no_pipe/no_pickup) since those carry no free text worth repeating.
-// Renders nothing at all when there's no history yet — adds nothing to the
-// vast majority of orders that never needed a follow-up.
+// _followUpTrailSectionHtml() exactly. Renders nothing at all when there's
+// no history yet — adds nothing to the vast majority of orders that never
+// needed a follow-up.
 export default function FollowUpTrail({ data, kind, id }: { data: AppData; kind: 'vo' | 'co'; id: string }) {
   const [open, setOpen] = useState(false);
   const entries = trailFor(data, kind, id);
@@ -24,26 +53,8 @@ export default function FollowUpTrail({ data, kind, id }: { data: AppData; kind:
         <span>📜 Follow-up Trail ({entries.length})</span>
       </button>
       {open && (
-        <div className="px-3 pb-3 pl-5 relative">
-          <div className="absolute left-[18px] top-1 bottom-3 w-px bg-[#534AB7]/25" />
-          <div className="flex flex-col gap-3">
-            {entries.map((e, i) => (
-              <div key={i} className="relative pl-3">
-                <div className="absolute -left-[3.5px] top-1 w-2 h-2 rounded-full bg-[#534AB7] ring-2 ring-[#1a1750]" />
-                <p className="text-[10px] text-white/40">
-                  {new Date(e.loggedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                  {' · '}
-                  {new Date(e.loggedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                  {' · '}{e.loggedBy}
-                </p>
-                <p className="text-xs font-semibold text-white mt-0.5">{e.subtitle || e.title}</p>
-                <p className="text-[11px] text-[#a89fff] mt-0.5">
-                  🗣️ {e.reasonLabel}
-                  {(e.reasonKey !== 'no_pipe' && e.reasonKey !== 'no_pickup') && e.detail ? ` — ${e.detail}` : ''}
-                </p>
-              </div>
-            ))}
-          </div>
+        <div className="px-3 pb-3">
+          <FollowUpTimeline entries={entries} />
         </div>
       )}
     </div>

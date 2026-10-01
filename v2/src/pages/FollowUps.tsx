@@ -9,6 +9,8 @@ import {
 } from '../lib/followUpUtils';
 import { buildVendorStatement, printVendorStatement } from '../lib/vendorStatementUtils';
 import FollowUpResponseModal from '../components/followups/FollowUpResponseModal';
+import SaareTrailsModal from '../components/followups/SaareTrailsModal';
+import AajKaLogModal from '../components/followups/AajKaLogModal';
 
 type SevFilter = 'all' | FuSeverity;
 
@@ -38,6 +40,8 @@ export default function FollowUps() {
   const [openGroups, setOpenGroups] = useState<Set<string> | null>(null);
   const [responseItem, setResponseItem] = useState<FollowUpItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showSaareTrails, setShowSaareTrails] = useState(false);
+  const [showAajKaLog, setShowAajKaLog] = useState(false);
 
   const groups = useMemo(() => groupByVendor(items), [items]);
 
@@ -105,7 +109,21 @@ export default function FollowUps() {
         <h1 className="text-xl font-bold text-white">💬 Kya Bola?</h1>
         <span className="text-xs text-white/50">{totalCount} pending follow-up{totalCount === 1 ? '' : 's'}</span>
       </div>
-      <p className="text-xs text-white/50 mb-4">Stuck orders and vendor orders that need a real answer.</p>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <p className="text-xs text-white/50">Stuck orders and vendor orders that need a real answer.</p>
+        <div className="flex gap-2">
+          <button onClick={() => setShowSaareTrails(true)}
+            className="text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-white/70">
+            📜 Saare Trails
+          </button>
+          {session?.role === 'owner' && (
+            <button onClick={() => setShowAajKaLog(true)}
+              className="text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-white/70">
+              📋 Aaj ka Log
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="flex gap-2 mb-5 flex-wrap">
         {SEV_CHIPS.map(chip => {
@@ -235,6 +253,8 @@ export default function FollowUps() {
           onSubmit={handleSubmitResponse}
         />
       )}
+      {showSaareTrails && <SaareTrailsModal data={data} onClose={() => setShowSaareTrails(false)} />}
+      {showAajKaLog && session?.role === 'owner' && <AajKaLogModal data={data} onClose={() => setShowAajKaLog(false)} />}
     </div>
   );
 }

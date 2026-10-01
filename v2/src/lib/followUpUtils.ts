@@ -318,6 +318,59 @@ export function trailFor(data: AppData, kind: 'vo' | 'co', id: string): FollowUp
     .sort((a, b) => a.loggedAt - b.loggedAt);
 }
 
+// ─── "Saare Trails" — browse every entity that's ever had a follow-up ────────
+// Ports Phase 1's openAllFollowUpTrailsModal() (bangle_v19.html ~L18352).
+// One card per (entity, rule TYPE) — if the same order was "unassigned" a
+// while ago and later "not dispatched", those are two separate conversations
+// and get their own cards, instead of being merged into one confusing mixed
+// timeline (the same identity `_trailGroupBodyHtml` uses).
+
+export interface TrailCardGroup {
+  groupKey: string; // `${kind}:${id}:${ruleKey}` — stable, unique per card
+  kind: 'vo' | 'co';
+  id: string;
+  ruleKey: string;
+  title: string;
+  /** Oldest → newest, same as trailFor(). */
+  entries: FollowUpLogEntry[];
+}
+
+export function buildTrailCardGroups(data: AppData): TrailCardGroup[] {
+  const map = new Map<string, TrailCardGroup>();
+  (data.followUpLog ?? []).forEach(e => {
+    const id = e.key.split(':')[1];
+    const groupKey = `${e.kind}:${id}:${e.ruleKey}`;
+    if (!map.has(groupKey)) map.set(groupKey, { groupKey, kind: e.kind, id, ruleKey: e.ruleKey, title: e.title, entries: [] });
+    map.get(groupKey)!.entries.push(e);
+  });
+  map.forEach(g => g.entries.sort((a, b) => a.loggedAt - b.loggedAt));
+  return [...map.values()];
+}
+
+// ─── "Aaj ka Log" — today's responses grouped by who logged them ─────────────
+// Ports Phase 1's openTodayFollowUpLogModal() (bangle_v19.html ~L18156).
+// Owner-only in Phase 1 — left to the caller to gate, same as every other
+// owner-only UI decision in this codebase.
+
+export interface TodaysLogByUser {
+  loggedBy: string;
+  /** Newest first. */
+  entries: FollowUpLogEntry[];
+}
+
+export function todaysLogByUser(data: AppData, now: number = Date.now()): TodaysLogByUser[] {
+  const todayStr = new Date(now).toISOString().split('T')[0];
+  const todayLog = (data.followUpLog ?? []).filter(e => new Date(e.loggedAt).toISOString().split('T')[0] === todayStr);
+  const byUser = new Map<string, FollowUpLogEntry[]>();
+  todayLog.forEach(e => {
+    if (!byUser.has(e.loggedBy)) byUser.set(e.loggedBy, []);
+    byUser.get(e.loggedBy)!.push(e);
+  });
+  return [...byUser.entries()]
+    .map(([loggedBy, entries]) => ({ loggedBy, entries: [...entries].sort((a, b) => b.loggedAt - a.loggedAt) }))
+    .sort((a, b) => b.entries.length - a.entries.length);
+}
+
 export type { Order, VendorOrder };
 
 // ─── Grouping + severity (drives the redesigned collapsed-per-vendor UI) ─────
