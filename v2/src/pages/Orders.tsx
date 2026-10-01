@@ -4,6 +4,7 @@ import { useApp } from '../store/AppContext';
 import type { Order, AppData } from '../types';
 import { computeStats, renumberOrders } from '../lib/orderUtils';
 import { orderStatus, resetProductionFields } from '../lib/coStageUtils';
+import { exportOrdersToExcel } from '../lib/exportUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import { rebuildVocab } from '../lib/vocabUtils';
 import { uid } from '../lib/orderUtils';
@@ -260,6 +261,11 @@ export default function Orders() {
           {!canEdit && session?.role !== 'owner' && (
             <span className="text-xs text-white/30 bg-white/5 px-3 py-1.5 rounded-lg">Read-only</span>
           )}
+          <button onClick={() => exportOrdersToExcel(data)}
+            title="Download every active order as an Excel workbook (Summary + Design & Variety Breakdown)"
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+            📤 Export to Excel
+          </button>
           {canEdit && (
             <button onClick={() => setModalOrder(null)}
               className="flex items-center gap-2 bg-[#534AB7] hover:bg-[#6259c8] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">

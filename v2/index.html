@@ -18,6 +18,38 @@
 
     <!-- SEO / OG -->
     <meta name="description" content="Production management dashboard for Siddhi Bangles" />
+
+    <!-- ════════════════════════════════════════════════════════════════════
+     Error monitoring (Sentry). Same loader-script mechanism bangle_v19.html
+     already uses in production — the loader key IS the project identity, so
+     this needs no separate DSN to get right. Silently reports uncaught JS
+     errors to the Sentry dashboard; doesn't affect users. Previously this
+     app called `Sentry.init({ dsn: '...o0.ingest.sentry.io/0' })` from the
+     npm SDK in main.tsx — that dsn was a placeholder, not a real project's,
+     so nothing was actually being reported. Replaced with the exact proven
+     setup instead of guessing a real DSN.
+     ════════════════════════════════════════════════════════════════════ -->
+    <script
+      src="https://js.sentry-cdn.com/2eff06b58f70c74c61f1f836e45381a2.min.js"
+      async crossorigin="anonymous"
+    ></script>
+    <script>
+      window.addEventListener('load', function () {
+        if (typeof Sentry === 'undefined' || !Sentry.onLoad) return;
+        Sentry.onLoad(function () {
+          Sentry.init({
+            release: 'bangle-tracker-v2@1.0',
+            // Separate from Phase 1's 'production' environment tag so the
+            // two apps' error streams don't get conflated in the dashboard,
+            // and a local `npm run dev` session never reports as production.
+            environment: location.hostname === 'localhost' ? 'development' : 'production-v2',
+            tracesSampleRate: 0,          // no performance tracing (stays on free tier)
+            replaysSessionSampleRate: 0,  // no session replay (stays on free tier)
+            replaysOnErrorSampleRate: 0,
+          });
+        });
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

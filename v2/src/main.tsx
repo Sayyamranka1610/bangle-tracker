@@ -1,15 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
-import * as Sentry from '@sentry/react';
 import './index.css';
 import App from './App.tsx';
 
-Sentry.init({
-  dsn: 'https://2eff06b58f70c74c61f1f836e45381a2@o0.ingest.sentry.io/0',
-  environment: import.meta.env.MODE,
-  tracesSampleRate: 0.2,
-});
+// Sentry is initialized via the loader script in index.html (same mechanism
+// bangle_v19.html uses) — see the comment there for why.
 
 // Auto-update SW — silently refreshes when a new version is deployed
 registerSW({ onNeedRefresh() {}, onOfflineReady() {} });
