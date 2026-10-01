@@ -131,7 +131,7 @@ export default function Assign() {
         {!canEdit && <p className="text-xs text-yellow-400 bg-yellow-500/10 px-3 py-1.5 rounded-lg mt-2 inline-block">Read-only — you can browse and queue, but submitting requires edit access</p>}
       </div>
 
-      <div className="flex gap-5">
+      <div className="flex flex-col md:flex-row gap-5">
         {/* ── Left: customer orders ── */}
         <div className="flex-1 min-w-0 space-y-2">
           {orders.length === 0 ? (
@@ -199,8 +199,11 @@ export default function Assign() {
           })}
         </div>
 
-        {/* ── Right: vendor orders, queue, form ── */}
-        <div className="w-96 flex-shrink-0 space-y-4">
+        {/* ── Right: vendor orders, queue, form — full-width and stacked
+            below the order list on mobile (a fixed 384px column left no
+            room for the left panel on a real phone width); reverts to the
+            original fixed-width side column at md+. ── */}
+        <div className="w-full md:w-96 md:flex-shrink-0 space-y-4">
           <div>
             <button onClick={() => setVosCollapsed(v => !v)} className="w-full flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-white">📋 Vendor Orders ({vendorOrders.length})</span>

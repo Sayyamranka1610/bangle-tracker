@@ -287,13 +287,16 @@ export default function Orders() {
           {canEdit ? 'No orders yet — click "New Order" to create one.' : 'No orders yet.'}
         </div>
       ) : (
-        <div className="flex gap-5">
-          {/* ── Client sidebar ── */}
-          <div className="w-56 shrink-0 border border-white/10 rounded-xl overflow-hidden self-start">
+        <div className="flex flex-col md:flex-row gap-5">
+          {/* ── Client sidebar — full-width and height-capped above the main
+              panel on mobile (a fixed 224px column left almost no room for
+              anything else on a real phone width, confirmed in-browser);
+              reverts to the original fixed-width side column at md+. ── */}
+          <div className="w-full md:w-56 md:shrink-0 border border-white/10 rounded-xl overflow-hidden self-start">
             <div className="px-3 py-2 text-xs font-semibold text-white/40 uppercase tracking-wider bg-white/5 border-b border-white/10">
               Clients ({clientNames.length})
             </div>
-            <div className="max-h-[70vh] overflow-y-auto">
+            <div className="max-h-56 md:max-h-[70vh] overflow-y-auto">
               {clientNames.map(name => {
                 const cd = clientMap.get(name)!;
                 const active = !isGlobalSearch && viewMode === 'active' && name === effectiveClient;
