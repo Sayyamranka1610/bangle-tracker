@@ -34,7 +34,7 @@ This file is the **linking bridge** between the current app (Phase 1) and Phase 
 | 17 | Vendor pending-order statement distinguishes "no photo" from "photo stuck on another device" | 2026-09-18 | `61c5843` in `bangle_v19.html` — relies on Phase 1's local-device image cache / `_imgIsDeviceLocal()`/Migrate Images concept. | **N/A — Phase 2 has no local-device image cache** (all images are R2 URLs, reachable from any device; see note below) |
 | 18 | Ask about pooled siblings before completing a vendor order via a customer-order tick (manually ticking Pipe/Karigar/Plating received on one customer's row asks, once, about every other customer sharing that same pooled vendor-order row before deciding the vendor row itself is done) | 2026-09-18 | `11f6af3` in `bangle_v19.html` — `_siblingCOHoldersOnSameVORow()`, wired into `toggleCOStageRcvd()`. | Not started — this is the CO→VO *manual-tick* direction; flagged below with #50's note |
 | 19 | One-click full reconciliation of customer↔vendor received status across the whole app, before a vendor meeting — "Reconcile Status" button on the Vendor Orders tab | 2026-09-18 | `7fe0b19` in `bangle_v19.html` — sweeps every linked row (Pipe/Karigar/Plating), applies the same rule the live tick uses, asks once per ambiguous pooled row. | **Done (no ambiguity/confirm needed in Phase 2 — see #50's note)** |
-| 20 | Pending order statement PDF was including archived/fully-received vendor orders | 2026-09-18 | `e9d4c72` in `bangle_v19.html` — the PDF's vendor-order filter never checked `vo.archived` or "every row already received", only `vo.status`. | **N/A — Phase 2 has no vendor-order archiving, and #49's statement already computes "pending" from real `recvQty` rather than a separate flag that can drift, so it can't have this bug; see note below** |
+| 20 | Pending order statement PDF was including archived/fully-received vendor orders | 2026-09-18 | `e9d4c72` in `bangle_v19.html` — the PDF's vendor-order filter never checked `vo.archived` or "every row already received", only `vo.status`. | **CORRECTED 2026-11-05: the old "N/A" was WRONG.** Production has 140 archived vendor orders and 406 vendor rows carrying Phase 1's `received` flag; Phase 2 ignores both. See audit item V1 below. |
 
 ---
 
@@ -170,3 +170,30 @@ This file is the **linking bridge** between the current app (Phase 1) and Phase 
 - [ ] Owner has signed off on Phase 2 in testing
 - [ ] Cloudflare Pages Phase 2 project pointing to `./v2/` subfolder
 - [ ] Old URL (`bangle-tracker.pages.dev`) redirected to new Phase 2 URL
+
+
+---
+
+## Full side-by-side audit — 2026-11-05 (owner-requested, after the owner found missing screens)
+
+Method: read Phase 1's real screen code (`bangle_v19.html`) page by page and compared against Phase 2, plus checked the real production data for what is actually used. Earlier "parity" claims were logic/data audits, not screen-by-screen — this section supersedes them. Status of every item: **OPEN** until fixed.
+
+**Severity A — wrong numbers / data safety (must fix before any cutover)**
+- V1. **Archived and received vendor orders are treated as live.** Production: 225 vendor orders, **140 archived**, 406 vendor rows carry Phase 1's `received` flag (27 of the 85 active orders are fully received by that flag), and every order has status `pending`. Phase 2 has no `archived`/`received` handling, so Vendors shows "225 orders / 224 On Track", and Kya Bola counts all 225 as pending follow-ups (Phase 1 drops archived + fully-received). The 479 badge is inflated. Fix: add `archived`/`received` to the types, honour them in Vendors, Dashboard, Follow-ups, Statement PDF; add Active/Archived toggle, status chips, Archive/Restore/Archive-completed, and a Phase-1-style done check.
+- S1. **No automatic cloud restore points.** Phase 1 writes hourly snapshots (`/appDataBackups`) and a daily copy kept 30 days (`/appDataDaily`, commit `a2b26ee`). Phase 2 writes neither — after cutover the safety net would stop growing.
+- S2. **No Backup/Restore to a file, no Version History screen, no weekly backup reminder (`57520d2`).** Also missing: Undo/Redo, Save-now button, Data Health, Image Backup CSV, Migrate Images button.
+
+**Severity B — missing screens/buttons the owner uses**
+- P1. Photos: Phase 1 shows a big (100px) labelled photo gallery per design in Customer-Order and Vendor-Order Designs tabs; Phase 2 only small thumbnails (magnifier now added, #60). Photos stored on another device (`__IDB__`, 32 in production) show a broken image instead of Phase 1's "on another device" tile.
+- P2. Photo coverage ("what still needs shooting") and the Photo Manager bulk "Upload & Assign to Orders" (Library) are absent.
+- O1. Per-order and per-client 📥 Export and 🖨️ Print buttons; global Export menu (CSV, Excel, client-wise, design-wise, with/without stages) and Print menu (all, by client, by design, with rate column option) — Phase 2 only has one "Export to Excel".
+- O2. Order Details tab: attached file (44 orders have one) cannot be opened/downloaded.
+- O3. To verify: Phase 1 groups an order's designs under the design name with one combined table; check Phase 2 layout.
+- V2. Vendor order cards are read-only for designs: no add design manually, no editing sizes/unit/rate (₹)/varieties/photos, no Remove design. Vendor Type tabs (All/Pipe/Karigar/Plating with counts), per-vendor-group and per-order 📥/🖨️ are missing.
+- A1. Analytics: missing Export Analytics CSV, Print, Quantity-by-size, Overdue-orders list (to verify Pieces-by-design-code).
+- G1. Global header: Share, Install app, logo/branding, filter bar (client/design/status), mobile "☰ Menu"; login uses a username dropdown in Phase 1 (text box in Phase 2).
+
+**Severity C — decisions / minor**
+- I1. Inventory tab (Stock view + ledger): production has 0 stock items and 52 frozen ledger entries — effectively unused. Needs owner decision (skip vs port).
+- M1. Phone layout: Orders/Vendors stat-card rows (4–5 across) cramped at 375px.
+- L1. Known pre-existing lint errors left alone (listed above).
