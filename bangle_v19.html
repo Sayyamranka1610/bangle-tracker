@@ -1849,8 +1849,50 @@ function backupToFile(){
   a.download = `bangle_backup_${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  try{ localStorage.setItem('bangle_last_file_backup_ts', String(Date.now())); }catch(e){} // resets the weekly reminder
   showToast('📤 Backup downloaded','green');
   audit('Backup','Full data backup downloaded to file');
+}
+
+// ── WEEKLY BACKUP REMINDER ────────────────────────────────────────────────────
+// Owner-only banner at the top of the app when no backup FILE has been downloaded
+// to this computer for 7+ days. Purely a localStorage date check — no network, no
+// data reads, so it cannot slow the app. The file itself is the existing 📤 Backup.
+const BACKUP_REMIND_DAYS = 7;
+function _checkBackupReminder(){
+  try{
+    if(!_currentUser || _currentUser.role!=='owner' || _isDemoMode() || _readOnly) return;
+    if(document.getElementById('backup-reminder')) return;
+    const now=Date.now();
+    if(now < parseInt(localStorage.getItem('bangle_backup_snooze_until')||'0',10)) return;
+    const last=parseInt(localStorage.getItem('bangle_last_file_backup_ts')||'0',10);
+    if(last && now-last < BACKUP_REMIND_DAYS*864e5) return;
+    const app=document.getElementById('app'); if(!app) return;
+    const lastTxt = last
+      ? '<strong>'+Math.floor((now-last)/864e5)+' days ago</strong> ('+new Date(last).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+')'
+      : '<strong>never</strong> (none saved on this computer yet)';
+    const el=document.createElement('div');
+    el.id='backup-reminder'; el.className='no-print';
+    el.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#FAEEDA;border:1px solid #EF9F27;border-radius:10px;padding:10px 14px;margin:0 0 10px';
+    el.innerHTML='<div style="font-size:13px;color:#633806;line-height:1.5"><strong>Time for your weekly backup.</strong> Last backup saved to your computer: '+lastTxt+'. Save a fresh copy and keep it in Google Drive.</div>'
+      +'<div style="display:flex;gap:8px;flex-shrink:0">'
+      +'<button onclick="_backupReminderDownload()" style="background:#534AB7;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer">Download backup now</button>'
+      +'<button onclick="_backupReminderSnooze()" style="background:#fff;color:#633806;border:1px solid #EF9F27;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer">Remind me tomorrow</button>'
+      +'</div>';
+    app.insertBefore(el, app.firstChild);
+  }catch(e){ console.warn('Backup reminder skipped:', e); }
+}
+function _backupReminderSnooze(){
+  try{ localStorage.setItem('bangle_backup_snooze_until', String(Date.now()+864e5)); }catch(e){}
+  const el=document.getElementById('backup-reminder'); if(el) el.remove();
+}
+function _backupReminderDownload(){
+  const el=document.getElementById('backup-reminder'); if(!el) return;
+  try{ backupToFile(); }catch(e){ showToast('⚠ Backup failed: '+e.message,'red'); return; }
+  const fname='bangle_backup_'+new Date().toISOString().split('T')[0]+'.json';
+  el.style.background='#E1F5EE'; el.style.borderColor='#5DCAA5';
+  el.innerHTML='<div style="font-size:13px;color:#085041;line-height:1.5"><strong>Backup downloaded.</strong> Look for <span style="font-family:monospace">'+fname+'</span> in your Downloads folder, then move it to Google Drive. Next reminder in 7 days.</div>';
+  setTimeout(()=>{ const e2=document.getElementById('backup-reminder'); if(e2) e2.remove(); }, 12000);
 }
 
 // ── IMAGE MANIFEST BACKUP ─────────────────────────────────────────────────────
@@ -16875,6 +16917,7 @@ function _updateUserChip(){
   const el=document.getElementById('fb-current-user');
   if(el && _currentUser)
     el.textContent='👤 '+_currentUser.username+(_currentUser.role==='owner'?' ★':'');
+  setTimeout(_checkBackupReminder, 8000); // after startup work settles; no-op for non-owners / read-only / recent backups
 }
 
 // ── MY PASSWORD (accessible to all logged-in users) ───────────────────────────
