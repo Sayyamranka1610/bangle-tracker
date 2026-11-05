@@ -1245,11 +1245,39 @@ function histPush(){
   _histIdx = _hist.length-1;
   updateUndoRedoBtns();
 }
+// Last-line-of-defence for Undo/Redo: if jumping to `snap` would remove a big chunk of
+// orders (the Aug 2026 wipe), ask first. Cancel = nothing changes at all.
+function _histJumpIsSafe(snap){
+  try{
+    const t = JSON.parse(snap);
+    const cur = {orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length};
+    const tgt = {orders:(t.orders||[]).length, vendorOrders:(t.vendorOrders||[]).length};
+    if(typeof _looksLikeAccidentalWipe==='function' && _looksLikeAccidentalWipe(cur, tgt)){
+      return confirm('⚠ This Undo/Redo would REMOVE data:\n\nNow: '+cur.orders+' customer orders, '+cur.vendorOrders+' vendor orders\nAfter: '+tgt.orders+' customer orders, '+tgt.vendorOrders+' vendor orders\n\nPress Cancel to keep your data exactly as it is.');
+    }
+  }catch(e){}
+  return true;
+}
 function histUndo(){
-  if(_histIdx <= 0){ showToast('Nothing to undo','amber'); return; }
+  // histPush() stores the state from BEFORE a change, so the newest entry is "how it
+  // looked before your last edit". The current (edited) state isn't stored yet — record
+  // it first so Undo returns to that "before" entry and Redo can come back. (Previously
+  // Undo skipped one entry too far, which on a fresh login meant the empty startup state.)
+  if(_histIdx === _hist.length-1){
+    const cur = snapState();
+    if(cur !== _hist[_histIdx]){
+      _hist.push(cur);
+      if(_hist.length > HIST_MAX) _hist.shift();
+      _histIdx = _hist.length-1;
+    }
+  }
+  if(_histIdx <= 0){ showToast('Nothing to undo','amber'); updateUndoRedoBtns(); return; }
+  const target = _hist[_histIdx-1];
+  if(!_histJumpIsSafe(target)){ showToast('Undo cancelled — your data is unchanged','amber'); return; }
   _histIdx--;
   _histLock = true;
-  loadSnap(_hist[_histIdx]);
+  loadSnap(target);
+  _hist[_histIdx] = snapState(); // re-render tweaks S slightly; store what's really on screen so "unchanged?" checks compare like with like
   _histLock = false;
   updateUndoRedoBtns();
   setSaveStatus('saving');
@@ -1258,14 +1286,23 @@ function histUndo(){
 }
 function histRedo(){
   if(_histIdx >= _hist.length-1){ showToast('Nothing to redo','amber'); return; }
+  const target = _hist[_histIdx+1];
+  if(!_histJumpIsSafe(target)){ showToast('Redo cancelled — your data is unchanged','amber'); return; }
   _histIdx++;
   _histLock = true;
-  loadSnap(_hist[_histIdx]);
+  loadSnap(target);
+  _hist[_histIdx] = snapState();
   _histLock = false;
   updateUndoRedoBtns();
   setSaveStatus('saving');
   save();
   showToast('↪ Redone','amber');
+}
+// Called whenever cloud data replaces what's on screen: older history describes a
+// different dataset (e.g. the empty pre-login state) and must never be reachable by Undo.
+function histReseed(){
+  _hist = [snapState()]; _histIdx = 0;
+  updateUndoRedoBtns();
 }
 function loadSnap(snap){
   const parsed = JSON.parse(snap);
@@ -16736,6 +16773,7 @@ function _applyRemoteState(parsed, savedAt){
   S.openClients = new Set(merged.openClients || []);
   S.openDesignStages = keepDesignStages || new Set();
   renumberOrders();
+  histReseed(); // another device changed the data — Undo must not be able to roll back to before their changes
   _origSave();
   _rememberRemoteCounts({orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length});
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
@@ -17243,7 +17281,6 @@ async function fbInit(){
       // This ensures no order is ever silently lost due to a sync race.
       const{merged,added,count}=_mergeLocalIntoRemote(parsed);
 
-      histPush();
       const keepDStages = S.openDesignStages;
       Object.assign(S, merged);
       S.filters     = {client:'',dname:'',dcode:'',status:''};  // always reset — never inherit stale filter from Firebase
@@ -17251,6 +17288,9 @@ async function fbInit(){
       S.openClients = new Set(merged.openClients || []);
       S.openDesignStages = keepDStages || new Set(merged.openDesignStages || []);
       renumberOrders();
+      // Undo history restarts from the cloud data. (This used to push the stale pre-login
+      // state as an Undo step — pressing Ctrl+Z then loaded it and wiped the screen.)
+      histReseed();
       _origSave();
       // Remember these counts as the last known-good cloud state — this is what
       // lets fbPush()'s safety guard catch an accidental wipe even on the very
