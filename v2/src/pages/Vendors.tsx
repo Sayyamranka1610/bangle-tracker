@@ -2,13 +2,21 @@ import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import type { VendorOrder, VendorStatus, AppData, Order } from '../types';
-import { vendorAlert, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
+import { vendorAlert, isVoDone, computeVendorStats, ALERT_CONFIG } from '../lib/vendorUtils';
 import { reconcileReceivedStatus } from '../lib/receiveUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import VendorOrderCard from '../components/vendors/VendorOrderCard';
 import VendorModal from '../components/vendors/VendorModal';
 
-type FilterKey = 'all' | 'ok' | 'warn' | 'late' | 'done';
+type StatusChip = '' | 'pending' | 'done';
+type TypeTab = '' | 'pipe' | 'karigar' | 'plating';
+
+const TYPE_TABS: { key: TypeTab; icon: string; label: string; color: string; bg: string }[] = [
+  { key: '',        icon: '📋', label: 'All',     color: '#534AB7', bg: '#EEEDFE' },
+  { key: 'pipe',    icon: '🔩', label: 'Pipe',    color: '#1565C0', bg: '#E3F2FD' },
+  { key: 'karigar', icon: '🛠️', label: 'Karigar', color: '#4A148C', bg: '#F3E5F5' },
+  { key: 'plating', icon: '🪙', label: 'Plating', color: '#BF360C', bg: '#FFF3E0' },
+];
 
 export default function Vendors() {
   const { state, showToast, saveAppData } = useApp();
@@ -17,7 +25,12 @@ export default function Vendors() {
   const vendorOrders: VendorOrder[] = useMemo(() => data.vendorOrders ?? [], [data.vendorOrders]);
   const canEdit = session?.role === 'owner' && hasLock;
 
-  const [filter, setFilter]           = useState<FilterKey>('all');
+  // Same controls as Phase 1: Pipe/Karigar/Plating tabs, All/Pending/Completed
+  // chips, and an Active ⇄ Archived switch (archived orders never mix into the
+  // live list or its counts).
+  const [statusChip, setStatusChip]   = useState<StatusChip>('');
+  const [typeTab, setTypeTab]         = useState<TypeTab>('');
+  const [archMode, setArchMode]       = useState(false);
   // Jump-to-order-here from the Follow-ups list (?q=<vendor order ID>) —
   // reuses the existing search box rather than building separate scroll-to
   // infrastructure, since a vendor-order ID search already narrows to
@@ -38,19 +51,30 @@ export default function Vendors() {
     return [...new Set([...fromVocab, ...fromOrders])].sort();
   }, [data.vocabulary, vendorOrders]);
 
+  const typeCounts = useMemo(() => {
+    const c: Record<string, number> = { '': 0, pipe: 0, karigar: 0, plating: 0 };
+    vendorOrders.filter(o => !o.archived).forEach(o => { c['']++; c[o.type ?? 'karigar']++; });
+    return c;
+  }, [vendorOrders]);
+  const completedUnarchived = useMemo(
+    () => vendorOrders.filter(o => !o.archived && isVoDone(o)).length, [vendorOrders]);
+
   const filtered = useMemo(() => {
-    let list = vendorOrders;
-    if (filter !== 'all') list = list.filter(o => vendorAlert(o) === filter);
+    let list = vendorOrders.filter(o => archMode ? !!o.archived : !o.archived);
+    if (typeTab && !archMode) list = list.filter(o => (o.type ?? 'karigar') === typeTab);
+    if (statusChip === 'done') list = list.filter(o => isVoDone(o));
+    else if (statusChip === 'pending') list = list.filter(o => !isVoDone(o));
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(o =>
         o.vendor.toLowerCase().includes(q) ||
         o.orderId.toLowerCase().includes(q) ||
-        o.notes?.toLowerCase().includes(q),
+        o.notes?.toLowerCase().includes(q) ||
+        (o.designs ?? []).some(d => (d.code ?? '').toLowerCase().includes(q) || (d.name ?? '').toLowerCase().includes(q)),
       );
     }
     return [...list].sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
-  }, [vendorOrders, filter, search]);
+  }, [vendorOrders, archMode, typeTab, statusChip, search]);
 
   // Group by vendor
   const grouped = useMemo(() => {
@@ -176,6 +200,40 @@ export default function Vendors() {
     }
   }
 
+  // Archive = hide from the live list but keep for analytics (Phase 1
+  // archiveVendorOrder / restoreVendorOrder / archiveAllCompletedVendorOrders).
+  async function handleArchive(order: VendorOrder) {
+    if (!isVoDone(order) && !confirm('This order is not completed yet. Do you still want to archive it?')) return;
+    const next = vendorOrders.map(o => o.id === order.id ? { ...o, archived: true, archivedAt: Date.now() } : o);
+    showToast(`📦 ${order.orderId} archived — still counted in analytics`, 'success');
+    await persist(next, 'VendorOrder', `Archived vendor order ${order.orderId} (${order.vendor})`);
+  }
+
+  async function handleRestore(order: VendorOrder) {
+    const next = vendorOrders.map(o => {
+      if (o.id !== order.id) return o;
+      const { archived: _a, archivedAt: _t, ...rest } = o;
+      void _a; void _t;
+      return rest as VendorOrder;
+    });
+    setArchMode(false);
+    showToast(`↩ ${order.orderId} restored to active vendor orders`, 'success');
+    await persist(next, 'VendorOrder', `Restored vendor order ${order.orderId} (${order.vendor}) from archive`);
+  }
+
+  async function handleArchiveCompleted() {
+    const targets = vendorOrders.filter(o => !o.archived && isVoDone(o));
+    if (!targets.length) { showToast('No completed vendor orders to archive.', 'info'); return; }
+    if (!confirm(`Archive ${targets.length} completed vendor order${targets.length !== 1 ? 's' : ''}?
+
+They'll be hidden from the active view but kept for analytics. You can restore any of them later from the Archived tab.`)) return;
+    const now = Date.now();
+    const ids = new Set(targets.map(t => t.id));
+    const next = vendorOrders.map(o => ids.has(o.id) ? { ...o, archived: true, archivedAt: now } : o);
+    showToast(`📦 ${targets.length} vendor order${targets.length !== 1 ? 's' : ''} archived`, 'success');
+    await persist(next, 'VendorOrder', `Bulk-archived ${targets.length} completed vendor order(s)`);
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     const next = vendorOrders.filter(o => o.id !== deleteTarget.id);
@@ -194,12 +252,13 @@ export default function Vendors() {
 
   // ── Stat cards ────────────────────────────────────────────────────────────────
 
+  // Same four cards as Phase 1's vendor stats bar. "Total" counts only active
+  // (non-archived) orders, so archived history never inflates the live numbers.
   const statCards = [
-    { key: 'all',  label: 'Total',    value: stats.total,   border: 'border-black/10' },
-    { key: 'ok',   label: 'On Track', value: stats.onTrack, border: 'border-green-500/30' },
-    { key: 'warn', label: 'Due Soon', value: stats.soon,    border: 'border-yellow-500/30' },
-    { key: 'late', label: 'Overdue',  value: stats.late,    border: 'border-red-500/30' },
-    { key: 'done', label: 'Delivered',value: stats.done,    border: 'border-indigo-500/30' },
+    { label: 'Total Orders', value: stats.total,    color: '#1a1916', border: 'border-black/10' },
+    { label: 'Pending',      value: stats.pending,  color: '#A32D2D', border: 'border-red-500/30' },
+    { label: 'Completed',    value: stats.done,     color: '#0F6E56', border: 'border-green-500/30' },
+    { label: 'Archived',     value: stats.archived, color: '#6b6478', border: 'border-black/10' },
   ];
 
   return (
@@ -209,7 +268,7 @@ export default function Vendors() {
         <div>
           <h1 className="text-2xl font-bold text-[#1a1916]">Vendors</h1>
           <p className="text-sm text-[#1a1916]/55 mt-0.5">
-            {vendorOrders.length} order{vendorOrders.length !== 1 ? 's' : ''} · {grouped.length} vendor{grouped.length !== 1 ? 's' : ''}
+            {filtered.length} {archMode ? 'archived ' : ''}order{filtered.length !== 1 ? 's' : ''} · {grouped.length} vendor{grouped.length !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -240,29 +299,61 @@ export default function Vendors() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {statCards.map(card => (
-          <button
-            key={card.key}
-            onClick={() => setFilter(card.key as FilterKey)}
-            className={`bg-white border rounded-xl p-4 text-left transition-all cursor-pointer ${card.border} ${
-              filter === card.key ? 'ring-2 ring-black/10 bg-black/[0.06]' : 'hover:bg-black/[0.06]'
-            }`}
-          >
-            <p className="text-2xl font-bold text-[#1a1916]">{card.value}</p>
+          <div key={card.label} className={`bg-white border rounded-xl p-4 ${card.border}`}>
+            <p className="text-2xl font-bold" style={{ color: card.color }}>{card.value}</p>
             <p className="text-xs text-[#1a1916]/60 mt-1">{card.label}</p>
-          </button>
+          </div>
         ))}
       </div>
 
-      {/* Search */}
-      <div className="mb-5">
+      {/* Pipe / Karigar / Plating tabs (active orders only) */}
+      {!archMode && (
+        <div className="flex gap-0.5 border-b-2 border-[#E0DFFF] mb-3 overflow-x-auto">
+          {TYPE_TABS.map(tab => {
+            const act = typeTab === tab.key;
+            return (
+              <button key={tab.key || 'all'} onClick={() => setTypeTab(tab.key)}
+                className="flex items-center gap-1.5 px-4 py-2 text-[12.5px] whitespace-nowrap border-b-[2.5px] -mb-[2px] transition-colors"
+                style={{ background: act ? tab.bg : 'transparent', color: act ? tab.color : '#777',
+                  fontWeight: act ? 800 : 600, borderBottomColor: act ? tab.color : 'transparent' }}>
+                {tab.icon} {tab.label}
+                <span className="text-[10.5px] font-bold rounded-full px-2 py-px"
+                  style={{ background: act ? '#fff' : '#EEEDFE', color: act ? tab.color : '#777' }}>{typeCounts[tab.key]}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Search + status chips + Active/Archived */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by vendor name, order ID, or notes…"
-          className="w-full bg-white border border-black/10 rounded-lg px-4 py-2.5 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
+          placeholder="Search vendor, order ID, design code…"
+          className="flex-1 min-w-[200px] bg-white border border-black/10 rounded-lg px-4 py-2.5 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
         />
+        {([['', 'All'], ['pending', '🔴 Pending'], ['done', '✅ Completed']] as [StatusChip, string][]).map(([k, label]) => (
+          <button key={k || 'all'} onClick={() => setStatusChip(k)}
+            className={`text-xs px-3 py-2 rounded-lg border transition-colors ${
+              statusChip === k ? 'bg-[#534AB7] border-[#534AB7] text-white' : 'bg-white border-black/10 text-[#1a1916]/60 hover:text-[#1a1916]'}`}>
+            {label}
+          </button>
+        ))}
+        <div className="flex rounded-lg border border-black/10 overflow-hidden">
+          <button onClick={() => { setArchMode(false); setStatusChip(''); }}
+            className={`text-xs px-3 py-2 ${!archMode ? 'bg-[#534AB7] text-white' : 'bg-white text-[#1a1916]/60 hover:text-[#1a1916]'}`}>Active</button>
+          <button onClick={() => { setArchMode(true); setStatusChip(''); setTypeTab(''); }}
+            className={`text-xs px-3 py-2 ${archMode ? 'bg-[#6b6478] text-white' : 'bg-white text-[#1a1916]/60 hover:text-[#1a1916]'}`}>📦 Archived ({stats.archived})</button>
+        </div>
+        {!archMode && canEdit && (
+          <button onClick={handleArchiveCompleted} disabled={!completedUnarchived}
+            className="text-xs px-3 py-2 rounded-lg border border-black/10 bg-white text-[#1a1916]/70 hover:bg-black/[0.06] disabled:opacity-40 disabled:cursor-not-allowed">
+            📦 Archive completed ({completedUnarchived})
+          </button>
+        )}
       </div>
 
       {/* Vendor groups */}
@@ -270,7 +361,7 @@ export default function Vendors() {
         <div className="text-center py-16 text-[#1a1916]/40">
           {vendorOrders.length === 0
             ? canEdit ? 'No vendor orders yet — click "New Vendor Order" to create one.' : 'No vendor orders yet.'
-            : 'No vendor orders match your filter.'}
+            : archMode && !search.trim() ? 'No archived vendor orders.' : 'No vendor orders match your filter.'}
         </div>
       ) : (
         <div className="space-y-5">
@@ -310,6 +401,8 @@ export default function Vendors() {
                         canEdit={canEdit}
                         onEdit={o => setModalOrder(o)}
                         onDelete={o => setDeleteTarget(o)}
+                        onArchive={handleArchive}
+                        onRestore={handleRestore}
                         onStatusChange={handleStatusChange}
                         onWhoChange={handleWhoChange}
                         onHoldToggle={handleHoldToggle}

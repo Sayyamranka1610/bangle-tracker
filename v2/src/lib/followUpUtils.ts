@@ -142,12 +142,11 @@ export function computeFollowUps(data: AppData, now: number = Date.now()): Compu
     const rule = FOLLOWUP_RULES[ruleKey];
     if (!rule) return; // plating vendor orders have no follow-up rule (matches Phase 1 — only pipe/karigar)
     const key = `vo:${vo.id}:${ruleKey}`;
-    // Resolved once delivered. Phase 1 also treats "every row individually
-    // ticked received" as resolved — Phase 2 doesn't track that per-row
-    // boolean on vendor-order rows (it tracks partial quantities via
-    // recvQty instead, see receiveUtils.ts), so `status==='delivered'` is
-    // this rule's sole resolution signal here — a deliberate simplification.
-    if (vendorAlert(vo) === 'done') return;
+    // Resolved if archived, marked Delivered, OR every row is already received
+    // (Phase 1's own three checks — vendorAlert() covers the last two: it counts
+    // both Phase 1's per-row tick and Phase 2's recorded quantities). Without the
+    // archived check, 140 long-finished production orders showed as pending.
+    if (vo.archived || vendorAlert(vo) === 'done') return;
     const anchor = anchorOrNow(vo.startDate);
     dueItem(key, rule, anchor, {
       kind: 'vo', voId: vo.id, vendor: vo.vendor || '(no vendor)',

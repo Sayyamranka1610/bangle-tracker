@@ -150,5 +150,6 @@ export function markImported(orders: Order[], queue: QueueItem[], voId: string):
 }
 
 export function openVendorOrders(vendorOrders: VendorOrder[]): VendorOrder[] {
-  return vendorOrders.filter(vo => vo.status !== 'delivered' && vo.status !== 'dispatched');
+  // Archived orders are never offered (Phase 1 `a414e9e`).
+  return vendorOrders.filter(vo => !vo.archived && vo.status !== 'delivered' && vo.status !== 'dispatched');
 }

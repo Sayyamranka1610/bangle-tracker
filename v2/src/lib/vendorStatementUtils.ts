@@ -1,4 +1,5 @@
 import type { AppData, VendorOrder } from '../types';
+import { isVoFullyReceived } from './vendorUtils';
 
 // ─── Vendor pending-order statement ("what do I still owe you") ──────────────
 // Ports Phase 1's openFollowUpVendorStatement() (bangle_v19.html ~L18323,
@@ -63,8 +64,11 @@ export interface VendorStatement {
 /** Pure — returns null when the vendor has nothing open, or everything open
  *  is already fully received. */
 export function buildVendorStatement(data: AppData, vendorName: string, now: number = Date.now()): VendorStatement | null {
+  // Same rule as the Kya Bola list (Phase 1 `e9d4c72`): skip archived orders,
+  // delivered/dispatched ones, and any whose every row is already received.
   const vos = (data.vendorOrders ?? []).filter(
-    vo => vo.vendor === vendorName && vo.status !== 'delivered' && vo.status !== 'dispatched',
+    vo => vo.vendor === vendorName && !vo.archived && vo.status !== 'delivered' && vo.status !== 'dispatched'
+      && !isVoFullyReceived(vo),
   );
   if (!vos.length) return null;
 
@@ -74,6 +78,7 @@ export function buildVendorStatement(data: AppData, vendorName: string, now: num
   vos.forEach(vo => {
     const rows: StatementRow[] = [];
     (vo.designs ?? []).forEach(d => {
+      if (d.received) return; // Phase 1 tick: this row is fully back
       const sizes = d.sizes ?? {};
       const recv = d.recvQty ?? {};
       const pending: Record<string, number> = {};

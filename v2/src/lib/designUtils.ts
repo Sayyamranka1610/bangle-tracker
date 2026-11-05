@@ -120,9 +120,9 @@ export function buildCodeMap(orders: Order[]): Map<string, DesignEntry[]> {
 // ─── Status display helpers ───────────────────────────────────────────────────
 
 export const STATUS_CONFIG = {
-  done:    { label: 'Done',    dot: 'bg-green-500',  text: 'text-green-400',  bg: 'bg-green-500/15' },
-  delayed: { label: 'Delayed', dot: 'bg-red-500',    text: 'text-red-400',    bg: 'bg-red-500/15' },
-  pending: { label: 'Pending', dot: 'bg-white/20',   text: 'text-white/40',   bg: 'bg-white/5' },
+  done:    { label: 'Done',    dot: 'bg-green-500',  text: 'text-green-700',  bg: 'bg-green-500/15' },
+  delayed: { label: 'Delayed', dot: 'bg-red-500',    text: 'text-red-700',    bg: 'bg-red-500/15' },
+  pending: { label: 'Pending', dot: 'bg-black/20',   text: 'text-[#1a1916]/55', bg: 'bg-black/5' },
 } satisfies Record<string, { label: string; dot: string; text: string; bg: string }>;
 
 // ─── Design CSV export (ports Phase 1's exportDesignCSV()) ───────────────────

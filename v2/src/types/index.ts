@@ -97,6 +97,9 @@ export interface DesignVariety extends VendorPipelineFields {
   images?: DesignImage[];
   unit?: string;
   rate?: number;
+  // Phase 1's per-row "received from vendor" tick (set on vendor-order varieties).
+  received?: boolean;
+  receivedAt?: number;
 }
 
 // ─── Design embedded inside an order ─────────────────────────────────────────
@@ -218,6 +221,11 @@ export interface VendorDesign {
   bufferSizes?: Record<string, number>;  // cover for rejections
   /** @deprecated superseded by extraSizes/extraUnit — still read for old data */
   stockSizes?: Record<string, number>;   // speculative / for stock
+  // Phase 1's per-row "received" tick + when. Production data has 400+ of
+  // these; Phase 2 reads them and also writes them when a row's quantities
+  // are fully back, so both apps agree about what is still outstanding.
+  received?: boolean;
+  receivedAt?: number;
   // What the vendor actually returned for this line, per size (cumulative
   // across several part-deliveries).
   recvQty?: Record<string, number>;
@@ -282,6 +290,11 @@ export interface VendorOrder {
   status: VendorStatus;
   notes?: string;
   designs?: VendorDesign[];
+  // Phase 1 "📦 Archive": hidden from the active list but kept for analytics.
+  // 140 of the 225 production vendor orders carry this.
+  archived?: boolean;
+  archivedAt?: number;
+  createdAt?: number;
 }
 
 // ─── Top-level appData stored at /appData in Firebase ────────────────────────

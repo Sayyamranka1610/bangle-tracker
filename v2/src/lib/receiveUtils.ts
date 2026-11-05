@@ -224,7 +224,12 @@ export function applyVendorReceipt(
         const mergedRej  = { ...(d.rejQty ?? {}) };
         Object.entries(recv).forEach(([s, q]) => addInto(mergedRecv, s, q));
         Object.entries(rej).forEach(([s, q]) => addInto(mergedRej, s, q));
-        return { ...d, recvQty: mergedRecv, rejQty: mergedRej };
+        // When every size is fully back, also set Phase 1's per-row "received" tick
+        // so the old app (and the Kya Bola / statement rules) agree it's done.
+        const ordered = Object.entries(d.sizes ?? {}).filter(([, n]) => (Number(n) || 0) > 0);
+        const allBack = ordered.length > 0 && ordered.every(([s, n]) => (Number(mergedRecv[s]) || 0) >= (Number(n) || 0));
+        const tick = allBack && !d.received ? { received: true, receivedAt: Date.now() } : {};
+        return { ...d, recvQty: mergedRecv, rejQty: mergedRej, ...tick };
       }),
     };
   });

@@ -5,7 +5,7 @@ import VendorWhoModal from './VendorWhoModal';
 import { receivableDesigns } from '../../lib/receiveUtils';
 import { voQty } from '../../lib/vendorWhoUtils';
 import { printVendorOrder } from '../../lib/vendorPrintUtils';
-import { vendorAlert, STATUS_PCT, STATUS_LABELS, ALL_STATUSES, ALERT_CONFIG } from '../../lib/vendorUtils';
+import { vendorAlert, voRowsProgress, STATUS_PCT, STATUS_LABELS, ALL_STATUSES, ALERT_CONFIG } from '../../lib/vendorUtils';
 import FollowUpTrail from '../followups/FollowUpTrail';
 import { useLightbox } from '../lightboxContext';
 
@@ -15,6 +15,8 @@ interface Props {
   canEdit: boolean;
   onEdit: (o: VendorOrder) => void;
   onDelete: (o: VendorOrder) => void;
+  onArchive: (o: VendorOrder) => void;
+  onRestore: (o: VendorOrder) => void;
   onStatusChange: (o: VendorOrder, status: VendorStatus) => void;
   onWhoChange: (patch: { vendorOrders: VendorOrder[]; orders?: Order[] }, auditDetail: string) => void;
   onHoldToggle: (order: VendorOrder, designId: string) => void;
@@ -30,7 +32,7 @@ const priorityLabels: Record<string, string> = {
   normal: '', urgent: '⚡ Urgent', critical: '🔴 Critical',
 };
 
-export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete, onStatusChange, onWhoChange, onHoldToggle }: Props) {
+export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete, onArchive, onRestore, onStatusChange, onWhoChange, onHoldToggle }: Props) {
   const lightbox = useLightbox();
   const [receiving, setReceiving] = useState(false);
   const [showDesigns, setShowDesigns] = useState(false);
@@ -38,10 +40,11 @@ export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete
   const pooledCount = receivableDesigns(order).length;
   const alert = vendorAlert(order);
   const pct   = STATUS_PCT[order.status];
+  const rows  = voRowsProgress(order);
   const { label: alertLabel, color, bg, bar } = ALERT_CONFIG[alert];
 
   return (
-    <div className="bg-white border border-black/10 rounded-xl p-4 hover:bg-white/[0.07] transition-colors">
+    <div className="bg-white border border-black/10 rounded-xl p-4 hover:bg-[#FAFAF8] transition-colors">
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
@@ -66,6 +69,13 @@ export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete
               className="p-1.5 text-[#1a1916]/55 hover:text-[#1a1916] hover:bg-black/[0.06] rounded-lg transition-colors text-sm"
               title="Edit"
             >✏️</button>
+            {order.archived ? (
+              <button onClick={() => onRestore(order)} title="Restore this order to Active"
+                className="px-2 py-1 text-xs font-bold text-[#3C3489] bg-[#EEEDFE] border border-[#AFA9EC] rounded-lg">↩ Restore</button>
+            ) : (
+              <button onClick={() => onArchive(order)} title="Archive this order (hides it from the active list, keeps it for analytics)"
+                className="p-1.5 text-[#1a1916]/55 hover:text-[#1a1916] hover:bg-black/[0.06] rounded-lg transition-colors text-sm">📦</button>
+            )}
             <button
               onClick={() => onDelete(order)}
               className="p-1.5 text-[#1a1916]/55 hover:text-red-700 hover:bg-red-500/10 rounded-lg transition-colors text-sm"
@@ -83,6 +93,12 @@ export default function VendorOrderCard({ order, data, canEdit, onEdit, onDelete
           <button onClick={() => setShowDesigns(s => !s)} className="hover:text-[#1a1916] transition-colors">
             🎨 {order.designs!.length} design{order.designs!.length !== 1 ? 's' : ''} {showDesigns ? '▾' : '▸'}
           </button>
+        )}
+        {rows.total > 0 && (
+          <span className={rows.received === rows.total ? 'text-green-700 font-semibold' : ''}
+            title="Rows (designs / varieties) already received from the vendor">
+            📥 {rows.received}/{rows.total} received
+          </span>
         )}
         {pooledCount > 0 && (
           <span className="text-[#534AB7]" title="Lines pooled from several customer orders">
