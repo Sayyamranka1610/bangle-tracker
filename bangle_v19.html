@@ -16272,21 +16272,40 @@ function _rememberRemoteCounts(counts){
 }
 // Returns true if going from `remote` to `local` looks like an accidental mass-delete
 // rather than a normal edit (deleting one or two orders should never trip this).
+// What the safety checks compare. orders/vendorOrders use a tight rule (any drop of
+// 5+ or 20%). The other three are broader "was something emptied?" checks with a loose
+// rule (lose half or more of at least 10-20 items) so normal day-to-day deleting
+// (which also removes an order's inventory entries) never triggers a false alarm.
+function _stateCounts(){
+  const designs = (arr)=>(arr||[]).reduce((a,o)=>a+((o&&o.designs)||[]).length,0);
+  return {
+    orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length,
+    invLedger:(S.invLedger||[]).length, stockItems:(S.stockItems||[]).length,
+    designs: designs(S.orders)+designs(S.vendorOrders)
+  };
+}
 function _looksLikeAccidentalWipe(remote, local){
   if(!remote) return false;
   const drop = (r,l)=> r>0 && (r-l) > 0 && ((r-l) >= 5 || (r-l) >= r*0.2);
-  return drop(remote.orders, local.orders) || drop(remote.vendorOrders, local.vendorOrders);
+  const emptied = (r,l,min)=> typeof r==='number' && typeof l==='number' && r>=min && l<=r*0.5;
+  return drop(remote.orders, local.orders) || drop(remote.vendorOrders, local.vendorOrders)
+      || emptied(remote.invLedger, local.invLedger, 20)
+      || emptied(remote.stockItems, local.stockItems, 10)
+      || emptied(remote.designs, local.designs, 20);
 }
 function _confirmDestructiveSave(remote, local){
   return new Promise(resolve=>{
     const mc=document.getElementById('modal-container');
     if(!mc){ resolve(true); return; } // no UI available (shouldn't happen) — fail open rather than hang forever
+    const extra = (typeof remote.designs==='number' && typeof local.designs==='number')
+      ? `<br>Inventory entries: <strong>${remote.invLedger}</strong> → <strong>${local.invLedger}</strong> · Stock items: <strong>${remote.stockItems}</strong> → <strong>${local.stockItems}</strong> · Designs inside orders: <strong>${remote.designs}</strong> → <strong>${local.designs}</strong>`
+      : '';
     mc.innerHTML=`<div class="modal-overlay">
       <div class="modal" style="width:460px">
         <div class="modal-header"><div class="modal-icon" style="background:#FCEBEB;color:#A32D2D">⚠️</div><h3>This save would delete data</h3></div>
         <p style="font-size:13px;line-height:1.6;color:#555;margin-bottom:12px">
           The cloud currently has <strong>${remote.orders} customer orders</strong> and <strong>${remote.vendorOrders} vendor orders</strong>.
-          What's about to be saved only has <strong>${local.orders} customer orders</strong> and <strong>${local.vendorOrders} vendor orders</strong>.
+          What's about to be saved only has <strong>${local.orders} customer orders</strong> and <strong>${local.vendorOrders} vendor orders</strong>.${extra}
         </p>
         <p style="font-size:12px;color:#A32D2D;background:#FCEBEB;padding:8px 12px;border-radius:8px;margin-bottom:12px">
           If you didn't intentionally delete orders (e.g. this followed an Undo, or the page just loaded), click Cancel — nothing will be lost — then try Redo or reload the page.
@@ -16560,7 +16579,16 @@ async function fbPush(silent){
     // SAFETY GUARD — see the block above FB_BACKUPS_ROOT for why this exists.
     // Compare what we're about to save against the last state we know is really
     // in the cloud; if this would wipe out a large chunk of it, stop and ask.
-    const localCounts = {orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length};
+    const localCounts = _stateCounts();
+    // Never upload a completely empty dataset when we have no record of what the cloud
+    // holds (brand-new / cleared browser). The wipe check below can't help there, and
+    // this is the exact situation behind the Aug 2026 incident. Nothing real is lost by
+    // skipping: an empty state has nothing worth saving.
+    if(!_isDemoMode() && !_lastKnownRemoteCounts && localCounts.orders===0 && localCounts.vendorOrders===0){
+      _fb.pendingLocal = false; // so incoming cloud updates can still be applied
+      fbSetStatus('connected','Live · nothing to save yet');
+      return;
+    }
     if(!_isDemoMode() && _looksLikeAccidentalWipe(_lastKnownRemoteCounts, localCounts)){
       const ok = await _confirmDestructiveSave(_lastKnownRemoteCounts, localCounts);
       if(!ok){
@@ -16775,7 +16803,7 @@ function _applyRemoteState(parsed, savedAt){
   renumberOrders();
   histReseed(); // another device changed the data — Undo must not be able to roll back to before their changes
   _origSave();
-  _rememberRemoteCounts({orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length});
+  _rememberRemoteCounts(_stateCounts());
   localStorage.setItem('bangle_saved_at', savedAt || new Date().toISOString());
   // Re-inject IDB images after every Firebase sync — without this, Firebase
   // __IDB__ placeholders overwrite locally-loaded image data on every sync.
@@ -17295,7 +17323,7 @@ async function fbInit(){
       // Remember these counts as the last known-good cloud state — this is what
       // lets fbPush()'s safety guard catch an accidental wipe even on the very
       // first load of a brand-new tab/session (survives via localStorage).
-      _rememberRemoteCounts({orders:(S.orders||[]).length, vendorOrders:(S.vendorOrders||[]).length});
+      _rememberRemoteCounts(_stateCounts());
       localStorage.setItem('bangle_saved_at', envelope.savedAt || new Date().toISOString());
       await migrateImagesToThumbs();
       // Always check IDB for un-migrated images on startup — ensures R2 migration
