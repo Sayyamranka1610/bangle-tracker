@@ -93,15 +93,15 @@ export default function SyncR2Modal({ entries, onSynced, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4" onClick={running ? undefined : onClose}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-md p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-bold text-[#4a9fe0]">🔄 Sync from R2 Bucket</h3>
-        <p className="text-sm text-white/70">{status}</p>
-        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-md p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-[#185FA5]">🔄 Sync from R2 Bucket</h3>
+        <p className="text-sm text-[#1a1916]/80">{status}</p>
+        <div className="h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
           <div className={`h-full rounded-full transition-all ${failed ? 'bg-red-500' : 'bg-[#4a9fe0]'}`} style={{ width: `${pct}%` }} />
         </div>
-        {detail && <p className="text-[11px] text-white/40 min-h-[16px]">{detail}</p>}
+        {detail && <p className="text-[11px] text-[#1a1916]/55 min-h-[16px]">{detail}</p>}
         {!running && (
-          <button onClick={onClose} className="mt-1 self-end text-xs font-semibold bg-white/10 hover:bg-white/15 rounded-lg px-4 py-2 text-white">Close</button>
+          <button onClick={onClose} className="mt-1 self-end text-xs font-semibold bg-black/[0.06] hover:bg-black/10 rounded-lg px-4 py-2 text-[#1a1916]">Close</button>
         )}
       </div>
     </div>

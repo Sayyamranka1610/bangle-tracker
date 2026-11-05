@@ -128,13 +128,13 @@ function VarietyRow({
   const total = sizes.reduce((a, s) => a + (Number(variety.sizes[s]) || 0), 0);
 
   return (
-    <tr className="border-b border-white/5">
+    <tr className="border-b border-black/[0.07]">
       {/* Variety name */}
       <td className="pr-2 py-1.5">
         <input
           value={variety.name}
           onChange={e => onChange({ ...variety, name: e.target.value })}
-          className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#534AB7]"
+          className="w-full bg-white border border-black/10 rounded px-2 py-1 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7]"
           placeholder="Variety name"
         />
       </td>
@@ -146,17 +146,17 @@ function VarietyRow({
             min="0"
             value={variety.sizes[sz] || ''}
             onChange={e => onChange({ ...variety, sizes: { ...variety.sizes, [sz]: Number(e.target.value) || 0 } })}
-            className="w-14 bg-white/5 border border-white/10 rounded px-1.5 py-1 text-white text-xs text-center focus:outline-none focus:border-[#534AB7]"
+            className="w-14 bg-white border border-black/10 rounded px-1.5 py-1 text-[#1a1916] text-xs text-center focus:outline-none focus:border-[#534AB7]"
             placeholder="0"
           />
         </td>
       ))}
       {/* Total */}
-      <td className="pl-2 py-1.5 text-center text-xs font-semibold text-[#a89fff] w-10">{total}</td>
+      <td className="pl-2 py-1.5 text-center text-xs font-semibold text-[#534AB7] w-10">{total}</td>
       {/* Remove */}
       <td className="pl-1 py-1.5 w-6">
         {canRemove && (
-          <button type="button" onClick={onRemove} className="text-white/20 hover:text-red-400 transition-colors">×</button>
+          <button type="button" onClick={onRemove} className="text-[#1a1916]/30 hover:text-red-700 transition-colors">×</button>
         )}
       </td>
     </tr>
@@ -214,53 +214,53 @@ function DesignSection({
   );
 
   return (
-    <div className="border border-white/10 rounded-xl p-4 space-y-3">
+    <div className="border border-black/10 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white/80">
+        <h3 className="text-sm font-semibold text-[#1a1916]/85">
           Design {index + 1}
         </h3>
         {totalDesigns > 1 && (
           <button type="button" onClick={onRemove}
-            className="text-xs text-red-400/70 hover:text-red-400 transition-colors">Remove</button>
+            className="text-xs text-red-700 hover:text-red-700 transition-colors">Remove</button>
         )}
       </div>
 
       {/* Name + Code */}
       <div className="grid grid-cols-2 gap-3">
         <div className="relative">
-          <label className="block text-xs text-white/50 mb-1">Design name *</label>
+          <label className="block text-xs text-[#1a1916]/60 mb-1">Design name *</label>
           <input
             value={design.name}
             onChange={e => { onChange({ ...design, name: e.target.value }); setDnameAc(true); }}
             onFocus={() => setDnameAc(true)}
             onBlur={() => setTimeout(() => setDnameAc(false), 150)}
             placeholder="e.g. Floral Bangle"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]"
+            className="w-full bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]"
           />
           {dnameAc && filteredDnames.length > 0 && (
-            <ul className="absolute z-20 w-full mt-1 bg-[#1a1750] border border-white/10 rounded-lg shadow-xl max-h-32 overflow-auto">
+            <ul className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-lg shadow-xl max-h-32 overflow-auto">
               {filteredDnames.slice(0, 6).map(n => (
                 <li key={n} onMouseDown={() => { onChange({ ...design, name: n }); setDnameAc(false); }}
-                  className="px-3 py-1.5 text-sm text-white hover:bg-white/10 cursor-pointer">{n}</li>
+                  className="px-3 py-1.5 text-sm text-[#1a1916] hover:bg-black/[0.06] cursor-pointer">{n}</li>
               ))}
             </ul>
           )}
         </div>
         <div className="relative">
-          <label className="block text-xs text-white/50 mb-1">Design code *</label>
+          <label className="block text-xs text-[#1a1916]/60 mb-1">Design code *</label>
           <input
             value={design.code}
             onChange={e => { onChange({ ...design, code: e.target.value }); setDcodeAc(true); }}
             onFocus={() => setDcodeAc(true)}
             onBlur={() => setTimeout(() => setDcodeAc(false), 150)}
             placeholder="e.g. DG-001"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]"
+            className="w-full bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]"
           />
           {dcodeAc && filteredDcodes.length > 0 && (
-            <ul className="absolute z-20 w-full mt-1 bg-[#1a1750] border border-white/10 rounded-lg shadow-xl max-h-32 overflow-auto">
+            <ul className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-lg shadow-xl max-h-32 overflow-auto">
               {filteredDcodes.slice(0, 6).map(c => (
                 <li key={c} onMouseDown={() => { onChange({ ...design, code: c }); setDcodeAc(false); }}
-                  className="px-3 py-1.5 text-sm text-white hover:bg-white/10 cursor-pointer">{c}</li>
+                  className="px-3 py-1.5 text-sm text-[#1a1916] hover:bg-black/[0.06] cursor-pointer">{c}</li>
               ))}
             </ul>
           )}
@@ -269,7 +269,7 @@ function DesignSection({
 
       {/* Size selector */}
       <div>
-        <label className="block text-xs text-white/50 mb-1.5">Sizes</label>
+        <label className="block text-xs text-[#1a1916]/60 mb-1.5">Sizes</label>
         <div className="flex flex-wrap gap-1.5">
           {DEFAULT_SIZES.map(sz => (
             <button
@@ -278,7 +278,7 @@ function DesignSection({
               className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
                 design.sizes.includes(sz)
                   ? 'bg-[#534AB7] border-[#534AB7] text-white'
-                  : 'border-white/10 text-white/40 hover:text-white hover:border-white/30'
+                  : 'border-black/10 text-[#1a1916]/55 hover:text-[#1a1916] hover:border-black/25'
               }`}
             >{sz}</button>
           ))}
@@ -288,20 +288,20 @@ function DesignSection({
       {/* Varieties grid */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-white/50">Quantities per variety</label>
+          <label className="text-xs text-[#1a1916]/60">Quantities per variety</label>
           {grandTotal > 0 && (
-            <span className="text-xs text-[#a89fff]">Total: {grandTotal} pcs</span>
+            <span className="text-xs text-[#534AB7]">Total: {grandTotal} pcs</span>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-white/10">
-                <th className="text-left pr-2 py-1 text-white/30 font-normal">Variety</th>
+              <tr className="border-b border-black/10">
+                <th className="text-left pr-2 py-1 text-[#1a1916]/40 font-normal">Variety</th>
                 {design.sizes.map(sz => (
-                  <th key={sz} className="text-center px-1 py-1 text-white/40 font-normal w-14">{sz}</th>
+                  <th key={sz} className="text-center px-1 py-1 text-[#1a1916]/55 font-normal w-14">{sz}</th>
                 ))}
-                <th className="text-center pl-2 py-1 text-[#a89fff] font-normal w-10">Total</th>
+                <th className="text-center pl-2 py-1 text-[#534AB7] font-normal w-10">Total</th>
                 <th className="w-6" />
               </tr>
             </thead>
@@ -320,7 +320,7 @@ function DesignSection({
           </table>
         </div>
         <button type="button" onClick={addVariety}
-          className="mt-2 text-xs text-[#a89fff] hover:text-white transition-colors">
+          className="mt-2 text-xs text-[#534AB7] hover:text-[#1a1916] transition-colors">
           + Add variety
         </button>
       </div>
@@ -459,21 +459,21 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
   return (
     <div className="fixed inset-0 bg-black/70 z-40 flex items-start justify-center p-4 overflow-y-auto"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl my-4">
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-2xl shadow-2xl my-4">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#1a1750] rounded-t-2xl z-10">
-          <h2 className="text-white font-semibold">{isEdit ? 'Edit Order' : 'New Order'}</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-xl leading-none">×</button>
+        <div className="px-6 py-4 border-b border-black/10 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+          <h2 className="text-[#1a1916] font-semibold">{isEdit ? 'Edit Order' : 'New Order'}</h2>
+          <button onClick={onClose} className="text-[#1a1916]/55 hover:text-[#1a1916] text-xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {error && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-red-700 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
           {/* ── Bulk import (create mode only) — mirrors Phase 1's file-drop zone ── */}
           {!isEdit && (
             <div className="space-y-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-xs font-semibold text-[#a89fff]">📤 Import from file <span className="font-normal text-white/40">— auto-fills all fields</span></p>
+                <p className="text-xs font-semibold text-[#534AB7]">📤 Import from file <span className="font-normal text-[#1a1916]/55">— auto-fills all fields</span></p>
                 <button type="button" onClick={downloadOrderTemplate}
                   className="text-xs bg-[#534AB7] hover:bg-[#6259c8] text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
                   📥 Download Excel Template
@@ -481,18 +481,18 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
               </div>
               <label
                 className={`block border-2 border-dashed rounded-xl px-4 py-5 text-center cursor-pointer transition-colors ${
-                  importing ? 'border-white/10 opacity-50' : 'border-white/20 hover:border-[#534AB7]'
+                  importing ? 'border-black/10 opacity-50' : 'border-black/20 hover:border-[#534AB7]'
                 }`}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFileImport(f); }}
               >
-                <p className="text-sm text-white/60">📂 Drop the filled Excel template here, or click to browse</p>
-                <p className="text-xs text-white/30 mt-0.5">.xlsx · .csv</p>
+                <p className="text-sm text-[#1a1916]/70">📂 Drop the filled Excel template here, or click to browse</p>
+                <p className="text-xs text-[#1a1916]/40 mt-0.5">.xlsx · .csv</p>
                 <input type="file" accept=".xlsx,.xls,.csv" disabled={importing} className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleFileImport(f); }} />
               </label>
               {importStatus && (
-                <p className={`text-xs px-3 py-1.5 rounded-lg whitespace-pre-wrap ${importStatus.startsWith('⚠️') ? 'text-red-300 bg-red-500/10' : 'text-green-400 bg-green-500/10'}`}>
+                <p className={`text-xs px-3 py-1.5 rounded-lg whitespace-pre-wrap ${importStatus.startsWith('⚠️') ? 'text-red-700 bg-red-500/10' : 'text-green-700 bg-green-500/10'}`}>
                   {importStatus}
                 </p>
               )}
@@ -501,11 +501,11 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
 
           {/* ── Order Info ── */}
           <div className="space-y-4">
-            <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Order Details</p>
+            <p className="text-xs font-semibold text-[#1a1916]/55 uppercase tracking-wider">Order Details</p>
 
             {/* Client */}
             <div className="relative">
-              <label className="block text-xs text-white/60 mb-1">Client name *</label>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">Client name *</label>
               <input
                 value={client}
                 onChange={e => { setClient(e.target.value); setClientAc(true); }}
@@ -513,13 +513,13 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
                 onBlur={() => setTimeout(() => setClientAc(false), 150)}
                 placeholder="e.g. Sharma Jewellers"
                 required
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]"
               />
               {clientAc && filteredClients.length > 0 && (
-                <ul className="absolute z-20 w-full mt-1 bg-[#1a1750] border border-white/10 rounded-lg shadow-xl max-h-36 overflow-auto">
+                <ul className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-lg shadow-xl max-h-36 overflow-auto">
                   {filteredClients.slice(0, 8).map(c => (
                     <li key={c} onMouseDown={() => { setClient(c); setClientAc(false); }}
-                      className="px-3 py-2 text-sm text-white hover:bg-white/10 cursor-pointer">{c}</li>
+                      className="px-3 py-2 text-sm text-[#1a1916] hover:bg-black/[0.06] cursor-pointer">{c}</li>
                   ))}
                 </ul>
               )}
@@ -528,21 +528,21 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
             {/* Date + Priority + Type */}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs text-white/60 mb-1">Start date *</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Start date *</label>
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
               </div>
               <div>
-                <label className="block text-xs text-white/60 mb-1">Priority</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Priority</label>
                 <select value={priority} onChange={e => setPriority(e.target.value as Priority)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7]">
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7]">
                   {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-white/60 mb-1">Bangle type</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Bangle type</label>
                 <select value={bangleType} onChange={e => setBangleType(e.target.value as BangleType)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7]">
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7]">
                   {BANGLE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
@@ -551,31 +551,31 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
             {/* Promised date + phone (retail) */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-white/60 mb-1">
+                <label className="block text-xs text-[#1a1916]/70 mb-1">
                   Promised to customer
-                  <span className="text-white/30 ml-1">— drives the overdue warnings</span>
+                  <span className="text-[#1a1916]/40 ml-1">— drives the overdue warnings</span>
                 </label>
                 <input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
               </div>
               <div>
-                <label className="block text-xs text-white/60 mb-1">Customer phone</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Customer phone</label>
                 <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Optional"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]" />
               </div>
             </div>
 
             {/* Tags / cohorts */}
             <div>
-              <label className="block text-xs text-white/60 mb-1">
-                Tags <span className="text-white/30">— e.g. "Exhibition Aug 2026", "Retail"</span>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">
+                Tags <span className="text-[#1a1916]/40">— e.g. "Exhibition Aug 2026", "Retail"</span>
               </label>
               <div className="flex flex-wrap gap-1.5 mb-1.5">
                 {tags.map(t => (
-                  <span key={t} className="inline-flex items-center gap-1 bg-[#534AB7]/30 border border-[#534AB7]/50 text-[#c9c3ff] rounded-full px-2.5 py-0.5 text-xs">
+                  <span key={t} className="inline-flex items-center gap-1 bg-[#534AB7]/30 border border-[#534AB7]/50 text-[#3C3489] rounded-full px-2.5 py-0.5 text-xs">
                     {t}
                     <button type="button" onClick={() => setTags(tags.filter(x => x !== t))}
-                      className="text-[#c9c3ff]/60 hover:text-white leading-none">×</button>
+                      className="text-[#3C3489] hover:text-[#1a1916] leading-none">×</button>
                   </span>
                 ))}
               </div>
@@ -597,7 +597,7 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
                 }}
                 list="bt-tag-options"
                 placeholder="Type a tag and press Enter…"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]" />
               <datalist id="bt-tag-options">
                 {knownTags.map(t => <option key={t} value={t} />)}
               </datalist>
@@ -605,15 +605,15 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
 
             {/* Notes */}
             <div>
-              <label className="block text-xs text-white/60 mb-1">Notes</label>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">Notes</label>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Optional notes…"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm resize-none focus:outline-none focus:border-[#534AB7]" />
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm resize-none focus:outline-none focus:border-[#534AB7]" />
             </div>
           </div>
 
           {/* ── Designs ── */}
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">
+            <p className="text-xs font-semibold text-[#1a1916]/55 uppercase tracking-wider">
               Designs ({designs.length})
             </p>
 
@@ -631,7 +631,7 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
             ))}
 
             <button type="button" onClick={addDesign}
-              className="w-full py-2 border border-dashed border-white/20 rounded-xl text-white/40 hover:text-white hover:border-white/40 text-sm transition-colors">
+              className="w-full py-2 border border-dashed border-black/20 rounded-xl text-[#1a1916]/55 hover:text-[#1a1916] hover:border-black/30 text-sm transition-colors">
               + Add another design
             </button>
           </div>
@@ -639,7 +639,7 @@ export default function OrderModal({ order, clients, dnames, dcodes, knownTags, 
           {/* Actions */}
           <div className="flex gap-2 pt-2 sticky bottom-0 pb-1">
             <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">
+              className="flex-1 py-2.5 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors">
               Cancel
             </button>
             <button type="submit"

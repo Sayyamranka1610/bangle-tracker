@@ -80,16 +80,16 @@ export default function Designs() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Designs</h1>
-          <p className="text-sm text-white/40 mt-0.5">
+          <h1 className="text-2xl font-bold text-[#1a1916]">Designs</h1>
+          <p className="text-sm text-[#1a1916]/55 mt-0.5">
             {codeMap.size} unique code{codeMap.size !== 1 ? 's' : ''} · {totalDesigns} design{totalDesigns !== 1 ? 's' : ''} across all orders
           </p>
         </div>
         {saving && (
-          <span className="text-xs text-yellow-300 animate-pulse">Saving…</span>
+          <span className="text-xs text-yellow-700 animate-pulse">Saving…</span>
         )}
         {!hasLock && session?.role === 'owner' && (
-          <span className="text-xs text-yellow-400 bg-yellow-500/10 px-3 py-1.5 rounded-lg">
+          <span className="text-xs text-yellow-700 bg-yellow-500/10 px-3 py-1.5 rounded-lg">
             Edit lock not held — read only
           </span>
         )}
@@ -101,13 +101,13 @@ export default function Designs() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search by design code, name, or client…"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+          className="w-full bg-white border border-black/10 rounded-lg px-4 py-2.5 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
         />
       </div>
 
       {/* Design groups */}
       {filteredEntries.length === 0 ? (
-        <div className="text-center py-16 text-white/30">
+        <div className="text-center py-16 text-[#1a1916]/40">
           {orders.length === 0
             ? 'No orders yet. Create an order first, then add designs to it.'
             : 'No designs match your search.'}

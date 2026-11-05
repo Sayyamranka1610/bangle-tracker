@@ -6,6 +6,7 @@ import {
   buildDashboard, dashboardTotals, allTags,
   type DashItem, type DashOrder,
 } from '../lib/dashboardUtils';
+import { useLightbox } from '../components/lightboxContext';
 
 // Client Dashboard — every client, their orders, and where each item is right
 // now. Read-only: this page never writes to Firebase.
@@ -26,7 +27,7 @@ function sortedSizes(sizes: Record<string, number>): string[] {
 function StageBar({ counts, total }: { counts: Record<CoStageKey, number>; total: number }) {
   if (!total) return null;
   return (
-    <div className="flex h-1.5 rounded-full overflow-hidden bg-white/10 mt-2">
+    <div className="flex h-1.5 rounded-full overflow-hidden bg-black/[0.06] mt-2">
       {CO_STAGE_DEFS.map(s => {
         const n = counts[s.k] || 0;
         if (!n) return null;
@@ -48,7 +49,7 @@ function SizeChips({ item }: { item: DashItem }) {
         const got = Number(item.recvQty[sz]) || 0;
         if (got >= ord && got > 0) {
           return (
-            <span key={sz} className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-green-500/15 text-green-300 border border-green-500/30"
+            <span key={sz} className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-green-500/15 text-green-700 border border-green-500/30"
               title={`${sz}: all ${ord} back`}>
               {sz} <b>×{ord}</b> ✓
             </span>
@@ -56,14 +57,14 @@ function SizeChips({ item }: { item: DashItem }) {
         }
         if (got > 0) {
           return (
-            <span key={sz} className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30"
+            <span key={sz} className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-amber-400/15 text-amber-700 border border-amber-400/30"
               title={`${sz}: ${got} of ${ord} back — ${ord - got} still to come`}>
               {sz} <b>×{got}</b> of {ord}
             </span>
           );
         }
         return (
-          <span key={sz} className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-white/5 text-white/60 border border-white/10"
+          <span key={sz} className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-white text-[#1a1916]/70 border border-black/10"
             title={`${sz}: ${ord} ordered, nothing back yet`}>
             {sz} <b>×{ord}</b>
           </span>
@@ -74,6 +75,7 @@ function SizeChips({ item }: { item: DashItem }) {
 }
 
 function ItemCard({ item }: { item: DashItem }) {
+  const lightbox = useLightbox();
   const [showNote, setShowNote] = useState(false);
   const def = CO_STAGE_DEFS.find(s => s.k === item.stage)!;
   const img = item.images?.[0]?.data;
@@ -81,53 +83,55 @@ function ItemCard({ item }: { item: DashItem }) {
   const ordered = item.qty;
 
   return (
-    <div className="border border-white/10 rounded-lg overflow-hidden bg-white/3">
+    <div className="border border-black/10 rounded-lg overflow-hidden bg-white">
       {img ? (
-        <img src={img} alt="" loading="lazy" className="w-full h-24 object-cover bg-white/5"
+        <img src={img} alt="" loading="lazy" title="Click to enlarge"
+          onClick={() => lightbox.open((item.images ?? []).map(i => i.data))}
+          className="w-full h-24 object-cover bg-white cursor-zoom-in"
           onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
       ) : (
-        <div className="w-full h-24 bg-white/5 flex items-center justify-center text-white/20 text-xs">no photo</div>
+        <div className="w-full h-24 bg-white flex items-center justify-center text-[#1a1916]/30 text-xs">no photo</div>
       )}
       <div className="p-2">
-        <div className="text-xs font-semibold text-white truncate" title={item.name}>
+        <div className="text-xs font-semibold text-[#1a1916] truncate" title={item.name}>
           {item.code || '(no code)'}
         </div>
-        <div className="text-[10px] text-white/40 truncate" title={`${item.name} — ${item.family}`}>
+        <div className="text-[10px] text-[#1a1916]/55 truncate" title={`${item.name} — ${item.family}`}>
           {item.varName ? `${item.varName} · ` : ''}{item.finish !== '—' ? item.finish : item.family}
         </div>
-        <div className="text-[10px] text-[#a89fff] mt-0.5">
+        <div className="text-[10px] text-[#534AB7] mt-0.5">
           {ordered} pcs · {sortedSizes(item.sizes).length} size{sortedSizes(item.sizes).length !== 1 ? 's' : ''}
         </div>
 
         <SizeChips item={item} />
 
         {back > 0 && (
-          <div className={`text-[10px] font-medium mt-1 ${back >= ordered ? 'text-green-300' : 'text-amber-300'}`}>
+          <div className={`text-[10px] font-medium mt-1 ${back >= ordered ? 'text-green-700' : 'text-amber-700'}`}>
             {back >= ordered
               ? `✓ all ${ordered} back`
               : `${back} of ${ordered} back · ${ordered - back} still to come`}
           </div>
         )}
         {item.rejected > 0 && (
-          <div className="text-[10px] text-red-300 mt-0.5">{item.rejected} rejected</div>
+          <div className="text-[10px] text-red-700 mt-0.5">{item.rejected} rejected</div>
         )}
 
         <div className="flex items-center justify-between gap-1 mt-1.5">
           <span className="text-[10px] font-semibold rounded-full px-2 py-0.5"
             style={{ background: def.bg, color: def.tx }}>{def.lbl}</span>
           {item.daysInStage !== null && (
-            <span className="text-[10px] text-white/30">{item.daysInStage}d</span>
+            <span className="text-[10px] text-[#1a1916]/40">{item.daysInStage}d</span>
           )}
         </div>
 
         {item.note && (
           <div className="mt-1.5">
             <button onClick={() => setShowNote(v => !v)}
-              className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-400/20 text-amber-300 border border-amber-400/30">
+              className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-400/20 text-amber-700 border border-amber-400/30">
               📌 {showNote ? 'hide note' : 'special request'}
             </button>
             {showNote && (
-              <p className="mt-1 text-[10px] leading-relaxed text-amber-200/90 bg-amber-400/10 border border-amber-400/25 rounded p-1.5">
+              <p className="mt-1 text-[10px] leading-relaxed text-amber-700 bg-amber-400/10 border border-amber-400/25 rounded p-1.5">
                 {item.note}
               </p>
             )}
@@ -152,28 +156,28 @@ function OrderBlock({ dash, stageFilter }: { dash: DashOrder; stageFilter: CoSta
   const hidden = filtered.length - shown.length;
 
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden mb-3">
-      <div className="px-3 py-2.5 bg-white/3 border-b border-white/10 flex items-center gap-3 flex-wrap">
+    <div className="border border-black/10 rounded-xl overflow-hidden mb-3">
+      <div className="px-3 py-2.5 bg-white border-b border-black/10 flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-[180px]">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-[#a89fff]">{dash.order.orderId}</span>
+            <span className="text-sm font-semibold text-[#534AB7]">{dash.order.orderId}</span>
             {dash.overdue && (
-              <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/20 text-red-300">⚠ overdue</span>
+              <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/20 text-red-700">⚠ overdue</span>
             )}
             {(dash.order.tags ?? []).map(t => (
-              <span key={t} className="text-[10px] rounded-full px-2 py-0.5 bg-[#534AB7]/30 text-[#c9c3ff]">{t}</span>
+              <span key={t} className="text-[10px] rounded-full px-2 py-0.5 bg-[#534AB7]/30 text-[#3C3489]">{t}</span>
             ))}
           </div>
-          <div className="text-[11px] text-white/40 mt-0.5">
+          <div className="text-[11px] text-[#1a1916]/55 mt-0.5">
             {dash.order.promisedDate
               ? <>promised {dash.order.promisedDate}
                   {dash.daysLeft !== null && (
-                    <span className={dash.daysLeft < 0 ? 'text-red-300' : 'text-white/40'}>
+                    <span className={dash.daysLeft < 0 ? 'text-red-700' : 'text-[#1a1916]/55'}>
                       {' '}({dash.daysLeft < 0 ? `${-dash.daysLeft}d late` : `${dash.daysLeft}d left`})
                     </span>
                   )}
                 </>
-              : <span className="text-white/25">no promised date</span>}
+              : <span className="text-[#1a1916]/35">no promised date</span>}
             {' · '}{dash.dispatched} of {dash.items.length} dispatched
           </div>
         </div>
@@ -182,7 +186,7 @@ function OrderBlock({ dash, stageFilter }: { dash: DashOrder; stageFilter: CoSta
         </div>
         <button
           onClick={() => navigate(`/orders?focus=${dash.order.id}`)}
-          className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors whitespace-nowrap">
+          className="text-[11px] px-2.5 py-1 rounded-lg bg-white hover:bg-black/[0.06] text-[#1a1916]/70 hover:text-[#1a1916] transition-colors whitespace-nowrap">
           Open order →
         </button>
       </div>
@@ -195,13 +199,13 @@ function OrderBlock({ dash, stageFilter }: { dash: DashOrder; stageFilter: CoSta
           </div>
           {hidden > 0 && (
             <button onClick={() => setShowAll(true)}
-              className="w-full py-2 text-[11px] text-[#a89fff] hover:bg-white/5 border-t border-white/10 transition-colors">
+              className="w-full py-2 text-[11px] text-[#534AB7] hover:bg-black/5 border-t border-black/10 transition-colors">
               Show {hidden} more item{hidden !== 1 ? 's' : ''} ({filtered.length} in this order)
             </button>
           )}
         </>
       ) : (
-        <p className="px-3 py-4 text-center text-[11px] text-white/25">No items at this stage in this order</p>
+        <p className="px-3 py-4 text-center text-[11px] text-[#1a1916]/35">No items at this stage in this order</p>
       )}
     </div>
   );
@@ -238,8 +242,8 @@ export default function Dashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-5">
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-sm text-white/40 mt-0.5">
+        <h1 className="text-2xl font-bold text-[#1a1916]">Dashboard</h1>
+        <p className="text-sm text-[#1a1916]/55 mt-0.5">
           Every client, every order, and exactly where each item is. Click a client to open them up.
         </p>
       </div>
@@ -247,9 +251,9 @@ export default function Dashboard() {
       {/* Totals */}
       <div className="grid gap-2.5 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
         {tiles.map(t => (
-          <div key={t.l} className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-3">
-            <div className={`text-2xl font-bold leading-none ${t.alert ? 'text-red-400' : 'text-[#a89fff]'}`}>{t.n}</div>
-            <div className="text-[10px] uppercase tracking-wide text-white/40 mt-1.5">{t.l}</div>
+          <div key={t.l} className="bg-white border border-black/10 rounded-xl px-3.5 py-3">
+            <div className={`text-2xl font-bold leading-none ${t.alert ? 'text-red-700' : 'text-[#534AB7]'}`}>{t.n}</div>
+            <div className="text-[10px] uppercase tracking-wide text-[#1a1916]/55 mt-1.5">{t.l}</div>
           </div>
         ))}
       </div>
@@ -260,11 +264,11 @@ export default function Dashboard() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search client, order, design code…"
-          className="flex-1 min-w-[220px] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]"
+          className="flex-1 min-w-[220px] bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]"
         />
         {tags.length > 0 && (
           <select value={tag ?? ''} onChange={e => setTag(e.target.value || null)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7]">
+            className="bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7]">
             <option value="">All tags</option>
             {tags.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
@@ -287,12 +291,12 @@ export default function Dashboard() {
         })}
         {stageFilter && (
           <button onClick={() => setStageFilter(null)}
-            className="text-[11px] font-semibold rounded-full px-3 py-1 bg-white/10 text-white/70">✕ show all</button>
+            className="text-[11px] font-semibold rounded-full px-3 py-1 bg-black/[0.06] text-[#1a1916]/80">✕ show all</button>
         )}
       </div>
 
       {clients.length === 0 && (
-        <p className="text-sm text-white/40 text-center py-10">
+        <p className="text-sm text-[#1a1916]/55 text-center py-10">
           No clients match. {search && 'Try a different search.'}
         </p>
       )}
@@ -305,19 +309,19 @@ export default function Dashboard() {
             className={`text-left border rounded-xl px-3.5 py-3 transition-all ${
               openClient === c.client
                 ? 'border-[#534AB7] bg-[#534AB7]/15'
-                : 'border-white/10 bg-white/5 hover:border-[#534AB7]/60'
+                : 'border-black/10 bg-white hover:border-[#534AB7]/60'
             }`}>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-sm font-semibold text-white truncate">{c.client}</span>
-              <span className="text-xs font-bold text-[#a89fff]">{c.dispatchedPct}%</span>
+              <span className="text-sm font-semibold text-[#1a1916] truncate">{c.client}</span>
+              <span className="text-xs font-bold text-[#534AB7]">{c.dispatchedPct}%</span>
             </div>
-            <div className="text-[11px] text-white/40 mt-0.5">
+            <div className="text-[11px] text-[#1a1916]/55 mt-0.5">
               {c.orders.length} order{c.orders.length !== 1 ? 's' : ''} · {c.itemCount} items · {c.pieces.toLocaleString()} pcs
               {c.soonestPromised && ` · due ${c.soonestPromised}`}
             </div>
             <StageBar counts={c.counts} total={c.itemCount} />
             {c.overdueOrders > 0 && (
-              <div className="mt-1.5 inline-block text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/20 text-red-300">
+              <div className="mt-1.5 inline-block text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/20 text-red-700">
                 ⚠ {c.overdueOrders} order{c.overdueOrders !== 1 ? 's' : ''} overdue
               </div>
             )}
@@ -329,16 +333,16 @@ export default function Dashboard() {
       {active && (
         <div className="mt-5" id="dash-drill">
           <div className="bg-[#534AB7] rounded-t-xl px-4 py-3 flex items-center gap-3 flex-wrap">
-            <span className="text-base font-bold text-white">{active.client}</span>
-            <span className="text-xs text-white/70">
+            <span className="text-base font-bold text-[#1a1916]">{active.client}</span>
+            <span className="text-xs text-[#1a1916]/80">
               {active.phones.length ? `📞 ${active.phones.join(', ')} · ` : ''}
               {active.itemCount} items · {active.pieces.toLocaleString()} pcs
             </span>
             <span className="flex-1" />
             <button onClick={() => setOpenClient(null)}
-              className="text-xs bg-white/20 hover:bg-white/30 text-white rounded-lg px-3 py-1 transition-colors">✕ close</button>
+              className="text-xs bg-black/[0.12] hover:bg-black/20 text-[#1a1916] rounded-lg px-3 py-1 transition-colors">✕ close</button>
           </div>
-          <div className="border border-t-0 border-white/10 rounded-b-xl p-3">
+          <div className="border border-t-0 border-black/10 rounded-b-xl p-3">
             {active.orders.map(o => (
               <OrderBlock key={o.order.id} dash={o} stageFilter={stageFilter} />
             ))}

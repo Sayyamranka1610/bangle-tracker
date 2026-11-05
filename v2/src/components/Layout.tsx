@@ -49,7 +49,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0f0e1a] text-white overflow-hidden">
+    <div className="flex h-screen bg-[#f4f3ef] text-[#1a1916] overflow-hidden">
       {isReadOnly && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-red-600/90 text-white text-xs text-center py-1 font-medium">
           READ-ONLY MODE — You can view everything but cannot make changes
@@ -57,7 +57,7 @@ export default function Layout() {
       )}
 
       {/* Mobile top bar — hamburger only, hidden at md+ where the sidebar is always visible */}
-      <div className={`md:hidden fixed left-0 right-0 z-40 flex items-center gap-3 bg-[#1a1750] border-b border-white/10 px-3 py-2.5 ${isReadOnly ? 'top-6' : 'top-0'}`}>
+      <div className={`md:hidden fixed left-0 right-0 z-40 flex items-center gap-3 bg-[#1a1750] text-white border-b border-white/10 px-3 py-2.5 ${isReadOnly ? 'top-6' : 'top-0'}`}>
         <button
           onClick={() => setMobileNavOpen(v => !v)}
           aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
@@ -79,7 +79,7 @@ export default function Layout() {
       )}
 
       {/* Sidebar — static in the flex layout at md+; off-canvas drawer below it */}
-      <aside className={`w-64 md:w-56 flex-shrink-0 bg-[#1a1750] flex flex-col fixed md:static inset-y-0 left-0 z-50 transition-transform duration-200 ${
+      <aside className={`w-64 md:w-56 flex-shrink-0 bg-[#1a1750] text-white flex flex-col fixed md:static inset-y-0 left-0 z-50 transition-transform duration-200 ${
         mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
       }`}>
         <div className="px-4 py-5 border-b border-white/10">

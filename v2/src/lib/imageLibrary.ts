@@ -9,8 +9,8 @@ export const LIB_SEGMENTS = ['CNC', 'Dye Gold'] as const;
 export type LibSegment = typeof LIB_SEGMENTS[number];
 
 export const LIB_SEG_META: Record<LibSegment, { icon: string; color: string; bg: string; border: string }> = {
-  'CNC':      { icon: '⚙️', color: '#a89fff', bg: 'bg-[#534AB7]/15', border: 'border-[#534AB7]/40' },
-  'Dye Gold': { icon: '✨', color: '#facc15', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
+  'CNC':      { icon: '⚙️', color: '#534AB7', bg: 'bg-[#534AB7]/10', border: 'border-[#534AB7]/40' },
+  'Dye Gold': { icon: '✨', color: '#8a6a00', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
 };
 
 export interface LibEntry {

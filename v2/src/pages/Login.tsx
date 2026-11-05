@@ -27,21 +27,21 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0e1a] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#f4f3ef] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#a89fff]">Siddhi Bangles</h1>
-          <p className="text-white/50 mt-1 text-sm">Bangle Tracker — Phase 2</p>
+          <h1 className="text-3xl font-bold text-[#534AB7]">Siddhi Bangles</h1>
+          <p className="text-[#1a1916]/60 mt-1 text-sm">Bangle Tracker — Phase 2</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-[#1a1750] rounded-2xl p-6 space-y-4 shadow-xl">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 space-y-4 shadow-xl">
           <div>
-            <label className="block text-xs text-white/60 mb-1">Username</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Username</label>
             <input
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
               placeholder="Enter username"
               autoComplete="username"
               required
@@ -49,12 +49,12 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">Password</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Password</label>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
               placeholder="Enter password"
               autoComplete="current-password"
               required
@@ -74,7 +74,7 @@ export default function Login() {
           <button
             type="button"
             onClick={() => { devLogin(); navigate('/orders', { replace: true }); }}
-            className="w-full mt-3 text-xs text-white/40 hover:text-white/70 underline text-center"
+            className="w-full mt-3 text-xs text-[#1a1916]/55 hover:text-[#1a1916]/80 underline text-center"
           >
             Skip login (dev preview only — read-only)
           </button>

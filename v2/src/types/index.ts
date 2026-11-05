@@ -38,6 +38,7 @@ export interface DesignStage {
 
 export interface DesignImage {
   data: string;   // base64 data URL or R2 URL
+  hqData?: string; // full-quality version when Phase 1 stored one — preferred in the photo viewer
   name?: string;
 }
 

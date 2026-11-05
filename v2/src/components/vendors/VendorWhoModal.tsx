@@ -154,30 +154,30 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-lg p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-lg p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div>
-          <h3 className="text-sm font-bold text-[#a89fff]">👥 Who is this row for?</h3>
-          <p className="text-xs text-white/40 mt-0.5">
-            Design <strong className="text-white/70">{code || '—'}</strong> in <strong className="text-white/70">{liveVo.orderId}</strong> — {rowTotal} {unit} total
+          <h3 className="text-sm font-bold text-[#534AB7]">👥 Who is this row for?</h3>
+          <p className="text-xs text-[#1a1916]/55 mt-0.5">
+            Design <strong className="text-[#1a1916]/80">{code || '—'}</strong> in <strong className="text-[#1a1916]/80">{liveVo.orderId}</strong> — {rowTotal} {unit} total
           </p>
         </div>
 
         {sources.length === 0 && (
-          <p className="text-xs text-white/30 text-center py-3">No customer linked to this row yet.</p>
+          <p className="text-xs text-[#1a1916]/40 text-center py-3">No customer linked to this row yet.</p>
         )}
 
         <div className="flex flex-col gap-1.5">
           {sources.map((s, si) => (
-            <div key={si} className="flex items-start gap-2.5 border border-[#534AB7]/25 rounded-lg px-3 py-2 bg-white/3">
+            <div key={si} className="flex items-start gap-2.5 border border-[#534AB7]/25 rounded-lg px-3 py-2 bg-white">
               <span className="text-[10px] font-bold text-white bg-[#534AB7] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">{s.orderLabel || 'CO'}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-white truncate">{s.client}</p>
-                <p className="text-[10px] text-white/40 mt-0.5">{voSizeStr(s.sizes)}</p>
+                <p className="text-[13px] font-semibold text-[#1a1916] truncate">{s.client}</p>
+                <p className="text-[10px] text-[#1a1916]/55 mt-0.5">{voSizeStr(s.sizes)}</p>
               </div>
-              <span className="text-[13px] font-bold text-[#a89fff] flex-shrink-0">{voQty(s.sizes)}</span>
+              <span className="text-[13px] font-bold text-[#534AB7] flex-shrink-0">{voQty(s.sizes)}</span>
               {canEdit && (
                 <button onClick={() => handleUnlink(si)}
-                  className="text-[10px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/40 rounded px-2 py-1 flex-shrink-0">
+                  className="text-[10px] font-bold bg-amber-400/15 text-amber-700 border border-amber-400/40 rounded px-2 py-1 flex-shrink-0">
                   ✕ Unlink
                 </button>
               )}
@@ -185,13 +185,13 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
           ))}
 
           {extraQty > 0 && (
-            <div className="flex items-start gap-2.5 border border-dashed border-white/15 rounded-lg px-3 py-2 bg-white/3">
-              <span className="text-[10px] font-bold text-white bg-white/20 rounded px-1.5 py-0.5 flex-shrink-0">Extra</span>
+            <div className="flex items-start gap-2.5 border border-dashed border-black/15 rounded-lg px-3 py-2 bg-white">
+              <span className="text-[10px] font-bold text-[#1a1916] bg-black/[0.12] rounded px-1.5 py-0.5 flex-shrink-0">Extra</span>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-white/70">Buffer/stock — nobody's</p>
-                <p className="text-[10px] text-white/40 mt-0.5">{voSizeStr(extraSizes)}</p>
+                <p className="text-[13px] font-semibold text-[#1a1916]/80">Buffer/stock — nobody's</p>
+                <p className="text-[10px] text-[#1a1916]/55 mt-0.5">{voSizeStr(extraSizes)}</p>
               </div>
-              <span className="text-[13px] font-bold text-white/50 flex-shrink-0">{extraQty}</span>
+              <span className="text-[13px] font-bold text-[#1a1916]/60 flex-shrink-0">{extraQty}</span>
             </div>
           )}
         </div>
@@ -200,7 +200,7 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
           showAdd ? (
             candidates.length ? (
               <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] text-white/30">Add which customer order(s)? Tick one or more, then confirm.</p>
+                <p className="text-[11px] text-[#1a1916]/40">Add which customer order(s)? Tick one or more, then confirm.</p>
                 {candidates.map((c, ci) => {
                   const key = candidateKey(c);
                   const checked = selected.has(key);
@@ -213,10 +213,10 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
                         className="mt-0.5 w-4 h-4 accent-[#534AB7] flex-shrink-0 cursor-pointer" />
                       <span className="text-[10px] font-bold text-white bg-[#534AB7] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">{c.orderLabel || 'CO'}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold text-white truncate">{c.client}</p>
-                        <p className="text-[10px] text-white/40 mt-0.5">{voSizeStr(c.sizes)}</p>
+                        <p className="text-[13px] font-semibold text-[#1a1916] truncate">{c.client}</p>
+                        <p className="text-[10px] text-[#1a1916]/55 mt-0.5">{voSizeStr(c.sizes)}</p>
                       </div>
-                      <span className="text-[13px] font-bold text-[#a89fff] flex-shrink-0">{c.qty} <span className="text-[10px] font-medium text-white/40">{c.unit}</span></span>
+                      <span className="text-[13px] font-bold text-[#534AB7] flex-shrink-0">{c.qty} <span className="text-[10px] font-medium text-[#1a1916]/55">{c.unit}</span></span>
                     </div>
                   );
                 })}
@@ -228,21 +228,21 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
                 )}
               </div>
             ) : (
-              <p className="text-[11px] text-white/30 text-center py-2.5 border border-dashed border-white/15 rounded-lg">
+              <p className="text-[11px] text-[#1a1916]/40 text-center py-2.5 border border-dashed border-black/15 rounded-lg">
                 No other customer order has design "{code}" waiting to be pooled.
               </p>
             )
           ) : (
             <button onClick={() => setShowAdd(true)}
-              className="border border-dashed border-[#534AB7]/40 rounded-lg py-2 text-center text-[#a89fff] text-xs font-semibold">
+              className="border border-dashed border-[#534AB7]/40 rounded-lg py-2 text-center text-[#534AB7] text-xs font-semibold">
               + Add another customer order
             </button>
           )
         )}
 
-        <div className={`flex justify-between gap-2.5 px-3 py-2 rounded-lg text-sm font-bold ${mismatch ? 'bg-amber-400/10 text-amber-200' : 'bg-white/5 text-[#a89fff]'}`}>
+        <div className={`flex justify-between gap-2.5 px-3 py-2 rounded-lg text-sm font-bold ${mismatch ? 'bg-amber-400/10 text-amber-700' : 'bg-white text-[#534AB7]'}`}>
           <span>Row total ({rowTotal} {unit})</span>
-          <span className={mismatch ? 'text-amber-300' : 'text-green-400'}>
+          <span className={mismatch ? 'text-amber-700' : 'text-green-700'}>
             {mismatch ? '⚠ ' : '✓ '}
             {addends.length ? `${addends.join(' + ')} = ` : ''}{accounted}
             {mismatch ? ` — ${Math.abs(totalDiff)} ${unit} unaccounted for` : ' — matches'}
@@ -251,7 +251,7 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
 
         {mismatch && canEdit && (
           totalDiff > 0 ? (
-            <div className="text-[11px] text-amber-300/80 bg-amber-400/10 border border-amber-400/25 rounded-lg px-3 py-2">
+            <div className="text-[11px] text-amber-700 bg-amber-400/10 border border-amber-400/25 rounded-lg px-3 py-2">
               This row has <strong>{Object.values(remainder).reduce((a, n) => a + Math.max(n, 0), 0)} {finerUnitFor(data, vd)}</strong> more than what's linked above — either another customer order still needs adding, or that's genuine extra stock made beyond any order.
               <div className="mt-1.5">
                 <button onClick={handleSweep} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-3 py-1.5">
@@ -260,7 +260,7 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
               </div>
             </div>
           ) : (
-            <div className="text-[11px] text-red-300/80 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2">
+            <div className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2">
               This row shows <strong>{Math.abs(totalDiff)} {unit} less</strong> than what's linked above — either a size was edited down by hand, or the customers linked need more made than this row currently has.
               <div className="mt-1.5">
                 <button onClick={handleGrow} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-3 py-1.5">
@@ -271,14 +271,14 @@ export default function VendorWhoModal({ data, vo, vendorDesignId, canEdit, onCh
           )
         )}
         {mismatch && !canEdit && (
-          <p className="text-[11px] text-amber-300/70 bg-amber-400/10 border border-amber-400/25 rounded-lg px-3 py-2">
+          <p className="text-[11px] text-amber-700 bg-amber-400/10 border border-amber-400/25 rounded-lg px-3 py-2">
             {anyPositive && !anyNegative
               ? "This row has more linked than what's accounted for — either another customer order still needs adding, or it's genuine extra stock."
               : "This row shows less than what's linked above — a size may have been edited down by hand, or the linked customers need more than this row currently has."}
           </p>
         )}
 
-        <button onClick={onClose} className="self-end text-xs font-semibold bg-white/10 hover:bg-white/15 rounded-lg px-4 py-2 text-white">Close</button>
+        <button onClick={onClose} className="self-end text-xs font-semibold bg-black/[0.06] hover:bg-black/10 rounded-lg px-4 py-2 text-[#1a1916]">Close</button>
       </div>
     </div>
   );

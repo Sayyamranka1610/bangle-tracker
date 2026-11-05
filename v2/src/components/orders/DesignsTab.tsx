@@ -5,20 +5,28 @@ import { DEFAULT_SIZES } from '../../lib/designUtils';
 import { dedupedVendorsOfType, setPipeVendor, setKarigarVendor, setPlatingVendor, toggleReceived, toggleVarietyDone, hasOnlyDefault, setHold, clearHold } from '../../lib/coStageUtils';
 import { karigarHistory, suggestionFor, type KarigarSuggestion } from '../../lib/karigarHistoryUtils';
 import PhotoPickerModal from '../designs/PhotoPickerModal';
+import { useLightbox } from '../lightboxContext';
 
 // Small thumbnail strip + "add from library" button — shared by the design
 // header (flat/CNC images) and each variety row (dye-gold images).
-function PhotoStrip({ images, canEdit, onAdd, onRemove }: {
+function PhotoStrip({ images, viewAll, canEdit, onAdd, onRemove }: {
   images: DesignImage[];
+  /** Photos the viewer pages through when one is clicked — defaults to `images`. A design-level strip passes
+   *  its own photos plus every variety's, like Phase 1's openDesignImgsLb. */
+  viewAll?: DesignImage[];
   canEdit: boolean;
   onAdd: () => void;
   onRemove: (index: number) => void;
 }) {
+  const lightbox = useLightbox();
+  const gallery = viewAll ?? images;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       {images.map((img, i) => (
         <div key={i} className="relative group flex-shrink-0">
-          <img src={img.data} alt={img.name ?? ''} className="w-8 h-8 rounded object-cover border border-white/10" />
+          <img src={img.data} alt={img.name ?? ''} title={`${img.name || 'Photo'} — click to enlarge`}
+            onClick={() => lightbox.open(gallery.map(g => g.hqData || g.data), Math.max(0, gallery.indexOf(img)))}
+            className="w-9 h-9 rounded-[5px] object-cover border border-[#AFA9EC] cursor-zoom-in hover:brightness-95 transition-[filter]" />
           {canEdit && (
             <button onClick={() => onRemove(i)} title="Remove photo"
               className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
@@ -27,7 +35,7 @@ function PhotoStrip({ images, canEdit, onAdd, onRemove }: {
       ))}
       {canEdit && (
         <button onClick={onAdd} title="Add photo from library or upload new"
-          className="w-8 h-8 rounded border border-dashed border-white/20 text-white/40 hover:text-white hover:border-white/40 flex items-center justify-center text-sm flex-shrink-0 transition-colors">+</button>
+          className="w-9 h-9 rounded-[5px] border border-dashed border-black/20 text-[#1a1916]/55 hover:text-[#1a1916] hover:border-black/30 flex items-center justify-center text-sm flex-shrink-0 transition-colors">+</button>
       )}
     </div>
   );
@@ -71,13 +79,13 @@ function VendorCell({
 
   return (
     <div className="flex flex-col gap-0.5 min-w-[90px]">
-      <span className="text-[9px] font-bold uppercase tracking-wide text-white/30">{label}</span>
+      <span className="text-[9px] font-bold uppercase tracking-wide text-[#1a1916]/40">{label}</span>
       <div className="flex items-center gap-1">
         <select
           disabled={!canEdit}
           value={selected === '__own__' ? '__own__' : (vendors.includes(selected) ? selected : selected || '')}
           onChange={e => onChange(setter(holder, e.target.value))}
-          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none focus:border-[#534AB7]"
+          className="flex-1 min-w-0 bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916] text-[10px] focus:outline-none focus:border-[#534AB7]"
         >
           <option value="">—</option>
           <option value="__own__">Own</option>
@@ -88,14 +96,14 @@ function VendorCell({
           onClick={() => onChange(toggleReceived(holder, stage))}
           title={received ? `Unmark ${label.toLowerCase()} received` : `Mark ${label.toLowerCase()} received`}
           className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${
-            received ? 'bg-green-500/20 text-green-400 border border-green-500/40' : 'bg-white/5 text-white/20 border border-white/10'
+            received ? 'bg-green-500/20 text-green-700 border border-green-500/40' : 'bg-white text-[#1a1916]/30 border border-black/10'
           }`}
         >✓</button>
       </div>
       {canEdit && !selected && suggestion && (
         <button type="button" onClick={() => onChange(setter(holder, suggestion.vendor))}
           title={`Made this ${suggestion.count} time${suggestion.count !== 1 ? 's' : ''} before`}
-          className="text-[9px] text-amber-300/80 hover:text-amber-300 text-left truncate">
+          className="text-[9px] text-amber-700 hover:text-amber-700 text-left truncate">
           💡 Last: {suggestion.vendor}
         </button>
       )}
@@ -228,20 +236,20 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
         const isFlatRow = hasOnlyDefault(design);
 
         return (
-          <div key={design.id} className="border border-white/10 rounded-xl overflow-hidden">
+          <div key={design.id} className="border border-black/10 rounded-xl overflow-hidden">
             {/* Design header */}
-            <div className="flex items-center gap-3 px-4 py-2.5 bg-white/3 border-b border-white/10">
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-black/10">
               {/* Name */}
               {canEdit && editingName?.di === di ? (
                 <input autoFocus value={editingName.value}
                   onChange={e => setEditingName({ di, value: e.target.value })}
                   onBlur={() => commitName(di, editingName.value)}
                   onKeyDown={e => e.key === 'Enter' && commitName(di, editingName.value)}
-                  className="flex-1 bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none"
+                  className="flex-1 bg-black/[0.06] border border-[#534AB7] rounded px-2 py-1 text-[#1a1916] text-sm focus:outline-none"
                   list={`dnames-${di}`} />
               ) : (
                 <span
-                  className={`flex-1 text-white font-semibold ${canEdit ? 'cursor-pointer hover:text-[#a89fff]' : ''}`}
+                  className={`flex-1 text-[#1a1916] font-semibold ${canEdit ? 'cursor-pointer hover:text-[#534AB7]' : ''}`}
                   onClick={() => canEdit && setEditingName({ di, value: design.name })}
                 >
                   {design.name || '(unnamed)'}
@@ -255,11 +263,11 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                   onChange={e => setEditingCode({ di, value: e.target.value })}
                   onBlur={() => commitCode(di, editingCode.value)}
                   onKeyDown={e => e.key === 'Enter' && commitCode(di, editingCode.value)}
-                  className="w-24 bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-xs focus:outline-none"
+                  className="w-24 bg-black/[0.06] border border-[#534AB7] rounded px-2 py-1 text-[#1a1916] text-xs focus:outline-none"
                   list={`dcodes-${di}`} />
               ) : (
                 <span
-                  className={`text-xs text-white/40 font-mono ${canEdit ? 'cursor-pointer hover:text-white/70' : ''}`}
+                  className={`text-xs text-[#1a1916]/55 font-mono ${canEdit ? 'cursor-pointer hover:text-[#1a1916]/80' : ''}`}
                   onClick={() => canEdit && setEditingCode({ di, value: design.code ?? '' })}
                 >
                   {design.code || (canEdit ? 'Add code' : '—')}
@@ -269,14 +277,15 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
 
               {canEdit && order.designs.length > 1 && (
                 <button onClick={() => onRemoveDesign(di)}
-                  className="text-xs text-red-400/60 hover:text-red-400 transition-colors ml-auto">Remove</button>
+                  className="text-xs text-red-700 hover:text-red-700 transition-colors ml-auto">Remove</button>
               )}
             </div>
 
             {/* Design-level photos (flat/CNC rows use these; dye-gold rows use per-variety photos below) */}
-            <div className="px-4 py-2 border-b border-white/5">
+            <div className="px-4 py-2 border-b border-black/[0.07]">
               <PhotoStrip
                 images={design.images ?? []}
+                viewAll={[...(design.images ?? []), ...(design.varieties ?? []).flatMap(v => v.images ?? [])]}
                 canEdit={canEdit}
                 onAdd={() => setPicker({ di, vi: null })}
                 onRemove={i => removeImage(di, null, i)}
@@ -287,21 +296,21 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
             <div className="p-4 overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left pr-3 py-1.5 text-white/40 font-normal">Variety</th>
-                    <th className="text-left px-2 py-1.5 text-white/30 font-normal">Photo</th>
+                  <tr className="border-b border-black/10">
+                    <th className="text-left pr-3 py-1.5 text-[#1a1916]/55 font-normal">Variety</th>
+                    <th className="text-left px-2 py-1.5 text-[#1a1916]/40 font-normal">Photo</th>
                     {sizeKeys.map(sz => (
-                      <th key={sz} className="text-center px-2 py-1.5 text-white/40 font-normal">{sz}</th>
+                      <th key={sz} className="text-center px-2 py-1.5 text-[#1a1916]/55 font-normal">{sz}</th>
                     ))}
-                    <th className="text-center pl-2 py-1.5 text-[#a89fff] font-normal">Total</th>
-                    <th className="text-center px-1 py-1.5 text-white/30 font-normal">Unit</th>
-                    <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Rate per unit — used to total up the order value">Rate (₹)</th>
-                    <th className="text-center px-2 py-1.5 text-white/30 font-normal">Pipe</th>
-                    <th className="text-center px-2 py-1.5 text-white/30 font-normal">Karigar</th>
-                    <th className="text-center px-2 py-1.5 text-white/30 font-normal">Plating</th>
-                    <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Special request for this row">Note</th>
-                    <th className="text-center px-1 py-1.5 text-white/30 font-normal" title="Pause production on this row">Hold</th>
-                    <th className="text-center px-1 py-1.5 text-white/30 font-normal">Done</th>
+                    <th className="text-center pl-2 py-1.5 text-[#534AB7] font-normal">Total</th>
+                    <th className="text-center px-1 py-1.5 text-[#1a1916]/40 font-normal">Unit</th>
+                    <th className="text-center px-1 py-1.5 text-[#1a1916]/40 font-normal" title="Rate per unit — used to total up the order value">Rate (₹)</th>
+                    <th className="text-center px-2 py-1.5 text-[#1a1916]/40 font-normal">Pipe</th>
+                    <th className="text-center px-2 py-1.5 text-[#1a1916]/40 font-normal">Karigar</th>
+                    <th className="text-center px-2 py-1.5 text-[#1a1916]/40 font-normal">Plating</th>
+                    <th className="text-center px-1 py-1.5 text-[#1a1916]/40 font-normal" title="Special request for this row">Note</th>
+                    <th className="text-center px-1 py-1.5 text-[#1a1916]/40 font-normal" title="Pause production on this row">Hold</th>
+                    <th className="text-center px-1 py-1.5 text-[#1a1916]/40 font-normal">Done</th>
                     {canEdit && <th className="w-6" />}
                   </tr>
                 </thead>
@@ -311,7 +320,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                     const isEditingName = editingVarName?.di === di && editingVarName.vi === vi;
 
                     return (
-                      <tr key={v.id} className={`border-b border-white/5 ${v.onHold ? 'border-l-2 border-l-amber-400' : ''}`}>
+                      <tr key={v.id} className={`border-b border-black/[0.07] ${v.onHold ? 'border-l-2 border-l-amber-400' : ''}`}>
                         <td className="pr-3 py-1.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {canEdit && isEditingName ? (
@@ -319,17 +328,17 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                                 onChange={e => setEditingVarName({ di, vi, value: e.target.value })}
                                 onBlur={() => commitVarName(di, vi, editingVarName.value)}
                                 onKeyDown={e => e.key === 'Enter' && commitVarName(di, vi, editingVarName.value)}
-                                className="w-24 bg-white/10 border border-[#534AB7] rounded px-1.5 py-0.5 text-white text-xs focus:outline-none" />
+                                className="w-24 bg-black/[0.06] border border-[#534AB7] rounded px-1.5 py-0.5 text-[#1a1916] text-xs focus:outline-none" />
                             ) : (
                               <span
-                                className={`text-white/70 ${canEdit ? 'cursor-pointer hover:text-white' : ''}`}
+                                className={`text-[#1a1916]/80 ${canEdit ? 'cursor-pointer hover:text-[#1a1916]' : ''}`}
                                 onClick={() => canEdit && setEditingVarName({ di, vi, value: v.name })}
                               >{v.name}</span>
                             )}
                             {v.onHold && (
                               <button onClick={() => canEdit && handleToggleHold(di, vi)}
                                 title={`⏸ On hold — ${v.holdReason || '(no reason given)'}. Click to edit or take off hold.`}
-                                className="text-[9px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/40 rounded-full px-2 py-0.5 whitespace-nowrap max-w-[140px] truncate">
+                                className="text-[9px] font-bold bg-amber-400/15 text-amber-700 border border-amber-400/40 rounded-full px-2 py-0.5 whitespace-nowrap max-w-[140px] truncate">
                                 ⏸ On hold — {v.holdReason || '(no reason given)'}
                               </button>
                             )}
@@ -349,26 +358,26 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                               <input type="number" min="0"
                                 value={v.sizes?.[sz] || ''}
                                 onChange={e => updateVarietySize(di, vi, sz, Number(e.target.value))}
-                                className="w-12 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-xs text-center focus:outline-none focus:border-[#534AB7]"
+                                className="w-12 bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916] text-xs text-center focus:outline-none focus:border-[#534AB7]"
                                 placeholder="0" />
                             ) : (
-                              <span className="text-white/70">{Number(v.sizes?.[sz]) || 0}</span>
+                              <span className="text-[#1a1916]/80">{Number(v.sizes?.[sz]) || 0}</span>
                             )}
                           </td>
                         ))}
-                        <td className="text-center pl-2 py-1.5 font-semibold text-[#a89fff]">{total}</td>
+                        <td className="text-center pl-2 py-1.5 font-semibold text-[#534AB7]">{total}</td>
                         <td className="px-1 py-1.5">
                           {canEdit ? (
                             <select
                               value={v.unit || ''}
                               onChange={e => updateVarietyFields(di, vi, { unit: e.target.value })}
-                              className="w-16 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-[11px] focus:outline-none focus:border-[#534AB7]"
+                              className="w-16 bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916] text-[11px] focus:outline-none focus:border-[#534AB7]"
                             >
                               <option value="">— not set —</option>
                               {units.map(u => <option key={u} value={u}>{u}</option>)}
                             </select>
                           ) : (
-                            <span className={v.unit ? 'text-white/70' : 'text-red-300/70'}>{v.unit || 'not set'}</span>
+                            <span className={v.unit ? 'text-[#1a1916]/80' : 'text-red-700'}>{v.unit || 'not set'}</span>
                           )}
                         </td>
                         <td className="px-1 py-1.5">
@@ -376,9 +385,9 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                             <input type="number" min="0" step="0.01" placeholder="₹"
                               value={v.rate ?? ''}
                               onChange={e => updateVarietyFields(di, vi, { rate: e.target.value === '' ? undefined : Number(e.target.value) })}
-                              className="w-16 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-[11px] text-right focus:outline-none focus:border-[#534AB7]" />
+                              className="w-16 bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916] text-[11px] text-right focus:outline-none focus:border-[#534AB7]" />
                           ) : (
-                            <span className="text-white/70">{v.rate ? `₹${v.rate}` : '—'}</span>
+                            <span className="text-[#1a1916]/80">{v.rate ? `₹${v.rate}` : '—'}</span>
                           )}
                         </td>
                         <td className="px-1 py-1.5">
@@ -408,8 +417,8 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                             title={v.note || 'Add a special request for this row'}
                             className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
                               v.note
-                                ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
-                                : 'text-white/20 hover:text-white/60 border border-transparent'
+                                ? 'bg-amber-400/20 text-amber-700 border border-amber-400/40'
+                                : 'text-[#1a1916]/30 hover:text-[#1a1916]/70 border border-transparent'
                             }`}
                           >{v.note ? '📌' : '+'}</button>
                         </td>
@@ -419,7 +428,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                             onClick={() => handleToggleHold(di, vi)}
                             title={v.onHold ? 'On hold — click to edit reason or take off hold' : 'Put this row on hold'}
                             className={`w-6 h-6 rounded text-xs flex items-center justify-center mx-auto transition-colors ${
-                              v.onHold ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40' : 'bg-white/5 text-white/20 border border-white/10'
+                              v.onHold ? 'bg-amber-400/20 text-amber-700 border border-amber-400/40' : 'bg-white text-[#1a1916]/30 border border-black/10'
                             }`}
                           >⏸</button>
                         </td>
@@ -429,7 +438,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                             onClick={() => updateVarietyFields(di, vi, toggleVarietyDone(v))}
                             title={v.done ? 'Undo dispatched' : 'Mark this variety dispatched'}
                             className={`w-6 h-6 rounded text-xs font-bold flex items-center justify-center mx-auto transition-colors ${
-                              v.done ? 'bg-green-500/20 text-green-400 border border-green-500/40' : 'bg-white/5 text-white/20 border border-white/10'
+                              v.done ? 'bg-green-500/20 text-green-700 border border-green-500/40' : 'bg-white text-[#1a1916]/30 border border-black/10'
                             }`}
                           >✓</button>
                         </td>
@@ -437,7 +446,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                           <td className="pl-1 py-1.5">
                             {varieties.length > 1 && (
                               <button onClick={() => removeVariety(di, vi)}
-                                className="text-white/20 hover:text-red-400 transition-colors">×</button>
+                                className="text-[#1a1916]/30 hover:text-red-700 transition-colors">×</button>
                             )}
                           </td>
                         )}
@@ -449,9 +458,9 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                     <tr className="bg-amber-400/5">
                       <td colSpan={99} className="px-3 py-2">
                         <div className="flex items-start gap-2">
-                          <span className="text-amber-300 text-xs pt-1.5">📌</span>
+                          <span className="text-amber-700 text-xs pt-1.5">📌</span>
                           <div className="flex-1">
-                            <label className="block text-[10px] uppercase tracking-wide text-amber-300/70 mb-1">
+                            <label className="block text-[10px] uppercase tracking-wide text-amber-700 mb-1">
                               Special request — {varieties[noteEdit.vi]?.name || 'this row'}
                             </label>
                             {canEdit ? (
@@ -461,10 +470,10 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                                 value={noteDraft}
                                 onChange={e => setNoteDraft(e.target.value)}
                                 placeholder="e.g. wants slightly lighter weight — confirmed on call"
-                                className="w-full bg-white/5 border border-amber-400/30 rounded-lg px-3 py-2 text-white placeholder-white/25 text-xs focus:outline-none focus:border-amber-400"
+                                className="w-full bg-white border border-amber-400/30 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-xs focus:outline-none focus:border-amber-400"
                               />
                             ) : (
-                              <p className="text-xs text-white/70">{varieties[noteEdit.vi]?.note || '—'}</p>
+                              <p className="text-xs text-[#1a1916]/80">{varieties[noteEdit.vi]?.note || '—'}</p>
                             )}
                             {canEdit && (
                               <div className="flex gap-2 mt-1.5">
@@ -476,7 +485,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                                   }}
                                   className="px-2.5 py-1 rounded bg-[#534AB7] hover:bg-[#6259c8] text-white text-xs font-medium">Save note</button>
                                 <button onClick={() => setNoteEdit(null)}
-                                  className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-white/60 text-xs">Cancel</button>
+                                  className="px-2.5 py-1 rounded bg-white hover:bg-black/[0.06] text-[#1a1916]/70 text-xs">Cancel</button>
                               </div>
                             )}
                           </div>
@@ -485,14 +494,14 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
                     </tr>
                   )}
                   {/* Totals row */}
-                  <tr className="border-t border-white/10">
-                    <td className="pr-3 py-1.5 text-white/30 text-xs">Total</td>
+                  <tr className="border-t border-black/10">
+                    <td className="pr-3 py-1.5 text-[#1a1916]/40 text-xs">Total</td>
                     <td />
                     {sizeKeys.map(sz => {
                       const t = varieties.reduce((a, v) => a + (Number(v.sizes?.[sz]) || 0), 0);
-                      return <td key={sz} className="text-center px-2 py-1.5 font-semibold text-white">{t}</td>;
+                      return <td key={sz} className="text-center px-2 py-1.5 font-semibold text-[#1a1916]">{t}</td>;
                     })}
-                    <td className="text-center pl-2 py-1.5 font-bold text-[#a89fff]">
+                    <td className="text-center pl-2 py-1.5 font-bold text-[#534AB7]">
                       {varieties.reduce((a, v) => a + sizeKeys.reduce((b, sz) => b + (Number(v.sizes?.[sz]) || 0), 0), 0)}
                     </td>
                     <td /><td /><td /><td /><td /><td /><td />
@@ -503,7 +512,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
 
               {canEdit && (
                 <button onClick={() => addVariety(di)}
-                  className="mt-2 text-xs text-[#a89fff] hover:text-white transition-colors">
+                  className="mt-2 text-xs text-[#534AB7] hover:text-[#1a1916] transition-colors">
                   + Add variety
                 </button>
               )}
@@ -514,7 +523,7 @@ export default function DesignsTab({ order, data, canEdit, dnames, dcodes, units
 
       {canEdit && (
         <button onClick={handleAddDesign}
-          className="w-full py-2 border border-dashed border-white/20 rounded-xl text-white/40 hover:text-white hover:border-white/40 text-sm transition-colors">
+          className="w-full py-2 border border-dashed border-black/20 rounded-xl text-[#1a1916]/55 hover:text-[#1a1916] hover:border-black/30 text-sm transition-colors">
           + Add design
         </button>
       )}

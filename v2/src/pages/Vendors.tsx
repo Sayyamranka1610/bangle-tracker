@@ -195,7 +195,7 @@ export default function Vendors() {
   // ── Stat cards ────────────────────────────────────────────────────────────────
 
   const statCards = [
-    { key: 'all',  label: 'Total',    value: stats.total,   border: 'border-white/10' },
+    { key: 'all',  label: 'Total',    value: stats.total,   border: 'border-black/10' },
     { key: 'ok',   label: 'On Track', value: stats.onTrack, border: 'border-green-500/30' },
     { key: 'warn', label: 'Due Soon', value: stats.soon,    border: 'border-yellow-500/30' },
     { key: 'late', label: 'Overdue',  value: stats.late,    border: 'border-red-500/30' },
@@ -207,15 +207,15 @@ export default function Vendors() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Vendors</h1>
-          <p className="text-sm text-white/40 mt-0.5">
+          <h1 className="text-2xl font-bold text-[#1a1916]">Vendors</h1>
+          <p className="text-sm text-[#1a1916]/55 mt-0.5">
             {vendorOrders.length} order{vendorOrders.length !== 1 ? 's' : ''} · {grouped.length} vendor{grouped.length !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {saving && <span className="text-xs text-yellow-300 animate-pulse">Saving…</span>}
+          {saving && <span className="text-xs text-yellow-700 animate-pulse">Saving…</span>}
           {!hasLock && session?.role === 'owner' && (
-            <span className="text-xs text-yellow-400 bg-yellow-500/10 px-3 py-1.5 rounded-lg">
+            <span className="text-xs text-yellow-700 bg-yellow-500/10 px-3 py-1.5 rounded-lg">
               Edit lock not held — read only
             </span>
           )}
@@ -223,7 +223,7 @@ export default function Vendors() {
             <button
               onClick={handleReconcile}
               title="Checks every customer order ↔ vendor order link for received-status mismatches and catches them up"
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-[#534AB7]/40 text-[#a89fff] px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-2 bg-white hover:bg-black/[0.06] border border-[#534AB7]/40 text-[#534AB7] px-3 py-2 rounded-lg text-sm font-medium transition-colors"
             >
               🔄 Reconcile Status
             </button>
@@ -245,12 +245,12 @@ export default function Vendors() {
           <button
             key={card.key}
             onClick={() => setFilter(card.key as FilterKey)}
-            className={`bg-white/5 border rounded-xl p-4 text-left transition-all cursor-pointer ${card.border} ${
-              filter === card.key ? 'ring-2 ring-white/20 bg-white/10' : 'hover:bg-white/8'
+            className={`bg-white border rounded-xl p-4 text-left transition-all cursor-pointer ${card.border} ${
+              filter === card.key ? 'ring-2 ring-black/10 bg-black/[0.06]' : 'hover:bg-black/[0.06]'
             }`}
           >
-            <p className="text-2xl font-bold text-white">{card.value}</p>
-            <p className="text-xs text-white/50 mt-1">{card.label}</p>
+            <p className="text-2xl font-bold text-[#1a1916]">{card.value}</p>
+            <p className="text-xs text-[#1a1916]/60 mt-1">{card.label}</p>
           </button>
         ))}
       </div>
@@ -261,13 +261,13 @@ export default function Vendors() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search by vendor name, order ID, or notes…"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+          className="w-full bg-white border border-black/10 rounded-lg px-4 py-2.5 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
         />
       </div>
 
       {/* Vendor groups */}
       {filtered.length === 0 ? (
-        <div className="text-center py-16 text-white/30">
+        <div className="text-center py-16 text-[#1a1916]/40">
           {vendorOrders.length === 0
             ? canEdit ? 'No vendor orders yet — click "New Vendor Order" to create one.' : 'No vendor orders yet.'
             : 'No vendor orders match your filter.'}
@@ -279,15 +279,15 @@ export default function Vendors() {
             const lateCount = orders.filter(o => vendorAlert(o) === 'late').length;
 
             return (
-              <div key={vendorName} className="border border-white/10 rounded-xl overflow-hidden">
+              <div key={vendorName} className="border border-black/10 rounded-xl overflow-hidden">
                 {/* Vendor section header */}
                 <button
                   onClick={() => toggleCollapse(vendorName)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1750] hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-black/5 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-white font-semibold">🏭 {vendorName}</span>
-                    <span className="text-xs text-white/40">
+                    <span className="text-[#1a1916] font-semibold">🏭 {vendorName}</span>
+                    <span className="text-xs text-[#1a1916]/55">
                       {orders.length} order{orders.length !== 1 ? 's' : ''}
                     </span>
                     {lateCount > 0 && (
@@ -296,7 +296,7 @@ export default function Vendors() {
                       </span>
                     )}
                   </div>
-                  <span className={`text-white/30 text-xs transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▶</span>
+                  <span className={`text-[#1a1916]/40 text-xs transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▶</span>
                 </button>
 
                 {/* Order cards grid */}
@@ -340,16 +340,16 @@ export default function Vendors() {
           className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4"
           onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}
         >
-          <div className="bg-[#1a1750] border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <h3 className="text-white font-semibold mb-1">Delete vendor order?</h3>
-            <p className="text-sm text-white/50 mb-5">
-              This will permanently delete <span className="text-white">{deleteTarget.orderId}</span> from{' '}
-              <span className="text-white">{deleteTarget.vendor}</span>.
+          <div className="bg-white border border-black/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="text-[#1a1916] font-semibold mb-1">Delete vendor order?</h3>
+            <p className="text-sm text-[#1a1916]/60 mb-5">
+              This will permanently delete <span className="text-[#1a1916]">{deleteTarget.orderId}</span> from{' '}
+              <span className="text-[#1a1916]">{deleteTarget.vendor}</span>.
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors"
+                className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors"
               >Cancel</button>
               <button
                 onClick={handleDelete}

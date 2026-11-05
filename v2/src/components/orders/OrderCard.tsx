@@ -36,27 +36,27 @@ function OrderValueChip({ data, order }: { data: AppData; order: Order }) {
   if (v.state === 'empty') return null;
   if (v.state === 'ok') {
     return (
-      <span title={`All ${v.rows} rows priced`} className="text-xs px-2 py-0.5 rounded-full font-bold bg-green-500/15 text-green-300">
+      <span title={`All ${v.rows} rows priced`} className="text-xs px-2 py-0.5 rounded-full font-bold bg-green-500/15 text-green-700">
         {formatMoney(v.total)}
       </span>
     );
   }
   if (v.state === 'pending') {
     return (
-      <span title="Add a rate to every row to see the order value" className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-300">
+      <span title="Add a rate to every row to see the order value" className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-700">
         Rates pending {v.priced}/{v.rows}
       </span>
     );
   }
   return (
-    <span title="Rate is per unit, so every row needs a unit before the order can be valued" className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/15 text-red-300">
+    <span title="Rate is per unit, so every row needs a unit before the order can be valued" className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/15 text-red-700">
       Unit missing on {v.noUnit} row{v.noUnit !== 1 ? 's' : ''}
     </span>
   );
 }
 
 const priorityColors: Record<string, string> = {
-  normal: 'text-white/40', urgent: 'text-orange-400', critical: 'text-red-400',
+  normal: 'text-[#1a1916]/55', urgent: 'text-orange-700', critical: 'text-red-700',
 };
 
 function InlineField({ field, value, type = 'text', options, canEdit, editingField, fieldValue, onStartEdit, onChangeValue, onCommit }: {
@@ -66,14 +66,14 @@ function InlineField({ field, value, type = 'text', options, canEdit, editingFie
   onChangeValue: (value: string) => void;
   onCommit: (field: string, value: string) => void;
 }) {
-  if (!canEdit) return <span className="text-white">{value || '—'}</span>;
+  if (!canEdit) return <span className="text-[#1a1916]">{value || '—'}</span>;
   if (editingField === field) {
     if (options) {
       return (
         <select autoFocus value={fieldValue}
           onChange={e => onChangeValue(e.target.value)}
           onBlur={() => onCommit(field, fieldValue)}
-          className="bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none">
+          className="bg-black/[0.06] border border-[#534AB7] rounded px-2 py-1 text-[#1a1916] text-sm focus:outline-none">
           {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       );
@@ -83,13 +83,13 @@ function InlineField({ field, value, type = 'text', options, canEdit, editingFie
         onChange={e => onChangeValue(e.target.value)}
         onBlur={() => onCommit(field, fieldValue)}
         onKeyDown={e => e.key === 'Enter' && onCommit(field, fieldValue)}
-        className={`bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none ${type === 'date' ? '[color-scheme:dark]' : ''}`} />
+        className={`bg-black/[0.06] border border-[#534AB7] rounded px-2 py-1 text-[#1a1916] text-sm focus:outline-none ${type === 'date' ? '[color-scheme:dark]' : ''}`} />
     );
   }
   return (
-    <span className="text-white cursor-pointer hover:text-[#a89fff] transition-colors"
+    <span className="text-[#1a1916] cursor-pointer hover:text-[#534AB7] transition-colors"
       onClick={() => onStartEdit(field, value)}>
-      {value || <span className="text-white/30 italic">click to edit</span>}
+      {value || <span className="text-[#1a1916]/40 italic">click to edit</span>}
     </span>
   );
 }
@@ -169,21 +169,21 @@ export default function OrderCard({
   }
 
   const statusBadge = status === 'archived'
-    ? { label: '📦 Archived', color: 'text-white/50', bg: 'bg-white/10' }
+    ? { label: '📦 Archived', color: 'text-[#1a1916]/60', bg: 'bg-black/[0.06]' }
     : status === 'done'
-      ? { label: '✅ Done', color: 'text-indigo-300', bg: 'bg-indigo-500/15' }
-      : { label: 'Pending', color: 'text-red-300', bg: 'bg-red-500/15' };
+      ? { label: '✅ Done', color: 'text-indigo-700', bg: 'bg-indigo-500/15' }
+      : { label: 'Pending', color: 'text-red-700', bg: 'bg-red-500/15' };
 
   return (
-    <div id={`oc-${order.id}`} className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-[#534AB7]/50' : 'border-white/10'} ${archivedView ? 'opacity-80' : ''}`}>
+    <div id={`oc-${order.id}`} className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-[#534AB7]/50' : 'border-black/10'} ${archivedView ? 'opacity-80' : ''}`}>
       {/* ── Card header ── */}
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full text-left px-4 py-3.5 flex items-start gap-3 hover:bg-white/3 transition-colors"
+        className="w-full text-left px-4 py-3.5 flex items-start gap-3 hover:bg-black/5 transition-colors"
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-mono text-white/40">{order.orderId}</span>
+            <span className="text-xs font-mono text-[#1a1916]/55">{order.orderId}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge.color} ${statusBadge.bg}`}>{statusBadge.label}</span>
             {order.priority !== 'normal' && (
               <span className={`text-xs font-medium ${priorityColors[order.priority]}`}>
@@ -191,21 +191,21 @@ export default function OrderCard({
               </span>
             )}
             {isOrderOverdue(order) && (
-              <span className="text-xs px-2 py-0.5 rounded-full font-medium text-red-300 bg-red-500/20"
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium text-red-700 bg-red-500/20"
                 title={`Promised ${order.promisedDate} — not all items dispatched`}>
                 ⚠ Overdue
               </span>
             )}
             {(order.tags ?? []).map(t => (
-              <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[#534AB7]/30 text-[#c9c3ff]">{t}</span>
+              <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[#534AB7]/30 text-[#3C3489]">{t}</span>
             ))}
             <OrderValueChip data={data} order={order} />
           </div>
-          <p className="text-white font-semibold mt-0.5 truncate">{order.client}</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/40 mt-0.5">
+          <p className="text-[#1a1916] font-semibold mt-0.5 truncate">{order.client}</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#1a1916]/55 mt-0.5">
             <span>📅 {order.startDate}</span>
             {order.promisedDate && (
-              <span className={isOrderOverdue(order) ? 'text-red-300' : ''}>
+              <span className={isOrderOverdue(order) ? 'text-red-700' : ''}>
                 🎯 promised {order.promisedDate}
               </span>
             )}
@@ -221,28 +221,28 @@ export default function OrderCard({
             {canEdit && !archivedView && (
               <>
                 <button onClick={e => { e.stopPropagation(); onEdit(order); }}
-                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm" title="Edit">✏️</button>
+                  className="p-1.5 text-[#1a1916]/40 hover:text-[#1a1916] hover:bg-black/[0.06] rounded-lg transition-colors text-sm" title="Edit">✏️</button>
                 <button onClick={e => { e.stopPropagation(); onDuplicate(order); }}
-                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm" title="Duplicate">⎘</button>
+                  className="p-1.5 text-[#1a1916]/40 hover:text-[#1a1916] hover:bg-black/[0.06] rounded-lg transition-colors text-sm" title="Duplicate">⎘</button>
                 <button onClick={e => { e.stopPropagation(); onArchive(order); }}
-                  className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm" title="Archive">📦</button>
+                  className="p-1.5 text-[#1a1916]/40 hover:text-[#1a1916] hover:bg-black/[0.06] rounded-lg transition-colors text-sm" title="Archive">📦</button>
               </>
             )}
             {canEdit && archivedView && (
               <button onClick={e => { e.stopPropagation(); onRestore(order); }}
-                className="px-2 py-1 text-xs text-[#a89fff] hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors" title="Restore">↩ Restore</button>
+                className="px-2 py-1 text-xs text-[#534AB7] hover:text-[#1a1916] bg-white hover:bg-black/[0.06] rounded-lg transition-colors" title="Restore">↩ Restore</button>
             )}
             {canEdit && (
               <button onClick={e => { e.stopPropagation(); onDelete(order); }}
-                className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm" title="Delete">🗑️</button>
+                className="p-1.5 text-[#1a1916]/40 hover:text-red-700 hover:bg-red-500/10 rounded-lg transition-colors text-sm" title="Delete">🗑️</button>
             )}
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full ${status === 'done' ? 'bg-indigo-500' : 'bg-white/30'}`} style={{ width: `${pct}%` }} />
+            <div className="w-16 h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${status === 'done' ? 'bg-indigo-500' : 'bg-black/20'}`} style={{ width: `${pct}%` }} />
             </div>
-            <span className="text-xs text-white/30">{pct}%</span>
-            <span className={`text-white/30 text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>▾</span>
+            <span className="text-xs text-[#1a1916]/40">{pct}%</span>
+            <span className={`text-[#1a1916]/40 text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>▾</span>
           </div>
         </div>
       </button>
@@ -264,15 +264,15 @@ export default function OrderCard({
 
       {/* ── Expanded content ── */}
       {expanded && (
-        <div className="border-t border-white/10">
+        <div className="border-t border-black/10">
           {/* Tabs */}
-          <div className="flex border-b border-white/10 bg-white/2">
+          <div className="flex border-b border-black/10 bg-white">
             {TABS.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2.5 text-xs font-medium transition-colors border-b-2 ${
                   activeTab === tab.id
-                    ? 'border-[#534AB7] text-white'
-                    : 'border-transparent text-white/40 hover:text-white'
+                    ? 'border-[#534AB7] text-[#1a1916]'
+                    : 'border-transparent text-[#1a1916]/55 hover:text-[#1a1916]'
                 }`}>
                 {tab.label}
               </button>
@@ -285,19 +285,19 @@ export default function OrderCard({
               <div className="space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                   <div>
-                    <p className="text-xs text-white/40 mb-0.5">Client</p>
+                    <p className="text-xs text-[#1a1916]/55 mb-0.5">Client</p>
                     <InlineField field="client" value={order.client}
                       canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
                       onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField} />
                   </div>
                   <div>
-                    <p className="text-xs text-white/40 mb-0.5">Start date</p>
+                    <p className="text-xs text-[#1a1916]/55 mb-0.5">Start date</p>
                     <InlineField field="startDate" value={order.startDate} type="date"
                       canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
                       onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField} />
                   </div>
                   <div>
-                    <p className="text-xs text-white/40 mb-0.5">Priority</p>
+                    <p className="text-xs text-[#1a1916]/55 mb-0.5">Priority</p>
                     <InlineField field="priority" value={order.priority}
                       canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
                       onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField}
@@ -308,7 +308,7 @@ export default function OrderCard({
                       ]} />
                   </div>
                   <div>
-                    <p className="text-xs text-white/40 mb-0.5">Bangle type</p>
+                    <p className="text-xs text-[#1a1916]/55 mb-0.5">Bangle type</p>
                     <InlineField field="bangleType" value={order.bangleType}
                       canEdit={canEdit} editingField={editingField} fieldValue={fieldValue}
                       onStartEdit={startFieldEdit} onChangeValue={setFieldValue} onCommit={commitField}
@@ -320,22 +320,22 @@ export default function OrderCard({
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-white/40 mb-0.5">Notes</p>
+                  <p className="text-xs text-[#1a1916]/55 mb-0.5">Notes</p>
                   {canEdit && editingField === 'notes' ? (
                     <textarea value={fieldValue} onChange={e => setFieldValue(e.target.value)}
                       onBlur={() => commitField('notes', fieldValue)}
                       rows={2} autoFocus
-                      className="w-full bg-white/10 border border-[#534AB7] rounded-lg px-3 py-2 text-white text-sm resize-none focus:outline-none" />
+                      className="w-full bg-black/[0.06] border border-[#534AB7] rounded-lg px-3 py-2 text-[#1a1916] text-sm resize-none focus:outline-none" />
                   ) : (
-                    <span className={`text-white ${canEdit ? 'cursor-pointer hover:text-[#a89fff]' : ''}`}
+                    <span className={`text-[#1a1916] ${canEdit ? 'cursor-pointer hover:text-[#534AB7]' : ''}`}
                       onClick={() => canEdit && (setEditingField('notes'), setFieldValue(order.notes ?? ''))}>
-                      {order.notes || <span className="text-white/30 italic">{canEdit ? 'click to add notes' : '—'}</span>}
+                      {order.notes || <span className="text-[#1a1916]/40 italic">{canEdit ? 'click to add notes' : '—'}</span>}
                     </span>
                   )}
                 </div>
-                <div className="pt-1 border-t border-white/10">
-                  <p className="text-xs text-white/30">Order ID: <span className="font-mono text-white/50">{order.orderId}</span></p>
-                  <p className="text-xs text-white/30">Created: {order.createdAt?.slice(0, 10)}</p>
+                <div className="pt-1 border-t border-black/10">
+                  <p className="text-xs text-[#1a1916]/40">Order ID: <span className="font-mono text-[#1a1916]/60">{order.orderId}</span></p>
+                  <p className="text-xs text-[#1a1916]/40">Created: {order.createdAt?.slice(0, 10)}</p>
                 </div>
               </div>
             )}
@@ -371,8 +371,8 @@ export default function OrderCard({
                     title={isDone ? 'Dispatched ✓ — click to undo' : 'Dispatch — auto-ticks all stages'}
                     className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
                       isDone
-                        ? 'bg-green-500/15 text-green-300 hover:bg-green-500/25'
-                        : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                        ? 'bg-green-500/15 text-green-700 hover:bg-green-500/25'
+                        : 'bg-white text-[#1a1916]/60 hover:bg-black/[0.06] hover:text-[#1a1916]'
                     }`}>
                     ✓ {isDone ? 'Dispatched' : 'Mark'} "{d.code || d.name || `Design ${di + 1}`}"{isDone ? '' : ' dispatched'}
                   </button>

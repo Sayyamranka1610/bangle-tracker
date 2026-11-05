@@ -19,24 +19,24 @@ export default function SizeTable({ design }: Props) {
       <table className="text-xs w-full">
         <thead>
           <tr>
-            {hasVarieties && <th className="text-left pr-3 py-1 text-white/40 font-normal">Variety</th>}
+            {hasVarieties && <th className="text-left pr-3 py-1 text-[#1a1916]/55 font-normal">Variety</th>}
             {sizeKeys.map(sz => (
-              <th key={sz} className="text-center px-2 py-1 text-white/40 font-normal">{sz}</th>
+              <th key={sz} className="text-center px-2 py-1 text-[#1a1916]/55 font-normal">{sz}</th>
             ))}
-            <th className="text-center px-2 py-1 text-white/40 font-normal">Total</th>
+            <th className="text-center px-2 py-1 text-[#1a1916]/55 font-normal">Total</th>
           </tr>
         </thead>
         <tbody>
           {hasVarieties ? (
             design.varieties!.map((v: DesignVariety) => (
-              <tr key={v.id} className="border-t border-white/5">
-                <td className="pr-3 py-1 text-white/60 truncate max-w-[100px]">{v.name}</td>
+              <tr key={v.id} className="border-t border-black/[0.07]">
+                <td className="pr-3 py-1 text-[#1a1916]/70 truncate max-w-[100px]">{v.name}</td>
                 {sizeKeys.map(sz => (
-                  <td key={sz} className="text-center px-2 py-1 text-white/80">
+                  <td key={sz} className="text-center px-2 py-1 text-[#1a1916]/85">
                     {Number(v.sizes?.[sz]) || 0}
                   </td>
                 ))}
-                <td className="text-center px-2 py-1 text-white font-medium">
+                <td className="text-center px-2 py-1 text-[#1a1916] font-medium">
                   {varietyTotalQty(v)}
                 </td>
               </tr>
@@ -44,25 +44,25 @@ export default function SizeTable({ design }: Props) {
           ) : (
             <tr>
               {sizeKeys.map(sz => (
-                <td key={sz} className="text-center px-2 py-1 text-white/80">
+                <td key={sz} className="text-center px-2 py-1 text-[#1a1916]/85">
                   {aggSizes[sz] || 0}
                 </td>
               ))}
-              <td className="text-center px-2 py-1 text-white font-medium">
+              <td className="text-center px-2 py-1 text-[#1a1916] font-medium">
                 {Object.values(aggSizes).reduce((a, v) => a + v, 0)}
               </td>
             </tr>
           )}
           {/* Totals row for multi-variety */}
           {hasVarieties && (
-            <tr className="border-t border-white/10">
-              <td className="pr-3 py-1 text-white/40 font-medium">Total</td>
+            <tr className="border-t border-black/10">
+              <td className="pr-3 py-1 text-[#1a1916]/55 font-medium">Total</td>
               {sizeKeys.map(sz => (
-                <td key={sz} className="text-center px-2 py-1 text-white font-medium">
+                <td key={sz} className="text-center px-2 py-1 text-[#1a1916] font-medium">
                   {aggSizes[sz] || 0}
                 </td>
               ))}
-              <td className="text-center px-2 py-1 text-[#a89fff] font-bold">
+              <td className="text-center px-2 py-1 text-[#534AB7] font-bold">
                 {Object.values(aggSizes).reduce((a, v) => a + v, 0)}
               </td>
             </tr>

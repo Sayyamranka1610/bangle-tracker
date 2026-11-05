@@ -10,6 +10,7 @@ import { genVendorOrderId } from '../lib/vendorUtils';
 import { buildAuditLog } from '../lib/auditUtils';
 import { todayISO } from '../lib/orderUtils';
 import { karigarHistory, suggestionFor, type KarigarSuggestion } from '../lib/karigarHistoryUtils';
+import { useLightbox } from '../components/lightboxContext';
 
 const SIZE_ORDER = ['2/2', '2/4', '2/6', '2/8', '2/10', '2/12', '2/14', '2/16'];
 
@@ -58,7 +59,7 @@ function PoolCard({
   onRemoveSize: (size: string) => void;
 }) {
   const [showWho, setShowWho] = useState(false);
-  const [zoomed, setZoomed] = useState(false);
+  const lightbox = useLightbox();
   const [pendingUnit, setPendingUnit] = useState('');
   const [addingSize, setAddingSize] = useState(false);
   const [newSize, setNewSize] = useState('');
@@ -85,9 +86,9 @@ function PoolCard({
 
   return (
     <div className={`border rounded-xl overflow-hidden mb-2.5 transition-colors ${
-      selected ? 'border-[#534AB7] bg-[#534AB7]/10' : 'border-white/10 bg-white/3'}`}>
+      selected ? 'border-[#534AB7] bg-[#534AB7]/10' : 'border-black/10 bg-white'}`}>
       {/* header */}
-      <div className="flex gap-3 p-3 items-start border-b border-white/10">
+      <div className="flex gap-3 p-3 items-start border-b border-black/10">
         {canEdit && (
           <input type="checkbox" checked={selected} onChange={onToggle} disabled={!!group.blocked}
             title={group.blocked ? 'Resolve the mixed units below before this batch can be selected' : undefined}
@@ -95,57 +96,52 @@ function PoolCard({
         )}
         {group.image
           ? <img src={group.image} alt="" loading="lazy"
-              onClick={e => { e.stopPropagation(); setZoomed(true); }}
+              onClick={e => { e.stopPropagation(); lightbox.open([group.image!]); }}
               title="Click to zoom"
-              className="w-20 h-20 rounded-lg object-cover border border-white/10 flex-shrink-0 cursor-zoom-in hover:brightness-110 transition-[filter]"
+              className="w-20 h-20 rounded-lg object-cover border border-black/10 flex-shrink-0 cursor-zoom-in hover:brightness-110 transition-[filter]"
               onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
-          : <div className="w-20 h-20 rounded-lg bg-white/5 flex-shrink-0" />}
-        {zoomed && group.image && (
-          <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setZoomed(false)}>
-            <img src={group.image} alt="" className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain" />
-          </div>
-        )}
+          : <div className="w-20 h-20 rounded-lg bg-white flex-shrink-0" />}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold text-white">{group.code}</div>
-          <div className="text-[11px] text-white/40 truncate" title={group.names.join(' · ')}>
+          <div className="text-sm font-bold text-[#1a1916]">{group.code}</div>
+          <div className="text-[11px] text-[#1a1916]/55 truncate" title={group.names.join(' · ')}>
             {group.names.join(' · ') || group.family}
           </div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {group.finishes.map(f => (
-              <span key={f} className="text-[10px] rounded-full px-2 py-0.5 bg-white/10 text-white/70">{f}</span>
+              <span key={f} className="text-[10px] rounded-full px-2 py-0.5 bg-black/[0.06] text-[#1a1916]/80">{f}</span>
             ))}
             {group.finishes.length > 1 && (
-              <span className="text-[10px] rounded-full px-2 py-0.5 bg-green-500/20 text-green-300"
+              <span className="text-[10px] rounded-full px-2 py-0.5 bg-green-500/20 text-green-700"
                 title="Same physical piece — the karigar makes them together">
                 ✓ {group.finishes.length} colours merged
               </span>
             )}
-            <span className="text-[10px] rounded-full px-2 py-0.5 bg-white/10 text-white/60">
+            <span className="text-[10px] rounded-full px-2 py-0.5 bg-black/[0.06] text-[#1a1916]/70">
               {group.clients.length} customer{group.clients.length !== 1 ? 's' : ''}
             </span>
             {group.mixedUnits && (
-              <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/15 text-red-300 border border-red-500/30"
+              <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-500/15 text-red-700 border border-red-500/30"
                 title={`Customers ordered this in different units (${group.units.join(', ')}) — pick one below before it can total`}>
                 ⚠ Mixed units ({group.units.join('/')})
               </span>
             )}
             {suggestion && (
               <span title={`Sent ${suggestion.at ? new Date(suggestion.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'earlier'} · made this design ${suggestion.count} time${suggestion.count !== 1 ? 's' : ''}`}
-                className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30">
+                className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-400/15 text-amber-700 border border-amber-400/30">
                 💡 Usually: {suggestion.vendor}
               </span>
             )}
           </div>
         </div>
         <div className="text-right flex-shrink-0">
-          <div className="text-xl font-bold text-[#a89fff] leading-none">{makeTotal}</div>
-          <div className="text-[10px] uppercase tracking-wide text-white/40 mt-1">to make</div>
+          <div className="text-xl font-bold text-[#534AB7] leading-none">{makeTotal}</div>
+          <div className="text-[10px] uppercase tracking-wide text-[#1a1916]/55 mt-1">to make</div>
         </div>
       </div>
 
       {familyNote && (
-        <div className="px-3 py-2 text-[11px] text-white/60 bg-white/3 border-b border-white/10">
-          <b className="text-[#a89fff]">Family note:</b> {familyNote}
+        <div className="px-3 py-2 text-[11px] text-[#1a1916]/70 bg-white border-b border-black/10">
+          <b className="text-[#534AB7]">Family note:</b> {familyNote}
         </div>
       )}
 
@@ -157,12 +153,12 @@ function PoolCard({
         <div className="px-3 py-3 bg-red-500/5 border-b border-red-500/20">
           {group.blocked.reason === 'choose' && (
             <>
-              <p className="text-xs text-white/60 mb-2">
+              <p className="text-xs text-[#1a1916]/70 mb-2">
                 Customers ordered this in different units ({group.units.join(', ')}). Pick ONE unit to total this batch in — every row converts to real piece-counts, nothing added raw.
               </p>
               <div className="flex gap-2">
                 <select value={pendingUnit} onChange={e => setPendingUnit(e.target.value)}
-                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#534AB7]">
+                  className="flex-1 bg-white border border-black/10 rounded-lg px-2 py-1.5 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7]">
                   <option value="">— pick a unit —</option>
                   {[...new Set([...group.units, ...knownUnits])].map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
@@ -174,13 +170,13 @@ function PoolCard({
             </>
           )}
           {group.blocked.reason === 'undefinedTarget' && (
-            <p className="text-xs text-amber-300">
+            <p className="text-xs text-amber-700">
               "{group.blocked.unit}" has no piece-count set — add it in Masters → Units first, or{' '}
               <button onClick={() => onChooseUnit(null)} className="underline">pick a different unit</button>.
             </p>
           )}
           {group.blocked.reason === 'undefinedRow' && (
-            <p className="text-xs text-amber-300">
+            <p className="text-xs text-amber-700">
               "{group.blocked.unit}" has no piece-count set — add it in Masters → Units so this row can convert, or{' '}
               <button onClick={() => onChooseUnit(null)} className="underline">pick a different target unit</button>.
             </p>
@@ -192,73 +188,73 @@ function PoolCard({
       {!group.blocked && <div className="overflow-x-auto">
         <table className="w-full text-xs" style={{ minWidth: 420 }}>
           <thead>
-            <tr className="border-b border-white/10">
-              <th className="text-left px-3 py-1.5 text-white/40 font-normal whitespace-nowrap">Size</th>
+            <tr className="border-b border-black/10">
+              <th className="text-left px-3 py-1.5 text-[#1a1916]/55 font-normal whitespace-nowrap">Size</th>
               {sizes.map(s => (
-                <th key={s} className="px-2 py-1.5 text-white/40 font-normal text-center whitespace-nowrap">
+                <th key={s} className="px-2 py-1.5 text-[#1a1916]/55 font-normal text-center whitespace-nowrap">
                   {s}
                   {canEdit && extraSizeKeys.includes(s) && (
                     <span onClick={() => onRemoveSize(s)} title="Remove this size column"
-                      className="ml-1 text-red-400 hover:text-red-300 cursor-pointer font-bold">✕</span>
+                      className="ml-1 text-red-700 hover:text-red-700 cursor-pointer font-bold">✕</span>
                   )}
                 </th>
               ))}
-              <th className="px-3 py-1.5 text-[#a89fff] font-normal text-center border-l border-white/10">Total</th>
+              <th className="px-3 py-1.5 text-[#534AB7] font-normal text-center border-l border-black/10">Total</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-white/5">
-              <td className="px-3 py-1.5 text-white/70 whitespace-nowrap">Ordered by customers</td>
-              {sizes.map(s => <td key={s} className="px-2 py-1.5 text-center text-white">{group.ordered[s] ?? 0}</td>)}
-              <td className="px-3 py-1.5 text-center font-bold text-[#a89fff] border-l border-white/10">{group.orderedTotal}</td>
+            <tr className="border-b border-black/[0.07]">
+              <td className="px-3 py-1.5 text-[#1a1916]/80 whitespace-nowrap">Ordered by customers</td>
+              {sizes.map(s => <td key={s} className="px-2 py-1.5 text-center text-[#1a1916]">{group.ordered[s] ?? 0}</td>)}
+              <td className="px-3 py-1.5 text-center font-bold text-[#534AB7] border-l border-black/10">{group.orderedTotal}</td>
             </tr>
-            <tr className="border-b border-white/5">
-              <td className="px-3 py-1.5 text-white/70 whitespace-nowrap">+ Buffer for rejections</td>
+            <tr className="border-b border-black/[0.07]">
+              <td className="px-3 py-1.5 text-[#1a1916]/80 whitespace-nowrap">+ Buffer for rejections</td>
               {sizes.map(s => (
                 <td key={s} className="px-1 py-1.5 text-center">
                   <input type="number" min="0" disabled={!canEdit}
                     value={extras.buffer[s] ?? ''} placeholder="—"
                     onChange={e => setExtra('buffer', s, e.target.value)}
-                    className="w-12 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-xs text-center focus:outline-none focus:border-[#534AB7] placeholder-white/20" />
+                    className="w-12 bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916] text-xs text-center focus:outline-none focus:border-[#534AB7] placeholder-black/35" />
                 </td>
               ))}
-              <td className="px-3 py-1.5 text-center text-white/60 border-l border-white/10">{bufferTotal || '—'}</td>
+              <td className="px-3 py-1.5 text-center text-[#1a1916]/70 border-l border-black/10">{bufferTotal || '—'}</td>
             </tr>
-            <tr className="border-b border-white/5">
-              <td className="px-3 py-1.5 text-white/70 whitespace-nowrap">+ Extra for stock</td>
+            <tr className="border-b border-black/[0.07]">
+              <td className="px-3 py-1.5 text-[#1a1916]/80 whitespace-nowrap">+ Extra for stock</td>
               {sizes.map(s => (
                 <td key={s} className="px-1 py-1.5 text-center">
                   <input type="number" min="0" disabled={!canEdit}
                     value={extras.stock[s] ?? ''} placeholder="—"
                     onChange={e => setExtra('stock', s, e.target.value)}
-                    className="w-12 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white text-xs text-center focus:outline-none focus:border-[#534AB7] placeholder-white/20" />
+                    className="w-12 bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916] text-xs text-center focus:outline-none focus:border-[#534AB7] placeholder-black/35" />
                 </td>
               ))}
-              <td className="px-3 py-1.5 text-center text-white/60 border-l border-white/10">{stockTotal || '—'}</td>
+              <td className="px-3 py-1.5 text-center text-[#1a1916]/70 border-l border-black/10">{stockTotal || '—'}</td>
             </tr>
             <tr className="bg-[#534AB7]/15">
-              <td className="px-3 py-2 font-bold text-white whitespace-nowrap">MAKE</td>
-              {sizes.map(s => <td key={s} className="px-2 py-2 text-center font-bold text-white">{make[s] ?? 0}</td>)}
-              <td className="px-3 py-2 text-center font-bold text-[#a89fff] border-l border-white/10">{makeTotal}</td>
+              <td className="px-3 py-2 font-bold text-[#1a1916] whitespace-nowrap">MAKE</td>
+              {sizes.map(s => <td key={s} className="px-2 py-2 text-center font-bold text-[#1a1916]">{make[s] ?? 0}</td>)}
+              <td className="px-3 py-2 text-center font-bold text-[#534AB7] border-l border-black/10">{makeTotal}</td>
             </tr>
           </tbody>
         </table>
       </div>}
 
       {canEdit && !group.blocked && (
-        <div className="px-3 py-1.5 border-t border-white/5">
+        <div className="px-3 py-1.5 border-t border-black/[0.07]">
           <button onClick={() => { setAddingSize(true); setNewSize(''); setAddSizeError(''); }}
-            className="text-[11px] text-[#a89fff] hover:text-white transition-colors">
+            className="text-[11px] text-[#534AB7] hover:text-[#1a1916] transition-colors">
             + Add size
           </button>
         </div>
       )}
       {addingSize && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setAddingSize(false)}>
-          <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-xs p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-[#a89fff]">➕ Add Size Column</h3>
-            <p className="text-xs text-white/50">
-              Type the size you want to add — e.g. <strong className="text-white/70">2/10</strong>. It'll show up with 0 ordered, so you can put a number straight into Buffer or Extra for stock.
+          <div className="bg-white border border-black/10 rounded-2xl w-full max-w-xs p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-[#534AB7]">➕ Add Size Column</h3>
+            <p className="text-xs text-[#1a1916]/60">
+              Type the size you want to add — e.g. <strong className="text-[#1a1916]/80">2/10</strong>. It'll show up with 0 ordered, so you can put a number straight into Buffer or Extra for stock.
             </p>
             <input value={newSize} autoFocus placeholder="e.g. 2/10"
               onChange={e => { setNewSize(e.target.value); setAddSizeError(''); }}
@@ -270,11 +266,11 @@ function PoolCard({
                 onAddSize(sz);
                 setAddingSize(false);
               }}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7]" />
-            {addSizeError && <p className="text-[11px] text-red-300">{addSizeError}</p>}
+              className="bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7]" />
+            {addSizeError && <p className="text-[11px] text-red-700">{addSizeError}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setAddingSize(false)}
-                className="text-xs font-semibold bg-white/5 hover:bg-white/10 rounded-lg px-4 py-2 text-white/70">Cancel</button>
+                className="text-xs font-semibold bg-white hover:bg-black/[0.06] rounded-lg px-4 py-2 text-[#1a1916]/80">Cancel</button>
               <button onClick={() => {
                 const sz = newSize.trim();
                 if (!sz) { setAddSizeError('Please enter a size (e.g. 2/10).'); return; }
@@ -289,13 +285,13 @@ function PoolCard({
 
       {/* who ordered it */}
       <button onClick={() => setShowWho(v => !v)}
-        className="w-full text-left px-3 py-2 text-[11px] text-[#a89fff] hover:bg-white/5 border-t border-white/10 transition-colors">
+        className="w-full text-left px-3 py-2 text-[11px] text-[#534AB7] hover:bg-black/5 border-t border-black/10 transition-colors">
         {showWho ? '▾' : '▸'} Who ordered this ({group.contributors.length} row{group.contributors.length !== 1 ? 's' : ''})
       </button>
       {showWho && (
-        <div className="px-3 pb-2 divide-y divide-white/5 border-t border-white/5">
+        <div className="px-3 pb-2 divide-y divide-black/[0.07] border-t border-black/[0.07]">
           {canEdit && (
-            <p className="text-[10px] text-white/30 py-1.5">
+            <p className="text-[10px] text-[#1a1916]/40 py-1.5">
               Uncheck a customer to leave their pieces out of this batch — their order is untouched and they stay available to pool next time.
             </p>
           )}
@@ -309,28 +305,28 @@ function PoolCard({
                       className="mt-0.5 w-3.5 h-3.5 accent-[#534AB7] cursor-pointer flex-shrink-0" />
                   )}
                   <div className={`min-w-0 ${c.excluded ? 'opacity-40 line-through' : ''}`}>
-                    <div className="text-xs text-white truncate">
+                    <div className="text-xs text-[#1a1916] truncate">
                       {c.row.client}
-                      {c.row.note && <span className="ml-1.5 text-[10px] text-amber-300 no-underline" title={c.row.note}>📌</span>}
-                      {c.excluded && <span className="ml-1.5 text-[10px] font-bold text-red-300 no-underline">excluded</span>}
+                      {c.row.note && <span className="ml-1.5 text-[10px] text-amber-700 no-underline" title={c.row.note}>📌</span>}
+                      {c.excluded && <span className="ml-1.5 text-[10px] font-bold text-red-700 no-underline">excluded</span>}
                     </div>
-                    <div className="text-[10px] text-white/35 truncate">
+                    <div className="text-[10px] text-[#1a1916]/45 truncate">
                       {c.row.orderLabel}{c.row.varName ? ` · ${c.row.varName}` : ''} · {c.row.finish} ·{' '}
                       {orderSizes(Object.keys(c.row.sizes)).map(s => `${s}×${c.row.sizes[s]}`).join(', ')}
                     </div>
                   </div>
                 </label>
-                <div className={`text-xs font-bold flex-shrink-0 ${c.excluded ? 'opacity-40 line-through text-white/40' : 'text-[#a89fff]'}`}>{c.qty}</div>
+                <div className={`text-xs font-bold flex-shrink-0 ${c.excluded ? 'opacity-40 line-through text-[#1a1916]/55' : 'text-[#534AB7]'}`}>{c.qty}</div>
               </div>
             );
           })}
           {(bufferTotal > 0 || stockTotal > 0) && (
             <div className="py-1.5 flex justify-between gap-3">
               <div>
-                <div className="text-xs text-green-300">Buffer / stock</div>
-                <div className="text-[10px] text-white/35">not promised to anyone — stays with you</div>
+                <div className="text-xs text-green-700">Buffer / stock</div>
+                <div className="text-[10px] text-[#1a1916]/45">not promised to anyone — stays with you</div>
               </div>
-              <div className="text-xs font-bold text-green-300">{bufferTotal + stockTotal}</div>
+              <div className="text-xs font-bold text-green-700">{bufferTotal + stockTotal}</div>
             </div>
           )}
         </div>
@@ -501,8 +497,8 @@ export default function Pooling() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-5">
-        <h1 className="text-2xl font-bold text-white">Pooling Board</h1>
-        <p className="text-sm text-white/40 mt-0.5">
+        <h1 className="text-2xl font-bold text-[#1a1916]">Pooling Board</h1>
+        <p className="text-sm text-[#1a1916]/55 mt-0.5">
           The same design wanted by several customers, added together into one batch worth sending.
           Only items not yet given to any vendor appear here.
         </p>
@@ -510,44 +506,44 @@ export default function Pooling() {
 
       {/* mode */}
       <div className="flex gap-2 items-center flex-wrap mb-2">
-        <span className="text-xs text-white/40">Sending to:</span>
-        <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
+        <span className="text-xs text-[#1a1916]/55">Sending to:</span>
+        <div className="flex gap-1 bg-white border border-black/10 rounded-xl p-1">
           {MODES.map(m => (
             <button key={m.id} onClick={() => { setMode(m.id); setSelected(new Set()); setUnitChoiceByKey({}); }}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                mode === m.id ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'}`}>
+                mode === m.id ? 'bg-[#534AB7] text-white' : 'text-[#1a1916]/60 hover:text-[#1a1916]'}`}>
               {m.label}
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-white/35">{modeHint}</span>
+        <span className="text-[11px] text-[#1a1916]/45">{modeHint}</span>
       </div>
 
       <div className="flex gap-2 flex-wrap items-center mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search code, family, design or client…"
-          className="flex-1 min-w-[220px] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+          className="flex-1 min-w-[220px] bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]" />
         <button onClick={() => setMultiOnly(v => !v)}
           className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-            multiOnly ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white border border-white/10'}`}>
+            multiOnly ? 'bg-[#534AB7] text-white' : 'bg-white text-[#1a1916]/60 hover:text-[#1a1916] border border-black/10'}`}>
           Only where 2+ customers want it
         </button>
       </div>
 
-      <div className="text-xs text-white/40 mb-3">
+      <div className="text-xs text-[#1a1916]/55 mb-3">
         {groups.length} batch{groups.length !== 1 ? 'es' : ''} · {totalLoose.toLocaleString()} pieces not yet with any vendor
         {multiOnly && ` · ${allGroups.length - groups.length} hidden (only one customer)`}
       </div>
 
       {groups.length === 0 && (
-        <div className="border border-white/10 rounded-xl p-8 text-center">
-          <p className="text-sm text-white/50">
+        <div className="border border-black/10 rounded-xl p-8 text-center">
+          <p className="text-sm text-[#1a1916]/60">
             {allGroups.length === 0
               ? 'Nothing to pool — every item is already with a vendor.'
               : 'No design here is wanted by 2 or more customers.'}
           </p>
           {allGroups.length > 0 && multiOnly && (
-            <p className="text-xs text-white/30 mt-2">
+            <p className="text-xs text-[#1a1916]/40 mt-2">
               That is normal: most designs are one-offs. The Buffer and Stock rows are what get a batch to a workable size.
             </p>
           )}
@@ -560,8 +556,8 @@ export default function Pooling() {
           {families.map(({ family, groups: gs }) => (
             <div key={family} className="mb-5">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <h2 className="text-sm font-bold text-[#a89fff]">{family}</h2>
-                <span className="text-[11px] text-white/35">
+                <h2 className="text-sm font-bold text-[#534AB7]">{family}</h2>
+                <span className="text-[11px] text-[#1a1916]/45">
                   {gs.length} batch{gs.length !== 1 ? 'es' : ''} · {gs.reduce((a, g) => a + g.orderedTotal, 0).toLocaleString()} pcs ordered
                 </span>
               </div>
@@ -587,21 +583,21 @@ export default function Pooling() {
 
         {/* create batch panel */}
         <div>
-          <div className="sticky top-4 border border-white/10 rounded-xl bg-white/5 overflow-hidden">
+          <div className="sticky top-4 border border-black/10 rounded-xl bg-white overflow-hidden">
             <div className="px-4 py-3 bg-[#534AB7] text-white text-sm font-semibold">
               Create {MODES.find(m => m.id === mode)!.label.replace(/^\S+\s/, '')} batch
             </div>
             <div className="p-4 space-y-3">
-              <div className="text-xs text-white/60">
+              <div className="text-xs text-[#1a1916]/70">
                 {selectedGroups.length} batch{selectedGroups.length !== 1 ? 'es' : ''} selected ·{' '}
-                <b className="text-[#a89fff]">{selectedMake}</b> pcs to make
+                <b className="text-[#534AB7]">{selectedMake}</b> pcs to make
               </div>
 
               <div>
-                <label className="block text-xs text-white/60 mb-1">Vendor *</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Vendor *</label>
                 <input list="bt-pool-vendors" value={vendor} onChange={e => setVendor(e.target.value)}
                   disabled={!canEdit} placeholder="Vendor name"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]" />
                 <datalist id="bt-pool-vendors">
                   {knownVendors.map(v => <option key={v} value={v} />)}
                 </datalist>
@@ -609,21 +605,21 @@ export default function Pooling() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs text-white/60 mb-1">Start</label>
+                  <label className="block text-xs text-[#1a1916]/70 mb-1">Start</label>
                   <input type="date" value={start} onChange={e => setStart(e.target.value)} disabled={!canEdit}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-white text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
+                    className="w-full bg-white border border-black/10 rounded-lg px-2 py-2 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
                 </div>
                 <div>
-                  <label className="block text-xs text-white/60 mb-1">Wanted by</label>
+                  <label className="block text-xs text-[#1a1916]/70 mb-1">Wanted by</label>
                   <input type="date" value={delivery} onChange={e => setDelivery(e.target.value)} disabled={!canEdit}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-white text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
+                    className="w-full bg-white border border-black/10 rounded-lg px-2 py-2 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-white/60 mb-1">Priority</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Priority</label>
                 <select value={priority} onChange={e => setPriority(e.target.value as Priority)} disabled={!canEdit}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#534AB7]">
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] text-sm focus:outline-none focus:border-[#534AB7]">
                   <option value="normal">Normal</option>
                   <option value="urgent">Urgent</option>
                   <option value="critical">🔴 Critical</option>
@@ -631,10 +627,10 @@ export default function Pooling() {
               </div>
 
               <div>
-                <label className="block text-xs text-white/60 mb-1">Notes</label>
+                <label className="block text-xs text-[#1a1916]/70 mb-1">Notes</label>
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} disabled={!canEdit}
                   placeholder="Anything the vendor should know…"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-xs resize-none focus:outline-none focus:border-[#534AB7]" />
+                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-xs resize-none focus:outline-none focus:border-[#534AB7]" />
               </div>
 
               <button onClick={createBatch}
@@ -644,13 +640,13 @@ export default function Pooling() {
               </button>
 
               {!canEdit && (
-                <p className="text-[11px] text-white/35 leading-relaxed">
+                <p className="text-[11px] text-[#1a1916]/45 leading-relaxed">
                   {session?.role !== 'owner'
                     ? 'Read-only — only the owner can create vendor orders.'
                     : 'Another device holds the edit lock. Creating batches is disabled until it is released.'}
                 </p>
               )}
-              <p className="text-[11px] text-white/30 leading-relaxed">
+              <p className="text-[11px] text-[#1a1916]/40 leading-relaxed">
                 Every piece stays linked to the customer who ordered it, so when the goods come back
                 the app knows exactly who gets what.
               </p>

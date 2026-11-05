@@ -5,28 +5,28 @@ import type { AuditEntry } from '../types';
 // ─── Action colour coding ─────────────────────────────────────────────────────
 
 const ACTION_COLORS: Record<string, { bg: string; text: string }> = {
-  'Create order':   { bg: 'bg-green-500/15',  text: 'text-green-400' },
-  'Delete order':   { bg: 'bg-red-500/15',    text: 'text-red-400' },
-  'Edit order':     { bg: 'bg-blue-500/15',   text: 'text-blue-400' },
-  'Add design':     { bg: 'bg-purple-500/15', text: 'text-purple-400' },
-  'Remove design':  { bg: 'bg-red-500/15',    text: 'text-red-400' },
-  'Edit design':    { bg: 'bg-blue-500/15',   text: 'text-blue-400' },
-  'Stage status':   { bg: 'bg-yellow-500/15', text: 'text-yellow-400' },
-  'Stage days':     { bg: 'bg-yellow-500/15', text: 'text-yellow-400' },
-  'Stage date':     { bg: 'bg-yellow-500/15', text: 'text-yellow-400' },
-  'Add variety':    { bg: 'bg-indigo-500/15', text: 'text-indigo-400' },
-  'Remove variety': { bg: 'bg-red-500/15',    text: 'text-red-400' },
-  'Add size':       { bg: 'bg-indigo-500/15', text: 'text-indigo-400' },
-  'Upload image':   { bg: 'bg-teal-500/15',   text: 'text-teal-400' },
-  'Backup':         { bg: 'bg-white/10',       text: 'text-white/60' },
-  'Restore':        { bg: 'bg-orange-500/15', text: 'text-orange-400' },
-  'Add stage':      { bg: 'bg-purple-500/15', text: 'text-purple-400' },
-  'Archive order':  { bg: 'bg-white/10',       text: 'text-white/60' },
-  'Restore order':  { bg: 'bg-orange-500/15', text: 'text-orange-400' },
+  'Create order':   { bg: 'bg-green-500/15',  text: 'text-green-700' },
+  'Delete order':   { bg: 'bg-red-500/15',    text: 'text-red-700' },
+  'Edit order':     { bg: 'bg-blue-500/15',   text: 'text-blue-700' },
+  'Add design':     { bg: 'bg-purple-500/15', text: 'text-purple-700' },
+  'Remove design':  { bg: 'bg-red-500/15',    text: 'text-red-700' },
+  'Edit design':    { bg: 'bg-blue-500/15',   text: 'text-blue-700' },
+  'Stage status':   { bg: 'bg-yellow-500/15', text: 'text-yellow-700' },
+  'Stage days':     { bg: 'bg-yellow-500/15', text: 'text-yellow-700' },
+  'Stage date':     { bg: 'bg-yellow-500/15', text: 'text-yellow-700' },
+  'Add variety':    { bg: 'bg-indigo-500/15', text: 'text-indigo-700' },
+  'Remove variety': { bg: 'bg-red-500/15',    text: 'text-red-700' },
+  'Add size':       { bg: 'bg-indigo-500/15', text: 'text-indigo-700' },
+  'Upload image':   { bg: 'bg-teal-500/15',   text: 'text-teal-700' },
+  'Backup':         { bg: 'bg-black/[0.06]',       text: 'text-[#1a1916]/70' },
+  'Restore':        { bg: 'bg-orange-500/15', text: 'text-orange-700' },
+  'Add stage':      { bg: 'bg-purple-500/15', text: 'text-purple-700' },
+  'Archive order':  { bg: 'bg-black/[0.06]',       text: 'text-[#1a1916]/70' },
+  'Restore order':  { bg: 'bg-orange-500/15', text: 'text-orange-700' },
 };
 
 function actionStyle(action: string) {
-  return ACTION_COLORS[action] ?? { bg: 'bg-white/5', text: 'text-white/50' };
+  return ACTION_COLORS[action] ?? { bg: 'bg-white', text: 'text-[#1a1916]/60' };
 }
 
 // Broad category for grouping the filter dropdown
@@ -144,8 +144,8 @@ export default function Audit() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Audit Trail</h1>
-          <p className="text-sm text-white/40 mt-0.5">
+          <h1 className="text-2xl font-bold text-[#1a1916]">Audit Trail</h1>
+          <p className="text-sm text-[#1a1916]/55 mt-0.5">
             {entries.length} entries · showing {filtered.length}
             {filtered.length !== entries.length ? ' (filtered)' : ''}
           </p>
@@ -153,13 +153,13 @@ export default function Audit() {
         <div className="flex gap-2">
           {hasFilters && (
             <button onClick={resetFilters}
-              className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">
+              className="text-xs text-[#1a1916]/60 hover:text-[#1a1916] px-3 py-1.5 rounded-lg border border-black/10 hover:bg-black/5 transition-colors">
               Clear filters
             </button>
           )}
           {filtered.length > 0 && (
             <button onClick={exportCSV}
-              className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">
+              className="text-xs text-[#1a1916]/60 hover:text-[#1a1916] px-3 py-1.5 rounded-lg border border-black/10 hover:bg-black/5 transition-colors">
               📥 Export CSV
             </button>
           )}
@@ -167,13 +167,13 @@ export default function Audit() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 space-y-3">
+      <div className="bg-white border border-black/10 rounded-xl p-4 mb-5 space-y-3">
         {/* Search */}
         <input
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search actions, details, users…"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+          className="w-full bg-white border border-black/10 rounded-lg px-4 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
         />
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -181,7 +181,7 @@ export default function Audit() {
           <select
             value={userFilter}
             onChange={e => { setUserFilter(e.target.value); setPage(1); }}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#534AB7]"
+            className="bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7]"
           >
             <option value="">All users</option>
             {uniqueUsers.map(u => <option key={u} value={u}>{u}</option>)}
@@ -191,7 +191,7 @@ export default function Audit() {
           <select
             value={actionFilter}
             onChange={e => { setActionFilter(e.target.value); setPage(1); }}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#534AB7]"
+            className="bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7]"
           >
             <option value="">All actions</option>
             {uniqueActions.map(a => (
@@ -204,7 +204,7 @@ export default function Audit() {
             type="date"
             value={dateFrom}
             onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]"
+            className="bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]"
             placeholder="From"
           />
 
@@ -213,7 +213,7 @@ export default function Audit() {
             type="date"
             value={dateTo}
             onChange={e => { setDateTo(e.target.value); setPage(1); }}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]"
+            className="bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] text-xs focus:outline-none focus:border-[#534AB7] [color-scheme:dark]"
             placeholder="To"
           />
         </div>
@@ -229,7 +229,7 @@ export default function Audit() {
             <button
               key={p.label}
               onClick={() => applyPreset(p.label)}
-              className="text-xs px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors border border-white/10"
+              className="text-xs px-3 py-1 rounded-lg bg-white hover:bg-black/[0.06] text-[#1a1916]/60 hover:text-[#1a1916] transition-colors border border-black/10"
             >
               {p.display}
             </button>
@@ -239,7 +239,7 @@ export default function Audit() {
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <div className="text-center py-16 text-white/30">
+        <div className="text-center py-16 text-[#1a1916]/40">
           {entries.length === 0
             ? 'No audit entries yet. Changes made in the app will appear here.'
             : 'No entries match your filters.'}
@@ -252,9 +252,9 @@ export default function Audit() {
           <div key={day}>
             {/* Day separator */}
             <div className="flex items-center gap-3 mb-2">
-              <span className="text-xs font-semibold text-white/50">{fmtDate(day)}</span>
-              <div className="flex-1 h-px bg-white/10" />
-              <span className="text-xs text-white/30">{dayEntries.length} event{dayEntries.length !== 1 ? 's' : ''}</span>
+              <span className="text-xs font-semibold text-[#1a1916]/60">{fmtDate(day)}</span>
+              <div className="flex-1 h-px bg-black/[0.06]" />
+              <span className="text-xs text-[#1a1916]/40">{dayEntries.length} event{dayEntries.length !== 1 ? 's' : ''}</span>
             </div>
 
             {/* Entries for this day */}
@@ -264,10 +264,10 @@ export default function Audit() {
                 return (
                   <div
                     key={e.id}
-                    className="flex items-start gap-3 px-4 py-2.5 rounded-lg bg-white/3 hover:bg-white/5 transition-colors"
+                    className="flex items-start gap-3 px-4 py-2.5 rounded-lg bg-white hover:bg-black/5 transition-colors"
                   >
                     {/* Time */}
-                    <span className="text-xs text-white/30 w-16 flex-shrink-0 pt-0.5 font-mono">
+                    <span className="text-xs text-[#1a1916]/40 w-16 flex-shrink-0 pt-0.5 font-mono">
                       {fmtTime(e.ts)}
                     </span>
 
@@ -277,12 +277,12 @@ export default function Audit() {
                     </span>
 
                     {/* User */}
-                    <span className="text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-white/50 flex-shrink-0">
+                    <span className="text-xs bg-white border border-black/10 px-2 py-0.5 rounded-full text-[#1a1916]/60 flex-shrink-0">
                       {e.user || '—'}
                     </span>
 
                     {/* Detail */}
-                    <span className="text-xs text-white/60 min-w-0 break-words">
+                    <span className="text-xs text-[#1a1916]/70 min-w-0 break-words">
                       {e.detail || '—'}
                     </span>
                   </div>
@@ -295,22 +295,22 @@ export default function Audit() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
-          <span className="text-xs text-white/40">
+        <div className="flex items-center justify-between mt-6 pt-4 border-t border-black/10">
+          <span className="text-xs text-[#1a1916]/55">
             Page {page} of {totalPages} · {filtered.length} entries
           </span>
           <div className="flex gap-2">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-3 py-1.5 text-xs rounded-lg border border-white/10 text-white/60 hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-xs rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               ← Previous
             </button>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="px-3 py-1.5 text-xs rounded-lg border border-white/10 text-white/60 hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-xs rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               Next →
             </button>

@@ -19,9 +19,9 @@ import { computeTurnaroundRows, taAvg, taMedian, taFmt, taGroup, TURNAROUND_TRAC
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-      <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">{title}</h2>
-      {subtitle && <p className="text-xs text-white/40 mt-1 mb-4">{subtitle}</p>}
+    <div className="bg-white border border-black/10 rounded-xl p-5">
+      <h2 className="text-sm font-semibold text-[#1a1916]/70 uppercase tracking-wider">{title}</h2>
+      {subtitle && <p className="text-xs text-[#1a1916]/55 mt-1 mb-4">{subtitle}</p>}
       {!subtitle && <div className="mb-4" />}
       {children}
     </div>
@@ -43,10 +43,10 @@ function KpiCards({ orders }: { orders: Order[] }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       {cards.map(c => (
-        <div key={c.label} className="bg-white/5 border border-white/10 rounded-xl p-4">
-          <p className="text-2xl font-bold text-white">{c.value}</p>
-          <p className="text-xs font-medium text-white/70 mt-0.5">{c.label}</p>
-          <p className="text-xs text-white/30 mt-0.5">{c.sub}</p>
+        <div key={c.label} className="bg-white border border-black/10 rounded-xl p-4">
+          <p className="text-2xl font-bold text-[#1a1916]">{c.value}</p>
+          <p className="text-xs font-medium text-[#1a1916]/80 mt-0.5">{c.label}</p>
+          <p className="text-xs text-[#1a1916]/40 mt-0.5">{c.sub}</p>
         </div>
       ))}
     </div>
@@ -57,7 +57,7 @@ function KpiCards({ orders }: { orders: Order[] }) {
 
 function StageBar({ counts, height = 'h-7' }: { counts: Record<CoStageKey, number>; height?: string }) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (!total) return <div className={`${height} bg-white/5 rounded-md`} />;
+  if (!total) return <div className={`${height} bg-white rounded-md`} />;
   return (
     <div className={`flex gap-px ${height} rounded-md overflow-hidden`}>
       {CO_STAGE_DEFS.filter(s => counts[s.k] > 0).map(s => (
@@ -73,30 +73,30 @@ function StageBar({ counts, height = 'h-7' }: { counts: Record<CoStageKey, numbe
 function ProductionPipeline({ orders }: { orders: Order[] }) {
   const pipeline = useMemo(() => computeProductionPipeline(orders), [orders]);
 
-  if (!pipeline.total) return <p className="text-white/30 text-sm">No production rows yet.</p>;
+  if (!pipeline.total) return <p className="text-[#1a1916]/40 text-sm">No production rows yet.</p>;
 
   return (
     <div>
       <StageBar counts={pipeline.grand} />
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 mb-5">
         {CO_STAGE_DEFS.map(s => (
-          <span key={s.k} className="flex items-center gap-1.5 text-xs text-white/50">
+          <span key={s.k} className="flex items-center gap-1.5 text-xs text-[#1a1916]/60">
             <span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.bg }} />
-            {s.lbl} <strong className="text-white/80">{pipeline.grand[s.k]}</strong>
+            {s.lbl} <strong className="text-[#1a1916]/85">{pipeline.grand[s.k]}</strong>
           </span>
         ))}
       </div>
 
-      <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">Per customer</p>
+      <p className="text-xs font-semibold text-[#1a1916]/55 uppercase tracking-wider mb-2">Per customer</p>
       <div className="space-y-2">
         {pipeline.perClient.map(row => (
           <div key={row.client} className="flex items-center gap-3">
             <div className="w-32 flex-shrink-0 min-w-0">
-              <p className="text-sm text-white truncate">{row.client}</p>
-              <p className="text-[10px] text-white/30">{row.orderCount} order{row.orderCount !== 1 ? 's' : ''} · {row.designCount} design{row.designCount !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-[#1a1916] truncate">{row.client}</p>
+              <p className="text-[10px] text-[#1a1916]/40">{row.orderCount} order{row.orderCount !== 1 ? 's' : ''} · {row.designCount} design{row.designCount !== 1 ? 's' : ''}</p>
             </div>
             <div className="flex-1"><StageBar counts={row.counts} height="h-5" /></div>
-            <span className={`w-10 flex-shrink-0 text-right text-xs font-semibold ${row.dispatchPct === 100 ? 'text-green-400' : row.dispatchPct > 0 ? 'text-[#a89fff]' : 'text-white/30'}`}>
+            <span className={`w-10 flex-shrink-0 text-right text-xs font-semibold ${row.dispatchPct === 100 ? 'text-green-700' : row.dispatchPct > 0 ? 'text-[#534AB7]' : 'text-[#1a1916]/40'}`}>
               {row.dispatchPct}%
             </span>
           </div>
@@ -119,23 +119,23 @@ function AllStagesView({ orders }: { orders: Order[] }) {
           <div key={s.k} className="border rounded-xl overflow-hidden" style={{ borderColor: s.bg }}>
             <div className="flex items-center gap-2 px-3 py-2" style={{ background: s.bg }}>
               <span className="text-xs font-bold" style={{ color: s.tx }}>{s.lbl}</span>
-              <span className="text-[10px] font-semibold bg-white/50 rounded-full px-2 py-0.5" style={{ color: s.tx }}>
+              <span className="text-[10px] font-semibold bg-black/30 rounded-full px-2 py-0.5" style={{ color: s.tx }}>
                 {items.length} row{items.length !== 1 ? 's' : ''}
               </span>
             </div>
             {items.length === 0 ? (
-              <p className="text-xs text-white/20 text-center py-2">Nothing here right now</p>
+              <p className="text-xs text-[#1a1916]/30 text-center py-2">Nothing here right now</p>
             ) : (
-              <div className="divide-y divide-white/5 max-h-48 overflow-y-auto">
+              <div className="divide-y divide-black/[0.07] max-h-48 overflow-y-auto">
                 {items.map((r, i) => (
                   <div key={i} className="flex items-center gap-2 px-3 py-1.5">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-[#a89fff] truncate">
-                        {r.code || '—'} <span className="font-normal text-white/50">{r.name}{r.varName ? ` · ${r.varName}` : ''}</span>
+                      <p className="text-xs font-semibold text-[#534AB7] truncate">
+                        {r.code || '—'} <span className="font-normal text-[#1a1916]/60">{r.name}{r.varName ? ` · ${r.varName}` : ''}</span>
                       </p>
-                      <p className="text-[10px] text-white/30">{r.orderId} · {r.client}</p>
+                      <p className="text-[10px] text-[#1a1916]/40">{r.orderId} · {r.client}</p>
                     </div>
-                    <span className="text-[10px] text-white/40 flex-shrink-0">{r.qty} pcs</span>
+                    <span className="text-[10px] text-[#1a1916]/55 flex-shrink-0">{r.qty} pcs</span>
                   </div>
                 ))}
               </div>
@@ -152,16 +152,16 @@ function AllStagesView({ orders }: { orders: Order[] }) {
 // creation to dispatch, and where along the way the time went.
 
 function TaBarList({ groups, barColor, onBarClick, activeKey }: { groups: TaGroup[]; barColor: string; onBarClick?: (key: string) => void; activeKey?: string | null }) {
-  if (!groups.length) return <p className="text-xs text-white/30 text-center py-3">Not enough dispatched data yet.</p>;
+  if (!groups.length) return <p className="text-xs text-[#1a1916]/40 text-center py-3">Not enough dispatched data yet.</p>;
   const max = Math.max(...groups.map(g => g.avg), 0.01);
   return (
     <div className="space-y-2">
       {groups.map(g => (
         <div key={g.key}
           onClick={() => onBarClick?.(g.key)}
-          className={`flex items-center gap-3 ${onBarClick ? 'cursor-pointer rounded-lg -mx-1 px-1 py-0.5 transition-colors' : ''} ${activeKey === g.key ? 'bg-white/10' : onBarClick ? 'hover:bg-white/5' : ''}`}>
-          <span className="text-xs text-white/60 w-28 flex-shrink-0 truncate" title={`${g.key} — ${g.n} row${g.n !== 1 ? 's' : ''} — click to see rows`}>{g.key}</span>
-          <div className="flex-1 h-5 bg-white/10 rounded overflow-hidden">
+          className={`flex items-center gap-3 ${onBarClick ? 'cursor-pointer rounded-lg -mx-1 px-1 py-0.5 transition-colors' : ''} ${activeKey === g.key ? 'bg-black/[0.06]' : onBarClick ? 'hover:bg-black/5' : ''}`}>
+          <span className="text-xs text-[#1a1916]/70 w-28 flex-shrink-0 truncate" title={`${g.key} — ${g.n} row${g.n !== 1 ? 's' : ''} — click to see rows`}>{g.key}</span>
+          <div className="flex-1 h-5 bg-black/[0.06] rounded overflow-hidden">
             <div className="h-full flex items-center px-2 text-[10px] font-semibold text-white whitespace-nowrap"
               style={{ width: `${Math.round(g.avg / max * 100)}%`, background: barColor }}>
               {taFmt(g.avg)} avg · {g.n}
@@ -189,22 +189,22 @@ function TaDrilldownPanel({ rows, dim, dimKey, onClose }: { rows: TurnaroundRow[
   const sorted = [...matched].sort((a, b) => (Number(b[dayField]) || 0) - (Number(a[dayField]) || 0));
 
   return (
-    <div className="mt-4 bg-white/5 border border-[#534AB7]/40 rounded-xl p-4 max-h-[50vh] overflow-y-auto">
+    <div className="mt-4 bg-white border border-[#534AB7]/40 rounded-xl p-4 max-h-[50vh] overflow-y-auto">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-semibold text-white">{dimKey} — {sorted.length} row{sorted.length !== 1 ? 's' : ''}</span>
-        <button onClick={onClose} className="ml-auto text-white/40 hover:text-white text-sm leading-none">✕</button>
+        <span className="text-sm font-semibold text-[#1a1916]">{dimKey} — {sorted.length} row{sorted.length !== 1 ? 's' : ''}</span>
+        <button onClick={onClose} className="ml-auto text-[#1a1916]/55 hover:text-[#1a1916] text-sm leading-none">✕</button>
       </div>
-      <div className="divide-y divide-white/5">
+      <div className="divide-y divide-black/[0.07]">
         {sorted.map((r, i) => (
           <div key={i}
             onClick={() => navigate(`/orders?focus=${r.orderDbId}`)}
-            className="flex items-center gap-3 py-2 px-1 cursor-pointer rounded hover:bg-white/5 transition-colors">
+            className="flex items-center gap-3 py-2 px-1 cursor-pointer rounded hover:bg-black/5 transition-colors">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[#a89fff] truncate">{r.code} <span className="font-normal text-white/60">· {r.client}</span></p>
-              {r.orderLabel && <p className="text-[10px] text-white/30">{r.orderLabel}</p>}
+              <p className="text-xs font-semibold text-[#534AB7] truncate">{r.code} <span className="font-normal text-[#1a1916]/70">· {r.client}</span></p>
+              {r.orderLabel && <p className="text-[10px] text-[#1a1916]/40">{r.orderLabel}</p>}
             </div>
-            <span className="text-xs font-semibold text-red-400 whitespace-nowrap">{taFmt(Number(r[dayField]))}</span>
-            <span className="text-[10px] text-[#a89fff] flex-shrink-0">→</span>
+            <span className="text-xs font-semibold text-red-700 whitespace-nowrap">{taFmt(Number(r[dayField]))}</span>
+            <span className="text-[10px] text-[#534AB7] flex-shrink-0">→</span>
           </div>
         ))}
       </div>
@@ -222,10 +222,10 @@ function TurnaroundSection({ orders }: { orders: Order[] }) {
   if (!rows.length) {
     return (
       <Card title="⏱ Turnaround Time — Order to Dispatch">
-        <p className="text-xs text-[#a89fff] font-semibold mb-2">{TURNAROUND_TRACKING_SINCE}</p>
-        <p className="text-center py-6 text-white/40 text-sm">
+        <p className="text-xs text-[#534AB7] font-semibold mb-2">{TURNAROUND_TRACKING_SINCE}</p>
+        <p className="text-center py-6 text-[#1a1916]/55 text-sm">
           No dispatched rows with full timing data yet.<br />
-          <span className="text-xs text-white/25">This fills in automatically as orders get dispatched from now on — nothing is estimated or guessed.</span>
+          <span className="text-xs text-[#1a1916]/35">This fills in automatically as orders get dispatched from now on — nothing is estimated or guessed.</span>
         </p>
       </Card>
     );
@@ -264,25 +264,25 @@ function TurnaroundSection({ orders }: { orders: Order[] }) {
   return (
     <>
       <Card title="⏱ Turnaround Time — Order to Dispatch">
-        <p className="text-xs text-[#a89fff] font-semibold mb-1">{TURNAROUND_TRACKING_SINCE}</p>
-        <p className="text-xs text-white/40 mb-4">Based on {rows.length} dispatched row{rows.length !== 1 ? 's' : ''} with complete timing data · measured from order creation to dispatch</p>
+        <p className="text-xs text-[#534AB7] font-semibold mb-1">{TURNAROUND_TRACKING_SINCE}</p>
+        <p className="text-xs text-[#1a1916]/55 mb-4">Based on {rows.length} dispatched row{rows.length !== 1 ? 's' : ''} with complete timing data · measured from order creation to dispatch</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white/5 rounded-lg p-3"><p className="text-xl font-bold text-white">{taFmt(overallAvg)}</p><p className="text-xs text-white/40 mt-0.5">Average</p></div>
-          <div className="bg-white/5 rounded-lg p-3"><p className="text-xl font-bold text-white">{taFmt(overallMedian)}</p><p className="text-xs text-white/40 mt-0.5">Median (typical)</p></div>
-          <div className="bg-white/5 rounded-lg p-3"><p className="text-xl font-bold text-green-400">{taFmt(fastest)}</p><p className="text-xs text-white/40 mt-0.5">Fastest</p></div>
-          <div className="bg-white/5 rounded-lg p-3"><p className="text-xl font-bold text-red-400">{taFmt(slowest)}</p><p className="text-xs text-white/40 mt-0.5">Slowest</p></div>
+          <div className="bg-white rounded-lg p-3"><p className="text-xl font-bold text-[#1a1916]">{taFmt(overallAvg)}</p><p className="text-xs text-[#1a1916]/55 mt-0.5">Average</p></div>
+          <div className="bg-white rounded-lg p-3"><p className="text-xl font-bold text-[#1a1916]">{taFmt(overallMedian)}</p><p className="text-xs text-[#1a1916]/55 mt-0.5">Median (typical)</p></div>
+          <div className="bg-white rounded-lg p-3"><p className="text-xl font-bold text-green-700">{taFmt(fastest)}</p><p className="text-xs text-[#1a1916]/55 mt-0.5">Fastest</p></div>
+          <div className="bg-white rounded-lg p-3"><p className="text-xl font-bold text-red-700">{taFmt(slowest)}</p><p className="text-xs text-[#1a1916]/55 mt-0.5">Slowest</p></div>
         </div>
       </Card>
 
       <Card title="Where the time actually goes" subtitle="Average days spent in each stage (only rows with both start & end timestamps count)">
         {stageStats.length === 0 ? (
-          <p className="text-xs text-white/30 text-center py-3">No stage timing data yet.</p>
+          <p className="text-xs text-[#1a1916]/40 text-center py-3">No stage timing data yet.</p>
         ) : (
           <div className="space-y-2">
             {stageStats.map(([name, avg, n, color]) => (
               <div key={name} className="flex items-center gap-3">
-                <span className="text-xs text-white/60 w-36 flex-shrink-0">{name}</span>
-                <div className="flex-1 h-5 bg-white/10 rounded overflow-hidden">
+                <span className="text-xs text-[#1a1916]/70 w-36 flex-shrink-0">{name}</span>
+                <div className="flex-1 h-5 bg-black/[0.06] rounded overflow-hidden">
                   <div className="h-full flex items-center px-2 text-[10px] font-semibold text-white whitespace-nowrap"
                     style={{ width: `${Math.round((avg! / maxStage) * 100)}%`, background: color }}>
                     {taFmt(avg)} · {n} rows
@@ -318,13 +318,13 @@ function TurnaroundSection({ orders }: { orders: Order[] }) {
             <TaBarList groups={byPlatingVendor} barColor="#BF360C" onBarClick={k => toggleDrilldown('platingVendor', k)} activeKey={drilldown?.dim === 'platingVendor' ? drilldown.key : null} />
           </div>
         </div>
-        <p className="text-[10px] text-white/25 mt-2">Vendors with fewer than 3 dispatched rows aren't ranked yet.</p>
+        <p className="text-[10px] text-[#1a1916]/35 mt-2">Vendors with fewer than 3 dispatched rows aren't ranked yet.</p>
         {drilldown && <TaDrilldownPanel rows={rows} dim={drilldown.dim} dimKey={drilldown.key} onClose={() => setDrilldown(null)} />}
       </Card>
 
       <Card title="Monthly Trend" subtitle="Average total days per dispatch month">
         {monthKeys.length <= 1 ? (
-          <p className="text-xs text-white/30 text-center py-3">Need at least 2 months of dispatched orders to show a trend.</p>
+          <p className="text-xs text-[#1a1916]/40 text-center py-3">Need at least 2 months of dispatched orders to show a trend.</p>
         ) : (
           <div className="space-y-2">
             {monthKeys.map(k => {
@@ -332,8 +332,8 @@ function TurnaroundSection({ orders }: { orders: Order[] }) {
               const label = new Date(`${k}-01`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
               return (
                 <div key={k} className="flex items-center gap-3">
-                  <span className="text-xs text-white/60 w-16 flex-shrink-0">{label}</span>
-                  <div className="flex-1 h-5 bg-white/10 rounded overflow-hidden">
+                  <span className="text-xs text-[#1a1916]/70 w-16 flex-shrink-0">{label}</span>
+                  <div className="flex-1 h-5 bg-black/[0.06] rounded overflow-hidden">
                     <div className="h-full flex items-center px-2 text-[10px] font-semibold text-white whitespace-nowrap"
                       style={{ width: `${Math.round(((avg ?? 0) / maxMonth) * 100)}%`, background: '#534AB7' }}>
                       {taFmt(avg)}
@@ -368,22 +368,22 @@ function DesignCodeLookup({ orders }: { orders: Order[] }) {
     <div>
       <input value={query} onChange={e => setQuery(e.target.value)}
         placeholder="Type a design code e.g. D-045…"
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm mb-3 focus:outline-none focus:border-[#534AB7]" />
+        className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm mb-3 focus:outline-none focus:border-[#534AB7]" />
       {!query.trim() ? (
-        <p className="text-xs text-white/30 text-center py-3">Start typing a design code above.</p>
+        <p className="text-xs text-[#1a1916]/40 text-center py-3">Start typing a design code above.</p>
       ) : hits.length === 0 ? (
-        <p className="text-xs text-white/30 text-center py-3">No designs found matching "{query}".</p>
+        <p className="text-xs text-[#1a1916]/40 text-center py-3">No designs found matching "{query}".</p>
       ) : (
-        <div className="divide-y divide-white/5 max-h-72 overflow-y-auto">
+        <div className="divide-y divide-black/[0.07] max-h-72 overflow-y-auto">
           {hits.map((h, i) => (
             <div key={i} className="flex items-center gap-2 py-2">
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-[#a89fff] truncate">
-                  {h.code || '—'} <span className="font-normal text-white/60">{h.name}{h.varName ? ` · ${h.varName}` : ''}</span>
+                <p className="text-xs font-semibold text-[#534AB7] truncate">
+                  {h.code || '—'} <span className="font-normal text-[#1a1916]/70">{h.name}{h.varName ? ` · ${h.varName}` : ''}</span>
                 </p>
-                <p className="text-[10px] text-white/30">{h.orderId} · {h.client}</p>
+                <p className="text-[10px] text-[#1a1916]/40">{h.orderId} · {h.client}</p>
               </div>
-              <span className="text-[10px] text-white/40 flex-shrink-0">{h.qty} pcs</span>
+              <span className="text-[10px] text-[#1a1916]/55 flex-shrink-0">{h.qty} pcs</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0" style={{ background: h.stageDef.bg, color: h.stageDef.tx }}>{h.stageDef.lbl}</span>
             </div>
           ))}
@@ -399,13 +399,13 @@ function ClientLeaderboard({ orders }: { orders: Order[] }) {
   const rows = useMemo(() => computeClientLeaderboard(orders), [orders]);
   const maxOrders = rows[0]?.orderCount ?? 1;
 
-  if (!rows.length) return <p className="text-white/30 text-sm">No client data yet.</p>;
+  if (!rows.length) return <p className="text-[#1a1916]/40 text-sm">No client data yet.</p>;
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-xs text-white/40 border-b border-white/10">
+          <tr className="text-xs text-[#1a1916]/55 border-b border-black/10">
             <th className="text-left py-2 pr-4 font-normal">Client</th>
             <th className="text-center px-3 font-normal">Orders</th>
             <th className="text-center px-3 font-normal">Pieces</th>
@@ -414,20 +414,20 @@ function ClientLeaderboard({ orders }: { orders: Order[] }) {
             <th className="text-left pl-4 font-normal">Activity</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/5">
+        <tbody className="divide-y divide-black/[0.07]">
           {rows.map((r: ClientRow) => (
-            <tr key={r.client} className="hover:bg-white/3 transition-colors">
-              <td className="py-2.5 pr-4 text-white font-medium">{r.client}</td>
-              <td className="text-center px-3 text-white/80">{r.orderCount}</td>
-              <td className="text-center px-3 text-white/80">{r.totalPieces.toLocaleString()}</td>
+            <tr key={r.client} className="hover:bg-black/5 transition-colors">
+              <td className="py-2.5 pr-4 text-[#1a1916] font-medium">{r.client}</td>
+              <td className="text-center px-3 text-[#1a1916]/85">{r.orderCount}</td>
+              <td className="text-center px-3 text-[#1a1916]/85">{r.totalPieces.toLocaleString()}</td>
               <td className="text-center px-3">
-                {r.pending > 0 && <span className="text-red-400">{r.pending}</span>}
+                {r.pending > 0 && <span className="text-red-700">{r.pending}</span>}
               </td>
               <td className="text-center px-3">
-                {r.done > 0 && <span className="text-indigo-400">{r.done}</span>}
+                {r.done > 0 && <span className="text-indigo-700">{r.done}</span>}
               </td>
               <td className="pl-4 w-28">
-                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-[#534AB7] rounded-full"
                     style={{ width: `${Math.round((r.orderCount / maxOrders) * 100)}%` }}
@@ -448,13 +448,13 @@ function DesignPopularity({ orders }: { orders: Order[] }) {
   const rows = useMemo(() => computeDesignPopularity(orders), [orders]);
   const maxTimes = rows[0]?.timesOrdered ?? 1;
 
-  if (!rows.length) return <p className="text-white/30 text-sm">No design data yet.</p>;
+  if (!rows.length) return <p className="text-[#1a1916]/40 text-sm">No design data yet.</p>;
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-xs text-white/40 border-b border-white/10">
+          <tr className="text-xs text-[#1a1916]/55 border-b border-black/10">
             <th className="text-left py-2 pr-4 font-normal">Design Code</th>
             <th className="text-left pr-4 font-normal">Name</th>
             <th className="text-center px-3 font-normal">Orders</th>
@@ -464,18 +464,18 @@ function DesignPopularity({ orders }: { orders: Order[] }) {
             <th className="pl-4 font-normal text-left">Popularity</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/5">
+        <tbody className="divide-y divide-black/[0.07]">
           {rows.map((r: DesignPopularityRow) => (
-            <tr key={r.code} className="hover:bg-white/3 transition-colors">
-              <td className="py-2.5 pr-4 font-mono text-[#a89fff] text-xs">{r.code}</td>
-              <td className="pr-4 text-white/80 max-w-[150px] truncate">{r.name !== r.code ? r.name : '—'}</td>
-              <td className="text-center px-3 text-white font-semibold">{r.timesOrdered}</td>
-              <td className="text-center px-3 text-white/80">{r.totalPieces.toLocaleString()}</td>
-              <td className="text-center px-3 text-white/60">{r.avgPieces}</td>
-              <td className="text-center px-3 text-white/60">{r.clients.length}</td>
+            <tr key={r.code} className="hover:bg-black/5 transition-colors">
+              <td className="py-2.5 pr-4 font-mono text-[#534AB7] text-xs">{r.code}</td>
+              <td className="pr-4 text-[#1a1916]/85 max-w-[150px] truncate">{r.name !== r.code ? r.name : '—'}</td>
+              <td className="text-center px-3 text-[#1a1916] font-semibold">{r.timesOrdered}</td>
+              <td className="text-center px-3 text-[#1a1916]/85">{r.totalPieces.toLocaleString()}</td>
+              <td className="text-center px-3 text-[#1a1916]/70">{r.avgPieces}</td>
+              <td className="text-center px-3 text-[#1a1916]/70">{r.clients.length}</td>
               <td className="pl-4 w-32">
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
                     <div
                       className="h-full bg-[#534AB7] rounded-full"
                       style={{ width: `${Math.round((r.timesOrdered / maxTimes) * 100)}%` }}
@@ -494,16 +494,16 @@ function DesignPopularity({ orders }: { orders: Order[] }) {
 // ─── Breakdown bars ───────────────────────────────────────────────────────────
 
 function BreakdownBars({ items, emptyText }: { items: BreakdownItem[]; emptyText: string }) {
-  if (!items.length) return <p className="text-white/30 text-sm">{emptyText}</p>;
+  if (!items.length) return <p className="text-[#1a1916]/40 text-sm">{emptyText}</p>;
   return (
     <div className="space-y-3">
       {items.map(item => (
         <div key={item.label} className="flex items-center gap-3">
-          <span className="text-sm text-white/70 w-20 flex-shrink-0">{item.label}</span>
-          <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+          <span className="text-sm text-[#1a1916]/80 w-20 flex-shrink-0">{item.label}</span>
+          <div className="flex-1 h-2 bg-black/[0.06] rounded-full overflow-hidden">
             <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} />
           </div>
-          <span className="text-xs text-white/50 w-16 text-right flex-shrink-0">
+          <span className="text-xs text-[#1a1916]/60 w-16 text-right flex-shrink-0">
             {item.count} ({item.pct}%)
           </span>
         </div>
@@ -524,8 +524,8 @@ export default function Analytics() {
   if (orders.length === 0) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-2xl font-bold text-white mb-2">Analytics</h1>
-        <p className="text-white/30">No orders yet. Create some orders first to see analytics.</p>
+        <h1 className="text-2xl font-bold text-[#1a1916] mb-2">Analytics</h1>
+        <p className="text-[#1a1916]/40">No orders yet. Create some orders first to see analytics.</p>
       </div>
     );
   }
@@ -533,8 +533,8 @@ export default function Analytics() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Analytics</h1>
-        <p className="text-sm text-white/40 mt-0.5">Live insights from your production data — includes archived orders</p>
+        <h1 className="text-2xl font-bold text-[#1a1916]">Analytics</h1>
+        <p className="text-sm text-[#1a1916]/55 mt-0.5">Live insights from your production data — includes archived orders</p>
       </div>
 
       {/* KPI row */}

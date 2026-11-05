@@ -88,30 +88,30 @@ export default function ImportFolderModal({ seg, onImported, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4" onClick={phase === 'uploading' ? undefined : onClose}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-lg p-5 flex flex-col gap-3.5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-lg p-5 flex flex-col gap-3.5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-sm font-bold text-[#a89fff]">📁 Import Photos into Library</h3>
-            <p className="text-xs text-white/40 mt-1">
-              Select your entire photos folder — its structure is preserved automatically. FolderName/photo.jpg → folder <strong className="text-white/60">FolderName</strong> in <strong className="text-white/60">{seg}</strong>. Every file is uploaded, nothing is filtered.
+            <h3 className="text-sm font-bold text-[#534AB7]">📁 Import Photos into Library</h3>
+            <p className="text-xs text-[#1a1916]/55 mt-1">
+              Select your entire photos folder — its structure is preserved automatically. FolderName/photo.jpg → folder <strong className="text-[#1a1916]/70">FolderName</strong> in <strong className="text-[#1a1916]/70">{seg}</strong>. Every file is uploaded, nothing is filtered.
             </p>
           </div>
           {phase !== 'uploading' && (
-            <button onClick={onClose} className="text-white/40 hover:text-white text-sm flex-shrink-0 ml-2">✕</button>
+            <button onClick={onClose} className="text-[#1a1916]/55 hover:text-[#1a1916] text-sm flex-shrink-0 ml-2">✕</button>
           )}
         </div>
 
         {phase === 'pick' && (
-          <div className="border-2 border-dashed border-white/15 rounded-xl p-6 text-center bg-white/3">
+          <div className="border-2 border-dashed border-black/15 rounded-xl p-6 text-center bg-white">
             <div className="text-3xl mb-2">📂</div>
-            <p className="text-xs text-white/50 mb-3">Works with 2,000+ photos — uploads {BATCH} at a time, saves progress every {SAVE_EVERY}</p>
+            <p className="text-xs text-[#1a1916]/60 mb-3">Works with 2,000+ photos — uploads {BATCH} at a time, saves progress every {SAVE_EVERY}</p>
             <label className="inline-flex items-center gap-2 bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-5 py-2.5 text-sm font-semibold cursor-pointer">
               📂 Select Folder
               <input ref={folderInputRef} type="file" multiple accept="image/*" className="hidden"
                 onChange={e => { const f = e.target.files; if (f?.length) runImport(f, null); e.target.value = ''; }} />
             </label>
-            <p className="text-[11px] text-white/30 mt-2.5 mb-1.5">— or select individual files —</p>
-            <label className="inline-flex items-center gap-2 bg-white/5 border border-white/15 text-white/70 rounded-lg px-4 py-2 text-xs font-semibold cursor-pointer">
+            <p className="text-[11px] text-[#1a1916]/40 mt-2.5 mb-1.5">— or select individual files —</p>
+            <label className="inline-flex items-center gap-2 bg-white border border-black/15 text-[#1a1916]/80 rounded-lg px-4 py-2 text-xs font-semibold cursor-pointer">
               🖼️ Select Individual Files
               <input type="file" multiple accept="image/*" className="hidden"
                 onChange={e => { const f = e.target.files; if (f?.length) runImport(f, 'General'); e.target.value = ''; }} />
@@ -121,34 +121,34 @@ export default function ImportFolderModal({ seg, onImported, onClose }: Props) {
 
         {(phase === 'uploading' || phase === 'done') && (
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-white">
+            <p className="text-sm font-semibold text-[#1a1916]">
               {phase === 'done'
                 ? `✅ ${(done - failed).toLocaleString()} photos imported!${failed ? ` · ${failed} failed` : ''}`
                 : `Uploading ${done.toLocaleString()} / ${total.toLocaleString()} photos (${pct}%)…`}
             </p>
-            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+            <div className="h-2 bg-black/[0.06] rounded-full overflow-hidden">
               <div className={`h-full rounded-full transition-all ${phase === 'done' ? (failed ? 'bg-amber-500' : 'bg-green-500') : 'bg-[#534AB7]'}`} style={{ width: `${phase === 'done' ? 100 : pct}%` }} />
             </div>
             {phase === 'uploading' && (
-              <p className="text-[11px] text-white/40">{failed ? `${failed} failed — will show list at end` : 'All uploads successful so far ✓'}</p>
+              <p className="text-[11px] text-[#1a1916]/55">{failed ? `${failed} failed — will show list at end` : 'All uploads successful so far ✓'}</p>
             )}
             {Object.keys(folderCounts).length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {Object.entries(folderCounts).map(([f, n]) => (
-                  <span key={f} className="text-[10px] bg-white/5 border border-white/10 rounded px-2 py-0.5 text-white/60">{f}: {n}</span>
+                  <span key={f} className="text-[10px] bg-white border border-black/10 rounded px-2 py-0.5 text-[#1a1916]/70">{f}: {n}</span>
                 ))}
               </div>
             )}
             {phase === 'done' && failedFiles.length > 0 && (
               <div className="mt-2 bg-red-500/10 border border-red-500/25 rounded-lg p-2.5 max-h-32 overflow-y-auto">
-                <p className="text-[11px] font-semibold text-red-300 mb-1">Failed files:</p>
+                <p className="text-[11px] font-semibold text-red-700 mb-1">Failed files:</p>
                 {failedFiles.map((f, i) => (
-                  <p key={i} className="text-[10px] text-red-300/70">{f.folder}/{f.fileName} — {f.reason}</p>
+                  <p key={i} className="text-[10px] text-red-700">{f.folder}/{f.fileName} — {f.reason}</p>
                 ))}
               </div>
             )}
             {phase === 'done' && (
-              <button onClick={onClose} className="mt-2 self-end text-xs font-semibold bg-white/10 hover:bg-white/15 rounded-lg px-4 py-2 text-white">Close</button>
+              <button onClick={onClose} className="mt-2 self-end text-xs font-semibold bg-black/[0.06] hover:bg-black/10 rounded-lg px-4 py-2 text-[#1a1916]">Close</button>
             )}
           </div>
         )}

@@ -250,20 +250,20 @@ export default function Orders() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Orders</h1>
-          <p className="text-sm text-white/40 mt-0.5">{stats.total} active order{stats.total !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-[#1a1916]">Orders</h1>
+          <p className="text-sm text-[#1a1916]/55 mt-0.5">{stats.total} active order{stats.total !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-3">
-          {saving && <span className="text-xs text-yellow-300 animate-pulse">Saving…</span>}
+          {saving && <span className="text-xs text-yellow-700 animate-pulse">Saving…</span>}
           {!hasLock && session?.role === 'owner' && (
-            <span className="text-xs text-yellow-400 bg-yellow-500/10 px-3 py-1.5 rounded-lg">Edit lock not held</span>
+            <span className="text-xs text-yellow-700 bg-yellow-500/10 px-3 py-1.5 rounded-lg">Edit lock not held</span>
           )}
           {!canEdit && session?.role !== 'owner' && (
-            <span className="text-xs text-white/30 bg-white/5 px-3 py-1.5 rounded-lg">Read-only</span>
+            <span className="text-xs text-[#1a1916]/40 bg-white px-3 py-1.5 rounded-lg">Read-only</span>
           )}
           <button onClick={() => exportOrdersToExcel(data)}
             title="Download every active order as an Excel workbook (Summary + Design & Variety Breakdown)"
-            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+            className="flex items-center gap-2 bg-white hover:bg-black/[0.06] border border-black/10 text-[#1a1916]/80 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
             📤 Export to Excel
           </button>
           {canEdit && (
@@ -283,7 +283,7 @@ export default function Orders() {
         }} />
 
       {allOrders.length === 0 ? (
-        <div className="text-center py-16 text-white/30">
+        <div className="text-center py-16 text-[#1a1916]/40">
           {canEdit ? 'No orders yet — click "New Order" to create one.' : 'No orders yet.'}
         </div>
       ) : (
@@ -292,8 +292,8 @@ export default function Orders() {
               panel on mobile (a fixed 224px column left almost no room for
               anything else on a real phone width, confirmed in-browser);
               reverts to the original fixed-width side column at md+. ── */}
-          <div className="w-full md:w-56 md:shrink-0 border border-white/10 rounded-xl overflow-hidden self-start">
-            <div className="px-3 py-2 text-xs font-semibold text-white/40 uppercase tracking-wider bg-white/5 border-b border-white/10">
+          <div className="w-full md:w-56 md:shrink-0 border border-black/10 rounded-xl overflow-hidden self-start">
+            <div className="px-3 py-2 text-xs font-semibold text-[#1a1916]/55 uppercase tracking-wider bg-white border-b border-black/10">
               Clients ({clientNames.length})
             </div>
             <div className="max-h-56 md:max-h-[70vh] overflow-y-auto">
@@ -302,13 +302,13 @@ export default function Orders() {
                 const active = !isGlobalSearch && viewMode === 'active' && name === effectiveClient;
                 return (
                   <button key={name} onClick={() => selectClient(name)}
-                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-white/5 transition-colors ${
-                      active ? 'bg-[#534AB7]/20 text-white' : 'text-white/60 hover:bg-white/5 hover:text-white'
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-black/[0.07] transition-colors ${
+                      active ? 'bg-[#534AB7]/20 text-[#1a1916]' : 'text-[#1a1916]/70 hover:bg-black/5 hover:text-[#1a1916]'
                     }`}>
                     <span className="truncate">👤 {name}</span>
                     <span className="flex items-center gap-1 text-[10px] shrink-0">
-                      {cd.done > 0 && <span className="text-green-400 font-semibold">{cd.done}●</span>}
-                      {cd.pending > 0 && <span className="text-red-400 font-semibold">{cd.pending}●</span>}
+                      {cd.done > 0 && <span className="text-green-700 font-semibold">{cd.done}●</span>}
+                      {cd.pending > 0 && <span className="text-red-700 font-semibold">{cd.pending}●</span>}
                     </span>
                   </button>
                 );
@@ -322,22 +322,22 @@ export default function Orders() {
             <div className="flex flex-wrap items-center gap-2 mb-3">
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Search client, order ID, design code…"
-                className="flex-1 min-w-[200px] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm" />
+                className="flex-1 min-w-[200px] bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm" />
               <button onClick={() => setStatusFilter('')}
-                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${!statusFilter ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}>All</button>
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${!statusFilter ? 'bg-[#534AB7] text-white' : 'bg-white text-[#1a1916]/60 hover:text-[#1a1916]'}`}>All</button>
               <button onClick={() => setStatusFilter('pending')}
-                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${statusFilter === 'pending' ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}>🔴 Pending</button>
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${statusFilter === 'pending' ? 'bg-[#534AB7] text-white' : 'bg-white text-[#1a1916]/60 hover:text-[#1a1916]'}`}>🔴 Pending</button>
               <button onClick={() => setStatusFilter('done')}
-                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${statusFilter === 'done' ? 'bg-[#534AB7] text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}>✅ Completed</button>
-              <div className="flex items-center gap-1 ml-auto bg-white/5 rounded-lg p-0.5">
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${statusFilter === 'done' ? 'bg-[#534AB7] text-white' : 'bg-white text-[#1a1916]/60 hover:text-[#1a1916]'}`}>✅ Completed</button>
+              <div className="flex items-center gap-1 ml-auto bg-white rounded-lg p-0.5">
                 <button onClick={() => setViewMode('active')}
-                  className={`text-xs px-3 py-1.5 rounded-md transition-colors ${viewMode === 'active' ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'}`}>Active</button>
+                  className={`text-xs px-3 py-1.5 rounded-md transition-colors ${viewMode === 'active' ? 'bg-[#534AB7] text-white' : 'text-[#1a1916]/60 hover:text-[#1a1916]'}`}>Active</button>
                 <button onClick={() => setViewMode('archived')}
-                  className={`text-xs px-3 py-1.5 rounded-md transition-colors ${viewMode === 'archived' ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'}`}>📦 Archived ({archivedCount})</button>
+                  className={`text-xs px-3 py-1.5 rounded-md transition-colors ${viewMode === 'archived' ? 'bg-[#534AB7] text-white' : 'text-[#1a1916]/60 hover:text-[#1a1916]'}`}>📦 Archived ({archivedCount})</button>
               </div>
               {viewMode === 'active' && canEdit && (
                 <button onClick={handleArchiveAllCompleted} disabled={!completedUnarchivedCount}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-white/5 text-white/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg bg-white text-[#1a1916]/60 hover:text-[#1a1916] disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                   📦 Archive completed ({completedUnarchivedCount})
                 </button>
               )}
@@ -346,14 +346,14 @@ export default function Orders() {
             {/* Section header */}
             {sectionTitle && (
               <div className="mb-3">
-                <p className="text-white font-semibold">{sectionTitle}</p>
-                <p className="text-xs text-white/40">{sectionMeta}</p>
+                <p className="text-[#1a1916] font-semibold">{sectionTitle}</p>
+                <p className="text-xs text-[#1a1916]/55">{sectionMeta}</p>
               </div>
             )}
 
             {/* Cards */}
             {visibleOrders.length === 0 ? (
-              <div className="text-center py-16 text-white/30">
+              <div className="text-center py-16 text-[#1a1916]/40">
                 {viewMode === 'archived' ? 'No archived orders.' : q ? `No orders found for "${search}"` : 'No orders for this client'}
               </div>
             ) : (
@@ -398,15 +398,15 @@ export default function Orders() {
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4"
           onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}>
-          <div className="bg-[#1a1750] border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <h3 className="text-white font-semibold mb-1">Delete order?</h3>
-            <p className="text-sm text-white/50 mb-5">
-              This will permanently delete <span className="text-white">{deleteTarget.orderId}</span> for{' '}
-              <span className="text-white">{deleteTarget.client}</span> and all its designs and stage data.
+          <div className="bg-white border border-black/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="text-[#1a1916] font-semibold mb-1">Delete order?</h3>
+            <p className="text-sm text-[#1a1916]/60 mb-5">
+              This will permanently delete <span className="text-[#1a1916]">{deleteTarget.orderId}</span> for{' '}
+              <span className="text-[#1a1916]">{deleteTarget.client}</span> and all its designs and stage data.
             </p>
             <div className="flex gap-2">
               <button onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+                className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors">Cancel</button>
               <button onClick={handleDelete}
                 className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium text-sm transition-colors">Delete</button>
             </div>

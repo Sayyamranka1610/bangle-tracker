@@ -49,22 +49,22 @@ export default function SaareTrailsModal({ data, onClose }: { data: AppData; onC
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 pt-5 pb-3">
-          <span className="w-8 h-8 rounded-lg bg-[#534AB7]/20 text-[#a89fff] flex items-center justify-center text-base flex-shrink-0">📜</span>
-          <h3 className="text-sm font-bold text-white">Saare Follow-up Trails</h3>
+          <span className="w-8 h-8 rounded-lg bg-[#534AB7]/20 text-[#534AB7] flex items-center justify-center text-base flex-shrink-0">📜</span>
+          <h3 className="text-sm font-bold text-[#1a1916]">Saare Follow-up Trails</h3>
         </div>
 
-        <div className="flex gap-1 px-5 border-b border-white/10">
+        <div className="flex gap-1 px-5 border-b border-black/10">
           <button onClick={() => setViewKind('co')}
             className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors ${
-              viewKind === 'co' ? 'border-[#534AB7] text-white' : 'border-transparent text-white/40 hover:text-white/70'
+              viewKind === 'co' ? 'border-[#534AB7] text-[#1a1916]' : 'border-transparent text-[#1a1916]/55 hover:text-[#1a1916]/80'
             }`}>
             📦 Customer Orders ({coCount})
           </button>
           <button onClick={() => setViewKind('vo')}
             className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors ${
-              viewKind === 'vo' ? 'border-[#534AB7] text-white' : 'border-transparent text-white/40 hover:text-white/70'
+              viewKind === 'vo' ? 'border-[#534AB7] text-[#1a1916]' : 'border-transparent text-[#1a1916]/55 hover:text-[#1a1916]/80'
             }`}>
             🏭 Vendor Orders ({voCount})
           </button>
@@ -72,7 +72,7 @@ export default function SaareTrailsModal({ data, onClose }: { data: AppData; onC
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {ruleKeysInOrder.length === 0 ? (
-            <p className="text-center py-10 text-white/30 text-sm">
+            <p className="text-center py-10 text-[#1a1916]/40 text-sm">
               {viewKind === 'vo' ? 'Vendor orders' : 'Customer orders'} ke liye abhi tak koi follow-up log nahi hua.
             </p>
           ) : ruleKeysInOrder.map(rk => {
@@ -80,25 +80,25 @@ export default function SaareTrailsModal({ data, onClose }: { data: AppData; onC
             const list = byRule.get(rk) ?? [];
             return (
               <div key={rk} className="mb-5">
-                <p className="text-[11px] font-bold text-[#a89fff] uppercase tracking-wide mb-1.5">
-                  {rule.icon} {rule.label} <span className="font-normal text-white/30 normal-case tracking-normal">({list.length})</span>
+                <p className="text-[11px] font-bold text-[#534AB7] uppercase tracking-wide mb-1.5">
+                  {rule.icon} {rule.label} <span className="font-normal text-[#1a1916]/40 normal-case tracking-normal">({list.length})</span>
                 </p>
                 <div className="flex flex-col gap-1.5">
                   {list.map(g => {
                     const open = openCards.has(g.groupKey);
                     return (
-                      <div key={g.groupKey} className="border border-[#534AB7]/25 rounded-lg bg-white/[0.02] overflow-hidden">
+                      <div key={g.groupKey} className="border border-[#534AB7]/25 rounded-lg bg-white overflow-hidden">
                         <button onClick={() => toggleCard(g.groupKey)}
-                          className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-white/5 transition-colors">
-                          <span className="transition-transform text-white/40 text-[10px]" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
-                          <span className="text-xs font-semibold text-white truncate">{g.kind === 'vo' ? '🏭' : '📦'} {g.title}</span>
-                          <span className="text-[10px] text-white/30 flex-shrink-0">({g.entries.length})</span>
+                          className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-black/5 transition-colors">
+                          <span className="transition-transform text-[#1a1916]/55 text-[10px]" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
+                          <span className="text-xs font-semibold text-[#1a1916] truncate">{g.kind === 'vo' ? '🏭' : '📦'} {g.title}</span>
+                          <span className="text-[10px] text-[#1a1916]/40 flex-shrink-0">({g.entries.length})</span>
                         </button>
                         {open && (
                           <div className="px-3 pb-3">
                             <FollowUpTimeline entries={g.entries} />
                             <button onClick={() => goTo(g)}
-                              className="mt-2 text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-white/70">
+                              className="mt-2 text-[11px] font-semibold bg-white hover:bg-black/[0.06] border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916]/80">
                               ↗ Kholo
                             </button>
                           </div>
@@ -112,7 +112,7 @@ export default function SaareTrailsModal({ data, onClose }: { data: AppData; onC
           })}
         </div>
 
-        <div className="px-5 py-3 border-t border-white/10 flex justify-end">
+        <div className="px-5 py-3 border-t border-black/10 flex justify-end">
           <button onClick={onClose} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] rounded-lg px-4 py-2 text-white">Close</button>
         </div>
       </div>

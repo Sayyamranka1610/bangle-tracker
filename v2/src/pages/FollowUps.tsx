@@ -106,19 +106,19 @@ export default function FollowUps() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-bold text-white">💬 Kya Bola?</h1>
-        <span className="text-xs text-white/50">{totalCount} pending follow-up{totalCount === 1 ? '' : 's'}</span>
+        <h1 className="text-xl font-bold text-[#1a1916]">💬 Kya Bola?</h1>
+        <span className="text-xs text-[#1a1916]/60">{totalCount} pending follow-up{totalCount === 1 ? '' : 's'}</span>
       </div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <p className="text-xs text-white/50">Stuck orders and vendor orders that need a real answer.</p>
+        <p className="text-xs text-[#1a1916]/60">Stuck orders and vendor orders that need a real answer.</p>
         <div className="flex gap-2">
           <button onClick={() => setShowSaareTrails(true)}
-            className="text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-white/70">
+            className="text-[11px] font-semibold bg-white hover:bg-black/[0.06] border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916]/80">
             📜 Saare Trails
           </button>
           {session?.role === 'owner' && (
             <button onClick={() => setShowAajKaLog(true)}
-              className="text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-white/70">
+              className="text-[11px] font-semibold bg-white hover:bg-black/[0.06] border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916]/80">
               📋 Aaj ka Log
             </button>
           )}
@@ -132,7 +132,7 @@ export default function FollowUps() {
           return (
             <button key={chip.key} onClick={() => setSevFilter(chip.key)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                active ? 'bg-[#534AB7] border-[#534AB7] text-white' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                active ? 'bg-[#534AB7] border-[#534AB7] text-white' : 'bg-white border-black/10 text-[#1a1916]/80 hover:bg-black/[0.06]'
               }`}>
               {chip.label} {count > 0 && <span className="opacity-70">({count})</span>}
             </button>
@@ -141,7 +141,7 @@ export default function FollowUps() {
       </div>
 
       {groups.length === 0 && (
-        <div className="text-center py-16 text-white/40 text-sm">
+        <div className="text-center py-16 text-[#1a1916]/55 text-sm">
           🎉 Koi follow-up pending nahi hai. Sab up to date hai.
         </div>
       )}
@@ -154,20 +154,20 @@ export default function FollowUps() {
           const sev = severityOf(g.oldest);
           const colors = SEV_COLORS[sev];
           return (
-            <div key={g.key} className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+            <div key={g.key} className="rounded-xl border border-black/10 bg-white overflow-hidden">
               <div role="button" tabIndex={0} onClick={() => toggleGroup(g.key)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') toggleGroup(g.key); }}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer">
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 transition-colors text-left cursor-pointer">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="flex-shrink-0">{g.icon}</span>
-                  <span className="font-semibold text-white text-sm truncate">{g.label}</span>
-                  <span className="text-xs text-white/40 flex-shrink-0">({visRows.length})</span>
+                  <span className="font-semibold text-[#1a1916] text-sm truncate">{g.label}</span>
+                  <span className="text-xs text-[#1a1916]/55 flex-shrink-0">({visRows.length})</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {g.isVendor && (
                     <button onClick={e => { e.stopPropagation(); printStatement(g.label); }}
                       title="Print a pending-order statement for this vendor"
-                      className="text-[10px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-2 py-0.5 text-white/70">
+                      className="text-[10px] font-semibold bg-white hover:bg-black/[0.06] border border-black/10 rounded-full px-2 py-0.5 text-[#1a1916]/80">
                       🖨 PDF
                     </button>
                   )}
@@ -175,7 +175,7 @@ export default function FollowUps() {
                     style={{ background: colors.bg, color: colors.tx, borderColor: colors.bd }}>
                     {g.oldest <= 0 ? 'Aaj se due' : `${g.oldest} din`}
                   </span>
-                  <span className="text-white/40 text-xs transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
+                  <span className="text-[#1a1916]/55 text-xs transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
                 </div>
               </div>
               {isOpen && (
@@ -185,13 +185,13 @@ export default function FollowUps() {
                     const itSev = severityOf(it.overdueDays);
                     const itColors = SEV_COLORS[itSev];
                     return (
-                      <div key={it.key} className="rounded-lg border border-white/10 bg-[#1a1750]/50 p-3 flex flex-col gap-1.5">
+                      <div key={it.key} className="rounded-lg border border-black/10 bg-[#F7F6FF] p-3 flex flex-col gap-1.5">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-sm font-semibold text-white">{it.title}</span>
+                              <span className="text-sm font-semibold text-[#1a1916]">{it.title}</span>
                               {g.isVendor && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/60">
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/[0.06] text-[#1a1916]/70">
                                   {it.rule.icon} {it.rule.label}
                                 </span>
                               )}
@@ -201,7 +201,7 @@ export default function FollowUps() {
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-white/50 mt-0.5">{it.subtitle}</p>
+                            <p className="text-xs text-[#1a1916]/60 mt-0.5">{it.subtitle}</p>
                           </div>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0"
                             style={{ background: itColors.bg, color: itColors.tx, borderColor: itColors.bd }}>
@@ -209,24 +209,24 @@ export default function FollowUps() {
                           </span>
                         </div>
 
-                        <p className="text-xs italic text-red-300/80">
+                        <p className="text-xs italic text-red-700">
                           "{it.isBrokenPromise && it.promisedDate
                             ? `Pichli baar bola tha ki ${fmtDate(it.promisedDate)} tak aa jayega — ab tak nahi aaya, kyun?`
                             : it.rule.ask}"
                         </p>
 
                         {lastLog && (
-                          <p className="text-[11px] text-white/40">
+                          <p className="text-[11px] text-[#1a1916]/55">
                             💬 Last time ({fmtDate(lastLog.loggedAt ? new Date(lastLog.loggedAt).toISOString().slice(0, 10) : '')}): {lastLog.reasonLabel}{lastLog.detail ? ` — ${lastLog.detail}` : ''}
                           </p>
                         )}
                         {it.timesFollowedUp > 0 && (
-                          <p className="text-[11px] text-white/30">Pehle bhi {it.timesFollowedUp} baar follow-up ho chuka hai</p>
+                          <p className="text-[11px] text-[#1a1916]/40">Pehle bhi {it.timesFollowedUp} baar follow-up ho chuka hai</p>
                         )}
 
                         <div className="flex gap-2 pt-1">
                           <button onClick={() => goToTarget(it)}
-                            className="text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-white/70">
+                            className="text-xs font-semibold bg-white hover:bg-black/[0.06] border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916]/80">
                             ↗ Kholo
                           </button>
                           {canEdit && (

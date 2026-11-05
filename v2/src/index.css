@@ -6,6 +6,11 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #f4f3ef;
+  color: #1a1916;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Light theme: native form controls (date pickers, scrollbars) should render light, like Phase 1. */
+:root { color-scheme: light; }

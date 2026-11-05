@@ -14,7 +14,7 @@ export default function ToastContainer() {
       {state.toasts.map(t => (
         <div
           key={t.id}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg text-white text-sm pointer-events-auto ${colors[t.type]}`}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg text-[#1a1916] text-sm pointer-events-auto ${colors[t.type]}`}
           onClick={() => dispatch({ type: 'REMOVE_TOAST', payload: t.id })}
         >
           <span className="font-bold">{icons[t.type]}</span>

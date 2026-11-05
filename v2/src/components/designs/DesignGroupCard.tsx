@@ -4,6 +4,7 @@ import type { DesignStage } from '../../types';
 import { designTotalQty, designPct, STATUS_CONFIG, stageGroup, aggreagatedSizes, exportDesignCSV, printDesignGroup } from '../../lib/designUtils';
 import SizeTable from './SizeTable';
 import StagePanel from './StagePanel';
+import { useLightbox } from '../lightboxContext';
 
 interface Props {
   code: string;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate }: Props) {
+  const lightbox = useLightbox();
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
 
   const firstName = entries[0]?.design.name ?? '';
@@ -29,7 +31,7 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
         {stages.map((s, i) => {
           const cfg = STATUS_CONFIG[s.status] ?? STATUS_CONFIG.pending;
           const gid = stageGroup(s.stageId);
-          const groupColor = gid === 'raw' ? '' : gid === 'semi' ? 'ring-1 ring-white/10' : '';
+          const groupColor = gid === 'raw' ? '' : gid === 'semi' ? 'ring-1 ring-black/10' : '';
           return (
             <span
               key={i}
@@ -43,41 +45,43 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
   }
 
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+    <div className="bg-white border border-black/10 rounded-xl overflow-hidden">
       {/* Group header */}
-      <div className="px-4 py-3 bg-white/3 border-b border-white/10 flex items-center gap-3">
+      <div className="px-4 py-3 bg-white border-b border-black/10 flex items-center gap-3">
         {thumbnail && (
           <img
             src={thumbnail}
             alt={code}
-            className="w-10 h-10 rounded object-cover flex-shrink-0"
+            title="Click to enlarge"
+            onClick={() => lightbox.open(allImages.map(i => i.hqData || i.data))}
+            className="w-10 h-10 rounded object-cover flex-shrink-0 cursor-zoom-in"
           />
         )}
         <div className="min-w-0 flex-1">
-          <h3 className="text-white font-semibold truncate">{code}</h3>
+          <h3 className="text-[#1a1916] font-semibold truncate">{code}</h3>
           {firstName && firstName !== code && (
-            <p className="text-xs text-white/50 truncate">{firstName}</p>
+            <p className="text-xs text-[#1a1916]/60 truncate">{firstName}</p>
           )}
         </div>
-        <div className="text-xs text-white/40 flex-shrink-0">
+        <div className="text-xs text-[#1a1916]/55 flex-shrink-0">
           {entries.length} order{entries.length !== 1 ? 's' : ''}
         </div>
         <button
           onClick={() => exportDesignCSV(code, entries)}
-          className="text-[10px] font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded px-2 py-1 flex-shrink-0 transition-colors"
+          className="text-[10px] font-medium text-[#1a1916]/70 hover:text-[#1a1916] bg-white hover:bg-black/[0.06] border border-black/10 rounded px-2 py-1 flex-shrink-0 transition-colors"
         >
           📥 Export
         </button>
         <button
           onClick={() => printDesignGroup(code, entries)}
-          className="text-[10px] font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded px-2 py-1 flex-shrink-0 transition-colors"
+          className="text-[10px] font-medium text-[#1a1916]/70 hover:text-[#1a1916] bg-white hover:bg-black/[0.06] border border-black/10 rounded px-2 py-1 flex-shrink-0 transition-colors"
         >
           🖨️ Print
         </button>
       </div>
 
       {/* One entry per order */}
-      <div className="divide-y divide-white/5">
+      <div className="divide-y divide-black/[0.07]">
         {entries.map(entry => {
           const { design, order, orderIndex, designIndex } = entry;
           const key = `${order.id}-${design.id}`;
@@ -92,15 +96,15 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
               {/* Entry summary row */}
               <button
                 onClick={() => setExpandedEntry(isExpanded ? null : key)}
-                className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors"
+                className="w-full text-left px-4 py-3 hover:bg-black/5 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   {/* Order ref */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono text-[#a89fff]">{order.orderId}</span>
-                      <span className="text-xs text-white/50">{order.client}</span>
-                      <span className="text-xs text-white/30">{order.startDate}</span>
+                      <span className="text-xs font-mono text-[#534AB7]">{order.orderId}</span>
+                      <span className="text-xs text-[#1a1916]/60">{order.client}</span>
+                      <span className="text-xs text-[#1a1916]/40">{order.startDate}</span>
                     </div>
 
                     {/* Size quantities inline */}
@@ -109,11 +113,11 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
                         {Object.entries(sizes)
                           .filter(([, v]) => v > 0)
                           .map(([sz, v]) => (
-                            <span key={sz} className="text-xs text-white/60">
-                              <span className="text-white/30">{sz}:</span> {v}
+                            <span key={sz} className="text-xs text-[#1a1916]/70">
+                              <span className="text-[#1a1916]/40">{sz}:</span> {v}
                             </span>
                           ))}
-                        <span className="text-xs font-medium text-white">{qty} pcs</span>
+                        <span className="text-xs font-medium text-[#1a1916]">{qty} pcs</span>
                       </div>
                     )}
                   </div>
@@ -122,7 +126,7 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
                   <div className="flex-shrink-0 text-right space-y-1">
                     <StageDots stages={design.stages} />
                     <div className="flex items-center gap-1.5 justify-end">
-                      <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                      <div className="w-16 h-1 bg-black/[0.06] rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${
                             pct === 100 ? 'bg-green-500' : 'bg-[#534AB7]'
@@ -130,18 +134,18 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <span className="text-xs text-white/40 w-7 text-right">{pct}%</span>
+                      <span className="text-xs text-[#1a1916]/55 w-7 text-right">{pct}%</span>
                     </div>
                   </div>
 
                   {/* Expand chevron */}
-                  <span className={`text-white/30 text-xs flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▾</span>
+                  <span className={`text-[#1a1916]/40 text-xs flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▾</span>
                 </div>
               </button>
 
               {/* Expanded detail */}
               {isExpanded && (
-                <div className="px-4 pb-4 border-t border-white/5 pt-3">
+                <div className="px-4 pb-4 border-t border-black/[0.07] pt-3">
                   {/* Images */}
                   {allImages.length > 0 && (
                     <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
@@ -150,7 +154,9 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
                           key={ii}
                           src={img.data}
                           alt={img.name ?? `Image ${ii + 1}`}
-                          className="h-20 w-20 object-cover rounded flex-shrink-0 border border-white/10"
+                          title="Click to enlarge"
+                          onClick={() => lightbox.open(allImages.map(i => i.hqData || i.data), ii)}
+                          className="h-20 w-20 object-cover rounded flex-shrink-0 border border-black/10 cursor-zoom-in"
                         />
                       ))}
                     </div>
@@ -158,15 +164,15 @@ export default function DesignGroupCard({ code, entries, canEdit, onStageUpdate 
 
                   {/* Size table */}
                   {hasSizes && (
-                    <div className="mb-3 bg-white/3 rounded-lg p-3">
-                      <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Quantities</p>
+                    <div className="mb-3 bg-white rounded-lg p-3">
+                      <p className="text-[10px] text-[#1a1916]/40 uppercase tracking-wider mb-2">Quantities</p>
                       <SizeTable design={design} />
                     </div>
                   )}
 
                   {/* Stages */}
                   <div>
-                    <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Production stages</p>
+                    <p className="text-[10px] text-[#1a1916]/40 uppercase tracking-wider mb-1">Production stages</p>
                     <StagePanel
                       design={design}
                       order={order}

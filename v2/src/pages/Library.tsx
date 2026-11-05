@@ -11,8 +11,10 @@ import MoveCopyModal from '../components/library/MoveCopyModal';
 import ImportFolderModal from '../components/library/ImportFolderModal';
 import SyncR2Modal from '../components/library/SyncR2Modal';
 import RcloneGuideModal from '../components/library/RcloneGuideModal';
+import { useLightbox } from '../components/lightboxContext';
 
 export default function Library() {
+  const lightbox = useLightbox();
   const { state, showToast } = useApp();
   const canEdit = state.session?.role === 'owner' && state.hasLock;
 
@@ -198,17 +200,17 @@ export default function Library() {
   }
 
   if (loading) {
-    return <div className="p-6 text-center text-white/40 animate-pulse">Loading library…</div>;
+    return <div className="p-6 text-center text-[#1a1916]/55 animate-pulse">Loading library…</div>;
   }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">
-        <button onClick={goRoot} className="text-sm font-semibold text-[#a89fff] bg-[#534AB7]/15 border border-[#534AB7]/40 rounded-lg px-3 py-1.5">🖼️ Library</button>
+        <button onClick={goRoot} className="text-sm font-semibold text-[#534AB7] bg-[#534AB7]/15 border border-[#534AB7]/40 rounded-lg px-3 py-1.5">🖼️ Library</button>
         {segment && (
           <>
-            <span className="text-white/20">›</span>
+            <span className="text-[#1a1916]/30">›</span>
             <button onClick={goSegment} className={`text-sm font-semibold rounded-lg px-3 py-1.5 border ${LIB_SEG_META[segment].bg} ${LIB_SEG_META[segment].border}`} style={{ color: LIB_SEG_META[segment].color }}>
               {LIB_SEG_META[segment].icon} {segment}
             </button>
@@ -216,8 +218,8 @@ export default function Library() {
         )}
         {folder && (
           <>
-            <span className="text-white/20">›</span>
-            <span className="text-sm font-semibold text-white">📁 {folder}</span>
+            <span className="text-[#1a1916]/30">›</span>
+            <span className="text-sm font-semibold text-[#1a1916]">📁 {folder}</span>
           </>
         )}
       </div>
@@ -225,7 +227,7 @@ export default function Library() {
       {/* ── ROOT: segment cards ── */}
       {!segment && (
         <div>
-          <p className="text-sm text-white/40 mb-4">{entries.length.toLocaleString()} photos permanently in cloud — organized by segment</p>
+          <p className="text-sm text-[#1a1916]/55 mb-4">{entries.length.toLocaleString()} photos permanently in cloud — organized by segment</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {LIB_SEGMENTS.map(seg => {
               const meta = LIB_SEG_META[seg];
@@ -239,12 +241,12 @@ export default function Library() {
                     <span className="text-lg font-bold" style={{ color: meta.color }}>{meta.icon} {seg}</span>
                     <span className="text-xs font-semibold" style={{ color: meta.color }}>{segFolders.length} folder{segFolders.length !== 1 ? 's' : ''} · {imgs.length} photo{imgs.length !== 1 ? 's' : ''}</span>
                   </div>
-                  <div className="grid grid-cols-4 h-20 bg-white/5">
+                  <div className="grid grid-cols-4 h-20 bg-white">
                     {previews.length ? previews.map((url, i) => <img key={i} src={url} className="w-full h-20 object-cover" alt="" />)
-                      : <div className="col-span-4 flex items-center justify-center text-3xl text-white/10">{meta.icon}</div>}
+                      : <div className="col-span-4 flex items-center justify-center text-3xl text-[#1a1916]/10">{meta.icon}</div>}
                   </div>
                   <div className="px-4 py-2.5 flex items-center justify-between text-xs">
-                    <span className="text-white/50">Click to browse & manage</span>
+                    <span className="text-[#1a1916]/60">Click to browse & manage</span>
                     <span className="font-semibold" style={{ color: meta.color }}>→</span>
                   </div>
                 </button>
@@ -266,29 +268,29 @@ export default function Library() {
                 <button onClick={() => handleNewFolder(segment)} className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5">➕ New Folder</button>
                 <button onClick={() => setImportModal(true)} className="text-xs font-semibold bg-[#534AB7] hover:bg-[#453d9e] text-white rounded-lg px-3 py-1.5">📁 Import Folder</button>
                 <button onClick={() => setSyncModal(true)} className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5">🔄 Sync from R2</button>
-                <button onClick={() => setRcloneGuide(true)} className="text-xs font-semibold bg-[#534AB7]/15 text-[#a89fff] border border-[#534AB7]/40 rounded-lg px-3 py-1.5">📖 rclone Guide</button>
+                <button onClick={() => setRcloneGuide(true)} className="text-xs font-semibold bg-[#534AB7]/15 text-[#534AB7] border border-[#534AB7]/40 rounded-lg px-3 py-1.5">📖 rclone Guide</button>
               </div>
             )}
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search folders in ${segment}…`}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm mb-4 focus:outline-none focus:border-[#534AB7]" />
+            className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm mb-4 focus:outline-none focus:border-[#534AB7]" />
 
           {filteredFolders.length === 0 ? (
-            <p className="text-center py-10 text-white/30 text-sm">{search ? `No folders match "${search}"` : 'No folders yet — click ➕ New Folder to create one'}</p>
+            <p className="text-center py-10 text-[#1a1916]/40 text-sm">{search ? `No folders match "${search}"` : 'No folders yet — click ➕ New Folder to create one'}</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {filteredFolders.map(f => (
-                <div key={f.name} className="border border-white/10 rounded-xl overflow-hidden hover:-translate-y-0.5 transition-transform">
-                  <button onClick={() => selectFolder(f.name)} className="w-full h-24 bg-white/5 flex items-center justify-center overflow-hidden">
+                <div key={f.name} className="border border-black/10 rounded-xl overflow-hidden hover:-translate-y-0.5 transition-transform">
+                  <button onClick={() => selectFolder(f.name)} className="w-full h-24 bg-white flex items-center justify-center overflow-hidden">
                     {f.preview ? <img src={f.preview} className="w-full h-full object-cover" alt="" /> : <span className="text-3xl">📁</span>}
                   </button>
                   <div className="px-2.5 py-2">
-                    <button onClick={() => selectFolder(f.name)} className="text-xs font-semibold text-white truncate block w-full text-left">📁 {f.name}</button>
-                    <p className="text-[10px] text-white/40">{f.count} photo{f.count !== 1 ? 's' : ''}</p>
+                    <button onClick={() => selectFolder(f.name)} className="text-xs font-semibold text-[#1a1916] truncate block w-full text-left">📁 {f.name}</button>
+                    <p className="text-[10px] text-[#1a1916]/55">{f.count} photo{f.count !== 1 ? 's' : ''}</p>
                     {canEdit && (
                       <div className="flex gap-1 mt-1.5">
-                        <button onClick={() => handleRenameFolder(segment, f.name, f.regId)} className="flex-1 text-[9px] bg-white/5 border border-white/10 rounded px-1 py-0.5 text-white/60">✏️ Rename</button>
-                        <button onClick={() => handleDeleteFolder(segment, f.name, f.regId)} className="flex-1 text-[9px] bg-red-500/10 border border-red-500/30 rounded px-1 py-0.5 text-red-400">🗑️ Delete</button>
+                        <button onClick={() => handleRenameFolder(segment, f.name, f.regId)} className="flex-1 text-[9px] bg-white border border-black/10 rounded px-1 py-0.5 text-[#1a1916]/70">✏️ Rename</button>
+                        <button onClick={() => handleDeleteFolder(segment, f.name, f.regId)} className="flex-1 text-[9px] bg-red-500/10 border border-red-500/30 rounded px-1 py-0.5 text-red-700">🗑️ Delete</button>
                       </div>
                     )}
                   </div>
@@ -304,20 +306,20 @@ export default function Library() {
         <div>
           <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-white">{folderItems.length} photo{folderItems.length !== 1 ? 's' : ''}</span>
+              <span className="text-sm font-semibold text-[#1a1916]">{folderItems.length} photo{folderItems.length !== 1 ? 's' : ''}</span>
               {canEdit && folderItems.length > 0 && (
                 <>
-                  <button onClick={toggleSelectAll} className="text-[11px] font-semibold bg-[#534AB7]/15 text-[#a89fff] border border-[#534AB7]/40 rounded-lg px-2.5 py-1">
+                  <button onClick={toggleSelectAll} className="text-[11px] font-semibold bg-[#534AB7]/15 text-[#534AB7] border border-[#534AB7]/40 rounded-lg px-2.5 py-1">
                     {selected.size === folderItems.length ? '☑ Deselect All' : '☐ Select All'}
                   </button>
                   {selected.size > 0 && (
-                    <button onClick={() => setSelected(new Set())} className="text-[11px] bg-white/5 text-white/60 border border-white/10 rounded-lg px-2.5 py-1">✕ Clear</button>
+                    <button onClick={() => setSelected(new Set())} className="text-[11px] bg-white text-[#1a1916]/70 border border-black/10 rounded-lg px-2.5 py-1">✕ Clear</button>
                   )}
                 </>
               )}
             </div>
             {canEdit && (
-              <label className={`text-xs font-semibold rounded-lg px-3 py-1.5 cursor-pointer transition-colors ${uploading ? 'bg-white/10 text-white/40' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
+              <label className={`text-xs font-semibold rounded-lg px-3 py-1.5 cursor-pointer transition-colors ${uploading ? 'bg-black/[0.06] text-[#1a1916]/55' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
                 {uploading ? 'Uploading…' : '+ Upload Here'}
                 <input type="file" multiple accept="image/*" disabled={uploading} className="hidden"
                   onChange={e => { handleUpload(e.target.files, segment, folder); e.target.value = ''; }} />
@@ -328,7 +330,7 @@ export default function Library() {
           {/* Bulk action bar — appears once at least one photo is selected */}
           {canEdit && selected.size > 0 && (
             <div className="flex items-center gap-2 mb-3 bg-[#534AB7]/10 border border-[#534AB7]/30 rounded-lg px-3 py-2">
-              <span className="text-xs font-semibold text-[#a89fff]">{selected.size} selected</span>
+              <span className="text-xs font-semibold text-[#534AB7]">{selected.size} selected</span>
               <button onClick={() => setMoveModal('move')} className="ml-auto text-[11px] font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5">📂 Move</button>
               <button onClick={() => setMoveModal('copy')} className="text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5">📋 Copy</button>
               <button onClick={handleDeleteSelected} className="text-[11px] font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-1.5">🗑️ Delete</button>
@@ -336,32 +338,33 @@ export default function Library() {
           )}
 
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search in ${folder}…`}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 text-sm mb-4 focus:outline-none focus:border-[#534AB7]" />
+            className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 text-sm mb-4 focus:outline-none focus:border-[#534AB7]" />
 
           {folderItems.length === 0 ? (
-            <p className="text-center py-10 text-white/30 text-sm">No photos{search ? ` matching "${search}"` : ''} in this folder.</p>
+            <p className="text-center py-10 text-[#1a1916]/40 text-sm">No photos{search ? ` matching "${search}"` : ''} in this folder.</p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
               {folderItems.map(e => {
                 const isSel = selected.has(e._id);
                 return (
-                  <div key={e._id} className={`border rounded-lg overflow-hidden bg-white/5 ${isSel ? 'border-[#534AB7] ring-1 ring-[#534AB7]' : 'border-white/10'}`}>
-                    <div className="relative h-20 bg-white/5">
+                  <div key={e._id} className={`border rounded-lg overflow-hidden bg-white ${isSel ? 'border-[#534AB7] ring-1 ring-[#534AB7]' : 'border-black/10'}`}>
+                    <div className="relative h-20 bg-white">
                       {canEdit && (
                         <button onClick={() => toggleSelect(e._id)}
-                          className={`absolute top-1 left-1 z-10 w-4.5 h-4.5 rounded flex items-center justify-center text-[10px] font-bold ${isSel ? 'bg-[#534AB7] text-white' : 'bg-black/50 text-white/60 border border-white/30'}`}
+                          className={`absolute top-1 left-1 z-10 w-4.5 h-4.5 rounded flex items-center justify-center text-[10px] font-bold ${isSel ? 'bg-[#534AB7] text-white' : 'bg-black/50 text-white/60 border border-black/25'}`}
                           style={{ width: 18, height: 18 }}>
                           {isSel ? '✓' : ''}
                         </button>
                       )}
-                      <a href={e.r2url} target="_blank" rel="noreferrer" className="block h-full">
+                      <button type="button" className="block h-full w-full cursor-zoom-in" title="Click to enlarge"
+                        onClick={() => lightbox.open(folderItems.map(f => f.r2url), folderItems.indexOf(e))}>
                         <img src={e.r2url} className="w-full h-full object-cover" alt={e.designCode || e.fileName} loading="lazy" />
-                      </a>
+                      </button>
                     </div>
                     <div className="px-1.5 py-1.5">
-                      <p className="text-[10px] font-semibold text-white truncate" title={e.designCode || e.fileName}>{e.designCode || e.fileName || '—'}</p>
+                      <p className="text-[10px] font-semibold text-[#1a1916] truncate" title={e.designCode || e.fileName}>{e.designCode || e.fileName || '—'}</p>
                       {canEdit && (
-                        <button onClick={() => handleDeletePhoto(e._id)} className="mt-1 w-full text-[9px] bg-red-500/10 border border-red-500/30 rounded px-1 py-0.5 text-red-400">Delete</button>
+                        <button onClick={() => handleDeletePhoto(e._id)} className="mt-1 w-full text-[9px] bg-red-500/10 border border-red-500/30 rounded px-1 py-0.5 text-red-700">Delete</button>
                       )}
                     </div>
                   </div>

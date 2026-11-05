@@ -66,16 +66,16 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
       className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-white font-semibold">{isEdit ? 'Edit Vendor Order' : 'New Vendor Order'}</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-xl leading-none">×</button>
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="px-6 py-4 border-b border-black/10 flex items-center justify-between">
+          <h2 className="text-[#1a1916] font-semibold">{isEdit ? 'Edit Vendor Order' : 'New Vendor Order'}</h2>
+          <button onClick={onClose} className="text-[#1a1916]/55 hover:text-[#1a1916] text-xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Vendor name */}
           <div className="relative">
-            <label className="block text-xs text-white/60 mb-1">Vendor name *</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Vendor name *</label>
             <input
               value={vendor}
               onChange={e => { setVendor(e.target.value); setAcOpen(true); }}
@@ -83,15 +83,15 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
               onBlur={() => setTimeout(() => setAcOpen(false), 150)}
               placeholder="e.g. Ram Cutting Works"
               required
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
             />
             {acOpen && filteredVendors.length > 0 && (
-              <ul className="absolute z-10 w-full mt-1 bg-[#1a1750] border border-white/10 rounded-lg shadow-lg max-h-36 overflow-auto">
+              <ul className="absolute z-10 w-full mt-1 bg-white border border-black/10 rounded-lg shadow-lg max-h-36 overflow-auto">
                 {filteredVendors.slice(0, 6).map(v => (
                   <li
                     key={v}
                     onMouseDown={() => { setVendor(v); setAcOpen(false); }}
-                    className="px-3 py-2 text-sm text-white hover:bg-white/10 cursor-pointer"
+                    className="px-3 py-2 text-sm text-[#1a1916] hover:bg-black/[0.06] cursor-pointer"
                   >{v}</li>
                 ))}
               </ul>
@@ -100,11 +100,11 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
 
           {/* Order type */}
           <div>
-            <label className="block text-xs text-white/60 mb-1">Order type</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Order type</label>
             <select
               value={type}
               onChange={e => setType(e.target.value as VendorOrderType)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] focus:outline-none focus:border-[#534AB7] text-sm"
             >
               <option value="karigar">🛠️ Karigar</option>
               <option value="pipe">🔩 Pipe</option>
@@ -115,22 +115,22 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-white/60 mb-1">Start date *</label>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">Start date *</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
                 required
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm [color-scheme:dark]"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] focus:outline-none focus:border-[#534AB7] text-sm [color-scheme:dark]"
               />
             </div>
             <div>
-              <label className="block text-xs text-white/60 mb-1">Delivery date</label>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">Delivery date</label>
               <input
                 type="date"
                 value={deliveryDate}
                 onChange={e => setDeliveryDate(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm [color-scheme:dark]"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] focus:outline-none focus:border-[#534AB7] text-sm [color-scheme:dark]"
               />
             </div>
           </div>
@@ -138,21 +138,21 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
           {/* Priority + status */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-white/60 mb-1">Priority</label>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">Priority</label>
               <select
                 value={priority}
                 onChange={e => setPriority(e.target.value as Priority)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] focus:outline-none focus:border-[#534AB7] text-sm"
               >
                 {priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-white/60 mb-1">Status</label>
+              <label className="block text-xs text-[#1a1916]/70 mb-1">Status</label>
               <select
                 value={status}
                 onChange={e => setStatus(e.target.value as VendorStatus)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] focus:outline-none focus:border-[#534AB7] text-sm"
               >
                 {ALL_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
               </select>
@@ -161,13 +161,13 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
 
           {/* Notes */}
           <div>
-            <label className="block text-xs text-white/60 mb-1">Notes</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Notes</label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}
               placeholder="Optional notes…"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm resize-none"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm resize-none"
             />
           </div>
 
@@ -175,7 +175,7 @@ export default function VendorModal({ order, allOrders, vendors, onSave, onClose
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white hover:bg-white/5 text-sm transition-colors"
+              className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] hover:bg-black/5 text-sm transition-colors"
             >
               Cancel
             </button>

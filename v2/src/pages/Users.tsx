@@ -110,8 +110,8 @@ export default function Users() {
   if (loading) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
-        <h1 className="text-2xl font-bold text-white mb-6">User Management</h1>
-        <p className="text-white/40 animate-pulse">Loading users…</p>
+        <h1 className="text-2xl font-bold text-[#1a1916] mb-6">User Management</h1>
+        <p className="text-[#1a1916]/55 animate-pulse">Loading users…</p>
       </div>
     );
   }
@@ -123,8 +123,8 @@ export default function Users() {
   if (!isOwner) {
     return (
       <div className="p-6 max-w-md mx-auto">
-        <h1 className="text-2xl font-bold text-white mb-1">My Account</h1>
-        <p className="text-sm text-white/40 mb-6">Change your login password. Contact the owner to change your username or role.</p>
+        <h1 className="text-2xl font-bold text-[#1a1916] mb-1">My Account</h1>
+        <p className="text-sm text-[#1a1916]/55 mb-6">Change your login password. Contact the owner to change your username or role.</p>
         <button
           onClick={() => setModal({ kind: 'myPassword' })}
           className="flex items-center gap-2 bg-[#534AB7] hover:bg-[#6259c8] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -143,11 +143,11 @@ export default function Users() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">User Management</h1>
-          <p className="text-sm text-white/40 mt-0.5">{users.length} user{users.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-[#1a1916]">User Management</h1>
+          <p className="text-sm text-[#1a1916]/55 mt-0.5">{users.length} user{users.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-3">
-          {saving && <span className="text-xs text-yellow-300 animate-pulse">Saving…</span>}
+          {saving && <span className="text-xs text-yellow-700 animate-pulse">Saving…</span>}
           <button
             onClick={() => setModal({ kind: 'add' })}
             className="flex items-center gap-2 bg-[#534AB7] hover:bg-[#6259c8] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -158,13 +158,13 @@ export default function Users() {
       </div>
 
       {/* Users table */}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+      <div className="bg-white border border-black/10 rounded-xl overflow-hidden">
         {users.length === 0 ? (
-          <p className="text-white/30 text-sm text-center py-10">No users yet. Add the first user above.</p>
+          <p className="text-[#1a1916]/40 text-sm text-center py-10">No users yet. Add the first user above.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs text-white/40">
+              <tr className="border-b border-black/10 text-xs text-[#1a1916]/55">
                 <th className="text-left px-5 py-3 font-normal">Username</th>
                 <th className="text-left px-4 py-3 font-normal">Password</th>
                 <th className="text-left px-4 py-3 font-normal">Role</th>
@@ -172,7 +172,7 @@ export default function Users() {
                 <th className="px-4 py-3 font-normal"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-black/[0.07]">
               {users.map((user, i) => {
                 const isMe = user.username === currentUser;
                 // Mirrors Phase 1 exactly: the delete button never appears for
@@ -182,24 +182,24 @@ export default function Users() {
                 const isRevealed = revealIdx === i;
 
                 return (
-                  <tr key={user.id ?? i} className="hover:bg-white/3 transition-colors">
+                  <tr key={user.id ?? i} className="hover:bg-black/5 transition-colors">
                     {/* Username */}
                     <td className="px-5 py-3">
-                      <span className="font-semibold text-white">{user.username}</span>
+                      <span className="font-semibold text-[#1a1916]">{user.username}</span>
                       {isMe && (
-                        <span className="ml-2 text-xs text-white/30">(you)</span>
+                        <span className="ml-2 text-xs text-[#1a1916]/40">(you)</span>
                       )}
                     </td>
 
                     {/* Password */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-white/60 tracking-widest">
+                        <span className="font-mono text-xs text-[#1a1916]/70 tracking-widest">
                           {isRevealed ? user.password : '••••••••'}
                         </span>
                         <button
                           onClick={() => setRevealIdx(isRevealed ? null : i)}
-                          className="text-white/30 hover:text-white/70 transition-colors text-sm"
+                          className="text-[#1a1916]/40 hover:text-[#1a1916]/80 transition-colors text-sm"
                           title={isRevealed ? 'Hide' : 'Show password'}
                         >
                           {isRevealed ? '🙈' : '👁'}
@@ -211,15 +211,15 @@ export default function Users() {
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                         user.role === 'owner'
-                          ? 'bg-green-500/15 text-green-400'
-                          : 'bg-[#534AB7]/30 text-[#a89fff]'
+                          ? 'bg-green-500/15 text-green-700'
+                          : 'bg-[#534AB7]/30 text-[#534AB7]'
                       }`}>
                         {user.role === 'owner' ? 'Owner' : 'Member'}
                       </span>
                     </td>
 
                     {/* Created */}
-                    <td className="px-4 py-3 text-xs text-white/40">
+                    <td className="px-4 py-3 text-xs text-[#1a1916]/55">
                       {user.createdAt ? user.createdAt.slice(0, 10) : '—'}
                     </td>
 
@@ -228,7 +228,7 @@ export default function Users() {
                       <div className="flex items-center gap-1 justify-end">
                         <button
                           onClick={() => setModal({ kind: 'changePassword', user, index: i })}
-                          className="px-2.5 py-1 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                          className="px-2.5 py-1 text-xs rounded-lg bg-white hover:bg-black/[0.06] text-[#1a1916]/70 hover:text-[#1a1916] transition-colors"
                           title="Change password"
                         >
                           🔑 Change PW
@@ -236,12 +236,12 @@ export default function Users() {
                         {canDelete ? (
                           <button
                             onClick={() => setModal({ kind: 'delete', user, index: i })}
-                            className="px-2.5 py-1 text-xs rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors"
+                            className="px-2.5 py-1 text-xs rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-700 hover:text-red-700 transition-colors"
                           >
                             Remove
                           </button>
                         ) : (
-                          <span className="px-2.5 py-1 text-xs text-white/20">
+                          <span className="px-2.5 py-1 text-xs text-[#1a1916]/30">
                             {isMe ? 'Cannot remove self' : 'Owners are protected'}
                           </span>
                         )}
@@ -256,10 +256,10 @@ export default function Users() {
       </div>
 
       {/* Info box */}
-      <div className="mt-4 bg-white/3 border border-white/10 rounded-xl px-5 py-4 text-xs text-white/40 space-y-1">
-        <p><span className="text-white/60 font-medium">Owner</span> — full access: read, write, manage users, export data.</p>
-        <p><span className="text-white/60 font-medium">Member</span> — read-only access: can view orders, designs, and inventory but cannot edit.</p>
-        <p className="text-white/25 mt-2">You cannot remove your own account or the last remaining owner.</p>
+      <div className="mt-4 bg-white border border-black/10 rounded-xl px-5 py-4 text-xs text-[#1a1916]/55 space-y-1">
+        <p><span className="text-[#1a1916]/70 font-medium">Owner</span> — full access: read, write, manage users, export data.</p>
+        <p><span className="text-[#1a1916]/70 font-medium">Member</span> — read-only access: can view orders, designs, and inventory but cannot edit.</p>
+        <p className="text-[#1a1916]/35 mt-2">You cannot remove your own account or the last remaining owner.</p>
       </div>
 
       {/* ── Modals ── */}
@@ -306,47 +306,47 @@ function AddUserModal({ onSave, onClose }: { onSave: (u: string, p: string, r: R
 
   return (
     <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-white font-semibold">Add New User</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-xl leading-none">×</button>
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="px-6 py-4 border-b border-black/10 flex items-center justify-between">
+          <h2 className="text-[#1a1916] font-semibold">Add New User</h2>
+          <button onClick={onClose} className="text-[#1a1916]/55 hover:text-[#1a1916] text-xl leading-none">×</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-red-700 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">Username *</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Username *</label>
             <input
               value={username}
               onChange={e => setUsername(e.target.value)}
               placeholder="e.g. rahul"
               autoFocus
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">Password * (min 4 chars)</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Password * (min 4 chars)</label>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Set a password"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 pr-9 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
               />
-              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-white/40 hover:text-white/80">
+              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-[#1a1916]/55 hover:text-[#1a1916]/85">
                 {showPw ? '🙈' : '👁'}
               </button>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">Role</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Role</label>
             <select
               value={role}
               onChange={e => setRole(e.target.value as Role)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] focus:outline-none focus:border-[#534AB7] text-sm"
             >
               <option value="member">Member (read-only)</option>
               <option value="owner">Owner (full access)</option>
@@ -354,7 +354,7 @@ function AddUserModal({ onSave, onClose }: { onSave: (u: string, p: string, r: R
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors">Cancel</button>
             <button type="submit" className="flex-1 py-2 rounded-lg bg-[#534AB7] hover:bg-[#6259c8] text-white font-medium text-sm transition-colors">Create User</button>
           </div>
         </form>
@@ -384,19 +384,19 @@ function ChangePwModal({ user, onSave, onClose }: { user: UserRecord; onSave: (p
 
   return (
     <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="px-6 py-4 border-b border-black/10 flex items-center justify-between">
           <div>
-            <h2 className="text-white font-semibold">Change Password</h2>
-            <p className="text-xs text-white/50 mt-0.5">for <span className="text-[#a89fff]">{user.username}</span></p>
+            <h2 className="text-[#1a1916] font-semibold">Change Password</h2>
+            <p className="text-xs text-[#1a1916]/60 mt-0.5">for <span className="text-[#534AB7]">{user.username}</span></p>
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-[#1a1916]/55 hover:text-[#1a1916] text-xl leading-none">×</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-red-700 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">New password * (min 4 chars)</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">New password * (min 4 chars)</label>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
@@ -404,16 +404,16 @@ function ChangePwModal({ user, onSave, onClose }: { user: UserRecord; onSave: (p
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Enter new password"
                 autoFocus
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 pr-9 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
               />
-              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-white/40 hover:text-white/80">
+              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-[#1a1916]/55 hover:text-[#1a1916]/85">
                 {showPw ? '🙈' : '👁'}
               </button>
             </div>
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors">Cancel</button>
             <button type="submit" className="flex-1 py-2 rounded-lg bg-[#534AB7] hover:bg-[#6259c8] text-white font-medium text-sm transition-colors">Save Password</button>
           </div>
         </form>
@@ -449,55 +449,55 @@ function MyPasswordModal({ onSave, onClose }: { onSave: (current: string, next: 
 
   return (
     <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-white font-semibold">Change My Password</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-xl leading-none">×</button>
+      <div className="bg-white border border-black/10 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="px-6 py-4 border-b border-black/10 flex items-center justify-between">
+          <h2 className="text-[#1a1916] font-semibold">Change My Password</h2>
+          <button onClick={onClose} className="text-[#1a1916]/55 hover:text-[#1a1916] text-xl leading-none">×</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-red-700 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">Current password *</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Current password *</label>
             <input
               type="password"
               value={current}
               onChange={e => setCurrent(e.target.value)}
               placeholder="Enter current password"
               autoFocus
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">New password * (min 4 chars)</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">New password * (min 4 chars)</label>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="New password"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 pr-9 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
               />
-              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-white/40 hover:text-white/80">
+              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-2 text-[#1a1916]/55 hover:text-[#1a1916]/85">
                 {showPw ? '🙈' : '👁'}
               </button>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs text-white/60 mb-1">Confirm new password *</label>
+            <label className="block text-xs text-[#1a1916]/70 mb-1">Confirm new password *</label>
             <input
               type={showPw ? 'text' : 'password'}
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
               placeholder="Confirm new password"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-[#534AB7] text-sm"
+              className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-[#1a1916] placeholder-black/35 focus:outline-none focus:border-[#534AB7] text-sm"
             />
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors">Cancel</button>
             <button type="submit" className="flex-1 py-2 rounded-lg bg-[#534AB7] hover:bg-[#6259c8] text-white font-medium text-sm transition-colors">Save Password</button>
           </div>
         </form>
@@ -511,13 +511,13 @@ function MyPasswordModal({ onSave, onClose }: { onSave: (current: string, next: 
 function DeleteModal({ user, onConfirm, onClose }: { user: UserRecord; onConfirm: () => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[#1a1750] border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-        <h3 className="text-white font-semibold mb-1">Remove user?</h3>
-        <p className="text-sm text-white/50 mb-5">
-          This will permanently remove <span className="text-white font-medium">{user.username}</span> ({user.role === 'owner' ? 'Owner' : 'Member'}). They will no longer be able to log in.
+      <div className="bg-white border border-black/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+        <h3 className="text-[#1a1916] font-semibold mb-1">Remove user?</h3>
+        <p className="text-sm text-[#1a1916]/60 mb-5">
+          This will permanently remove <span className="text-[#1a1916] font-medium">{user.username}</span> ({user.role === 'owner' ? 'Owner' : 'Member'}). They will no longer be able to log in.
         </p>
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+          <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-black/10 text-[#1a1916]/70 hover:text-[#1a1916] text-sm transition-colors">Cancel</button>
           <button onClick={onConfirm} className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium text-sm transition-colors">Remove</button>
         </div>
       </div>

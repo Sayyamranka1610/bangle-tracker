@@ -16,10 +16,12 @@ import Pooling from './pages/Pooling';
 import Library from './pages/Library';
 import KarigarHistory from './pages/KarigarHistory';
 import FollowUps from './pages/FollowUps';
+import LightboxProvider from './components/Lightbox';
 
 export default function App() {
   return (
     <AppProvider>
+      <LightboxProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -46,6 +48,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/orders" replace />} />
         </Routes>
       </BrowserRouter>
+      </LightboxProvider>
     </AppProvider>
   );
 }

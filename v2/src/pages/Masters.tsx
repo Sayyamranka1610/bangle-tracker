@@ -32,17 +32,17 @@ export default function Masters() {
   return (
     <div className={`p-6 mx-auto ${tab === 'families' ? 'max-w-5xl' : 'max-w-4xl'}`}>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Masters</h1>
-        <p className="text-sm text-white/40 mt-0.5">
+        <h1 className="text-2xl font-bold text-[#1a1916]">Masters</h1>
+        <p className="text-sm text-[#1a1916]/55 mt-0.5">
           Auto-populated from orders. Add entries here for dropdown suggestions during order entry.
         </p>
       </div>
 
-      <div className="flex gap-1 mb-5 bg-white/5 border border-white/10 rounded-xl p-1 w-fit flex-wrap">
+      <div className="flex gap-1 mb-5 bg-white border border-black/10 rounded-xl p-1 w-fit flex-wrap">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === t.id ? 'bg-[#534AB7] text-white' : 'text-white/50 hover:text-white'
+              tab === t.id ? 'bg-[#534AB7] text-white' : 'text-[#1a1916]/60 hover:text-[#1a1916]'
             }`}>
             {t.icon} {t.label}
           </button>
@@ -132,21 +132,21 @@ function MasterList({ label, listKey, data, canEdit, showVendorType, showPieceCo
   }
 
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 bg-white/3 border-b border-white/10 flex items-center justify-between">
-        <span className="text-sm font-semibold text-white">{label}s</span>
-        <span className="text-xs bg-white/10 text-white/50 rounded-full px-2 py-0.5">{items.length}</span>
+    <div className="bg-white border border-black/10 rounded-xl overflow-hidden">
+      <div className="px-4 py-3 bg-white border-b border-black/10 flex items-center justify-between">
+        <span className="text-sm font-semibold text-[#1a1916]">{label}s</span>
+        <span className="text-xs bg-black/[0.06] text-[#1a1916]/60 rounded-full px-2 py-0.5">{items.length}</span>
       </div>
 
       {items.length > 5 && (
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder={`Search ${label.toLowerCase()}s…`}
-          className="w-full bg-transparent border-b border-white/10 px-4 py-2 text-white placeholder-white/30 text-sm focus:outline-none" />
+          className="w-full bg-transparent border-b border-black/10 px-4 py-2 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none" />
       )}
 
-      <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
+      <div className="max-h-64 overflow-y-auto divide-y divide-black/[0.07]">
         {filtered.length === 0 ? (
-          <p className="text-xs text-white/30 px-4 py-3">{items.length === 0 ? 'No entries yet — auto-populated from orders.' : 'No match found.'}</p>
+          <p className="text-xs text-[#1a1916]/40 px-4 py-3">{items.length === 0 ? 'No entries yet — auto-populated from orders.' : 'No match found.'}</p>
         ) : filtered.map((value, i) => (
           <div key={value} className="flex items-center gap-2 px-4 py-2">
             {editingIdx === i ? (
@@ -154,15 +154,15 @@ function MasterList({ label, listKey, data, canEdit, showVendorType, showPieceCo
                 onChange={e => setEditValue(e.target.value)}
                 onBlur={() => commitRename(i)}
                 onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setEditingIdx(null); }}
-                className="flex-1 bg-white/10 border border-[#534AB7] rounded px-2 py-1 text-white text-sm focus:outline-none" />
+                className="flex-1 bg-black/[0.06] border border-[#534AB7] rounded px-2 py-1 text-[#1a1916] text-sm focus:outline-none" />
             ) : (
-              <span className="flex-1 text-sm text-white/80 truncate">{value}</span>
+              <span className="flex-1 text-sm text-[#1a1916]/85 truncate">{value}</span>
             )}
             {showVendorType && editingIdx !== i && (
               <select disabled={!canEdit} value={vendorTypeOf(data, value)}
                 onChange={e => handleVendorTypeChange(value, e.target.value as VendorOrderType)}
                 title="Vendor segment — changing this moves all their vendor orders too"
-                className="text-xs bg-white/5 border border-white/10 rounded px-2 py-1 text-white/70 focus:outline-none">
+                className="text-xs bg-white border border-black/10 rounded px-2 py-1 text-[#1a1916]/80 focus:outline-none">
                 {VENDOR_TYPE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             )}
@@ -173,18 +173,18 @@ function MasterList({ label, listKey, data, canEdit, showVendorType, showPieceCo
                     defaultValue={unitPieces(data, value) ?? ''}
                     onBlur={e => handlePieceCountChange(value, e.target.value)}
                     placeholder="pcs"
-                    className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-xs text-right focus:outline-none focus:border-[#534AB7]" />
+                    className="w-16 bg-white border border-black/10 rounded px-2 py-1 text-[#1a1916] text-xs text-right focus:outline-none focus:border-[#534AB7]" />
                 ) : (
-                  <span className="text-xs text-white/50">{unitPieces(data, value) ?? '—'} pcs</span>
+                  <span className="text-xs text-[#1a1916]/60">{unitPieces(data, value) ?? '—'} pcs</span>
                 )}
               </div>
             )}
             {canEdit && editingIdx !== i && (
               <>
                 <button onClick={() => { setEditingIdx(i); setEditValue(value); }}
-                  className="text-white/20 hover:text-white transition-colors text-sm" title="Rename">✏️</button>
+                  className="text-[#1a1916]/30 hover:text-[#1a1916] transition-colors text-sm" title="Rename">✏️</button>
                 <button onClick={() => handleDelete(value)}
-                  className="text-white/20 hover:text-red-400 transition-colors text-sm" title="Remove">✕</button>
+                  className="text-[#1a1916]/30 hover:text-red-700 transition-colors text-sm" title="Remove">✕</button>
               </>
             )}
           </div>
@@ -192,14 +192,14 @@ function MasterList({ label, listKey, data, canEdit, showVendorType, showPieceCo
       </div>
 
       {canEdit && (
-        <div className="flex gap-2 px-4 py-3 border-t border-white/10 bg-white/2">
+        <div className="flex gap-2 px-4 py-3 border-t border-black/10 bg-white">
           <input value={newValue} onChange={e => setNewValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder={`New ${label.toLowerCase()}…`}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#534AB7]" />
+            className="flex-1 bg-white border border-black/10 rounded-lg px-3 py-1.5 text-[#1a1916] placeholder-black/35 text-sm focus:outline-none focus:border-[#534AB7]" />
           {showVendorType && (
             <select value={newVendorType} onChange={e => setNewVendorType(e.target.value as VendorOrderType)}
-              className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none">
+              className="bg-white border border-black/10 rounded-lg px-2 py-1.5 text-[#1a1916] text-sm focus:outline-none">
               {VENDOR_TYPE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           )}
