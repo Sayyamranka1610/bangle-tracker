@@ -3709,35 +3709,40 @@ async function openCloudBackupsModal(){
   mc.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
     <div class="modal" style="width:480px;max-height:80vh;overflow:auto">
       <div class="modal-header"><div class="modal-icon" style="background:#EDEBFC;color:#4A3AAE">🕐</div><h3>Cloud version history</h3></div>
-      <p style="font-size:12px;color:#777;margin-bottom:10px">Automatic snapshots taken roughly once an hour, kept for the last 30. Pick one to see its order counts and restore it if today's data looks wrong.</p>
+      <p style="font-size:12px;color:#777;margin-bottom:10px">Automatic snapshots taken roughly once an hour (last 30), plus one saved copy per day for the last 30 days. Pick one to see its order counts and restore it if data looks wrong.</p>
       <div id="cloud-backups-list" style="font-size:13px">Loading…</div>
       <div class="modal-actions"><button onclick="closeModal()">Close</button></div>
     </div>
   </div>`;
   const list = document.getElementById('cloud-backups-list');
   try{
-    const r = await fetch(FB_BACKUPS_ROOT+'.json?shallow=true');
-    const keys = Object.keys((r.ok?await r.json():{})||{}).sort().reverse();
-    if(!keys.length){ list.textContent='No automatic snapshots yet — check back in about an hour.'; return; }
-    // Fetch counts for each snapshot's metadata only (small — orders/vendorOrders are top-level ints)
-    const rows = await Promise.all(keys.slice(0,30).map(async k=>{
-      try{
-        const rr = await fetch(FB_BACKUPS_ROOT+'/'+k+'.json');
-        const snap = rr.ok ? await rr.json() : null;
-        return {k, savedAt: snap?.savedAt||k, orders: snap?.orders ?? '?', vendorOrders: snap?.vendorOrders ?? '?'};
-      }catch(e){ return {k, savedAt:k, orders:'?', vendorOrders:'?'}; }
-    }));
-    list.innerHTML = rows.map(row=>`
+    const listKeys = async root=>{ try{ const r=await fetch(root+'.json?shallow=true'); return Object.keys((r.ok?await r.json():{})||{}).sort().reverse(); }catch(e){ return []; } };
+    const [hourlyKeys, dailyKeys] = await Promise.all([listKeys(FB_BACKUPS_ROOT), listKeys(FB_DAILY_ROOT)]);
+    if(!hourlyKeys.length && !dailyKeys.length){ list.textContent='No automatic snapshots yet — check back in about an hour.'; return; }
+    // Read ONLY the three tiny metadata fields per snapshot — never the full ~4 MB copy.
+    const meta = async (root,k,daily)=>{
+      const f = async n=>{ try{ const r=await fetch(root+'/'+k+'/'+n+'.json'); return r.ok?await r.json():null; }catch(e){ return null; } };
+      const [savedAt,orders,vendorOrders] = await Promise.all([f('savedAt'),f('orders'),f('vendorOrders')]);
+      return {k, daily, savedAt: savedAt||k, orders: orders ?? '?', vendorOrders: vendorOrders ?? '?'};
+    };
+    const rowHtml = row=>`
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid #eee">
         <span>${new Date(row.savedAt).toLocaleString('en-IN')} <span style="color:#888">— ${row.orders} orders, ${row.vendorOrders} vendor orders</span></span>
-        <button style="font-size:12px" onclick="restoreCloudBackup('${row.k}')">Restore</button>
-      </div>`).join('');
+        <button style="font-size:12px" onclick="restoreCloudBackup('${row.k}',${row.daily})">Restore</button>
+      </div>`;
+    const hourlyRows = await Promise.all(hourlyKeys.slice(0,30).map(k=>meta(FB_BACKUPS_ROOT,k,false)));
+    const dailyRows  = await Promise.all(dailyKeys.slice(0,30).map(k=>meta(FB_DAILY_ROOT,k,true)));
+    list.innerHTML =
+      '<div style="font-weight:700;color:#3C3489;margin:4px 0">Daily copies (last 30 days)</div>'
+      +(dailyRows.length?dailyRows.map(rowHtml).join(''):'<div style="color:#888;padding:6px 4px">None yet — the first one is saved the next time the owner edits something.</div>')
+      +'<div style="font-weight:700;color:#3C3489;margin:14px 0 4px">Hourly copies (last ~30 hours)</div>'
+      +hourlyRows.map(rowHtml).join('');
   }catch(e){ list.textContent='Failed to load: '+e.message; }
 }
-async function restoreCloudBackup(key){
+async function restoreCloudBackup(key,daily){
   if(!confirm('Restore this snapshot? Your current data will be replaced with this earlier version (today\'s changes since then will be lost unless you download a backup first).')) return;
   try{
-    const r = await fetch(FB_BACKUPS_ROOT+'/'+key+'.json');
+    const r = await fetch((daily?FB_DAILY_ROOT:FB_BACKUPS_ROOT)+'/'+key+'.json');
     if(!r.ok) throw new Error('HTTP '+r.status);
     const snap = await r.json();
     const state = JSON.parse(snap.data);
@@ -16245,6 +16250,44 @@ async function _maybeSnapshotBackup(dataStr, counts){
   }catch(e){ console.warn('Backup snapshot failed:', e); }
 }
 
+// ── DAILY LONG-TERM SNAPSHOTS (added Nov 2026) ─────────────────────────────────
+// The hourly snapshots above only reach back ~30 hours. This keeps ONE copy per
+// calendar day for the last 30 days at /appDataDaily/YYYY-MM-DD, so a problem
+// noticed after a long absence can still be rolled back. Cost: ~30 x 4 MB in
+// Firebase (well inside the 1 GB free limit). Cheap on the client: after the
+// first save of a day, later saves return from a localStorage check with no
+// network call. Never overwrites an existing day (first healthy save of the day
+// wins, and other devices see it and skip).
+const FB_DAILY_ROOT = 'https://bangle-tracker-default-rtdb.firebaseio.com/appDataDaily';
+const DAILY_KEEP_DAYS = 30;
+async function _maybeDailyBackup(dataStr, counts){
+  if(_isDemoMode()||_readOnly) return;
+  try{
+    if(!counts || !(counts.orders>0)) return; // never archive an empty/wiped-looking state as "the day's copy"
+    const d = new Date();
+    const day = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(localStorage.getItem('bangle_last_daily_date')===day) return;
+    const chk = await fetch(FB_DAILY_ROOT+'/'+day+'/savedAt.json');
+    if(!chk.ok) return; // can't tell if today's copy exists — try again on a later save
+    if(await chk.json()){ localStorage.setItem('bangle_last_daily_date', day); return; }
+    const payload = JSON.stringify({
+      data: dataStr, savedAt: d.toISOString(),
+      orders: counts.orders, vendorOrders: counts.vendorOrders
+    });
+    const put = await fetch(FB_DAILY_ROOT+'/'+day+'.json', {method:'PUT', headers:{'Content-Type':'application/json'}, body:payload});
+    if(!put.ok) return; // failed — leave the date unmarked so a later save retries
+    localStorage.setItem('bangle_last_daily_date', day);
+    // Prune to the newest DAILY_KEEP_DAYS days (date keys sort correctly as text)
+    const lr = await fetch(FB_DAILY_ROOT+'.json?shallow=true');
+    if(lr.ok){
+      const keys = Object.keys((await lr.json())||{}).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
+      if(keys.length>DAILY_KEEP_DAYS){
+        await Promise.all(keys.slice(0, keys.length-DAILY_KEEP_DAYS).map(k=>fetch(FB_DAILY_ROOT+'/'+k+'.json',{method:'DELETE'}).catch(()=>{})));
+      }
+    }
+  }catch(e){ console.warn('Daily backup failed:', e); }
+}
+
 // Unique device ID so we don't re-apply our own pushed updates
 const FB_DEVICE_ID = (()=>{
   let id = sessionStorage.getItem('fb_did');
@@ -16481,6 +16524,7 @@ async function fbPush(silent){
     // time — this used to re-scan the entire dataset again immediately, which
     // made an already-heavy startup save feel like a freeze ("Page Unresponsive").
     setTimeout(()=>_maybeSnapshotBackup(dataStr, localCounts), 4000);
+    setTimeout(()=>_maybeDailyBackup(dataStr, localCounts), 20000); // staggered so the two uploads never overlap
     const t = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     fbSetStatus('connected', 'Live · saved ' + t);
   } catch(e){
